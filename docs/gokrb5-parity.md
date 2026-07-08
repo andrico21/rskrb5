@@ -55,6 +55,9 @@ preview release unless the release notes explicitly call it out as skipped.
 - The current acceptable 0.2.0 evidence is the green hosted keytab-secret
   dry-run plus static AD keytab fixture coverage. These do not prove Windows AD
   PAC parity.
+- Do not add random or placeholder AD endpoint secrets. Endpoint secrets should
+  be set only for real services reachable from the selected runner; otherwise
+  keep using the non-live keytab dry-run.
 
 ## Immediate Next Slices
 

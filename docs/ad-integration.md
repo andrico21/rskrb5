@@ -191,6 +191,9 @@ endpoint secrets exist and are reachable from GitHub-hosted runners:
 
 Keep the dry-run green while this blocker is deferred. Do not claim Windows AD
 PAC parity until `test_ad=true` passes without soft-skip.
+Do not add random, placeholder, or reserved endpoint secrets to make GitHub's
+strict readiness check pass; endpoint secrets must represent real reachable AD
+services. Without that, use only `test_ad_dry_run=true`.
 
 After the required secrets are present, dispatch the gate:
 

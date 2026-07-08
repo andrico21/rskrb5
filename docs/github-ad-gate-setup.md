@@ -69,6 +69,12 @@ Endpoint secrets are plain `host:port` strings:
 | `TEST_AD_USER_ADMIN_ADDR` | `192.168.88.100:464` |
 | `TEST_AD_RESOURCE_ADMIN_ADDR` | `192.168.88.101:464` |
 
+Set endpoint secrets only when they identify real AD endpoints reachable from
+the selected runner. Do not use random, placeholder, or reserved addresses to
+make the strict readiness check pass; that only moves the failure to the live
+reachability preflight. While no AD lab is available, use the keytab-secret
+dry-run instead.
+
 Keytab secrets are standard base64 of the complete MIT keytab bytes:
 
 | Secret | Keytab content |
@@ -104,7 +110,8 @@ scripts/check-github-ad-gate.py
 
 The readiness script must report all required secrets present. It does not
 prove that GitHub-hosted runners can reach the AD endpoints; the workflow
-preflight checks that from inside GitHub Actions.
+preflight checks that from inside GitHub Actions. Treat strict readiness as
+meaningful only when the endpoint secrets point at real AD services.
 
 To validate only the keytab secret shape without requiring live AD endpoints,
 run the non-live dry-run check:

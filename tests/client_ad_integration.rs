@@ -4,7 +4,7 @@ use std::env;
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -569,6 +569,113 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 #[test]
+fn strict_ad_gate_rejects_missing_testad() {
+    let _guard = AD_LOCK.lock().expect("AD integration test lock");
+    let _env = clear_ad_env();
+    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
+
+    let error = ad_enabled().expect_err("strict AD gate rejects a TESTAD soft skip");
+    assert!(
+        error
+            .to_string()
+            .contains("TESTAD_REQUIRED=1 forbids soft skips"),
+        "{error}"
+    );
+}
+
+#[test]
+fn strict_ad_gate_rejects_malformed_user_kdc_endpoint() {
+    let _guard = AD_LOCK.lock().expect("AD integration test lock");
+    let _env = clear_ad_env();
+    let _testad = EnvOverride::set("TESTAD", "1");
+    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
+    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", "127.0.0.1:not-a-port");
+
+    let error = ad_enabled().expect_err("strict AD gate rejects malformed endpoints");
+    assert!(
+        error.to_string().contains("cannot reach user KDC"),
+        "{error}"
+    );
+}
+
+#[test]
+fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
+    let _guard = AD_LOCK.lock().expect("AD integration test lock");
+    let _env = clear_ad_env();
+    let listener = TcpListener::bind(("127.0.0.1", 0))?;
+    let endpoint = listener.local_addr()?.to_string();
+    drop(listener);
+
+    let _testad = EnvOverride::set("TESTAD", "1");
+    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
+    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", endpoint.as_str());
+
+    let error = ad_enabled().expect_err("strict AD gate rejects unreachable endpoints");
+    assert!(
+        error.to_string().contains("cannot reach user KDC at"),
+        "{error}"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn ad_config_uses_endpoint_overrides_and_rc4_trust_options() -> Result<(), Box<dyn Error>> {
+    let _guard = AD_LOCK.lock().expect("AD integration test lock");
+    let _env = clear_ad_env();
+    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", "192.0.2.10:10088");
+    let _resource_kdc = EnvOverride::set("TEST_AD_RESOURCE_KDC_ADDR", "192.0.2.11:10088");
+    let _user_admin = EnvOverride::set("TEST_AD_USER_ADMIN_ADDR", "192.0.2.10:10464");
+    let _resource_admin = EnvOverride::set("TEST_AD_RESOURCE_ADMIN_ADDR", "192.0.2.11:10464");
+
+    let config = ad_config(false)?;
+    assert_eq!(
+        config.configured_kdcs(USER_REALM)?,
+        &["192.0.2.10:10088".to_owned()]
+    );
+    assert_eq!(
+        config.configured_kdcs(RESOURCE_REALM)?,
+        &["192.0.2.11:10088".to_owned()]
+    );
+    assert_eq!(
+        config
+            .realm(USER_REALM)
+            .expect("USER realm exists")
+            .admin_server,
+        ["192.0.2.10:10464".to_owned()]
+    );
+    assert_eq!(
+        config
+            .realm(RESOURCE_REALM)
+            .expect("RESOURCE realm exists")
+            .admin_server,
+        ["192.0.2.11:10464".to_owned()]
+    );
+    assert!(!config.libdefaults.allow_weak_crypto);
+    assert!(!config.libdefaults.canonicalize);
+    assert_eq!(config.libdefaults.default_tkt_enctype_ids, [AES256_ETYPE]);
+    assert_eq!(config.libdefaults.default_tgs_enctype_ids, [AES256_ETYPE]);
+
+    let rc4_config = ad_config(true)?;
+    assert!(rc4_config.libdefaults.allow_weak_crypto);
+    assert!(rc4_config.libdefaults.canonicalize);
+    assert_eq!(
+        rc4_config.libdefaults.default_tkt_enctype_ids,
+        [RC4_HMAC_ETYPE]
+    );
+    assert_eq!(
+        rc4_config.libdefaults.default_tgs_enctype_ids,
+        [RC4_HMAC_ETYPE]
+    );
+    assert_eq!(
+        rc4_config.libdefaults.permitted_enctype_ids,
+        [RC4_HMAC_ETYPE]
+    );
+
+    Ok(())
+}
+
+#[test]
 fn ad_keytab_uses_path_override() -> Result<(), Box<dyn Error>> {
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
     let _env = clear_keytab_env(TESTUSER1_KEYTAB);
@@ -637,6 +744,24 @@ fn clear_keytab_env(fixture: AdKeytabFixture) -> Vec<EnvOverride> {
         EnvOverride::remove(fixture.hex_env),
         EnvOverride::remove(fixture.base64_env),
     ]
+}
+
+fn clear_ad_env() -> Vec<EnvOverride> {
+    [
+        "TESTAD",
+        "TESTAD_REQUIRED",
+        "TEST_AD_USER_KDC_ADDR",
+        "TEST_AD_RESOURCE_KDC_ADDR",
+        "TEST_AD_USER_ADMIN_ADDR",
+        "TEST_AD_RESOURCE_ADMIN_ADDR",
+        "TEST_AD_KDC_ADDR",
+        "TEST_AD_RES_KDC_ADDR",
+        "TEST_AD_ADMIN_ADDR",
+        "TEST_AD_RES_ADMIN_ADDR",
+    ]
+    .into_iter()
+    .map(EnvOverride::remove)
+    .collect()
 }
 
 fn temp_keytab_path(label: &str) -> PathBuf {

@@ -27,6 +27,9 @@
   spike path that does not count as Windows AD parity evidence.
 - Added static coverage for the embedded AD keytab fixtures so the required
   account principals and AES/RC4 key material are checked without a live lab.
+- Hardened AD preflight dry-runs so endpoint values are syntax-validated even
+  when reachability is skipped, and added CI smoke coverage for no-lab AD gate
+  failure and dry-run paths.
 - Split private SPNEGO DER/TLV helpers into a dedicated module; no public API or
   wire-format behavior changes are intended.
 - Split private PAC NDR/deferred-pointer parsing helpers into a dedicated

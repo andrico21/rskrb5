@@ -87,6 +87,12 @@ def main() -> int:
             )
         print(f"  {label}: {value} ({source})")
 
+        try:
+            split_host_port(value)
+        except ValueError as error:
+            errors.append(f"{label} endpoint {value!r} is invalid: {error}")
+            continue
+
         should_check = required_reachability or check_admin_reachability
         if should_check and not skip_reachability:
             error = check_tcp(label, value, timeout)
