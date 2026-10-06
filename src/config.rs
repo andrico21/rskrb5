@@ -53,6 +53,20 @@ impl Config {
         }
     }
 
+    /// Create a config with no parsed sections, without reading any
+    /// environment variable.
+    ///
+    /// The environment-free twin of [`Config::new`]: the defaults come from
+    /// [`LibDefaults::new_without_env`] instead of [`LibDefaults::new`], which
+    /// reads `UID` and `HOME`.
+    pub fn new_without_env() -> Self {
+        Self {
+            libdefaults: LibDefaults::new_without_env(),
+            realms: Vec::new(),
+            domain_realm: BTreeMap::new(),
+        }
+    }
+
     /// Load and parse a `krb5.conf` file.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
         let input = std::fs::read_to_string(path.as_ref())?;
@@ -149,7 +163,23 @@ impl Config {
 
     /// Parse a `krb5.conf` string.
     pub fn parse(input: &str) -> Result<Self, Error> {
-        let mut config = Self::new();
+        Self::parse_with(input, Self::new)
+    }
+
+    /// Parse a `krb5.conf` string without reading any environment variable.
+    ///
+    /// The environment-free twin of [`Config::parse`]: the same parser, with
+    /// the defaults taken from [`Config::new_without_env`]. `parse` reaches
+    /// `Config::new` -> `LibDefaults::new` -> `UID`/`HOME`, which is exactly
+    /// what a caller that must not read the environment cannot have.
+    pub fn parse_without_env(input: &str) -> Result<Self, Error> {
+        Self::parse_with(input, Self::new_without_env)
+    }
+
+    /// The parser both entry points share: they differ in nothing but the
+    /// constructor that seeds the defaults.
+    fn parse_with(input: &str, seed: fn() -> Self) -> Result<Self, Error> {
+        let mut config = seed();
         let mut current = SectionKind::Unknown;
         let mut lines = Vec::new();
 
@@ -331,15 +361,43 @@ pub struct LibDefaults {
 }
 
 impl LibDefaults {
+    /// The `UID` the client-keytab default path falls back to when the
+    /// variable is unset. Named so the environment-reading constructor and the
+    /// environment-free one cannot drift apart.
+    const FALLBACK_UID: &'static str = "0";
+
     /// Create default libdefaults.
     pub fn new() -> Self {
+        Self::with_uid_and_home(std::env::var("UID").ok(), std::env::var("HOME").ok())
+    }
+
+    /// Create default libdefaults without reading any environment variable.
+    ///
+    /// Identical to [`LibDefaults::new`] except for the two fields `new()`
+    /// derives from the environment, which take the values `new()` produces
+    /// when the variable is unset:
+    ///
+    /// - `default_client_keytab_name` is
+    ///   `/usr/local/var/krb5/user/0/client.keytab` (the `UID` fallback);
+    /// - `k5login_directory` is the empty string (the `HOME` fallback).
+    ///
+    /// Every other default is the shared non-env default set, so a caller that
+    /// must not read the environment gets one default set rather than a second
+    /// divergent one.
+    pub fn new_without_env() -> Self {
+        Self::with_uid_and_home(None, None)
+    }
+
+    /// Create default libdefaults from already-read `UID` and `HOME` values, or
+    /// from `None` when they must not be read at all.
+    fn with_uid_and_home(uid: Option<String>, home: Option<String>) -> Self {
         let default_enctypes = DEFAULT_ENCTYPES
             .iter()
             .map(|value| (*value).to_owned())
             .collect::<Vec<_>>();
         let default_client_keytab_name = format!(
             "/usr/local/var/krb5/user/{}/client.keytab",
-            std::env::var("UID").unwrap_or_else(|_| "0".to_owned())
+            uid.unwrap_or_else(|| Self::FALLBACK_UID.to_owned())
         );
         let mut defaults = Self {
             allow_weak_crypto: false,
@@ -361,7 +419,7 @@ impl LibDefaults {
             forwardable: false,
             ignore_acceptor_hostname: false,
             k5login_authoritative: false,
-            k5login_directory: std::env::var("HOME").unwrap_or_default(),
+            k5login_directory: home.unwrap_or_default(),
             kdc_default_options: 0x0000_0010,
             kdc_time_sync: 1,
             no_addresses: true,
@@ -1217,9 +1275,153 @@ fn is_weak_enctype(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Error};
+    use super::{Config, Error, LibDefaults};
     use std::path::PathBuf;
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// The marker the parent sets when it re-executes this binary as a probe, so
+    /// a normal run leaves the probe test inert.
+    const PROBE_MARKER: &str = "RSKRB5_ENV_FREE_PROBE";
+    /// Every probe line carries this prefix, so the parent can ignore the test
+    /// harness's own output.
+    const PROBE_PREFIX: &str = "rskrb5-probe:";
+    /// This probe test's name in this binary, for the child's `--exact`.
+    const PROBE_TEST: &str = "config::tests::env_free_fields_probe_child";
+    /// The hostile `UID` the parent gives the child.
+    const HOSTILE_UID: &str = "4242";
+    /// The hostile `HOME` the parent gives the child.
+    const HOSTILE_HOME: &str = "/attacker/home";
+
+    /// The `UID`-derived default the environment-free constructors must produce:
+    /// the path `LibDefaults::new` builds when `UID` is unset.
+    const ENV_FREE_CLIENT_KEYTAB: &str = "/usr/local/var/krb5/user/0/client.keytab";
+
+    /// The environment-free constructor's fields, and - as the control - the
+    /// environment-reading constructor's, printed for the parent to assert on.
+    #[test]
+    fn env_free_fields_probe_child() {
+        if std::env::var_os(PROBE_MARKER).is_none() {
+            return;
+        }
+        let config = Config::new_without_env();
+        let defaults = LibDefaults::new_without_env();
+        let parsed = Config::parse_without_env("[libdefaults]\n").expect("empty config parses");
+        let reading = LibDefaults::new();
+        for (name, keytab, k5login) in [
+            (
+                "config",
+                &config.libdefaults.default_client_keytab_name,
+                &config.libdefaults.k5login_directory,
+            ),
+            (
+                "defaults",
+                &defaults.default_client_keytab_name,
+                &defaults.k5login_directory,
+            ),
+            (
+                "parsed",
+                &parsed.libdefaults.default_client_keytab_name,
+                &parsed.libdefaults.k5login_directory,
+            ),
+            (
+                "reading",
+                &reading.default_client_keytab_name,
+                &reading.k5login_directory,
+            ),
+        ] {
+            println!("{PROBE_PREFIX}{name}_client_keytab={keytab}");
+            println!("{PROBE_PREFIX}{name}_k5login={k5login}");
+        }
+    }
+
+    /// Run this binary as a child with a hostile `UID`/`HOME` - a child process,
+    /// never this one's environment - and return the probe lines it
+    /// printed.
+    fn hostile_env_probe() -> Vec<String> {
+        let executable = std::env::current_exe().expect("current_exe resolves");
+        let output = Command::new(executable)
+            .args(["--exact", PROBE_TEST, "--nocapture"])
+            .env_clear()
+            .env(PROBE_MARKER, "1")
+            .env("UID", HOSTILE_UID)
+            .env("HOME", HOSTILE_HOME)
+            .output()
+            .expect("probe child spawns");
+        assert!(
+            output.status.success(),
+            "the probe child must exit 0: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.strip_prefix(PROBE_PREFIX))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The value of one probe line, if the child printed it.
+    fn probe_field(lines: &[String], key: &str) -> String {
+        lines
+            .iter()
+            .find_map(|line| line.strip_prefix(key)?.strip_prefix('=').map(str::to_owned))
+            .unwrap_or_else(|| panic!("the probe must print {key}: {lines:?}"))
+    }
+
+    /// The control, asserted by every test below: the child's environment really
+    /// is hostile, so `LibDefaults::new` in that child follows it. Without this,
+    /// an inert probe would make the env-free assertions pass for the wrong
+    /// reason.
+    fn assert_the_child_environment_is_hostile(lines: &[String]) {
+        assert_eq!(
+            probe_field(lines, "reading_client_keytab"),
+            format!("/usr/local/var/krb5/user/{HOSTILE_UID}/client.keytab"),
+            "the environment-reading constructor must follow the hostile UID"
+        );
+        assert_eq!(probe_field(lines, "reading_k5login"), HOSTILE_HOME);
+    }
+
+    /// `Config::new_without_env` reads neither `UID` nor `HOME`: hostile values
+    /// in the process environment leave both derived fields at their
+    /// deterministic non-env values.
+    #[test]
+    fn env_free_config_constructor_does_not_read_uid_or_home() {
+        let lines = hostile_env_probe();
+        assert_the_child_environment_is_hostile(&lines);
+        assert_eq!(
+            probe_field(&lines, "config_client_keytab"),
+            ENV_FREE_CLIENT_KEYTAB,
+            "the env-free config's keytab default is the UID-fallback path"
+        );
+        assert_eq!(probe_field(&lines, "config_k5login"), "");
+    }
+
+    /// The same for the `LibDefaults` constructor the two env-free config
+    /// constructors share.
+    #[test]
+    fn env_free_libdefaults_constructor_does_not_read_uid_or_home() {
+        let lines = hostile_env_probe();
+        assert_the_child_environment_is_hostile(&lines);
+        assert_eq!(
+            probe_field(&lines, "defaults_client_keytab"),
+            ENV_FREE_CLIENT_KEYTAB
+        );
+        assert_eq!(probe_field(&lines, "defaults_k5login"), "");
+    }
+
+    /// `Config::parse_without_env` must not reach `Config::parse` ->
+    /// `Config::new` -> `LibDefaults::new`: it shares the parser, not the
+    /// constructor.
+    #[test]
+    fn parse_without_env_does_not_read_uid_or_home() {
+        let lines = hostile_env_probe();
+        assert_the_child_environment_is_hostile(&lines);
+        assert_eq!(
+            probe_field(&lines, "parsed_client_keytab"),
+            ENV_FREE_CLIENT_KEYTAB
+        );
+        assert_eq!(probe_field(&lines, "parsed_k5login"), "");
+    }
 
     #[test]
     fn load_default_paths_loads_existing_platform_candidate() {
