@@ -1,15 +1,20 @@
 [package]
-name = "rskrb5"
-version = "0.2.0"
+name = "rskrb5-patched"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
-description = "Pure-Rust Kerberos v5 client/service library with HTTP Negotiate support."
-repository = "https://github.com/clelange/rskrb5"
+description = "Temporary patched fork of rskrb5: upstream main at 6f4abc9 plus the fixes awaiting upstream (see FORK-NOTES.md) - verbatim result bytes, environment-free config, include/includedir, TGS FAST subkey, TCP_NODELAY"
+repository = "https://github.com/andrico21/rskrb5"
 readme = "README.md"
 keywords = ["kerberos", "krb5", "spnego", "gssapi", "authentication"]
 categories = ["authentication", "cryptography", "network-programming"]
 exclude = [".github/", "docs/scratch-log.md", "fuzz/"]
+
+# The lib target keeps the upstream name, so consumers' `use rskrb5::…` paths
+# (and the dependency key) stay unchanged - see FORK-NOTES.md.
+[lib]
+name = "rskrb5"
 
 [features]
 default = ["spnego", "tokio", "serde"]
