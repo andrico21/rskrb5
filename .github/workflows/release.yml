@@ -1,0 +1,158 @@
+name: Release
+
+# Publishes `rskrb5-patched` to crates.io only when (a) a `vN.N.N` tag exists
+# on a commit AND (b) the CI workflow on that exact commit completed
+# successfully. Triggered off `workflow_run: [CI]` (not `push: tags`) so a red
+# CI blocks the publish; the tag lookup below rejects every non-release run.
+#
+# Cutting a release:
+#   1. land the release commit on a `release/*` branch (version bumped,
+#      CHANGELOG.md entry written)
+#   2. CI runs on the branch push - it must be green
+#   3. push the tag (`v0.2.1`) at that same SHA; CI runs again on the tag ref
+#   4. when that run completes successfully this workflow finds the tag,
+#      verifies it against the crate version, dry-runs, publishes with the
+#      repository's CARGO_REGISTRY_TOKEN secret, and opens the GitHub release
+#   A re-run of the CI workflow on the same SHA is the manual recovery path.
+#
+# The branch-push and tag-push CI runs share one SHA, so both pass the tag
+# lookup and `cargo publish` can be attempted twice. The publish step is
+# therefore idempotent: "already exists on crates.io index" exits success and
+# records published=false, and the GitHub release is gated on published=true -
+# a run that did not upload the bytes never certifies them.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  publish:
+    name: cargo publish
+    # Provenance gate (before any checkout): a succeeded CI run whose head
+    # repository is THIS repo, triggered by push or a manual dispatch. Both
+    # are non-fork-triggerable; pull_request runs never publish.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'push' ||
+       github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # The exact commit CI ran against, tags included for the lookup below.
+      # This job reads local git metadata only; no push credential is
+      # persisted into the untrusted-head_sha checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+
+      - name: Find a vN.N.N tag pointing at this commit
+        id: find-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          TAG=$(git tag --points-at "$SHA" \
+                | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+                | head -n1 || true)
+          if [ -z "$TAG" ]; then
+            echo "::notice::No vN.N.N tag points at $SHA - this run is not a release invocation. Skipping publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          VERSION="${TAG#v}"
+          echo "Found tag: $TAG (version $VERSION)"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify crate name and version
+        if: steps.find-tag.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The crate name is part of the contract: consumers depend on
+          # `rskrb5-patched` (see FORK-NOTES.md). A rename without a release
+          # workflow update must fail here, not publish under a new name.
+          META=$(cargo metadata --no-deps --format-version 1)
+          NAME=$(echo "$META" | jq -r --arg c "rskrb5-patched" '.packages[] | select(.name == $c) | .name')
+          VERSION=$(echo "$META" | jq -r --arg c "rskrb5-patched" '.packages[] | select(.name == $c) | .version')
+          if [ "$NAME" != "rskrb5-patched" ]; then
+            echo "::error::package rskrb5-patched not found; the fork's crate name changed without this workflow"
+            exit 1
+          fi
+          if [ "$VERSION" != "${{ steps.find-tag.outputs.version }}" ]; then
+            echo "::error::tag ${{ steps.find-tag.outputs.tag }} does not match rskrb5-patched's manifest version $VERSION"
+            exit 1
+          fi
+          echo "rskrb5-patched $VERSION is publishable."
+
+      - name: Release notes
+        if: steps.find-tag.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.find-tag.outputs.version }}"
+          NOTES_PATH="${RUNNER_TEMP}/RELEASE_NOTES.md"
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\[" ver "\\]" { found=1; next }
+              found && /^## \[/        { exit }
+              found                    { print }
+            ' CHANGELOG.md > "$NOTES_PATH"
+          fi
+          if [ ! -s "$NOTES_PATH" ]; then
+            printf 'Patched fork of `rskrb5` %s, published as `rskrb5-patched`. See FORK-NOTES.md for the patch list, the upstream references and the retirement trigger.\n' "$VERSION" > "$NOTES_PATH"
+          fi
+          echo "NOTES_PATH=${NOTES_PATH}" >> "$GITHUB_ENV"
+
+      - name: Dry-run publish
+        if: steps.find-tag.outputs.skip != 'true'
+        # Default features, matching the validation the consumer repository
+        # ran against the vendored tree; the crate's `evaluation` extras are
+        # not part of the shipped shape here.
+        run: cargo publish --dry-run
+
+      - name: Publish to crates.io
+        id: publish
+        if: steps.find-tag.outputs.skip != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          TAG="${{ steps.find-tag.outputs.tag }}"
+          OUTPUT=$(cargo publish 2>&1) && STATUS=0 || STATUS=$?
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Published rskrb5-patched@$TAG to crates.io."
+            exit 0
+          fi
+          if echo "$OUTPUT" | grep -qiF "already exists on crates.io index"; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::rskrb5-patched@$TAG was already on crates.io before this run; this pipeline did not upload these bytes and will not create a release for them. If this is not the expected duplicate trigger for the same SHA, the version was published out of band - verify the uploaded artifact."
+            exit 0
+          fi
+          echo "::error::cargo publish failed for rskrb5-patched@$TAG (exit $STATUS)."
+          exit "$STATUS"
+
+      - name: Create GitHub release
+        if: steps.find-tag.outputs.skip != 'true' && steps.publish.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.find-tag.outputs.tag }}" \
+            --title "rskrb5-patched ${{ steps.find-tag.outputs.tag }}" \
+            --notes-file "${NOTES_PATH}" \
+            --verify-tag
