@@ -9,7 +9,7 @@ repository = "https://github.com/andrico21/rskrb5"
 readme = "README.md"
 keywords = ["kerberos", "krb5", "spnego", "gssapi", "authentication"]
 categories = ["authentication", "cryptography", "network-programming"]
-exclude = [".github/", "docs/scratch-log.md", "fuzz/"]
+exclude = [".github/", "docs/fix-plans/", "docs/scratch-log.md", "fuzz/"]
 
 # The lib target keeps the upstream name, so consumers' `use rskrb5::…` paths
 # (and the dependency key) stay unchanged - see FORK-NOTES.md.
