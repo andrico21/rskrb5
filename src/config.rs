@@ -5,6 +5,7 @@
 //! realm lookup, duration parsing, and configured KDC discovery.
 
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -30,6 +31,22 @@ const DEFAULT_ENCTYPES: &[&str] = &[
 ];
 
 const DEFAULT_PREAUTH_TYPES: &[i32] = &[17, 16, 15, 14];
+
+/// The deepest `include` nesting a configuration may reach before parsing fails
+/// with [`Error::IncludeTooDeep`].
+///
+/// MIT's parser recurses without a bound; this one is a deliberate divergence so
+/// a pathological configuration cannot nest without limit.
+pub const MAX_INCLUDE_DEPTH: usize = 8;
+
+/// The most files one configuration may pull in through `include` and
+/// `includedir` before parsing fails with [`Error::IncludeTooMany`].
+pub const MAX_INCLUDE_FILES: usize = 64;
+
+/// The most bytes one configuration may pull in through `include` and
+/// `includedir` - counted across every included file - before parsing fails with
+/// [`Error::IncludeTooLarge`] (1 MiB).
+pub const MAX_INCLUDE_BYTES: usize = 1024 * 1024;
 
 /// Parsed Kerberos configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,9 +85,16 @@ impl Config {
     }
 
     /// Load and parse a `krb5.conf` file.
+    ///
+    /// The file's canonical path is on the open chain before its own directives
+    /// expand, so a configuration that includes itself - under any spelling of
+    /// its own name - is [`Error::IncludeCycle`] rather than a recursion that
+    /// only runs out of depth.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let input = std::fs::read_to_string(path.as_ref())?;
-        Self::parse(&input)
+        let path = path.as_ref();
+        let canonical = std::fs::canonicalize(path)?;
+        let input = std::fs::read_to_string(path)?;
+        Self::parse_with_roots(&input, [canonical])
     }
 
     /// Load and parse the `krb5.conf` path list named by `KRB5_CONFIG`.
@@ -111,7 +135,10 @@ impl Config {
     /// Load and parse one or more `krb5.conf` files.
     ///
     /// Files are concatenated in iterator order before parsing, preserving the
-    /// same section semantics as a single file with repeated sections.
+    /// same section semantics as a single file with repeated sections. Each
+    /// file's canonical path is on the open chain before any of that text
+    /// expands, so a file the list names that one of its own children includes
+    /// is [`Error::IncludeCycle`] rather than a second read of the same file.
     pub fn load_paths<I, P>(paths: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = P>,
@@ -119,6 +146,7 @@ impl Config {
     {
         let mut input = String::new();
         let mut loaded = 0usize;
+        let mut roots = Vec::new();
         for path in paths {
             let path = path.as_ref();
             if path.as_os_str().is_empty() {
@@ -127,14 +155,16 @@ impl Config {
             if loaded > 0 {
                 input.push('\n');
             }
+            let canonical = std::fs::canonicalize(path)?;
             input.push_str(&std::fs::read_to_string(path)?);
             input.push('\n');
+            roots.push(canonical);
             loaded += 1;
         }
         if loaded == 0 {
             return Err(Error::EmptyConfigPathList);
         }
-        Self::parse(&input)
+        Self::parse_with_roots(&input, roots)
     }
 
     fn load_default_paths<I, P>(paths: I) -> Result<Self, Error>
@@ -162,6 +192,15 @@ impl Config {
     }
 
     /// Parse a `krb5.conf` string.
+    ///
+    /// A line beginning with `include <file>` or `includedir <dir>` outside a
+    /// `{ ... }` group is expanded before the sections are parsed: the named file
+    /// is spliced at the directive site (MIT's `parse_include_file`), or every
+    /// file the directory holds whose name MIT's `valid_name` accepts is spliced
+    /// in alphanumeric order (`parse_include_dir`). The expansion is bounded by
+    /// [`MAX_INCLUDE_DEPTH`], [`MAX_INCLUDE_FILES`] and [`MAX_INCLUDE_BYTES`], and
+    /// a cycle, an unreadable file or directory, or a bound that is passed is a
+    /// named [`Error`] rather than a skipped directive.
     pub fn parse(input: &str) -> Result<Self, Error> {
         Self::parse_with(input, Self::new)
     }
@@ -179,6 +218,38 @@ impl Config {
     /// The parser both entry points share: they differ in nothing but the
     /// constructor that seeds the defaults.
     fn parse_with(input: &str, seed: fn() -> Self) -> Result<Self, Error> {
+        Self::parse_with_roots_and_seed(input, [], seed)
+    }
+
+    /// The parser the string entry point and the two file loaders share: they
+    /// differ in nothing but the canonical paths the text came from.
+    ///
+    /// Those paths go on the open chain before the text they contributed is
+    /// expanded, which is what makes the configuration's own files cycle
+    /// members: a root that includes itself, and a path-list root a child
+    /// includes, are [`Error::IncludeCycle`] like any other re-entered file.
+    fn parse_with_roots<I>(input: &str, roots: I) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = PathBuf>,
+    {
+        Self::parse_with_roots_and_seed(input, roots, Self::new)
+    }
+
+    /// Both axes at once: the canonical paths that root the include chain, and
+    /// the constructor that seeds the defaults (the environment-free twins pass
+    /// [`Config::new_without_env`]). The string entry point and the two file
+    /// loaders share this; nothing else in the parser branches on either.
+    fn parse_with_roots_and_seed<I>(
+        input: &str,
+        roots: I,
+        seed: fn() -> Self,
+    ) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = PathBuf>,
+    {
+        let input = IncludeExpansion::default()
+            .with_roots(roots)
+            .expand(input, 0)?;
         let mut config = seed();
         let mut current = SectionKind::Unknown;
         let mut lines = Vec::new();
@@ -672,6 +743,55 @@ pub enum Error {
     /// The requested realm has no configured password-change servers.
     #[error("realm has no configured kpasswd servers: {0}")]
     NoKpasswdServer(String),
+    /// Include nesting reached past [`MAX_INCLUDE_DEPTH`].
+    #[error("include nesting reached depth {depth}, past the limit of {limit}")]
+    IncludeTooDeep {
+        /// The depth the parser reached.
+        depth: usize,
+        /// The documented limit.
+        limit: usize,
+    },
+    /// More files were included than [`MAX_INCLUDE_FILES`] allows.
+    #[error("configuration included {count} files, past the limit of {limit}")]
+    IncludeTooMany {
+        /// The number of files the parser reached.
+        count: usize,
+        /// The documented limit.
+        limit: usize,
+    },
+    /// Included files carried more bytes than [`MAX_INCLUDE_BYTES`] allows.
+    #[error("included configuration reached {bytes} bytes, past the limit of {limit}")]
+    IncludeTooLarge {
+        /// The number of included bytes the parser read. A single file that
+        /// overshoots the limit is read only up to the limit plus one byte, so
+        /// this is the limit plus one in that case.
+        bytes: usize,
+        /// The documented limit.
+        limit: usize,
+    },
+    /// An include chain returned to a file or directory it is already reading.
+    #[error("include cycle: {path} is already being read")]
+    IncludeCycle {
+        /// The file or directory the cycle returned to.
+        path: PathBuf,
+    },
+    /// An `include` directive named a file that could not be read, or that is
+    /// not UTF-8 text.
+    #[error("include file {path} could not be read: {source}")]
+    IncludeFile {
+        /// The file the directive named.
+        path: PathBuf,
+        /// Why it could not be used.
+        source: std::io::Error,
+    },
+    /// An `includedir` directive named a directory that could not be listed.
+    #[error("includedir {path} could not be listed: {source}")]
+    IncludeDir {
+        /// The directory the directive named.
+        path: PathBuf,
+        /// Why it could not be listed.
+        source: std::io::Error,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -1273,10 +1393,271 @@ fn is_weak_enctype(value: &str) -> bool {
     )
 }
 
+/// One `include`/`includedir` directive, split from its argument.
+#[derive(Clone, Copy, Debug)]
+enum IncludeDirective<'a> {
+    /// `include <file>`: splice one file.
+    File(&'a str),
+    /// `includedir <dir>`: splice every file MIT's filter accepts, in
+    /// alphanumeric order.
+    Directory(&'a str),
+}
+
+impl<'a> IncludeDirective<'a> {
+    /// The directive a line carries, or `None` when it carries neither.
+    ///
+    /// Recognized as the first token of the line - which is where MIT's
+    /// `krb5.conf` documentation places them ("at the beginning of a line") and
+    /// where `prof_parse.c:282-291` tests for them. MIT requires the keyword at
+    /// column 0; leading whitespace is accepted here too, because a line this
+    /// parser does not recognize at the top level is skipped silently, and a
+    /// directive must never be ignored silently.
+    fn parse(line: &'a str) -> Option<Self> {
+        // `includedir` first: `include` is a prefix of it.
+        if let Some(rest) = line.strip_prefix("includedir")
+            && starts_with_whitespace(rest)
+        {
+            return Some(Self::Directory(rest.trim()));
+        }
+        let rest = line.strip_prefix("include")?;
+        if starts_with_whitespace(rest) {
+            return Some(Self::File(rest.trim()));
+        }
+        None
+    }
+}
+
+/// Whether `text` begins with whitespace (and so the keyword before it was a
+/// whole token).
+fn starts_with_whitespace(text: &str) -> bool {
+    text.chars().next().is_some_and(char::is_whitespace)
+}
+
+/// Whether `name` is one an `includedir` accepts, per MIT's `valid_name`
+/// (`krb5-1.21-final`, `src/util/profile/prof_parse.c:224-243`): dotfiles -
+/// "editor or filesystem artifacts" - are skipped, a name ending in `.conf` is
+/// included, and so is a name made only of alphanumeric characters, dashes and
+/// underscores. Like MIT's, it works on the name's bytes.
+fn includedir_name_is_valid(name: &[u8]) -> bool {
+    if name.starts_with(b".") {
+        return false;
+    }
+    if name.len() >= 5 && name.ends_with(b".conf") {
+        return true;
+    }
+    !name.is_empty()
+        && name
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'_')
+}
+
+/// The `include`/`includedir` budget one parse runs under, and the files and
+/// directories whose directives it is expanding right now.
+///
+/// MIT's parser has neither: it recurses on whatever the configuration names.
+/// The caps ([`MAX_INCLUDE_DEPTH`], [`MAX_INCLUDE_FILES`], [`MAX_INCLUDE_BYTES`])
+/// and the cycle check on canonical paths are a deliberate divergence from MIT.
+#[derive(Default)]
+struct IncludeExpansion {
+    /// Canonical paths of the files and directories being expanded, outermost
+    /// first: the cycle check is a membership test on this chain, so a file - or
+    /// a directory reached again through a symlink - that is re-entered by one
+    /// of its own descendants is a named [`Error::IncludeCycle`] rather than
+    /// unbounded recursion. The configuration's own top-level files are on it
+    /// before the first directive expands ([`Self::with_roots`]), so a root that
+    /// includes itself is a cycle too.
+    open: Vec<PathBuf>,
+    /// How many files the directives have included so far.
+    files: usize,
+    /// How many bytes of included content have been read so far.
+    bytes: usize,
+}
+
+impl IncludeExpansion {
+    /// The same expansion, with the canonical paths the configuration's own
+    /// text came from already on the open chain.
+    ///
+    /// A caller that read its text from files hands them over; a caller parsing
+    /// a string hands over nothing, because a string has no path to re-enter.
+    fn with_roots<I>(mut self, roots: I) -> Self
+    where
+        I: IntoIterator<Item = PathBuf>,
+    {
+        self.open.extend(roots);
+        self
+    }
+
+    /// Replace every directive in `input` with what it names, recursively.
+    ///
+    /// `depth` is the include depth of the text itself: the configuration a
+    /// caller handed over is depth 0, and each `include` adds one. A directive
+    /// inside a `{ ... }` group is left alone - it is a setting of that group,
+    /// and the section parser refuses it by name rather than ignoring it.
+    fn expand(&mut self, input: &str, depth: usize) -> Result<String, Error> {
+        let mut expanded = String::with_capacity(input.len());
+        let mut group_level = 0i32;
+        for line in input.lines() {
+            let cleaned = strip_comments(line).trim();
+            if group_level == 0
+                && let Some(directive) = IncludeDirective::parse(cleaned)
+            {
+                expanded.push_str(&self.splice(directive, depth)?);
+                continue;
+            }
+            expanded.push_str(line);
+            expanded.push('\n');
+            group_level += brace_delta(cleaned);
+        }
+        Ok(expanded)
+    }
+
+    /// What one directive contributes to the expanded text.
+    fn splice(&mut self, directive: IncludeDirective<'_>, depth: usize) -> Result<String, Error> {
+        match directive {
+            IncludeDirective::File(argument) => self.include_file(Path::new(argument), depth),
+            IncludeDirective::Directory(argument) => self.include_dir(Path::new(argument), depth),
+        }
+    }
+
+    /// One `include`: read the file and expand its own directives in turn.
+    ///
+    /// A path is used exactly as the configuration spells it, which is what MIT
+    /// does (`fopen` on the token, relative to the process's working directory
+    /// when it is relative) - no rebasing on the including file's directory.
+    fn include_file(&mut self, path: &Path, depth: usize) -> Result<String, Error> {
+        let depth = depth + 1;
+        if depth > MAX_INCLUDE_DEPTH {
+            return Err(Error::IncludeTooDeep {
+                depth,
+                limit: MAX_INCLUDE_DEPTH,
+            });
+        }
+        // Resolving the path is how a file that does not exist is named rather
+        // than skipped; it also gives the cycle check its canonical key.
+        let canonical = std::fs::canonicalize(path).map_err(|source| Error::IncludeFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if self.open.contains(&canonical) {
+            return Err(Error::IncludeCycle {
+                path: path.to_path_buf(),
+            });
+        }
+        let content = self.read_include(path)?;
+        self.open.push(canonical);
+        let expanded = self.expand(&content, depth);
+        self.open.pop();
+        expanded
+    }
+
+    /// One included file's text, counted against the file and byte caps.
+    fn read_include(&mut self, path: &Path) -> Result<String, Error> {
+        let count = self.files + 1;
+        if count > MAX_INCLUDE_FILES {
+            return Err(Error::IncludeTooMany {
+                count,
+                limit: MAX_INCLUDE_FILES,
+            });
+        }
+        // Read at most one byte past what is left of the budget, so an oversize
+        // file is refused without reading it into memory first.
+        let remaining = MAX_INCLUDE_BYTES.saturating_sub(self.bytes);
+        let file = std::fs::File::open(path).map_err(|source| Error::IncludeFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let mut bytes = Vec::new();
+        file.take(remaining as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|source| Error::IncludeFile {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        if bytes.len() > remaining {
+            return Err(Error::IncludeTooLarge {
+                bytes: self.bytes + bytes.len(),
+                limit: MAX_INCLUDE_BYTES,
+            });
+        }
+        let content = String::from_utf8(bytes).map_err(|error| Error::IncludeFile {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("not UTF-8 text: {error}"),
+            ),
+        })?;
+        self.files = count;
+        self.bytes += content.len();
+        Ok(content)
+    }
+
+    /// One `includedir`: every accepted name, in alphanumeric order.
+    ///
+    /// The file cap is enforced while the directory is scanned, so a directory
+    /// with more accepted names than the budget allows is refused before any
+    /// name is sorted or any file is read.
+    ///
+    /// The directory's canonical path joins the open chain for as long as its
+    /// files are being expanded, so a directory that is reached again through a
+    /// symlink while it is being read - and an entry that is one of the
+    /// directories already being read - is [`Error::IncludeCycle`] naming the
+    /// path the configuration spelled, rather than a chain that only runs out of
+    /// depth. The path is used exactly as the configuration spells it, as an
+    /// `include` path is (`fopen` on the token, MIT's own rule).
+    fn include_dir(&mut self, dir: &Path, depth: usize) -> Result<String, Error> {
+        let canonical = std::fs::canonicalize(dir).map_err(|source| Error::IncludeDir {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+        if self.open.contains(&canonical) {
+            return Err(Error::IncludeCycle {
+                path: dir.to_path_buf(),
+            });
+        }
+        let entries = std::fs::read_dir(dir).map_err(|source| Error::IncludeDir {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+        let mut names = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|source| Error::IncludeDir {
+                path: dir.to_path_buf(),
+                source,
+            })?;
+            // Matched as bytes, like MIT's `valid_name`, so a `.conf` name that is
+            // not UTF-8 is included too; the path used to open a file is always
+            // the one the directory entry carries.
+            let name = entry.file_name();
+            if includedir_name_is_valid(name.as_encoded_bytes()) {
+                let count = self.files + names.len() + 1;
+                if count > MAX_INCLUDE_FILES {
+                    return Err(Error::IncludeTooMany {
+                        count,
+                        limit: MAX_INCLUDE_FILES,
+                    });
+                }
+                names.push(name);
+            }
+        }
+        // Byte order, which is `strcmp` order: MIT reads the directory's accepted
+        // files in alphanumeric order.
+        names.sort();
+        self.open.push(canonical);
+        let mut expanded = String::new();
+        for name in names {
+            expanded.push_str(&self.include_file(&dir.join(name), depth)?);
+        }
+        self.open.pop();
+        Ok(expanded)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Config, Error, LibDefaults};
-    use std::path::PathBuf;
+    use super::{
+        Config, Error, LibDefaults, MAX_INCLUDE_BYTES, MAX_INCLUDE_DEPTH, MAX_INCLUDE_FILES,
+    };
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1491,5 +1872,515 @@ mod tests {
             "rskrb5-config-unit-{name}-{}-{nanos}",
             std::process::id()
         ))
+    }
+
+    /// A fresh directory for one fixture tree, unique per process and call.
+    fn fixture_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "rskrb5-config-include-{name}-{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("fixture directory is created");
+        dir
+    }
+
+    /// Write `contents` to `dir/name` and return the path it wrote.
+    fn write_fixture(dir: &Path, name: &str, contents: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, contents).expect("fixture file writes");
+        path
+    }
+
+    /// Remove a fixture tree. Cleanup never fails a test.
+    fn remove_fixture(dir: &Path) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// `include` splices the named file at the directive site, so a
+    /// fragment's settings are in the configuration and a setting the parent
+    /// writes *after* the directive still wins - the splice is positional, not a
+    /// merge of two independently parsed files.
+    #[test]
+    fn include_file_splices_settings_at_directive_site() {
+        let dir = fixture_dir("splice");
+        let fragment = write_fixture(
+            &dir,
+            "fragment.conf",
+            "[libdefaults]\n default_realm = FRAGMENT.EXAMPLE\n\
+             [realms]\n FRAGMENT.EXAMPLE = {\n  kdc = kdc.fragment.example:88\n }\n",
+        );
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!(
+                "include {}\n[libdefaults]\n default_realm = PARENT.EXAMPLE\n",
+                fragment.display()
+            ),
+        );
+
+        let config = Config::load(&root).expect("the split configuration loads");
+        remove_fixture(&dir);
+
+        assert!(
+            config.realm("FRAGMENT.EXAMPLE").is_some(),
+            "the fragment's realm is spliced into the configuration"
+        );
+        assert_eq!(
+            config.libdefaults.default_realm, "PARENT.EXAMPLE",
+            "a setting after the directive site still wins, so the splice is positional"
+        );
+    }
+
+    /// `includedir` applies MIT's filename filter - a `.conf` name or a
+    /// name made only of alphanumerics, dashes and underscores, never a dotfile -
+    /// and reads the accepted names in alphanumeric order.
+    ///
+    /// The order assertion is the `default_realm` one: two accepted names set it,
+    /// and the one that sorts last wins. The filter assertion is the empty realm
+    /// list: only the two rejected names carry a `[realms]` section, so a realm
+    /// appearing at all would mean one of them was read.
+    #[test]
+    fn includedir_filters_names_like_mit_and_sorts_alphanumerically() {
+        let dir = fixture_dir("filter");
+        let fragments = dir.join("fragments");
+        std::fs::create_dir_all(&fragments).expect("fragment directory is created");
+        write_fixture(
+            &fragments,
+            "10-first.conf",
+            "[libdefaults]\n default_realm = FIRST.EXAMPLE\n",
+        );
+        write_fixture(
+            &fragments,
+            "20-flag",
+            "[libdefaults]\n udp_preference_limit = 1\n",
+        );
+        write_fixture(
+            &fragments,
+            "30-last.conf",
+            "[libdefaults]\n default_realm = LAST.EXAMPLE\n",
+        );
+        write_fixture(
+            &fragments,
+            "40-dotfile-suffix.bak",
+            "[realms]\n REJECTED.EXAMPLE = {\n  kdc = kdc.rejected.example:88\n }\n",
+        );
+        write_fixture(
+            &fragments,
+            ".50-hidden.conf",
+            "[realms]\n HIDDEN.EXAMPLE = {\n  kdc = kdc.hidden.example:88\n }\n",
+        );
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("includedir {}\n", fragments.display()),
+        );
+
+        let config = Config::load(&root).expect("the split configuration loads");
+        remove_fixture(&dir);
+
+        assert_eq!(
+            config.libdefaults.default_realm, "LAST.EXAMPLE",
+            "the accepted names are read in alphanumeric order, so the last one wins"
+        );
+        assert_eq!(config.libdefaults.udp_preference_limit, 1);
+        assert!(
+            config.realms.is_empty(),
+            "a `.bak` name and a dotfile are not included: {:?}",
+            config.realms
+        );
+    }
+
+    /// An include chain that returns to a file it is already reading is a
+    /// named cycle error, not unbounded recursion.
+    ///
+    /// `a.conf` is the file the caller loaded, so it is on the open chain from
+    /// the start: the chain returns to it, and that is the file the error
+    /// names. Before the root was tracked the parser read `a.conf` a second time
+    /// and detected the cycle one level further down, at `b.conf`.
+    #[test]
+    fn include_cycle_is_a_named_error() {
+        let dir = fixture_dir("cycle");
+        let second = write_fixture(&dir, "b.conf", "");
+        let first = write_fixture(&dir, "a.conf", &format!("include {}\n", second.display()));
+        std::fs::write(&second, format!("include {}\n", first.display()))
+            .expect("the second fixture writes");
+
+        let error = Config::load(&first).expect_err("a cycle is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(&error, Error::IncludeCycle { path } if path == &first),
+            "the cycle names the file it returned to, which is already being read: {error:?}"
+        );
+    }
+
+    /// Nesting past [`MAX_INCLUDE_DEPTH`] is a named error carrying the
+    /// depth it reached and the limit.
+    #[test]
+    fn include_depth_limit_is_named() {
+        let dir = fixture_dir("depth");
+        let mut paths = Vec::new();
+        for level in 1..=10 {
+            paths.push(write_fixture(&dir, &format!("level{level}.conf"), ""));
+        }
+        for (index, path) in paths.iter().enumerate() {
+            let next = paths.get(index + 1);
+            let contents =
+                next.map_or_else(String::new, |next| format!("include {}\n", next.display()));
+            std::fs::write(path, contents).expect("the fixture writes");
+        }
+
+        let error = Config::load(&paths[0]).expect_err("a chain past the limit is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(
+                error,
+                Error::IncludeTooDeep {
+                    depth: 9,
+                    limit: MAX_INCLUDE_DEPTH
+                }
+            ),
+            "eight levels of include are read; the ninth is past the limit of {MAX_INCLUDE_DEPTH}: {error:?}"
+        );
+    }
+
+    /// More included files than [`MAX_INCLUDE_FILES`] is a named error.
+    #[test]
+    fn include_file_count_limit_is_named() {
+        let dir = fixture_dir("count");
+        let fragments = dir.join("fragments");
+        std::fs::create_dir_all(&fragments).expect("fragment directory is created");
+        for index in 0..=MAX_INCLUDE_FILES {
+            write_fixture(
+                &fragments,
+                &format!("f{index:02}.conf"),
+                "[libdefaults]\n default_realm = COUNT.EXAMPLE\n",
+            );
+        }
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("includedir {}\n", fragments.display()),
+        );
+
+        let error = Config::load(&root).expect_err("too many included files are refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(
+                error,
+                Error::IncludeTooMany {
+                    count: 65,
+                    limit: MAX_INCLUDE_FILES
+                }
+            ),
+            "the 65th file is past the limit of {MAX_INCLUDE_FILES}: {error:?}"
+        );
+    }
+
+    /// An `includedir` with more accepted names than the file cap is refused while
+    /// the directory is scanned: its first entry cannot be read, and the cap is
+    /// still what is reported, so no file was opened.
+    #[test]
+    fn includedir_past_the_file_cap_is_refused_before_any_file_is_read() {
+        let dir = fixture_dir("count-early");
+        let fragments = dir.join("fragments");
+        std::fs::create_dir_all(fragments.join("f00.conf"))
+            .expect("an unreadable first entry is created");
+        for index in 1..=MAX_INCLUDE_FILES {
+            write_fixture(&fragments, &format!("f{index:02}.conf"), "[libdefaults]\n");
+        }
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("includedir {}\n", fragments.display()),
+        );
+
+        let error = Config::load(&root).expect_err("too many accepted names are refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(
+                error,
+                Error::IncludeTooMany {
+                    limit: MAX_INCLUDE_FILES,
+                    ..
+                }
+            ),
+            "the cap is reported before the unreadable first entry is opened: {error:?}"
+        );
+    }
+
+    /// `includedir` matches names as bytes, like MIT's `valid_name`: a `.conf`
+    /// name that is not UTF-8 is included. Linux only, because some filesystems
+    /// refuse such names.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn includedir_matches_names_as_bytes_like_mit() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = fixture_dir("byte-names");
+        let fragments = dir.join("fragments");
+        std::fs::create_dir_all(&fragments).expect("fragment directory is created");
+        let name = std::ffi::OsStr::from_bytes(b"\xff-realm.conf");
+        std::fs::write(
+            fragments.join(name),
+            "[libdefaults]\n default_realm = BYTES.EXAMPLE\n",
+        )
+        .expect("a .conf name that is not UTF-8 is created");
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("includedir {}\n", fragments.display()),
+        );
+
+        let config = Config::load(&root).expect("the directory loads");
+        remove_fixture(&dir);
+
+        assert_eq!(config.libdefaults.default_realm, "BYTES.EXAMPLE");
+    }
+
+    /// Included bytes past [`MAX_INCLUDE_BYTES`] are a named error - and the
+    /// oversize file is refused rather than read into memory whole.
+    #[test]
+    fn include_total_byte_limit_is_named() {
+        let dir = fixture_dir("bytes");
+        let oversize = write_fixture(
+            &dir,
+            "big.conf",
+            &format!(
+                "#{}\n[libdefaults]\n default_realm = BIG.EXAMPLE\n",
+                "x".repeat(MAX_INCLUDE_BYTES)
+            ),
+        );
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("include {}\n", oversize.display()),
+        );
+
+        let error = Config::load(&root).expect_err("an oversize include is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(
+                error,
+                Error::IncludeTooLarge {
+                    bytes: 1_048_577,
+                    limit: MAX_INCLUDE_BYTES
+                }
+            ),
+            "the read stops one byte past the limit of {MAX_INCLUDE_BYTES}: {error:?}"
+        );
+    }
+
+    /// An `include` naming a file that cannot be read is a named error
+    /// carrying the path - MIT's `PROF_FAIL_INCLUDE_FILE`, never a silent skip.
+    #[test]
+    fn unreadable_include_file_is_named() {
+        let dir = fixture_dir("unreadable-file");
+        let missing = dir.join("missing.conf");
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("include {}\n", missing.display()),
+        );
+
+        let error = Config::load(&root).expect_err("a missing include is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(&error, Error::IncludeFile { path, source } if path == &missing && source.kind() == std::io::ErrorKind::NotFound),
+            "the error names the file the directive named: {error:?}"
+        );
+    }
+
+    /// An `includedir` naming a directory that cannot be listed is a named
+    /// error - MIT's `PROF_FAIL_INCLUDE_DIR`.
+    #[test]
+    fn unreadable_includedir_is_named() {
+        let dir = fixture_dir("unreadable-dir");
+        let missing = dir.join("missing-dir");
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("includedir {}\n", missing.display()),
+        );
+
+        let error = Config::load(&root).expect_err("a missing includedir is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(&error, Error::IncludeDir { path, source } if path == &missing && source.kind() == std::io::ErrorKind::NotFound),
+            "the error names the directory the directive named: {error:?}"
+        );
+    }
+
+    /// A `KRB5_CONFIG` path list keeps MIT's order with an include in it -
+    /// files are read in list order, each file's includes are expanded where the
+    /// directive sits, and a later file's settings still win.
+    #[test]
+    fn krb5_config_path_list_preserves_mit_order_with_includes() {
+        let dir = fixture_dir("path-list");
+        let fragment = write_fixture(
+            &dir,
+            "fragment.conf",
+            "[libdefaults]\n default_realm = INCLUDE.EXAMPLE\n\
+             [realms]\n INCLUDE.EXAMPLE = {\n  kdc = kdc.include.example:88\n }\n",
+        );
+        let first = write_fixture(
+            &dir,
+            "first.conf",
+            &format!(
+                "include {}\n[libdefaults]\n udp_preference_limit = 1\n",
+                fragment.display()
+            ),
+        );
+        let second = write_fixture(
+            &dir,
+            "second.conf",
+            "[libdefaults]\n default_realm = SECOND.EXAMPLE\n udp_preference_limit = 2\n",
+        );
+
+        let config = Config::load_paths([first, second]).expect("the path list loads");
+        remove_fixture(&dir);
+
+        assert_eq!(
+            config.libdefaults.default_realm, "SECOND.EXAMPLE",
+            "the later file in the list wins over the included fragment"
+        );
+        assert_eq!(
+            config.libdefaults.udp_preference_limit, 2,
+            "and over the file that carried the include"
+        );
+        assert!(
+            config.realm("INCLUDE.EXAMPLE").is_some(),
+            "the include inside the first file was expanded at its directive site"
+        );
+    }
+
+    /// A root file that includes itself is a cycle, and the root is what
+    /// the cycle returns to - so the root is on the open stack before its own
+    /// directives expand.
+    ///
+    /// The chain is seven files long on purpose: the root is reached again while
+    /// the parser is already eight levels down, which is the deepest include the
+    /// limit allows. Without the root on the open stack the recursion runs one
+    /// level past [`MAX_INCLUDE_DEPTH`] and is named as merely deep.
+    #[test]
+    fn a_root_file_including_itself_is_a_cycle() {
+        let dir = fixture_dir("root-self");
+        let root = write_fixture(&dir, "krb5.conf", "");
+        let mut chain = Vec::new();
+        for level in 1..=7 {
+            chain.push(write_fixture(&dir, &format!("level{level}.conf"), ""));
+        }
+        for (index, path) in chain.iter().enumerate() {
+            let next = chain
+                .get(index + 1)
+                .cloned()
+                .unwrap_or_else(|| root.clone());
+            std::fs::write(path, format!("include {}\n", next.display()))
+                .expect("the chain writes");
+        }
+        std::fs::write(&root, format!("include {}\n", chain[0].display()))
+            .expect("the root writes");
+
+        let error = Config::load(&root).expect_err("a root that includes itself is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(&error, Error::IncludeCycle { path } if path == &root),
+            "the root file is already being read, so returning to it is a cycle: {error:?}"
+        );
+    }
+
+    /// A path-list root that a child includes is the same cycle. Every
+    /// top-level file is on the open stack before the text it contributed is
+    /// expanded, so a child's `include` of the root is named rather than the
+    /// root being read a second time.
+    #[test]
+    fn a_path_list_root_included_by_a_child_is_a_cycle() {
+        let dir = fixture_dir("path-list-root");
+        let first = write_fixture(
+            &dir,
+            "first.conf",
+            "[libdefaults]\n default_realm = FIRST.EXAMPLE\n",
+        );
+        let second = write_fixture(
+            &dir,
+            "second.conf",
+            &format!("include {}\n", first.display()),
+        );
+
+        let error = Config::load_paths([&first, &second])
+            .expect_err("a path-list root a child includes is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(&error, Error::IncludeCycle { path } if path == &first),
+            "the root of the path list is already being read: {error:?}"
+        );
+    }
+
+    /// An `includedir` reached again through a symlink while its files
+    /// are being expanded is a cycle, named at the path the directive spelled -
+    /// the canonical directories being expanded are tracked, so the chain is
+    /// named rather than merely deep.
+    ///
+    /// `top/up` is `top` itself, and the directive that names it sits at the
+    /// eighth include level, one past where an untracked directory would leave
+    /// the file-level check.
+    #[cfg(target_family = "unix")]
+    #[test]
+    fn a_symlinked_includedir_cycle_is_named() {
+        let dir = fixture_dir("symlinked-dir");
+        let top = dir.join("top");
+        std::fs::create_dir_all(&top).expect("the included directory is created");
+        std::os::unix::fs::symlink(&top, top.join("up")).expect("the symlink is created");
+        write_fixture(
+            &top,
+            "00.conf",
+            "[libdefaults]\n udp_preference_limit = 1\n",
+        );
+        let mut chain = Vec::new();
+        for level in 1..=7 {
+            chain.push(top.join(format!("tmp{level}.conf")));
+        }
+        std::fs::write(
+            &chain[6],
+            format!("includedir {}\n", top.join("up").display()),
+        )
+        .expect("the chain writes");
+        for index in (0..6).rev() {
+            std::fs::write(
+                &chain[index],
+                format!("include {}\n", chain[index + 1].display()),
+            )
+            .expect("the chain writes");
+        }
+        write_fixture(
+            &top,
+            "10.conf",
+            &format!("include {}\n", chain[0].display()),
+        );
+        let cycle = top.join("up");
+        let root = write_fixture(
+            &dir,
+            "krb5.conf",
+            &format!("includedir {}\n", top.display()),
+        );
+
+        let error = Config::load(&root).expect_err("the symlinked cycle is refused");
+        remove_fixture(&dir);
+
+        assert!(
+            matches!(&error, Error::IncludeCycle { path } if path == &cycle),
+            "the symlink names the directory that is already being read: {error:?}"
+        );
     }
 }
