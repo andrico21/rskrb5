@@ -548,6 +548,45 @@ fn tcp_login_reuses_one_connection_for_the_preauth_retry() -> Result<(), Box<dyn
 }
 
 #[test]
+fn auto_login_reuses_the_stream_after_the_udp_fall_back_to_tcp() -> Result<(), Box<dyn Error>> {
+    runtime().block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept client");
+            let first = read_framed(&mut socket).await.expect("read bare AS-REQ");
+            write_framed(&mut socket, &preauth_required_error())
+                .await
+                .expect("write KRB-ERROR");
+            let second = read_framed(&mut socket).await.expect("read retry AS-REQ");
+            write_framed(&mut socket, b"not-an-as-rep")
+                .await
+                .expect("write stub reply");
+            let reconnected = tokio::time::timeout(Duration::from_millis(250), listener.accept())
+                .await
+                .is_ok();
+            (first.len(), second.len(), reconnected)
+        });
+
+        // No UDP socket answers on this port, so the Auto leg falls back to
+        // TCP; the retry must ride that same connection.
+        let _ = login_over(addr, KdcProtocol::Auto).await;
+
+        let (first_len, second_len, reconnected) = server.await?;
+        assert!(
+            first_len > 0,
+            "KDC received the AS-REQ after the UDP fallback"
+        );
+        assert!(second_len > 0, "preauth retry must ride the pinned stream");
+        assert!(
+            !reconnected,
+            "preauth retry must not open a second connection"
+        );
+        Ok::<_, Box<dyn Error>>(())
+    })
+}
+
+#[test]
 fn tcp_login_reconnects_when_the_kdc_closes_the_stream() -> Result<(), Box<dyn Error>> {
     runtime().block_on(async {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -584,11 +623,16 @@ fn tcp_login_reconnects_when_the_kdc_closes_the_stream() -> Result<(), Box<dyn E
 
 /// Drive a password TGT login over TCP against a stub KDC.
 async fn login_over_tcp(addr: std::net::SocketAddr) -> Result<(), ClientError> {
+    login_over(addr, KdcProtocol::Tcp).await
+}
+
+/// Drive a password TGT login over the given protocol against a stub KDC.
+async fn login_over(addr: std::net::SocketAddr, protocol: KdcProtocol) -> Result<(), ClientError> {
     let options = AsReqOptions::new(SystemTime::now(), 1);
     TokioKdcTransport::new()
         .with_timeout(Duration::from_secs(2))
         .login_tgt_with_password(
-            KdcProtocol::Tcp,
+            protocol,
             addr,
             Principal::user("TEST.GOKRB5", "testuser1"),
             b"password",

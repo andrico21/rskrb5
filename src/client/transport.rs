@@ -260,9 +260,10 @@ impl TokioKdcTransport {
 
     /// Send an encoded KDC request and keep a TCP stream open for a follow-up.
     ///
-    /// Returns no stream for [`KdcProtocol::Udp`], which has none, or for
-    /// [`KdcProtocol::Auto`], which races the two protocols and may answer over
-    /// either; those follow the unpinned path unchanged.
+    /// Returns no stream for [`KdcProtocol::Udp`], which has none. For
+    /// [`KdcProtocol::Auto`] a stream exists exactly when the request fell back
+    /// to TCP, so a follow-up reuses the connection that answered instead of
+    /// probing UDP again and opening a second connection.
     async fn send_pinned<A>(
         &self,
         protocol: KdcProtocol,
@@ -277,10 +278,21 @@ impl TokioKdcTransport {
                 .send_tcp_pinned(addr, request)
                 .await
                 .map(|(response, stream)| (response, Some(stream))),
-            KdcProtocol::Udp | KdcProtocol::Auto => self
-                .send(protocol, addr, request)
+            KdcProtocol::Udp => self
+                .send_udp(addr, request)
                 .await
                 .map(|response| (response, None)),
+            KdcProtocol::Auto => match self.send_udp(addr.clone(), request).await {
+                Ok(response) if kdc_error_code(&response) == Some(KRB_ERR_RESPONSE_TOO_BIG) => self
+                    .send_tcp_pinned(addr, request)
+                    .await
+                    .map(|(response, stream)| (response, Some(stream))),
+                Ok(response) => Ok((response, None)),
+                Err(_) => self
+                    .send_tcp_pinned(addr, request)
+                    .await
+                    .map(|(response, stream)| (response, Some(stream))),
+            },
         }
     }
 
