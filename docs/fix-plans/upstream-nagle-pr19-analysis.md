@@ -47,15 +47,19 @@ Three mechanisms, one goal (AS-login latency against a Windows DC: 768.6 ms → 
 - Verified on the branch: `cargo fmt --all -- --check` clean, `cargo clippy
   --all-targets --all-features -- -D warnings` clean, `cargo test --all-features
   --no-fail-fast` green (service 23/23, client_transport 19/19).
-- Version stays `0.2.1`; the release commit/version bump remains the user's call.
+- Fork release: version bumped to `0.2.2` on `release/0.2.2`; pushing the
+  `v0.2.2` tag at that tip publishes through the release workflow.
 
 ## Upstream routing
 
 - No duplicate PR for the core fix: PR #19 is open and covers mechanisms 1-3. When it
   merges, drop the imported commits at rebase and keep only the Auto extension.
-- Offer the Auto extension on PR #19 first (draft below). If it merges without it or
-  the author declines, file the stacked follow-up from
-  `pr-bodies/followup-tcp-auto-pinning.md` once #19 lands.
+- The Auto extension is open as a stacked PR into PR #19's head branch:
+  <https://github.com/Gittingc0dez/rskrb5/pull/1>. If it is folded in, nothing else is
+  needed; if it is declined, file the same commit against `clelange/rskrb5` after #19
+  lands (body: `pr-bodies/followup-tcp-auto-pinning.md`).
+- The draft comment below remains the alternative if a PR into the contributor's fork is
+  not wanted.
 
 ## Draft comment for clelange/rskrb5#19
 

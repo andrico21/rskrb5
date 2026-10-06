@@ -1,10 +1,10 @@
 [package]
 name = "rskrb5-patched"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
-description = "Temporary patched fork of rskrb5: upstream main at 6f4abc9 plus the fixes awaiting upstream (see FORK-NOTES.md) - verbatim result bytes, environment-free config, include/includedir, TGS FAST subkey, TCP_NODELAY"
+description = "Temporary patched fork of rskrb5: upstream main at 6f4abc9 plus the fixes awaiting upstream (see FORK-NOTES.md) - verbatim result bytes, environment-free config, include/includedir, TGS FAST subkey, AP-REQ replay/realm hardening, TCP framing and preauth stream reuse"
 repository = "https://github.com/andrico21/rskrb5"
 readme = "README.md"
 keywords = ["kerberos", "krb5", "spnego", "gssapi", "authentication"]

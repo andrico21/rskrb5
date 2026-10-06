@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.2] - 2026-10-07
+
+Patched fork of `rskrb5`, still based on upstream `clelange/rskrb5` `main` at
+`6f4abc9`, adding the changes below on top of the 0.2.1 set. See
+`FORK-NOTES.md` for the upstream references and the retirement trigger.
+
+- AP-REQ replay identity is canonicalized over the advisory name-type: a
+  name-type-only replay of a captured AP-REQ is rejected, and the replay key
+  binds the service component to the key identity that accepted the ticket
+  (clelange/rskrb5 PR #20).
+- The authenticator client realm is bound to the KDC-authenticated ticket
+  realm, and `ValidatedApReq.client` returns the ticket-derived identity, so
+  no authenticator-supplied value reaches callers (clelange/rskrb5 PR #21).
+- TCP transport: the record mark and the request body are written as one
+  segment, `TCP_NODELAY` is set, and the preauth retry rides the pinned stream
+  that answered the first AS phase (third-party PR #19's commits, authorship
+  preserved), plus a pinning extension for the `Auto` fallback (Gittingc0dez
+  stacked PR #1).
+- Documentation: detailed fix plans for the remaining audit findings live in
+  `docs/fix-plans/` (excluded from packaging).
+
 ## [0.2.1] - 2026-10-06
 
 Patched fork of `rskrb5`, based on upstream `clelange/rskrb5` `main` at

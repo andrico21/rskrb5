@@ -1,9 +1,10 @@
-# PR (stacked follow-up): transport — pin the Auto fallback TCP stream for the preauth retry
+# Stacked suggestion for clelange/rskrb5#19: pin the Auto fallback TCP stream for the preauth retry
 
-- Target: `clelange/rskrb5` `main` **after** PR #19 lands (or fold into #19 as a review suggestion).
+- Base: this fork's `main` (which is PR #19's head branch). Merge here to fold the change
+  into #19, or close it and we will file the same commit against `clelange/rskrb5` after
+  #19 lands.
 - Branch: `fix/tcp-preauth-pinning` (`andrico21/rskrb5`), commit `b1153c7`, stacked on the
-  two commits imported from PR #19's branch (`b31b5d1`, `9403abe`) — retarget/rebase onto
-  `main` once #19 merges.
+  two commits imported from PR #19's branch (`b31b5d1`, `9403abe`).
 - Not a duplicate: PR #19 covers the Tcp path, single-segment framing, `nodelay` and the
   pinned `Tcp` stream; this adds the missing `KdcProtocol::Auto` arm.
 
