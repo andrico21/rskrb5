@@ -176,6 +176,22 @@ impl TokioKdcTransport {
         .and_then(non_empty_kdc_response)
     }
 
+    /// Open a TCP stream to a KDC with Nagle disabled.
+    ///
+    /// [`Self::send_tcp`] writes the RFC 4120 record mark and the request body
+    /// in two writes; with Nagle enabled the body waits for the peer's
+    /// acknowledgement of the mark, which adds the peer's delayed-ACK timer -
+    /// or a round trip - to every exchange. Nothing is written before this
+    /// returns, so a failure here leaves nothing of the request on the wire.
+    async fn connect_tcp<A>(addr: A) -> Result<TcpStream, Error>
+    where
+        A: ToSocketAddrs,
+    {
+        let stream = TcpStream::connect(addr).await?;
+        stream.set_nodelay(true)?;
+        Ok(stream)
+    }
+
     /// Send an encoded KDC request over RFC 4120 TCP framing.
     pub async fn send_tcp<A>(&self, addr: A, request: &[u8]) -> Result<Vec<u8>, Error>
     where
@@ -189,7 +205,7 @@ impl TokioKdcTransport {
             })?;
 
         self.with_transport_timeout(async {
-            let mut stream = TcpStream::connect(addr).await?;
+            let mut stream = Self::connect_tcp(addr).await?;
             stream.write_all(&u32::to_be_bytes(request_len)).await?;
             stream.write_all(request).await?;
 
@@ -1324,5 +1340,16 @@ mod tests {
     fn rejects_dns_server_override_hostname() {
         let error = parse_dns_server("dns.test.gokrb5:53").expect_err("hostname rejected");
         assert!(error.contains("expected IP literal"));
+    }
+
+    /// A missing `TCP_NODELAY` fails no exchange; it only lets Nagle hold the
+    /// request body until the peer acknowledges the record mark, which no
+    /// wire-level test can see. Assert the option itself.
+    #[tokio::test]
+    async fn connect_disables_nagle_on_the_kdc_socket() -> Result<(), Box<dyn std::error::Error>> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let stream = TokioKdcTransport::connect_tcp(listener.local_addr()?).await?;
+        assert!(stream.nodelay()?, "the KDC TCP connect must disable Nagle");
+        Ok(())
     }
 }
