@@ -17,14 +17,14 @@ use rskrb5::client::{
     TgsReqOptions, build_ap_req_with_confounder, build_kpasswd_request,
     build_kpasswd_request_with_confounders, build_preauthenticated_as_req,
     build_s4u2proxy_req_with_confounder, build_s4u2self_req_with_confounder,
-    build_tgs_req_for_realm_with_confounder, build_tgs_req_with_confounder, build_tgt_as_req,
-    build_tgt_renewal_req_with_confounder, build_ticket_renewal_req_with_confounder,
-    default_password_salt, derive_password_reply_key, exchange_as_req, exchange_tgs_req,
-    login_as_service_with_keytab, login_as_service_with_password, login_tgt_with_keytab,
-    login_tgt_with_password, pa_enc_timestamp_with_confounder, pa_for_user_padata,
-    pa_pac_options_padata, process_as_rep, process_kdc_error, process_tgs_rep,
-    process_tgs_rep_with_referral, renew_tgt, renew_ticket, s4u_byte_array, s4u2proxy, s4u2self,
-    select_preauth_key_info, verify_kpasswd_ap_rep,
+    build_tgs_req_for_realm_with_confounder, build_tgs_req_for_realm_with_confounder_and_subkey,
+    build_tgs_req_with_confounder, build_tgt_as_req, build_tgt_renewal_req_with_confounder,
+    build_ticket_renewal_req_with_confounder, default_password_salt, derive_password_reply_key,
+    exchange_as_req, exchange_tgs_req, login_as_service_with_keytab,
+    login_as_service_with_password, login_tgt_with_keytab, login_tgt_with_password,
+    pa_enc_timestamp_with_confounder, pa_for_user_padata, pa_pac_options_padata, process_as_rep,
+    process_kdc_error, process_tgs_rep, process_tgs_rep_with_referral, renew_tgt, renew_ticket,
+    s4u_byte_array, s4u2proxy, s4u2self, select_preauth_key_info, verify_kpasswd_ap_rep,
 };
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 use rskrb5::client::{BlockingNegotiateClient, NegotiateClient};

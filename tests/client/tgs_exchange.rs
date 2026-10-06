@@ -783,3 +783,173 @@ fn renew_ticket_uses_transport_boundary() {
     assert_eq!(session.service, sample_service_principal());
     assert!(!session.ticket.is_empty());
 }
+
+/// RFC 6113 section 5.4.2: a TGS request that will be FAST-armored with the TGT
+/// in `PA-TGS-REQ` must carry a subkey in its authenticator, because the
+/// implicit TGS armor key is
+/// `KRB-FX-CF2(subkey, TGT session key, "subkeyarmor", "ticketarmor")`.
+///
+/// This is the red test for the subkey seam: the unarmored builder leaves
+/// `Authenticator.subkey` as `None`, so a caller's FAST layer has no subkey
+/// to derive the armor key from. It asserts by decrypting the authenticator, not
+/// by inspecting a flag.
+#[test]
+fn tgs_req_authenticator_carries_subkey_for_implicit_armor() {
+    let tgt = sample_tgt_session();
+    let service = sample_service_principal();
+    let options = TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788)
+        .with_ticket_lifetime(Duration::from_secs(2 * 60 * 60))
+        .with_etypes(vec![18]);
+
+    let subkey = rskrb5::keytab::EncryptionKey {
+        etype: 18,
+        value: vec![0x42; 32],
+    };
+    let parts = build_tgs_req_for_realm_with_confounder_and_subkey(
+        &tgt,
+        "TEST.GOKRB5",
+        service,
+        options,
+        timestamp(1_893_553_451),
+        654_321,
+        &decode_hex(TGS_REQ_CONFOUNDER),
+        &subkey,
+    )
+    .expect("TGS-REQ builds");
+    let decoded: rasn_kerberos::TgsReq =
+        rasn::der::decode(&parts.request.der).expect("TGS-REQ decodes");
+    let padata = decoded.0.padata.as_ref().expect("TGS-REQ has padata");
+    let ap_req: rasn_kerberos::ApReq =
+        rasn::der::decode(padata[0].value.as_ref()).expect("PA-TGS-REQ AP-REQ decodes");
+
+    let authenticator = rskrb5::ap_req::decrypt_ap_req_authenticator(
+        &ap_req,
+        &tgt.session_key,
+        TGS_REQ_AUTHENTICATOR_USAGE,
+    )
+    .expect("TGS authenticator decrypts");
+    let carried = authenticator
+        .subkey
+        .as_ref()
+        .expect("implicit TGS armor needs the authenticator subkey (RFC 6113 section 5.4.2)");
+    assert_eq!(
+        carried.r#type, subkey.etype,
+        "the authenticator carries the supplied subkey's enctype"
+    );
+    assert_eq!(
+        carried.value.as_ref(),
+        subkey.value.as_slice(),
+        "the authenticator carries exactly the subkey the caller supplied"
+    );
+    assert_eq!(
+        parts.authenticator_subkey.value, subkey.value,
+        "and the seam hands the same subkey back for the armor key"
+    );
+}
+
+/// The seam exposes the AP-REQ DER that the outer `PA-TGS-REQ` padata carries:
+/// those are the bytes RFC 6113 section 5.4.2 keys the FAST `req-checksum` over,
+/// so a caller must be able to name them without re-encoding the request.
+#[test]
+fn tgs_req_exposes_pa_tgs_req_ap_req_bytes() {
+    let tgt = sample_tgt_session();
+    let service = sample_service_principal();
+    let options = TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788)
+        .with_ticket_lifetime(Duration::from_secs(2 * 60 * 60))
+        .with_etypes(vec![18]);
+    let subkey = rskrb5::keytab::EncryptionKey {
+        etype: 18,
+        value: vec![0x24; 32],
+    };
+
+    let parts = build_tgs_req_for_realm_with_confounder_and_subkey(
+        &tgt,
+        "TEST.GOKRB5",
+        service,
+        options,
+        timestamp(1_893_553_451),
+        654_321,
+        &decode_hex(TGS_REQ_CONFOUNDER),
+        &subkey,
+    )
+    .expect("TGS-REQ builds");
+    let decoded: rasn_kerberos::TgsReq =
+        rasn::der::decode(&parts.request.der).expect("TGS-REQ decodes");
+    let padata = decoded.0.padata.as_ref().expect("TGS-REQ has padata");
+    assert_eq!(padata[0].r#type, PA_TGS_REQ);
+    assert_eq!(
+        padata[0].value.as_ref(),
+        parts.ap_req_der.as_slice(),
+        "the exposed bytes are the AP-REQ the outer PA-TGS-REQ carries"
+    );
+    let ap_req: rasn_kerberos::ApReq =
+        rasn::der::decode(&parts.ap_req_der).expect("the exposed bytes are an AP-REQ");
+    assert_eq!(ap_req.msg_type, rasn::types::Integer::from(14));
+}
+
+/// The unarmored builders keep the shape every existing caller has: no subkey.
+#[test]
+fn legacy_tgs_builder_stays_unarmored_for_existing_callers() {
+    let tgt = sample_tgt_session();
+    let service = sample_service_principal();
+    let options = TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788)
+        .with_ticket_lifetime(Duration::from_secs(2 * 60 * 60))
+        .with_etypes(vec![18]);
+
+    let request = build_tgs_req_with_confounder(
+        &tgt,
+        service,
+        options,
+        timestamp(1_893_553_451),
+        654_321,
+        &decode_hex(TGS_REQ_CONFOUNDER),
+    )
+    .expect("TGS-REQ builds");
+    let decoded: rasn_kerberos::TgsReq = rasn::der::decode(&request.der).expect("TGS-REQ decodes");
+    let padata = decoded.0.padata.as_ref().expect("TGS-REQ has padata");
+    let ap_req: rasn_kerberos::ApReq =
+        rasn::der::decode(padata[0].value.as_ref()).expect("PA-TGS-REQ AP-REQ decodes");
+
+    let authenticator = rskrb5::ap_req::decrypt_ap_req_authenticator(
+        &ap_req,
+        &tgt.session_key,
+        TGS_REQ_AUTHENTICATOR_USAGE,
+    )
+    .expect("TGS authenticator decrypts");
+    assert!(
+        authenticator.subkey.is_none(),
+        "a caller that did not ask for implicit armor gets no subkey"
+    );
+}
+
+/// The deterministic builder only accepts a subkey shaped like the random-subkey
+/// builder's, in the TGT session key's enctype and length; anything else is refused.
+#[test]
+fn tgs_subkey_must_match_the_session_key_enctype_and_length() {
+    let tgt = sample_tgt_session();
+    let build = |subkey: &rskrb5::keytab::EncryptionKey| {
+        build_tgs_req_for_realm_with_confounder_and_subkey(
+            &tgt,
+            "TEST.GOKRB5",
+            sample_service_principal(),
+            TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![18]),
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+            subkey,
+        )
+    };
+    let other_etype = rskrb5::keytab::EncryptionKey {
+        etype: 17,
+        value: vec![0x42; 16],
+    };
+    assert!(matches!(
+        build(&other_etype),
+        Err(Error::ApReqKeyEtypeMismatch { key_etype: 17, .. })
+    ));
+    let short = rskrb5::keytab::EncryptionKey {
+        etype: tgt.session_key.etype,
+        value: vec![0x42; 16],
+    };
+    assert!(matches!(build(&short), Err(Error::Crypto(_))));
+}

@@ -178,6 +178,39 @@ pub struct BuiltTgsReq {
     pub nonce: u32,
 }
 
+/// The TGS-REQ plus the pieces an implicit-FAST caller needs from it.
+///
+/// RFC 6113 section 5.4.2 arms a TGS request implicitly when the TGT travels in
+/// `PA-TGS-REQ`: the FAST `req-checksum` is keyed over the encoded AP-REQ, and
+/// the armor key is `KRB-FX-CF2(subkey, TGT session key, "subkeyarmor",
+/// "ticketarmor")` with the subkey this request's authenticator carries. Both
+/// are returned here rather than added to [`BuiltTgsReq`], so unarmored callers
+/// keep the shape they had.
+#[derive(Clone)]
+pub struct TgsFastRequestParts {
+    /// The request as built, with its validation metadata.
+    pub request: BuiltTgsReq,
+    /// DER of the AP-REQ placed in the outer `PA-TGS-REQ` padata.
+    pub ap_req_der: Vec<u8>,
+    /// The authenticator's subkey. Secret, and zeroized on drop: the implicit
+    /// armor key is derived from it, so it must not reach a log.
+    pub authenticator_subkey: EncryptionKey,
+}
+
+impl core::fmt::Debug for TgsFastRequestParts {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("TgsFastRequestParts")
+            .field("request", &self.request)
+            .field("ap_req_der_len", &self.ap_req_der.len())
+            .field(
+                "authenticator_subkey_etype",
+                &self.authenticator_subkey.etype,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
 /// Built client AP-REQ.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BuiltApReq {
@@ -1906,6 +1939,13 @@ pub fn build_s4u2proxy_req_with_confounder(
 }
 
 /// Build a TGS-REQ for an explicit KDC realm, timestamp, and confounder.
+///
+/// The authenticator carries **no** subkey: this is the unarmored shape every
+/// existing caller gets. A request that will be FAST-armored uses
+/// [`build_tgs_req_for_realm_with_subkey`] or
+/// [`build_tgs_req_for_realm_with_confounder_and_subkey`], whose authenticator
+/// carries the subkey RFC 6113 section 5.4.2 derives the implicit armor key
+/// from.
 pub fn build_tgs_req_for_realm_with_confounder(
     tgt: &AsRepSession,
     kdc_realm: impl Into<String>,
@@ -1915,6 +1955,121 @@ pub fn build_tgs_req_for_realm_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
+    build_tgs_req_for_realm_inner(
+        tgt, kdc_realm, service, options, timestamp, cusec, confounder, None,
+    )
+    .map(|(request, _ap_req_der)| request)
+}
+
+/// Build a TGS-REQ that carries an authenticator subkey, with random confounder
+/// and subkey: the input RFC 6113 section 5.4.2's implicit TGS armor needs.
+///
+/// The subkey is fresh for every call, in the TGT session key's enctype and
+/// length, and it never leaves [`TgsFastRequestParts::authenticator_subkey`]
+/// except into the request and the caller's armor key.
+pub fn build_tgs_req_for_realm_with_subkey(
+    tgt: &AsRepSession,
+    kdc_realm: impl Into<String>,
+    service: Principal,
+    options: TgsReqOptions,
+) -> Result<TgsFastRequestParts, Error> {
+    let (timestamp, cusec) = current_preauth_time()?;
+    let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
+        .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
+    let mut confounder = vec![0; etype.confounder_len()];
+    getrandom::fill(&mut confounder)?;
+    let subkey = random_subkey_for(&tgt.session_key)?;
+    let (request, ap_req_der) = build_tgs_req_for_realm_inner(
+        tgt,
+        kdc_realm,
+        service,
+        options,
+        timestamp,
+        cusec,
+        &confounder,
+        Some(&subkey),
+    )?;
+    Ok(TgsFastRequestParts {
+        request,
+        ap_req_der,
+        authenticator_subkey: subkey,
+    })
+}
+
+/// Build a TGS-REQ that carries `subkey`, with an explicit timestamp and
+/// confounder.
+///
+/// This helper only accepts a subkey shaped as
+/// [`build_tgs_req_for_realm_with_subkey`] generates it, in the TGT session
+/// key's enctype and length, and the bytes should be fresh random bytes. The
+/// shape is this crate's constraint: RFC 6113 lets the two KRB-FX-CF2 inputs
+/// differ in enctype. A subkey of another enctype is
+/// [`Error::ApReqKeyEtypeMismatch`]; one of another length is [`Error::Crypto`].
+#[allow(clippy::too_many_arguments)]
+pub fn build_tgs_req_for_realm_with_confounder_and_subkey(
+    tgt: &AsRepSession,
+    kdc_realm: impl Into<String>,
+    service: Principal,
+    options: TgsReqOptions,
+    timestamp: SystemTime,
+    cusec: u32,
+    confounder: &[u8],
+    subkey: &EncryptionKey,
+) -> Result<TgsFastRequestParts, Error> {
+    if subkey.etype != tgt.session_key.etype {
+        return Err(Error::ApReqKeyEtypeMismatch {
+            key_etype: subkey.etype,
+            encrypted_data_etype: tgt.session_key.etype,
+        });
+    }
+    if subkey.value.len() != tgt.session_key.value.len() {
+        return Err(crate::crypto::Error::InvalidKeyLength {
+            expected: tgt.session_key.value.len(),
+            actual: subkey.value.len(),
+        }
+        .into());
+    }
+    let (request, ap_req_der) = build_tgs_req_for_realm_inner(
+        tgt,
+        kdc_realm,
+        service,
+        options,
+        timestamp,
+        cusec,
+        confounder,
+        Some(subkey),
+    )?;
+    Ok(TgsFastRequestParts {
+        request,
+        ap_req_der,
+        authenticator_subkey: subkey.clone(),
+    })
+}
+
+/// A fresh key of `key`'s enctype and length, from the OS CSPRNG.
+pub(crate) fn random_subkey_for(key: &EncryptionKey) -> Result<EncryptionKey, Error> {
+    let mut value = vec![0; key.value.len()];
+    getrandom::fill(&mut value)?;
+    Ok(EncryptionKey {
+        etype: key.etype,
+        value,
+    })
+}
+
+/// Build a TGS-REQ for an explicit KDC realm, timestamp, and confounder, with
+/// an optional authenticator subkey: the request, and the DER of the AP-REQ
+/// that went into its `PA-TGS-REQ` padata.
+#[allow(clippy::too_many_arguments)]
+fn build_tgs_req_for_realm_inner(
+    tgt: &AsRepSession,
+    kdc_realm: impl Into<String>,
+    service: Principal,
+    options: TgsReqOptions,
+    timestamp: SystemTime,
+    cusec: u32,
+    confounder: &[u8],
+    subkey: Option<&EncryptionKey>,
+) -> Result<(BuiltTgsReq, Vec<u8>), Error> {
     if options.etypes.is_empty() {
         return Err(Error::EmptyEtypes);
     }
@@ -1965,7 +2120,7 @@ pub fn build_tgs_req_for_realm_with_confounder(
         }),
         cusec: rasn::types::Integer::from(cusec),
         ctime: kerberos_time_from_system_time(timestamp)?,
-        subkey: None,
+        subkey: subkey.map(encryption_key_to_rasn),
         seq_number: None,
         authorization_data: None,
     };
@@ -1980,11 +2135,10 @@ pub fn build_tgs_req_for_realm_with_confounder(
         confounder,
     )
     .map_err(ap_req_error)?;
+    let ap_req_der = crate::ap_req::encode_ap_req(&ap_req).map_err(ap_req_error)?;
     let pa_tgs_req = rasn_kerberos::PaData {
         r#type: PA_TGS_REQ,
-        value: crate::ap_req::encode_ap_req(&ap_req)
-            .map_err(ap_req_error)?
-            .into(),
+        value: ap_req_der.clone().into(),
     };
     let mut padata = Vec::with_capacity(options.padata.len() + 1);
     padata.push(pa_tgs_req);
@@ -1992,14 +2146,17 @@ pub fn build_tgs_req_for_realm_with_confounder(
     let message = crate::kdc_req::build_tgs_req(req_body, Some(padata));
     let der = crate::kdc_req::encode_tgs_req(&message).map_err(kdc_req_error)?;
 
-    Ok(BuiltTgsReq {
-        message,
-        der,
-        client: tgt.client.clone(),
-        kdc_realm,
-        service,
-        nonce: options.nonce,
-    })
+    Ok((
+        BuiltTgsReq {
+            message,
+            der,
+            client: tgt.client.clone(),
+            kdc_realm,
+            service,
+            nonce: options.nonce,
+        },
+        ap_req_der,
+    ))
 }
 
 /// Build a client AP-REQ with an explicit authenticator timestamp and confounder.
