@@ -11,12 +11,22 @@ name: CI
 # alongside a `collapsible_if` in the patch series, so the lint step is
 # advisory: the fork will not diverge from the vendored bytes for lints the
 # upstream baseline never ran. Build, tests, docs and packaging are blocking.
+#
+# Scheduled, advisory jobs (weekly + manual dispatch): `mutants`, scoped to the
+# patch-dense files, and `fuzz`, driving the kadmin frame parsers patch 0002
+# touches. Both are `continue-on-error` per RUST_GUIDELINES section 12 -
+# informational, never a merge gate. GitHub runs scheduled workflows from the
+# default branch, so the weekly pass exercises `main`; dispatch against the
+# patched tree with `gh workflow run ci.yml --ref release/0.2.1`.
 
 on:
   push:
     branches: [main, "release/**"]
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   pull_request:
+  schedule:
+    # Weekly, Monday 03:37 UTC: the advisory mutants + fuzz pass.
+    - cron: "37 3 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -54,3 +64,57 @@ jobs:
 
       - name: Package (verify build against the registry)
         run: cargo package --locked
+
+  mutants:
+    name: cargo-mutants (scheduled, advisory)
+    # Section 12 classes cargo-mutants as Recommended/informational. Scoped to
+    # the two smallest patch-dense files first - patch 0002's remote reply
+    # parser and patch 0012's transport - so a run finishes inside the wall;
+    # widen the `-f` list (src/config.rs, src/client.rs) once a green run shows
+    # headroom.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      - name: Run cargo mutants (advisory, wall-capped at 60m)
+        run: timeout 60m cargo mutants --no-shuffle --timeout 120 -j 4 -f src/kadmin.rs -f src/client/transport.rs
+      - name: Upload mutants.out
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mutants-out
+          path: mutants.out
+          retention-days: 14
+
+  fuzz:
+    name: cargo-fuzz (scheduled, advisory)
+    # Patch 0002 parses remote KDC bytes, so the parser gets a fuzz target: the
+    # three kadmin frame parsers on arbitrary input, a bounded smoke run per
+    # invocation. A crash is a finding (upstream or patch) and surfaces through
+    # the advisory status.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz the kadmin frame parsers (bounded)
+        run: cargo +nightly fuzz run kpasswd_reply -- -max_total_time=300 -rss_limit_mb=4096
+      - name: Upload corpus
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fuzz-corpus
+          path: fuzz/corpus
+          retention-days: 14

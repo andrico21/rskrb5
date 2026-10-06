@@ -1,0 +1,21 @@
+[package]
+name = "rskrb5-patched-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rskrb5 = { path = ".." }
+
+[[bin]]
+name = "kpasswd_reply"
+path = "fuzz_targets/kpasswd_reply.rs"
+test = false
+doc = false
+bench = false
