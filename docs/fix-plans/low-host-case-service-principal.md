@@ -2,7 +2,7 @@
 
 - Severity: low — likelihood medium / impact low / confidence high — fingerprint `rskrb5/client/host-based-principal-host-case`
 - Audit: run-2 `findings.json` record `rskrb5/client/host-based-principal-host-case` + primary evidence `run-2/agents/vfy-rskrb5-client-host-based-p/artifacts/vfy-host-case3.log` (independent reproduction), corroborated by `run-2/agents/hunt2b-identity/artifacts/probe-identity-3.log`
-- Status: planned; not implemented in the fork; no upstream PR yet
+- Status: implemented on branch `fix/host-case-spn` (`50e5284`); new tests fail before and pass after; no upstream PR yet
 
 ## Problem
 

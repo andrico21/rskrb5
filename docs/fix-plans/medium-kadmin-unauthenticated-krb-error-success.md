@@ -2,7 +2,7 @@
 
 - Severity: medium (likelihood medium / impact medium / confidence high) — fingerprint `rskrb5/kadmin/Reply::decrypt_result/unauthenticated-krb-error-success`
 - Audit: run-2 findings.json record (`verdict: confirmed`) + `agents/vfy-rskrb5-kadmin-reply-decryp/artifacts/vfy-kadmin-probe2.log:188-193`
-- Status: planned; not implemented in the fork; no upstream PR yet
+- Status: implemented on branch `fix/kadmin-unsigned-success` (`a089831`); rejection tests fail before and pass after; no upstream PR yet
 
 ## Problem
 

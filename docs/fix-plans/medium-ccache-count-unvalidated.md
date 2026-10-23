@@ -2,7 +2,7 @@
 
 - Severity: medium (likelihood medium / impact medium / confidence high) — fingerprint `rskrb5/ccache/parse/count-before-input-bound`
 - Audit: run-2 findings.json record (`verdict: confirmed`) + `agents/vfy-rskrb5-ccache-parse-count-/artifacts/ccache-parse-count-verify5:50-73`
-- Status: planned; not implemented in the fork; no upstream PR yet
+- Status: implemented on branch `fix/ccache-count-bounds` (`9701864`); regression tests fail before (allocator abort under RLIMIT_AS) and pass after; no upstream PR yet
 
 ## Problem
 
