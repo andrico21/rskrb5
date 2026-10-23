@@ -635,3 +635,33 @@ fn temp_file(name: &str) -> PathBuf {
 fn temp_dir(name: &str) -> PathBuf {
     temp_file(name)
 }
+
+#[cfg(test)]
+mod fork_property_tests {
+    use proptest::prelude::*;
+    use rskrb5::ccache::{CCache, Error};
+
+    /// Minimum encoded size of one principal component: a four-byte length.
+    const MIN_COMPONENT_LEN: usize = 4;
+
+    proptest! {
+        /// Any component count, with the input cut right after the count
+        /// field, is rejected before allocation and never panics.
+        #[test]
+        fn component_count_is_bounded_by_remaining_input(count in 1..=i32::MAX) {
+            let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
+            bytes.extend_from_slice(&0i32.to_be_bytes()); // name type
+            bytes.extend_from_slice(&count.to_be_bytes()); // component count
+
+            let error = CCache::parse(&bytes).expect_err("count exceeds remaining input");
+            match error {
+                Error::Truncated { needed, remaining, .. } => {
+                    prop_assert_eq!(remaining, 0);
+                    prop_assert_eq!(needed, count as usize * MIN_COMPONENT_LEN);
+                }
+                Error::LengthOverflow => prop_assert!(cfg!(target_pointer_width = "32")),
+                other => prop_assert!(false, "unexpected error: {other:?}"),
+            }
+        }
+    }
+}

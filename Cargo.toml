@@ -2,7 +2,7 @@
 name = "rskrb5-patched"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99"
 license = "Apache-2.0"
 description = "Temporary patched fork of rskrb5: upstream main at 6f4abc9 plus the fixes awaiting upstream (see FORK-NOTES.md) - verbatim result bytes, environment-free config, include/includedir, TGS FAST subkey, AP-REQ replay/realm hardening, TCP framing and preauth stream reuse, ccache count bounds, authenticated kpasswd success, enctype binding and permitted_enctypes, renewal pacing and recovery, DNS host case folding, clockskew handoff, mutual-auth fail-closed"
 repository = "https://github.com/andrico21/rskrb5"
@@ -72,6 +72,7 @@ required-features = ["evaluation"]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 hex = "0.4"
 pretty_assertions = "1.4"
+proptest = "1.12"
 tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread", "test-util"] }
 toml = "0.9"
 
