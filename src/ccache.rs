@@ -589,7 +589,7 @@ impl Principal {
         }
 
         let realm = read_counted_string(bytes, offset, endian)?;
-        let mut components = Vec::with_capacity(component_count as usize);
+        let mut components = Vec::with_capacity(component_count);
         for _ in 0..component_count {
             components.push(read_counted_string(bytes, offset, endian)?);
         }
