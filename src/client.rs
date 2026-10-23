@@ -2462,6 +2462,7 @@ pub fn process_as_rep(
 
     let enc_part =
         crate::kdc_rep::decrypt_as_rep_enc_part(&as_rep, reply_key).map_err(kdc_rep_error)?;
+    enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
     validate_as_rep_encrypted_padata(request, &enc_part, reply_key)?;
 
     if enc_part.nonce != request.nonce {
@@ -2606,6 +2607,7 @@ fn process_tgs_rep_inner(
 
     let enc_part = crate::kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key)
         .map_err(kdc_rep_error)?;
+    enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
 
     if enc_part.nonce != request.nonce {
         return Err(Error::NonceMismatch {
@@ -2830,6 +2832,14 @@ pub enum Error {
     /// The encrypted data etype is not implemented yet.
     #[error("unsupported encryption type: {0}")]
     UnsupportedEtype(i32),
+
+    /// A KDC reply used an enctype outside the request's requested list.
+    #[error("KDC reply enctype {0} was not requested")]
+    EnctypeNotRequested(i32),
+
+    /// A KDC reply used an enctype outside the configured permitted list.
+    #[error("KDC reply enctype {0} is not permitted by configuration")]
+    EnctypeNotPermitted(i32),
 
     /// A key did not match the encrypted KDC reply data etype.
     #[error(
@@ -3353,6 +3363,7 @@ fn password_initial_as_rep_session(
     let Some((etype, _)) = as_rep_reply_key_info(response) else {
         return Ok(None);
     };
+    enforce_requested_enctypes(&request.message.0.req_body.etype, etype)?;
     let key_info = PreauthKeyInfo {
         etype,
         salt: None,
@@ -3446,6 +3457,7 @@ fn keytab_initial_as_rep_session(
     let Some((etype, kvno)) = as_rep_reply_key_info(response) else {
         return Ok(None);
     };
+    enforce_requested_enctypes(&request.message.0.req_body.etype, etype)?;
     let (reply_key, _) =
         select_keytab_reply_key_for_etype(keytab, client, kvno.unwrap_or_default(), etype)?;
     process_as_rep(request, response, &reply_key).map(Some)
@@ -3479,6 +3491,23 @@ fn initial_preauth_probe_options(mut options: AsReqOptions) -> AsReqOptions {
         });
     }
     options
+}
+
+fn enforce_requested_enctypes(requested: &[i32], etype: i32) -> Result<(), Error> {
+    if requested.contains(&etype) {
+        Ok(())
+    } else {
+        Err(Error::EnctypeNotRequested(etype))
+    }
+}
+
+/// Reject a reply enctype outside a non-empty operator allowlist.
+pub(crate) fn ensure_permitted_enctype(permitted: &[i32], etype: i32) -> Result<(), Error> {
+    if permitted.is_empty() || permitted.contains(&etype) {
+        Ok(())
+    } else {
+        Err(Error::EnctypeNotPermitted(etype))
+    }
 }
 
 fn as_rep_reply_key_info(response: &[u8]) -> Option<(i32, Option<u32>)> {
