@@ -6,7 +6,8 @@ use std::{
 use pretty_assertions::assert_eq;
 use rskrb5::ccache::{CCache, CacheName, Credential, Error, Principal};
 
-mod common;
+#[path = "support/env.rs"]
+mod env;
 
 const CCACHE_TEST: &str = concat!(
     "0504000c00010008000000060000000000000001000000010000000b544553542e474f4b524235000000097465737475",
@@ -80,11 +81,20 @@ fn saves_and_loads_ccache_file() {
 
 #[test]
 fn saves_and_loads_ccache_from_env() {
+    const TEST_PATH: &str = "saves_and_loads_ccache_from_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_file("save-load-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(name.as_ref()))]);
+        return;
+    }
     let bytes = decode_hex(CCACHE_TEST);
     let cache = CCache::parse(&bytes).expect("ccache fixture parses");
-    let path = temp_file("save-load-env");
-    let name = format!("FILE:{}", path.display());
-    let _env = common::EnvVarGuard::set_krb5ccname(&name);
+    let name = std::env::var("KRB5CCNAME").expect("the parent test sets KRB5CCNAME");
+    let path = PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5CCNAME names a FILE: path"),
+    );
 
     cache.save_to_env().expect("ccache saves to env name");
     let loaded = CCache::load_from_env().expect("ccache loads from env name");
@@ -95,8 +105,11 @@ fn saves_and_loads_ccache_from_env() {
 
 #[test]
 fn rejects_missing_ccache_env_name() {
-    let _env = common::EnvVarGuard::remove_krb5ccname();
-
+    const TEST_PATH: &str = "rejects_missing_ccache_env_name";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
+        return;
+    }
     assert!(matches!(
         CCache::load_from_env().expect_err("missing KRB5CCNAME rejected on load"),
         Error::DefaultCacheName(std::env::VarError::NotPresent)

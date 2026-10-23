@@ -1880,14 +1880,23 @@ fn negotiate_client_preserves_unsupported_cache_type_error() {
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_loads_from_ccache_env() {
+    const TEST_PATH: &str = "session_cache::tokio_client_loads_from_ccache_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_client_ccache_file("load-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(name.as_ref()))]);
+        return;
+    }
     let tgt = sample_tgt_session();
     let service_ticket = sample_service_ticket_session(&tgt);
     let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
     client.cache_service_ticket(service_ticket);
     let cache = client.to_ccache().expect("client exports ccache");
-    let path = temp_client_ccache_file("load-env");
-    let name = format!("FILE:{}", path.display());
-    let _env = common::EnvVarGuard::set_krb5ccname(&name);
+    let name = std::env::var("KRB5CCNAME").expect("the parent test sets KRB5CCNAME");
+    let path = std::path::PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5CCNAME names a FILE: path"),
+    );
     cache.save_name(&name).expect("ccache saves by name");
 
     let loaded = TokioClient::from_ccache_env(Config::new(), KdcProtocol::Tcp)
@@ -1958,8 +1967,12 @@ fn tokio_client_loads_from_config_default_ccache_name() {
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_uses_config_default_ccache_when_env_is_absent() {
-    let _env = common::EnvVarGuard::remove_krb5ccname();
-
+    const TEST_PATH: &str =
+        "session_cache::tokio_client_uses_config_default_ccache_when_env_is_absent";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
+        return;
+    }
     let tgt = sample_tgt_session();
     let service_ticket = sample_service_ticket_session(&tgt);
     let directory = temp_client_ccache_dir("default-ccache-env-fallback");
@@ -1993,11 +2006,22 @@ fn tokio_client_uses_config_default_ccache_when_env_is_absent() {
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prefers_env_default_ccache_over_config_name() {
+    const TEST_PATH: &str =
+        "session_cache::tokio_client_prefers_env_default_ccache_over_config_name";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_client_ccache_file("default-ccache-env-precedence");
+        let env_name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(env_name.as_ref()))]);
+        return;
+    }
     let tgt = sample_tgt_session();
     let service_ticket = sample_service_ticket_session(&tgt);
-    let path = temp_client_ccache_file("default-ccache-env-precedence");
-    let env_name = format!("FILE:{}", path.display());
-    let _env = common::EnvVarGuard::set_krb5ccname(&env_name);
+    let env_name = std::env::var("KRB5CCNAME").expect("the parent test sets KRB5CCNAME");
+    let path = std::path::PathBuf::from(
+        env_name
+            .strip_prefix("FILE:")
+            .expect("KRB5CCNAME names a FILE: path"),
+    );
     let config_default = "MEMORY:config-default".to_owned();
     let mut client = TokioClient::from_tgt_session(
         config_with_default_ccache_name(config_default.clone()),
@@ -2026,6 +2050,12 @@ fn tokio_client_prefers_env_default_ccache_over_config_name() {
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_rejects_missing_config_default_ccache_name() {
+    const TEST_PATH: &str =
+        "session_cache::tokio_client_rejects_missing_config_default_ccache_name";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
+        return;
+    }
     let error = TokioClient::from_default_ccache_name(Config::new(), KdcProtocol::Tcp)
         .expect_err("missing default ccache name is rejected");
 
@@ -2042,8 +2072,6 @@ fn tokio_client_rejects_missing_config_default_ccache_name() {
         .update_default_ccache_name()
         .expect_err("missing default ccache name is rejected");
     assert!(matches!(error, Error::NoDefaultCCacheName));
-
-    let _env = common::EnvVarGuard::remove_krb5ccname();
 
     let error = TokioClient::from_default_ccache(Config::new(), KdcProtocol::Tcp)
         .expect_err("missing default ccache name is rejected");
@@ -2084,11 +2112,20 @@ fn tokio_client_loads_client_keytab_from_config_name() {
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_keytab_from_env() {
+    const TEST_PATH: &str = "session_cache::tokio_client_loads_keytab_from_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_client_keytab_file("load-keytab-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+        return;
+    }
     let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-keytab-env");
-    let name = format!("FILE:{}", path.display());
+    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
+    let path = std::path::PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5_KTNAME names a FILE: path"),
+    );
     keytab.save_name(&name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&name);
 
     let client = TokioClient::with_keytab_from_env(
         Config::new(),
@@ -2106,11 +2143,21 @@ fn tokio_client_loads_keytab_from_env() {
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_client_keytab_from_env() {
+    const TEST_PATH: &str = "session_cache::tokio_client_loads_client_keytab_from_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_client_keytab_file("load-client-keytab-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", Some(name.as_ref()))]);
+        return;
+    }
     let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-client-keytab-env");
-    let name = format!("FILE:{}", path.display());
+    let name =
+        std::env::var("KRB5_CLIENT_KTNAME").expect("the parent test sets KRB5_CLIENT_KTNAME");
+    let path = std::path::PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5_CLIENT_KTNAME names a FILE: path"),
+    );
     keytab.save_name(&name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_client_ktname(&name);
 
     let client = TokioClient::with_client_keytab_from_env(
         Config::new(),
@@ -2128,8 +2175,12 @@ fn tokio_client_loads_client_keytab_from_env() {
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_default_client_keytab_when_env_is_absent() {
-    let _env = common::EnvVarGuard::remove_krb5_client_ktname();
-
+    const TEST_PATH: &str =
+        "session_cache::tokio_client_loads_default_client_keytab_when_env_is_absent";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
+        return;
+    }
     let keytab = keytab_with_reply_key(1);
     let path = temp_client_keytab_file("load-default-client-keytab");
     let name = format!("FILE:{}", path.display());
@@ -2151,11 +2202,26 @@ fn tokio_client_loads_default_client_keytab_when_env_is_absent() {
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_prefers_env_client_keytab_over_config_name() {
+    const TEST_PATH: &str =
+        "session_cache::tokio_client_prefers_env_client_keytab_over_config_name";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_client_keytab_file("load-env-client-keytab");
+        let env_name = format!("FILE:{}", path.display());
+        env::run_in_child(
+            TEST_PATH,
+            &[("KRB5_CLIENT_KTNAME", Some(env_name.as_ref()))],
+        );
+        return;
+    }
     let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-env-client-keytab");
-    let env_name = format!("FILE:{}", path.display());
+    let env_name =
+        std::env::var("KRB5_CLIENT_KTNAME").expect("the parent test sets KRB5_CLIENT_KTNAME");
+    let path = std::path::PathBuf::from(
+        env_name
+            .strip_prefix("FILE:")
+            .expect("KRB5_CLIENT_KTNAME names a FILE: path"),
+    );
     keytab.save_name(&env_name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_client_ktname(&env_name);
     let missing_config_name = format!(
         "FILE:{}",
         temp_client_keytab_file("missing-config-client-keytab").display()
@@ -2177,8 +2243,11 @@ fn tokio_client_prefers_env_client_keytab_over_config_name() {
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_reports_missing_client_keytab_env() {
-    let _env = common::EnvVarGuard::remove_krb5_client_ktname();
-
+    const TEST_PATH: &str = "session_cache::tokio_client_reports_missing_client_keytab_env";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
+        return;
+    }
     let error = TokioClient::with_client_keytab_from_env(
         Config::new(),
         KdcProtocol::Tcp,

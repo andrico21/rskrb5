@@ -16,7 +16,10 @@ use rskrb5::{
     },
 };
 
-mod common;
+#[path = "support/env.rs"]
+mod env;
+#[path = "support/pac_ad_win2k.rs"]
+mod pac_ad_win2k;
 
 const HTTP_KEYTAB: &str = concat!(
     "0502000000440002000b544553542e474f4b5242350004485454500010686f73742e746573742e676f6b",
@@ -160,11 +163,20 @@ fn validates_ap_req_from_keytab_name() {
 
 #[test]
 fn validates_ap_req_from_keytab_env() {
+    const TEST_PATH: &str = "validates_ap_req_from_keytab_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_service_keytab_file("validate-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+        return;
+    }
     let keytab = http_keytab();
-    let path = temp_service_keytab_file("validate-env");
-    let name = format!("FILE:{}", path.display());
+    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
+    let path = PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5_KTNAME names a FILE: path"),
+    );
     keytab.save_name(&name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&name);
     let mut validator = ServiceValidator::from_keytab_env()
         .expect("validator loads keytab from env")
         .with_now(timestamp(1_893_553_447));
@@ -202,8 +214,11 @@ fn validates_ap_req_from_default_keytab_name() {
 
 #[test]
 fn validates_ap_req_from_default_keytab_when_env_is_absent() {
-    let _env = common::EnvVarGuard::remove_krb5_ktname();
-
+    const TEST_PATH: &str = "validates_ap_req_from_default_keytab_when_env_is_absent";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+        return;
+    }
     let keytab = http_keytab();
     let path = temp_service_keytab_file("validate-default-env-fallback");
     let name = format!("FILE:{}", path.display());
@@ -225,11 +240,21 @@ fn validates_ap_req_from_default_keytab_when_env_is_absent() {
 
 #[test]
 fn validates_ap_req_prefers_env_keytab_over_config_default() {
+    const TEST_PATH: &str = "validates_ap_req_prefers_env_keytab_over_config_default";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_service_keytab_file("validate-env-precedence");
+        let env_name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(env_name.as_ref()))]);
+        return;
+    }
     let keytab = http_keytab();
-    let path = temp_service_keytab_file("validate-env-precedence");
-    let env_name = format!("FILE:{}", path.display());
+    let env_name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
+    let path = PathBuf::from(
+        env_name
+            .strip_prefix("FILE:")
+            .expect("KRB5_KTNAME names a FILE: path"),
+    );
     keytab.save_name(&env_name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&env_name);
     let missing_config_name = format!(
         "FILE:{}",
         temp_service_keytab_file("missing-config-default").display()
@@ -282,7 +307,7 @@ fn validates_ap_req_with_verified_ticket_pac() {
 fn rejects_ap_req_with_invalid_ticket_pac_checksum() {
     let keytab = syshttp_keytab();
     let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-    let mut pac_bytes = decode_hex(common::PAC_AD_WIN2K);
+    let mut pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
     let pac_header = pac::Pac::parse(&pac_bytes).expect("PAC header parses");
     let server_signature = pac_header
         .buffer(pac::INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
@@ -690,6 +715,11 @@ fn rejects_large_authenticator_clock_skew() {
 
 #[test]
 fn config_clockskew_bounds_authenticator_freshness() {
+    const TEST_PATH: &str = "config_clockskew_bounds_authenticator_freshness";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+        return;
+    }
     let keytab = http_keytab();
     let path = temp_service_keytab_file("config-clockskew");
     let name = format!("FILE:{}", path.display());
@@ -713,7 +743,6 @@ fn config_clockskew_bounds_authenticator_freshness() {
         .validate_ap_req(&decode_hex(VALID_AP_REQ))
         .expect("fresh authenticator stays accepted");
 
-    let _env = common::EnvVarGuard::remove_krb5_ktname();
     let mut default = ServiceValidator::from_default_keytab(&config)
         .expect("validator loads the default keytab")
         .with_now(timestamp(1_893_553_447 + 2));
@@ -786,7 +815,7 @@ fn alias_ap_req() -> Vec<u8> {
 }
 
 fn syshttp_keytab() -> Keytab {
-    Keytab::parse(&decode_hex(common::SYSHTTP_KEYTAB)).expect("sysHTTP keytab parses")
+    Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB)).expect("sysHTTP keytab parses")
 }
 
 fn config_with_default_keytab_name(keytab_name: &str) -> Config {
@@ -811,7 +840,7 @@ fn config_with_default_keytab_name_and_clockskew(keytab_name: &str, clockskew: &
 }
 
 fn ap_req_with_pac() -> Vec<u8> {
-    ap_req_with_pac_bytes(decode_hex(common::PAC_AD_WIN2K))
+    ap_req_with_pac_bytes(decode_hex(pac_ad_win2k::PAC_AD_WIN2K))
 }
 
 fn ap_req_with_pac_bytes(pac_bytes: Vec<u8>) -> Vec<u8> {

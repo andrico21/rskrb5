@@ -49,7 +49,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "tokio")]
 use tokio::net::TcpListener;
 
-mod common;
+#[cfg(feature = "tokio")]
+#[path = "support/env.rs"]
+mod env;
 
 const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
 const SESSION_KEY: &str = "8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07";

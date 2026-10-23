@@ -35,7 +35,9 @@ use tower_layer::Layer;
 #[cfg(feature = "tower")]
 use tower_service::Service;
 
-mod common;
+#[cfg(feature = "tower")]
+#[path = "support/env.rs"]
+mod env;
 
 const HTTP_KEYTAB: &str = concat!(
     "0502000000440002000b544553542e474f4b5242350004485454500010686f73742e746573742e676f6b",
@@ -880,10 +882,19 @@ fn tower_layer_loads_owned_keytab_name() {
 #[cfg(feature = "tower")]
 #[test]
 fn tower_service_loads_keytab_env() {
-    let path = temp_file("http-keytab-env");
-    let name = format!("FILE:{}", path.display());
+    const TEST_PATH: &str = "tower_service_loads_keytab_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_file("http-keytab-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+        return;
+    }
+    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
+    let path = std::path::PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5_KTNAME names a FILE: path"),
+    );
     keytab().save(&path).expect("keytab saves");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&name);
 
     let mut service = krb_http::NegotiateService::from_keytab_env(AssertAcceptedService)
         .expect("service loads keytab env")
@@ -906,10 +917,19 @@ fn tower_service_loads_keytab_env() {
 #[cfg(feature = "tower")]
 #[test]
 fn tower_layer_loads_keytab_env() {
-    let path = temp_file("http-layer-keytab-env");
-    let name = format!("FILE:{}", path.display());
+    const TEST_PATH: &str = "tower_layer_loads_keytab_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_file("http-layer-keytab-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+        return;
+    }
+    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
+    let path = std::path::PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5_KTNAME names a FILE: path"),
+    );
     keytab().save(&path).expect("keytab saves");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&name);
 
     let layer = krb_http::NegotiateLayer::from_keytab_env()
         .expect("layer loads keytab env")
@@ -984,8 +1004,11 @@ fn tower_layer_config_clockskew_rejects_stale_authenticator() {
 #[cfg(feature = "tower")]
 #[test]
 fn tower_layer_loads_default_keytab_when_env_is_absent() {
-    let _env = common::EnvVarGuard::remove_krb5_ktname();
-
+    const TEST_PATH: &str = "tower_layer_loads_default_keytab_when_env_is_absent";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+        return;
+    }
     let path = temp_file("http-default-keytab-env-fallback");
     let name = format!("FILE:{}", path.display());
     keytab().save(&path).expect("keytab saves");
@@ -1014,10 +1037,20 @@ fn tower_layer_loads_default_keytab_when_env_is_absent() {
 #[cfg(feature = "tower")]
 #[test]
 fn tower_service_prefers_env_keytab_over_config_default() {
-    let path = temp_file("http-env-keytab-precedence");
-    let env_name = format!("FILE:{}", path.display());
+    const TEST_PATH: &str = "tower_service_prefers_env_keytab_over_config_default";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_file("http-env-keytab-precedence");
+        let env_name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(env_name.as_ref()))]);
+        return;
+    }
+    let env_name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
+    let path = std::path::PathBuf::from(
+        env_name
+            .strip_prefix("FILE:")
+            .expect("KRB5_KTNAME names a FILE: path"),
+    );
     keytab().save(&path).expect("keytab saves");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&env_name);
     let missing_config_name = format!(
         "FILE:{}",
         temp_file("missing-http-config-default").display()

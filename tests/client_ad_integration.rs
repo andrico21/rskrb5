@@ -3,7 +3,7 @@
 use std::{
     env,
     error::Error,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fs,
     net::{TcpListener, TcpStream, ToSocketAddrs},
     path::PathBuf,
@@ -21,6 +21,9 @@ use rskrb5::{
     keytab::Keytab,
     service::ServiceValidator,
 };
+
+#[path = "support/env.rs"]
+mod child_env;
 
 const USER_REALM: &str = "USER.GOKRB5";
 const RESOURCE_REALM: &str = "RES.GOKRB5";
@@ -575,9 +578,26 @@ fn runtime() -> tokio::runtime::Runtime {
 
 #[test]
 fn strict_ad_gate_rejects_missing_testad() {
+    const TEST_PATH: &str = "strict_ad_gate_rejects_missing_testad";
+    if !child_env::in_child(TEST_PATH) {
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                ("TESTAD", None),
+                ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                ("TEST_AD_USER_KDC_ADDR", None),
+                ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                ("TEST_AD_USER_ADMIN_ADDR", None),
+                ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                ("TEST_AD_KDC_ADDR", None),
+                ("TEST_AD_RES_KDC_ADDR", None),
+                ("TEST_AD_ADMIN_ADDR", None),
+                ("TEST_AD_RES_ADMIN_ADDR", None),
+            ],
+        );
+        return;
+    }
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
 
     let error = ad_enabled().expect_err("strict AD gate rejects a TESTAD soft skip");
     assert!(
@@ -590,11 +610,29 @@ fn strict_ad_gate_rejects_missing_testad() {
 
 #[test]
 fn strict_ad_gate_rejects_malformed_user_kdc_endpoint() {
+    const TEST_PATH: &str = "strict_ad_gate_rejects_malformed_user_kdc_endpoint";
+    if !child_env::in_child(TEST_PATH) {
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                ("TESTAD", Some(OsStr::new("1"))),
+                ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                (
+                    "TEST_AD_USER_KDC_ADDR",
+                    Some(OsStr::new("127.0.0.1:not-a-port")),
+                ),
+                ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                ("TEST_AD_USER_ADMIN_ADDR", None),
+                ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                ("TEST_AD_KDC_ADDR", None),
+                ("TEST_AD_RES_KDC_ADDR", None),
+                ("TEST_AD_ADMIN_ADDR", None),
+                ("TEST_AD_RES_ADMIN_ADDR", None),
+            ],
+        );
+        return;
+    }
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let _testad = EnvOverride::set("TESTAD", "1");
-    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
-    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", "127.0.0.1:not-a-port");
 
     let error = ad_enabled().expect_err("strict AD gate rejects malformed endpoints");
     assert!(
@@ -605,15 +643,30 @@ fn strict_ad_gate_rejects_malformed_user_kdc_endpoint() {
 
 #[test]
 fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let listener = TcpListener::bind(("127.0.0.1", 0))?;
-    let endpoint = listener.local_addr()?.to_string();
-    drop(listener);
+    const TEST_PATH: &str = "strict_ad_gate_rejects_unreachable_user_kdc_endpoint";
+    if !child_env::in_child(TEST_PATH) {
+        let listener = TcpListener::bind(("127.0.0.1", 0))?;
+        let endpoint = listener.local_addr()?.to_string();
+        drop(listener);
 
-    let _testad = EnvOverride::set("TESTAD", "1");
-    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
-    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", endpoint.as_str());
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                ("TESTAD", Some(OsStr::new("1"))),
+                ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                ("TEST_AD_USER_KDC_ADDR", Some(OsStr::new(&endpoint))),
+                ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                ("TEST_AD_USER_ADMIN_ADDR", None),
+                ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                ("TEST_AD_KDC_ADDR", None),
+                ("TEST_AD_RES_KDC_ADDR", None),
+                ("TEST_AD_ADMIN_ADDR", None),
+                ("TEST_AD_RES_ADMIN_ADDR", None),
+            ],
+        );
+        return Ok(());
+    }
+    let _guard = AD_LOCK.lock().expect("AD integration test lock");
 
     let error = ad_enabled().expect_err("strict AD gate rejects unreachable endpoints");
     assert!(
@@ -626,12 +679,38 @@ fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn 
 
 #[test]
 fn ad_config_uses_endpoint_overrides_and_rc4_trust_options() -> Result<(), Box<dyn Error>> {
+    const TEST_PATH: &str = "ad_config_uses_endpoint_overrides_and_rc4_trust_options";
+    if !child_env::in_child(TEST_PATH) {
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                ("TESTAD", None),
+                ("TESTAD_REQUIRED", None),
+                (
+                    "TEST_AD_USER_KDC_ADDR",
+                    Some(OsStr::new("192.0.2.10:10088")),
+                ),
+                (
+                    "TEST_AD_RESOURCE_KDC_ADDR",
+                    Some(OsStr::new("192.0.2.11:10088")),
+                ),
+                (
+                    "TEST_AD_USER_ADMIN_ADDR",
+                    Some(OsStr::new("192.0.2.10:10464")),
+                ),
+                (
+                    "TEST_AD_RESOURCE_ADMIN_ADDR",
+                    Some(OsStr::new("192.0.2.11:10464")),
+                ),
+                ("TEST_AD_KDC_ADDR", None),
+                ("TEST_AD_RES_KDC_ADDR", None),
+                ("TEST_AD_ADMIN_ADDR", None),
+                ("TEST_AD_RES_ADMIN_ADDR", None),
+            ],
+        );
+        return Ok(());
+    }
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", "192.0.2.10:10088");
-    let _resource_kdc = EnvOverride::set("TEST_AD_RESOURCE_KDC_ADDR", "192.0.2.11:10088");
-    let _user_admin = EnvOverride::set("TEST_AD_USER_ADMIN_ADDR", "192.0.2.10:10464");
-    let _resource_admin = EnvOverride::set("TEST_AD_RESOURCE_ADMIN_ADDR", "192.0.2.11:10464");
 
     let config = ad_config(false)?;
     assert_eq!(
@@ -682,12 +761,25 @@ fn ad_config_uses_endpoint_overrides_and_rc4_trust_options() -> Result<(), Box<d
 
 #[test]
 fn ad_keytab_uses_path_override() -> Result<(), Box<dyn Error>> {
+    const TEST_PATH: &str = "ad_keytab_uses_path_override";
+    if !child_env::in_child(TEST_PATH) {
+        let path = temp_keytab_path("testuser1");
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                (TESTUSER1_KEYTAB.path_env, Some(path.as_os_str())),
+                (TESTUSER1_KEYTAB.hex_env, None),
+                (TESTUSER1_KEYTAB.base64_env, None),
+            ],
+        );
+        return Ok(());
+    }
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(TESTUSER1_KEYTAB);
     let bytes = decode_hex_value(KEYTAB_TESTUSER1_USER_GOKRB5)?;
-    let path = temp_keytab_path("testuser1");
+    let path = PathBuf::from(
+        env::var_os(TESTUSER1_KEYTAB.path_env).expect("the parent test sets the keytab path"),
+    );
     fs::write(&path, &bytes)?;
-    let _path_env = EnvOverride::set(TESTUSER1_KEYTAB.path_env, path.as_os_str());
 
     assert_eq!(testuser1_keytab()?, keytab(KEYTAB_TESTUSER1_USER_GOKRB5)?);
 
@@ -697,15 +789,25 @@ fn ad_keytab_uses_path_override() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn ad_keytab_uses_hex_override() -> Result<(), Box<dyn Error>> {
+    const TEST_PATH: &str = "ad_keytab_uses_hex_override";
+    if !child_env::in_child(TEST_PATH) {
+        let spaced_hex = KEYTAB_TESTUSER2_USER_GOKRB5
+            .as_bytes()
+            .chunks(64)
+            .map(|chunk| std::str::from_utf8(chunk).expect("fixture hex is utf8"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                (TESTUSER2_KEYTAB.path_env, None),
+                (TESTUSER2_KEYTAB.hex_env, Some(OsStr::new(&spaced_hex))),
+                (TESTUSER2_KEYTAB.base64_env, None),
+            ],
+        );
+        return Ok(());
+    }
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(TESTUSER2_KEYTAB);
-    let spaced_hex = KEYTAB_TESTUSER2_USER_GOKRB5
-        .as_bytes()
-        .chunks(64)
-        .map(|chunk| std::str::from_utf8(chunk).expect("fixture hex is utf8"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let _hex_env = EnvOverride::set(TESTUSER2_KEYTAB.hex_env, spaced_hex.as_str());
 
     assert_eq!(testuser2_keytab()?, keytab(KEYTAB_TESTUSER2_USER_GOKRB5)?);
 
@@ -717,11 +819,21 @@ fn ad_keytab_uses_hex_override() -> Result<(), Box<dyn Error>> {
 fn ad_keytab_uses_base64_override() -> Result<(), Box<dyn Error>> {
     use base64::Engine as _;
 
+    const TEST_PATH: &str = "ad_keytab_uses_base64_override";
+    if !child_env::in_child(TEST_PATH) {
+        let bytes = decode_hex_value(KEYTAB_SYSHTTP_RES_GOKRB5)?;
+        let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                (SYSHTTP_KEYTAB.path_env, None),
+                (SYSHTTP_KEYTAB.hex_env, None),
+                (SYSHTTP_KEYTAB.base64_env, Some(OsStr::new(&base64))),
+            ],
+        );
+        return Ok(());
+    }
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(SYSHTTP_KEYTAB);
-    let bytes = decode_hex_value(KEYTAB_SYSHTTP_RES_GOKRB5)?;
-    let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-    let _base64_env = EnvOverride::set(SYSHTTP_KEYTAB.base64_env, base64.as_str());
 
     assert_eq!(syshttp_keytab()?, keytab(KEYTAB_SYSHTTP_RES_GOKRB5)?);
 
@@ -730,43 +842,29 @@ fn ad_keytab_uses_base64_override() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn ad_keytab_path_override_takes_precedence_over_encoded_values() -> Result<(), Box<dyn Error>> {
+    const TEST_PATH: &str = "ad_keytab_path_override_takes_precedence_over_encoded_values";
+    if !child_env::in_child(TEST_PATH) {
+        let path = temp_keytab_path("testuser3");
+        child_env::run_in_child(
+            TEST_PATH,
+            &[
+                (TESTUSER3_KEYTAB.path_env, Some(path.as_os_str())),
+                (TESTUSER3_KEYTAB.hex_env, Some(OsStr::new("00"))),
+                (TESTUSER3_KEYTAB.base64_env, None),
+            ],
+        );
+        return Ok(());
+    }
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(TESTUSER3_KEYTAB);
-    let path = temp_keytab_path("testuser3");
+    let path = PathBuf::from(
+        env::var_os(TESTUSER3_KEYTAB.path_env).expect("the parent test sets the keytab path"),
+    );
     fs::write(&path, decode_hex_value(KEYTAB_TESTUSER3_USER_GOKRB5)?)?;
-    let _path_env = EnvOverride::set(TESTUSER3_KEYTAB.path_env, path.as_os_str());
-    let _hex_env = EnvOverride::set(TESTUSER3_KEYTAB.hex_env, "00");
 
     assert_eq!(testuser3_keytab()?, keytab(KEYTAB_TESTUSER3_USER_GOKRB5)?);
 
     let _ = fs::remove_file(path);
     Ok(())
-}
-
-fn clear_keytab_env(fixture: AdKeytabFixture) -> Vec<EnvOverride> {
-    vec![
-        EnvOverride::remove(fixture.path_env),
-        EnvOverride::remove(fixture.hex_env),
-        EnvOverride::remove(fixture.base64_env),
-    ]
-}
-
-fn clear_ad_env() -> Vec<EnvOverride> {
-    [
-        "TESTAD",
-        "TESTAD_REQUIRED",
-        "TEST_AD_USER_KDC_ADDR",
-        "TEST_AD_RESOURCE_KDC_ADDR",
-        "TEST_AD_USER_ADMIN_ADDR",
-        "TEST_AD_RESOURCE_ADMIN_ADDR",
-        "TEST_AD_KDC_ADDR",
-        "TEST_AD_RES_KDC_ADDR",
-        "TEST_AD_ADMIN_ADDR",
-        "TEST_AD_RES_ADMIN_ADDR",
-    ]
-    .into_iter()
-    .map(EnvOverride::remove)
-    .collect()
 }
 
 fn temp_keytab_path(label: &str) -> PathBuf {
@@ -778,41 +876,4 @@ fn temp_keytab_path(label: &str) -> PathBuf {
         "rskrb5-ad-{label}-{}-{nanos}.keytab",
         std::process::id()
     ))
-}
-
-struct EnvOverride {
-    key: &'static str,
-    previous: Option<OsString>,
-}
-
-impl EnvOverride {
-    fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
-        let previous = env::var_os(key);
-        // SAFETY: callers hold AD_LOCK while mutating and restoring AD test env vars.
-        unsafe {
-            env::set_var(key, value);
-        }
-        Self { key, previous }
-    }
-
-    fn remove(key: &'static str) -> Self {
-        let previous = env::var_os(key);
-        // SAFETY: callers hold AD_LOCK while mutating and restoring AD test env vars.
-        unsafe {
-            env::remove_var(key);
-        }
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvOverride {
-    fn drop(&mut self) {
-        // SAFETY: callers hold AD_LOCK while dropping guards created in these tests.
-        unsafe {
-            match &self.previous {
-                Some(value) => env::set_var(self.key, value),
-                None => env::remove_var(self.key),
-            }
-        }
-    }
 }

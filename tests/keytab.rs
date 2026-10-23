@@ -5,7 +5,8 @@ use std::{
 
 use rskrb5::keytab::{EncryptionKey, Entry, Error, Keytab, KeytabName, Principal};
 
-mod common;
+#[path = "support/env.rs"]
+mod env;
 
 const KEYTAB_TESTUSER1_TEST_GOKRB5: &str = "05020000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80100110010698c4df8e9f60e7eea5a21bf4526ad25000000010000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80100120020bbdc430aab7e2d4622a0b6951481453b0962e9db8e2f168942ad175cda6d9de9000000010000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80200110010698c4df8e9f60e7eea5a21bf4526ad25000000020000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80200120020bbdc430aab7e2d4622a0b6951481453b0962e9db8e2f168942ad175cda6d9de9000000020000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d801001300102eb8501967a7886e1f0c63ac9be8c4a0000000010000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d802001300102eb8501967a7886e1f0c63ac9be8c4a0000000020000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d801001400208ad66f209bb07daa186f8a229830f5ba06a3a2a33638f4ec66e1d29324e417ee000000010000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d802001400208ad66f209bb07daa186f8a229830f5ba06a3a2a33638f4ec66e1d29324e417ee00000002000000430001000b544553542e474f4b52423500097465737475736572310000000159beb1d801001000184580fb91760dabe6f808c22c26494f644cb35d61d32c79e300000001000000430001000b544553542e474f4b52423500097465737475736572310000000159beb1d802001000184580fb91760dabe6f808c22c26494f644cb35d61d32c79e3000000020000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80100170010084768c373663b3bef1f6385883cf7ff000000010000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80200170010084768c373663b3bef1f6385883cf7ff00000002";
 const KTUTIL_USER_KEYTAB: &str = "0502000000460001000b4558414d504c452e4f5247000475736572000000015e5e3d001f001200206e88eb2b3931ef17c92e780a4ee421f1411ff5b104e3f75b50dd13f9ed04f9c60000001f000000360001000b4558414d504c452e4f5247000475736572000000015e5e3d001f001100109bb7d5ba0f554412558441a31f2377120000001f000000360001000b4558414d504c452e4f5247000475736572000000015e5e3d001f00170010110d0c51e144d36fb7e4f9e012fbb8880000001f";
@@ -116,11 +117,20 @@ fn saves_and_loads_keytab_file() {
 
 #[test]
 fn saves_and_loads_keytab_from_env() {
+    const TEST_PATH: &str = "saves_and_loads_keytab_from_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_file("save-load-env");
+        let name = format!("FILE:{}", path.display());
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+        return;
+    }
     let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
     let keytab = Keytab::parse(&bytes).expect("keytab fixture parses");
-    let path = temp_file("save-load-env");
-    let name = format!("FILE:{}", path.display());
-    let _env = common::EnvVarGuard::set_krb5_ktname(&name);
+    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
+    let path = PathBuf::from(
+        name.strip_prefix("FILE:")
+            .expect("KRB5_KTNAME names a FILE: path"),
+    );
 
     keytab.save_to_env().expect("keytab saves to env name");
     let loaded = Keytab::load_from_env().expect("keytab loads from env name");
@@ -131,8 +141,11 @@ fn saves_and_loads_keytab_from_env() {
 
 #[test]
 fn rejects_missing_keytab_env_name() {
-    let _env = common::EnvVarGuard::remove_krb5_ktname();
-
+    const TEST_PATH: &str = "rejects_missing_keytab_env_name";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+        return;
+    }
     assert!(matches!(
         Keytab::load_from_env().expect_err("missing KRB5_KTNAME rejected on load"),
         Error::DefaultKeytabName(std::env::VarError::NotPresent)

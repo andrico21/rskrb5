@@ -6,7 +6,8 @@ use std::{
 use pretty_assertions::assert_eq;
 use rskrb5::config::{Config, Error, parse_duration};
 
-mod common;
+#[path = "support/env.rs"]
+mod env;
 
 const KRB5_CONF: &str = r#"[libdefaults]
   default_realm = TEST.GOKRB5
@@ -197,8 +198,19 @@ fn loads_config_path_list_in_order() {
 
 #[test]
 fn loads_config_path_list_from_env() {
-    let first = temp_file("load-env-first");
-    let second = temp_file("load-env-second");
+    const TEST_PATH: &str = "loads_config_path_list_from_env";
+    if !env::in_child(TEST_PATH) {
+        let paths =
+            std::env::join_paths([temp_file("load-env-first"), temp_file("load-env-second")])
+                .expect("config paths join");
+        env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(&paths))]);
+        return;
+    }
+    let paths = std::env::var_os("KRB5_CONFIG").expect("the parent test sets KRB5_CONFIG");
+    let [first, second]: [PathBuf; 2] = std::env::split_paths(&paths)
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("KRB5_CONFIG lists two paths");
     std::fs::write(
         &first,
         r#"
@@ -215,9 +227,6 @@ fn loads_config_path_list_from_env() {
 "#,
     )
     .expect("second config writes");
-    let paths =
-        std::env::join_paths([first.as_os_str(), second.as_os_str()]).expect("config paths join");
-    let _env = common::EnvVarGuard::set_krb5_config(&paths);
 
     let config = Config::load_from_env().expect("config loads from KRB5_CONFIG");
     let _ = std::fs::remove_file(&first);
@@ -228,7 +237,14 @@ fn loads_config_path_list_from_env() {
 
 #[test]
 fn load_default_prefers_krb5_config_env() {
-    let path = temp_file("load-default-env");
+    const TEST_PATH: &str = "load_default_prefers_krb5_config_env";
+    if !env::in_child(TEST_PATH) {
+        let path = temp_file("load-default-env");
+        env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(path.as_os_str()))]);
+        return;
+    }
+    let path =
+        PathBuf::from(std::env::var_os("KRB5_CONFIG").expect("the parent test sets KRB5_CONFIG"));
     std::fs::write(
         &path,
         r#"
@@ -237,7 +253,6 @@ fn load_default_prefers_krb5_config_env() {
 "#,
     )
     .expect("env config writes");
-    let _env = common::EnvVarGuard::set_krb5_config(&path);
 
     let config = Config::load_default().expect("default config loads from env");
     let fallback = Config::load_default_or_parse(
@@ -267,8 +282,11 @@ fn rejects_empty_config_path_list() {
 
 #[test]
 fn rejects_missing_config_env() {
-    let _env = common::EnvVarGuard::remove_krb5_config();
-
+    const TEST_PATH: &str = "rejects_missing_config_env";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", None)]);
+        return;
+    }
     assert!(matches!(
         Config::load_from_env().expect_err("missing KRB5_CONFIG rejected"),
         Error::DefaultConfigName

@@ -20,7 +20,10 @@ use rskrb5::{
     },
 };
 
-mod common;
+#[path = "support/pac_ad_win2k.rs"]
+mod pac_ad_win2k;
+#[path = "support/pac_trust.rs"]
+mod pac_trust;
 
 const CLIENT_CLAIMS_INFO_STR: &str = "01100800cccccccc000100000000000000000200d80000000400020000000000d8000000000000000000000000000000d800000001100800ccccccccc80000000000000000000200010000000400020000000000000000000000000001000000010000000100000008000200010000000c000200030003000100000010000200290000000000000029000000610064003a002f002f006500780074002f00730041004d004100630063006f0075006e0074004e0061006d0065003a0038003800640035006400390030003800350065006100350063003000630030000000000001000000140002000a000000000000000a00000074006500730074007500730065007200310000000000000000000000";
 const CLIENT_CLAIMS_INFO_INT: &str = "01100800cccccccce00000000000000000000200b80000000400020000000000b8000000000000000000000000000000b800000001100800cccccccca80000000000000000000200010000000400020000000000000000000000000001000000010000000100000008000200010000000c0002000100010001000000100002002a000000000000002a000000610064003a002f002f006500780074002f006d007300440053002d0053007500700070006f00720074006500640045003a0038003800640035006400650061003800660031006100660035006600310039000000010000001c0000000000000000000000";
@@ -37,7 +40,7 @@ const CLAIMS_ENTRY_ID_UINT64: &str = "ad://ext/objectClass:88d5de791e7b27e6";
 
 #[test]
 fn parses_gokrb5_pac_container_and_buffers() {
-    let bytes = decode_hex(common::PAC_AD_WIN2K);
+    let bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
     let pac = Pac::parse_and_process(&bytes).expect("PAC parses");
 
     assert_eq!(pac.c_buffers, 5);
@@ -57,7 +60,7 @@ fn parses_gokrb5_pac_container_and_buffers() {
 
 #[test]
 fn derives_ad_credentials_from_kerb_validation_info() {
-    let bytes = decode_hex(common::PAC_AD_WIN2K);
+    let bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
     assert!(
         Pac::parse(&bytes)
             .expect("raw PAC parses")
@@ -100,7 +103,7 @@ fn derives_ad_credentials_from_kerb_validation_info() {
 
 #[test]
 fn parses_signature_data_and_zeroes_checksum_bytes() {
-    let pac = Pac::parse_and_process(&decode_hex(common::PAC_AD_WIN2K)).expect("PAC parses");
+    let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC parses");
     let server = pac
         .server_checksum
         .as_ref()
@@ -145,7 +148,7 @@ fn parses_signature_data_and_zeroes_checksum_bytes() {
 
 #[test]
 fn parses_component_buffers_directly() {
-    let pac = Pac::parse(&decode_hex(common::PAC_AD_WIN2K)).expect("PAC header parses");
+    let pac = Pac::parse(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC header parses");
 
     let client_buffer = pac
         .buffer(INFO_TYPE_PAC_CLIENT_INFO)
@@ -452,8 +455,8 @@ fn parses_credential_data_directly() {
 
 #[test]
 fn verifies_pac_server_checksum_with_service_key() {
-    let pac = Pac::parse_and_process(&decode_hex(common::PAC_AD_WIN2K)).expect("PAC parses");
-    let keytab = Keytab::parse(&decode_hex(common::SYSHTTP_KEYTAB)).expect("keytab parses");
+    let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC parses");
+    let keytab = Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB)).expect("keytab parses");
     let (key, kvno) = keytab
         .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
         .expect("service key exists");
@@ -468,8 +471,9 @@ fn verifies_pac_server_checksum_with_service_key() {
 
 #[test]
 fn rejects_tampered_pac_server_checksum() {
-    let mut pac = Pac::parse_and_process(&decode_hex(common::PAC_AD_WIN2K)).expect("PAC parses");
-    let keytab = Keytab::parse(&decode_hex(common::SYSHTTP_KEYTAB)).expect("keytab parses");
+    let mut pac =
+        Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC parses");
+    let keytab = Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB)).expect("keytab parses");
     let (key, _) = keytab
         .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
         .expect("service key exists");
@@ -490,7 +494,7 @@ fn rejects_tampered_pac_server_checksum() {
 
 #[test]
 fn parses_domain_trust_validation_info_resource_groups() {
-    let kvi = KerbValidationInfo::parse(&decode_hex(common::PAC_KERB_VALIDATION_INFO_TRUST))
+    let kvi = KerbValidationInfo::parse(&decode_hex(pac_trust::PAC_KERB_VALIDATION_INFO_TRUST))
         .expect("trust KVI parses");
 
     assert_eq!(kvi.effective_name.value, "testuser1");
@@ -542,7 +546,7 @@ fn parses_domain_trust_validation_info_resource_groups() {
 
 #[test]
 fn extracts_pac_from_if_relevant_authorization_data() {
-    let pac_bytes = decode_hex(common::PAC_AD_WIN2K);
+    let pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
     let nested =
         rasn_kerberos::AuthorizationData::from(vec![rasn_kerberos::AuthorizationDataValue {
             r#type: pac::AD_WIN2K_PAC,
