@@ -19,12 +19,12 @@ name = "rskrb5"
 [features]
 default = ["spnego", "tokio", "serde"]
 evaluation = [
-    "spnego",
-    "dep:hex",
-    "dep:picky-asn1",
-    "dep:picky-asn1-der",
-    "dep:picky-krb",
-    "dep:serde",
+  "spnego",
+  "dep:hex",
+  "dep:picky-asn1",
+  "dep:picky-asn1-der",
+  "dep:picky-krb",
+  "dep:serde",
 ]
 messages = ["dep:chrono", "dep:rasn", "dep:rasn-kerberos"]
 spnego = ["messages", "dep:base64"]
@@ -36,12 +36,21 @@ serde = ["dep:serde", "dep:serde_json"]
 [dependencies]
 aes = "0.9.1"
 base64 = { version = "0.22", optional = true }
-chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
-compcol = { version = "0.6.0", default-features = false, features = ["lznt1", "xpress", "xpress_huffman"] }
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+], optional = true }
+compcol = { version = "0.6.0", default-features = false, features = [
+  "lznt1",
+  "xpress",
+  "xpress_huffman",
+] }
 des = "0.9.0"
 hex = { version = "0.4", optional = true }
 getrandom = { version = "0.3", features = ["std"] }
-hickory-resolver = { version = "0.26.1", default-features = false, features = ["system-config", "tokio"], optional = true }
+hickory-resolver = { version = "0.26.1", default-features = false, features = [
+  "system-config",
+  "tokio",
+], optional = true }
 http_types = { package = "http", version = "1", optional = true }
 hmac = "0.13.0"
 md-5 = "0.11.0"
@@ -58,10 +67,21 @@ serde_json = { version = "1", optional = true }
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 thiserror = "2"
-tokio = { version = "1.47", features = ["net", "io-util", "time", "rt", "sync"], optional = true }
+tokio = { version = "1.47", features = [
+  "net",
+  "io-util",
+  "time",
+  "rt",
+  "sync",
+], optional = true }
 tower_layer = { package = "tower-layer", version = "0.3", optional = true }
 tower_service = { package = "tower-service", version = "0.3", optional = true }
 zeroize = { version = "1", features = ["derive"] }
+
+# `md-5` is imported under its library name `md5` (`use md5::Md5;` in
+# src/crypto.rs), which cargo-machete's name-based scan does not match.
+[package.metadata.cargo-machete]
+ignored = ["md-5"]
 
 [[bin]]
 name = "rskrb5-compat-report"
@@ -69,11 +89,19 @@ path = "src/bin/rskrb5-compat-report.rs"
 required-features = ["evaluation"]
 
 [dev-dependencies]
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "tokio",
+] }
 hex = "0.4"
 pretty_assertions = "1.4"
 proptest = "1.12"
-tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread", "test-util"] }
+tokio = { version = "1.47", features = [
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "test-util",
+] }
 toml = "0.9"
 
 [[example]]

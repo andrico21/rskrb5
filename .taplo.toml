@@ -1,0 +1,19 @@
+# taplo configuration
+# https://taplo.tamasfe.dev/configuration/file.html
+#
+# Scopes taplo's recursive file discovery to source-tracked TOML so
+# `taplo fmt --check` / `taplo lint` ignore build artifacts and vendored
+# package snapshots that live under `target/`.
+
+include = ["**/*.toml"]
+exclude = [
+  "target/**",
+  "vendor/**",
+  ".git/**",
+  # cargo-vet owns and regenerates these; formatting them would churn
+  # against the tool's own output style.
+  "supply-chain/**",
+  # Upstream-origin data file (present at 6f4abc9); reformatting it would
+  # rewrite upstream lines for no behavioural change.
+  "docs/gokrb5-parity.toml",
+]

@@ -1,0 +1,8 @@
+# Every unavoidable duplicate, mirrored in deny.toml `[bans] skip`; each
+# chain was reported by `cargo tree -i <crate>@<version> -e normal --all-features`.
+allowed-duplicate-crates = [
+  "base64",    # =0.22.1: rskrb5-patched direct dependency (spnego feature); 0.23.1 via picky-krb 0.12.3 -> picky-asn1-x509 0.15.5 (evaluation feature)
+  "getrandom", # =0.3.4: rskrb5-patched direct dependency; 0.4.3 via rand 0.10.3 (hickory 0.26.3, picky-krb 0.12.3) and uuid 1.29.0
+  "r-efi",     # =5.3.0: getrandom 0.3.4 -> rskrb5-patched (UEFI target only); 6.0.0 via getrandom 0.4.3
+  "syn",       # =2.0.119: rasn-derive / rasn-derive-impl 0.28.15, snafu-derive 0.8.9 (rasn 0.28.15) and zeroize_derive 1.5.0; 3.0.9 elsewhere
+]
