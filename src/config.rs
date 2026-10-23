@@ -312,10 +312,18 @@ pub struct LibDefaults {
     pub permitted_enctype_ids: Vec<i32>,
     /// Whether `[libdefaults] permitted_enctypes` was explicitly configured.
     ///
-    /// The seeded default name list is gokrb5-derived and narrower than MIT's
-    /// default (it has no SHA2 enctypes), so the policy is only enforced when
-    /// the operator set it explicitly.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    /// Parsing a `[libdefaults] permitted_enctypes` line sets this flag. The
+    /// seeded default name list is gokrb5-derived and narrower than MIT's
+    /// default (it has no SHA2 enctypes), so the allowlist is only enforced
+    /// when this flag is set.
+    ///
+    /// The flag round-trips through serde. Serialized `LibDefaults` that lack
+    /// this field deserialize it as `false`.
+    ///
+    /// Code that builds `LibDefaults` programmatically (a struct literal or
+    /// `Default`) and wants the allowlist enforced must set this flag to
+    /// `true` together with `permitted_enctypes` / `permitted_enctype_ids`.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: bool,
     /// Preferred preauthentication type IDs.
     pub preferred_preauth_types: Vec<i32>,

@@ -594,6 +594,66 @@ fn config_json_matches_gokrb5_shape() {
     );
 }
 
+#[cfg(feature = "serde")]
+#[test]
+fn permitted_enctypes_explicit_survives_a_serde_round_trip() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect("config parses");
+    assert!(config.libdefaults.permitted_enctypes_explicit);
+
+    let json = serde_json::to_string(&config.libdefaults).expect("libdefaults serialize");
+    let decoded: rskrb5::config::LibDefaults =
+        serde_json::from_str(&json).expect("libdefaults deserialize");
+
+    assert!(decoded.permitted_enctypes_explicit);
+    assert_eq!(decoded, config.libdefaults);
+    #[cfg(feature = "messages")]
+    assert_eq!(encoded_as_req_etypes(&decoded), vec![18]);
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn implicit_permitted_enctypes_round_trip_stays_implicit() {
+    let config = Config::parse(KRB5_CONF).expect("config parses");
+    assert!(!config.libdefaults.permitted_enctypes_explicit);
+
+    let json = serde_json::to_string(&config.libdefaults).expect("libdefaults serialize");
+    let decoded: rskrb5::config::LibDefaults =
+        serde_json::from_str(&json).expect("libdefaults deserialize");
+
+    assert!(!decoded.permitted_enctypes_explicit);
+    assert_eq!(decoded, config.libdefaults);
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn libdefaults_json_without_the_explicit_field_deserializes_as_implicit() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect("config parses");
+    let mut value = serde_json::to_value(&config.libdefaults).expect("libdefaults serialize");
+    let removed = value
+        .as_object_mut()
+        .expect("libdefaults serialize as an object")
+        .remove("permitted_enctypes_explicit");
+    assert_eq!(removed, Some(serde_json::Value::Bool(true)));
+
+    let decoded: rskrb5::config::LibDefaults =
+        serde_json::from_value(value).expect("libdefaults deserialize");
+
+    assert!(!decoded.permitted_enctypes_explicit);
+    assert_eq!(decoded.permitted_enctype_ids, vec![18]);
+}
+
 #[test]
 fn rejects_v4_realm_directives() {
     let err = Config::parse(
@@ -623,4 +683,20 @@ fn temp_file(name: &str) -> PathBuf {
         "rskrb5-config-{name}-{}-{nanos}",
         std::process::id()
     ))
+}
+
+#[cfg(feature = "messages")]
+fn encoded_as_req_etypes(defaults: &rskrb5::config::LibDefaults) -> Vec<i32> {
+    let options = rskrb5::client::AsReqOptions::from_libdefaults(
+        UNIX_EPOCH + Duration::from_secs(1_893_553_447),
+        0x1122_3344,
+        defaults,
+    );
+    let request = rskrb5::client::build_tgt_as_req(
+        rskrb5::Principal::user("TEST.GOKRB5", "testuser1"),
+        options,
+    )
+    .expect("AS-REQ builds");
+    let decoded: rasn_kerberos::AsReq = rasn::der::decode(&request.der).expect("AS-REQ decodes");
+    decoded.0.req_body.etype
 }
