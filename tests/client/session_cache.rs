@@ -609,47 +609,38 @@ fn tokio_client_auto_renewal_handle_aborts() {
     });
 }
 
-#[cfg(all(feature = "tokio", target_os = "linux"))]
+#[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_auto_renewal_paces_cache_only_nonrenewable_tgt() {
-    runtime().block_on(async {
-        // Due (55 min old, 5 min left) but not renewable, and cache-only: the
-        // refresh is a successful no-op.
-        let mut tgt = current_tgt_session(55, 5);
-        tgt.renew_till = None;
-        let client = std::sync::Arc::new(tokio::sync::Mutex::new(TokioClient::from_tgt_session(
-            Config::new(),
-            KdcProtocol::Tcp,
-            tgt,
-        )));
-        let renewal = TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(50));
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .expect("paused runtime");
+        runtime.block_on(async move {
+            // Due (55 min old, 5 min left) but not renewable, and cache-only:
+            // the refresh is a successful no-op that must be paced.
+            let mut tgt = current_tgt_session(55, 5);
+            tgt.renew_till = None;
+            let client = std::sync::Arc::new(tokio::sync::Mutex::new(
+                TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt),
+            ));
+            let renewal =
+                TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(50));
 
-        let before = thread_utime_ticks();
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let after = thread_utime_ticks();
-        renewal.abort();
-
-        let ticks = after.saturating_sub(before);
-        assert!(
-            ticks < 25,
-            "auto-renewal spun without pacing: {ticks} CPU ticks in 500 ms"
-        );
+            // With auto-advanced paused time, a paced loop lets this sleep
+            // complete; a spinning loop keeps the runtime busy instead.
+            tokio::time::sleep(Duration::from_secs(600)).await;
+            renewal.abort();
+            done.send(()).expect("pacing result reported");
+        });
     });
-}
 
-#[cfg(all(feature = "tokio", target_os = "linux"))]
-fn thread_utime_ticks() -> u64 {
-    // The test runtime is current-thread and the spawned renewal task runs on
-    // this thread, so measure this thread's CPU time: the harness executes
-    // other tests in parallel threads of the same process.
-    let stat = std::fs::read_to_string("/proc/thread-self/stat").expect("thread stat reads");
-    let after_comm = stat
-        .rsplit_once(')')
-        .expect("stat contains the comm field")
-        .1;
-    let fields: Vec<&str> = after_comm.split_whitespace().collect();
-    // Field 14 (utime) is index 11 after the `) <state>` boundary.
-    fields[11].parse().expect("utime parses")
+    finished
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the auto-renewal loop paces instead of spinning");
 }
 
 #[cfg(feature = "tokio")]

@@ -810,19 +810,15 @@ impl TokioClient {
                 if client.credentials.is_none() && client.tgt.is_none() {
                     return;
                 }
-                // A due TGT that cannot make progress is reported back as the
-                // unchanged session; pace that case too instead of spinning
-                // for the rest of the refresh band.
-                let before = client
-                    .tgt
-                    .as_ref()
-                    .map(|tgt| (tgt.ticket.clone(), tgt.session_key.clone()));
+                // A refresh that leaves the TGT due made no progress (for
+                // example a cache-only, non-renewable ticket); pace that case
+                // too instead of spinning for the rest of the refresh band.
                 let refreshed = client.refresh_tgt_if_needed().await.map(|_| ());
-                let after = client
+                let still_due = client
                     .tgt
                     .as_ref()
-                    .map(|tgt| (tgt.ticket.clone(), tgt.session_key.clone()));
-                if refreshed.is_err() || after == before {
+                    .is_none_or(|tgt| session_refresh_due_at(tgt, SystemTime::now()));
+                if refreshed.is_err() || still_due {
                     drop(client);
                     tokio::time::sleep(retry_delay).await;
                 }
