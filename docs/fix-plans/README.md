@@ -24,7 +24,7 @@ refreshes the lockfile for the next fork release.
 
 | Plan | Problem (one line) | Status |
 |---|---|---|
-| [medium-ccache-count-unvalidated.md](medium-ccache-count-unvalidated.md) | Ccache record counts reserve memory from an unvalidated 32-bit count; a 16-byte cache aborts the process on allocator refusal | implemented — `fix/ccache-count-bounds` (`9701864`) |
+| [medium-ccache-count-unvalidated.md](medium-ccache-count-unvalidated.md) | Ccache record counts reserve memory from an unvalidated 32-bit count; a 16-byte cache aborts the process on allocator refusal | implemented — `fix/ccache-count-bounds` (`9701864`, + `a37a4d1`) |
 | [medium-kadmin-unauthenticated-krb-error-success.md](medium-kadmin-unauthenticated-krb-error-success.md) | An unsigned KRB-ERROR result code 0 is accepted as kpasswd success and replaces the stored password credential | implemented — `fix/kadmin-unsigned-success` (`a089831`) |
 | [medium-permitted-enctypes-unconsumed.md](medium-permitted-enctypes-unconsumed.md) | `[libdefaults] permitted_enctypes` is parsed but consumed nowhere; requests and reply acceptance ignore the operator allowlist | planned |
 | [medium-as-rep-enctype-downgrade.md](medium-as-rep-enctype-downgrade.md) | The initial AS-REP can select a reply/session enctype outside the caller's requested list (RC4 downgrade) | planned |
