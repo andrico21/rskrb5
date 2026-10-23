@@ -221,6 +221,26 @@ fn processes_as_rep_and_exports_ccache_credential() {
 }
 
 #[test]
+fn process_as_rep_rejects_session_key_outside_requested_enctypes() {
+    let request = build_tgt_as_req(
+        Principal::user("TEST.GOKRB5", "testuser1"),
+        AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![23]),
+    )
+    .expect("AS-REQ builds");
+    let reply_key = reply_key();
+    let response = synthetic_as_rep_with_reply_key(
+        &request,
+        request.nonce,
+        request.service.clone(),
+        &reply_key,
+    );
+
+    let error = process_as_rep(&request, &response, &reply_key)
+        .expect_err("a session key outside the requested list is rejected");
+    assert!(matches!(error, Error::EnctypeNotRequested(18)));
+}
+
+#[test]
 fn process_as_rep_validates_pa_req_enc_pa_rep_checksum() {
     let request = sample_request_with_pa_req_enc_pa_rep();
     let reply_key = reply_key();

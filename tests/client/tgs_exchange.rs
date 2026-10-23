@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn process_tgs_rep_rejects_session_key_outside_requested_enctypes() {
+    let tgt = sample_tgt_session();
+    let request = build_tgs_req_with_confounder(
+        &tgt,
+        sample_service_principal(),
+        TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![23]),
+        timestamp(1_893_553_451),
+        654_321,
+        &decode_hex(TGS_REQ_CONFOUNDER),
+    )
+    .expect("TGS-REQ builds");
+    let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+
+    let error = process_tgs_rep(&request, &response, &tgt.session_key)
+        .expect_err("a session key outside the requested list is rejected");
+    assert!(matches!(error, Error::EnctypeNotRequested(18)));
+}
+
+#[test]
 fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
     let tgt = sample_tgt_session();
     let service = sample_service_principal();
