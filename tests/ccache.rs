@@ -507,6 +507,57 @@ fn rejects_invalid_ccache_inputs() {
     ));
 }
 
+#[test]
+fn rejects_impossible_component_count() {
+    let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
+    bytes.extend_from_slice(&0i32.to_be_bytes()); // name type
+    bytes.extend_from_slice(&i32::MAX.to_be_bytes()); // component count
+    bytes.extend_from_slice(&0i32.to_be_bytes()); // realm length
+
+    assert!(matches!(
+        CCache::parse(&bytes).expect_err("impossible component count rejected"),
+        Error::Truncated { .. }
+    ));
+}
+
+#[test]
+fn rejects_impossible_address_count() {
+    let mut bytes = ccache_prefix_before_address_count();
+    bytes.extend_from_slice(&i32::MAX.to_be_bytes());
+
+    assert!(matches!(
+        CCache::parse(&bytes).expect_err("impossible address count rejected"),
+        Error::Truncated { .. }
+    ));
+}
+
+#[test]
+fn rejects_impossible_auth_data_count() {
+    let mut bytes = ccache_prefix_before_address_count();
+    bytes.extend_from_slice(&0i32.to_be_bytes()); // no addresses
+    bytes.extend_from_slice(&i32::MAX.to_be_bytes());
+
+    assert!(matches!(
+        CCache::parse(&bytes).expect_err("impossible auth-data count rejected"),
+        Error::Truncated { .. }
+    ));
+}
+
+/// A v4 cache prefix up to a credential's address count: empty header,
+/// empty default/client/server principals, no key, zero times and flags.
+fn ccache_prefix_before_address_count() -> Vec<u8> {
+    let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
+    bytes.extend_from_slice(&[0u8; 12]); // default principal
+    bytes.extend_from_slice(&[0u8; 12]); // client principal
+    bytes.extend_from_slice(&[0u8; 12]); // server principal
+    bytes.extend_from_slice(&[0, 0]); // key type
+    bytes.extend_from_slice(&[0u8; 4]); // key length
+    bytes.extend_from_slice(&[0u8; 16]); // times
+    bytes.push(0); // is_skey
+    bytes.extend_from_slice(&[0u8; 4]); // ticket flags
+    bytes
+}
+
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
