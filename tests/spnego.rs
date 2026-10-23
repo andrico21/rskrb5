@@ -3,14 +3,16 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use pretty_assertions::assert_eq;
-use rskrb5::client::{AsRepSession, Principal};
-use rskrb5::crypto::AesSha1Etype;
-use rskrb5::keytab::{EncryptionKey, Keytab};
-use rskrb5::service::{ApRepOptions, ServiceValidator};
-use rskrb5::spnego::{
-    self, CONTEXT_FLAG_CONF, CONTEXT_FLAG_INTEG, InitiatorContextOptions, Krb5MechToken,
-    Krb5TokenId, NegState, NegTokenInit, NegTokenResp, NegotiationToken, ObjectIdentifier,
-    SpnegoToken,
+use rskrb5::{
+    client::{AsRepSession, Principal},
+    crypto::AesSha1Etype,
+    keytab::{EncryptionKey, Keytab},
+    service::{ApRepOptions, ServiceValidator},
+    spnego::{
+        self, CONTEXT_FLAG_CONF, CONTEXT_FLAG_INTEG, InitiatorContextOptions, Krb5MechToken,
+        Krb5TokenId, NegState, NegTokenInit, NegTokenResp, NegotiationToken, ObjectIdentifier,
+        SpnegoToken,
+    },
 };
 
 const KRB5_TOKEN: &str = concat!(

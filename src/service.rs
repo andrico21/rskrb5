@@ -7,16 +7,20 @@
 //! builds and verifies AP-REP mutual-auth replies using the AP-REQ
 //! authenticator timestamp.
 
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use sha2::{Digest, Sha256};
 
-use crate::config::Config;
-use crate::keytab::{EncryptionKey, Keytab};
-use crate::pac::{self, Pac};
+use crate::{
+    config::Config,
+    keytab::{EncryptionKey, Keytab},
+    pac::{self, Pac},
+};
 
 const DEFAULT_MAX_CLOCK_SKEW: Duration = Duration::from_secs(5 * 60);
 const INVALID_TICKET_FLAG: usize = 7;

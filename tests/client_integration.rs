@@ -1,24 +1,28 @@
 #![cfg(feature = "tokio")]
 
-use std::error::Error;
-use std::fs;
-use std::io::{Read, Write};
-use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use rskrb5::ccache::CCache;
-use rskrb5::client::{
-    AsReqOptions, Error as ClientError, KdcProtocol, PreauthKeyInfo, Principal, TgsReqOptions,
-    TokioClient, TokioKdcTransport, build_tgs_req, build_tgt_as_req, derive_password_reply_key,
-    pa_enc_timestamp_with_confounder,
+use std::{
+    error::Error,
+    fs,
+    io::{Read, Write},
+    net::{Ipv4Addr, TcpStream, ToSocketAddrs},
+    path::PathBuf,
+    process::{Command, Stdio},
+    sync::Mutex,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use rskrb5::config::Config;
-use rskrb5::crypto::{AesSha1Etype, Des3CbcSha1KdEtype};
-use rskrb5::kadmin::{KPASSWD_SUCCESS, ipv4_host_address};
-use rskrb5::keytab::{EncryptionKey, Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal};
+
+use rskrb5::{
+    ccache::CCache,
+    client::{
+        AsReqOptions, Error as ClientError, KdcProtocol, PreauthKeyInfo, Principal, TgsReqOptions,
+        TokioClient, TokioKdcTransport, build_tgs_req, build_tgt_as_req, derive_password_reply_key,
+        pa_enc_timestamp_with_confounder,
+    },
+    config::Config,
+    crypto::{AesSha1Etype, Des3CbcSha1KdEtype},
+    kadmin::{KPASSWD_SUCCESS, ipv4_host_address},
+    keytab::{EncryptionKey, Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
+};
 
 const REALM: &str = "TEST.GOKRB5";
 const USER: &str = "testuser1";
@@ -2308,8 +2312,9 @@ fn base64_encode(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod preflight_tests {
-    use super::*;
     use std::net::TcpListener;
+
+    use super::*;
 
     #[test]
     fn tcp_reachable_accepts_open_local_listener() {

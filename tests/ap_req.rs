@@ -2,14 +2,16 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::ap_req::{
-    AP_REQ_AUTHENTICATOR_USAGE, Error, KRB_AP_REQ_MSG_TYPE, TGS_REQ_AP_REQ_AUTHENTICATOR_USAGE,
-    ap_options_from_bits, ap_options_to_bits, authenticator_usage_for_ticket, build_ap_req,
-    build_ap_req_with_confounder, decode_ap_req, decode_authenticator,
-    decrypt_ap_req_authenticator, encode_ap_req, encode_build_ap_req_with_confounder,
+use rskrb5::{
+    ap_req::{
+        AP_REQ_AUTHENTICATOR_USAGE, Error, KRB_AP_REQ_MSG_TYPE, TGS_REQ_AP_REQ_AUTHENTICATOR_USAGE,
+        ap_options_from_bits, ap_options_to_bits, authenticator_usage_for_ticket, build_ap_req,
+        build_ap_req_with_confounder, decode_ap_req, decode_authenticator,
+        decrypt_ap_req_authenticator, encode_ap_req, encode_build_ap_req_with_confounder,
+    },
+    crypto::KerberosEtype,
+    keytab::EncryptionKey,
 };
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::keytab::EncryptionKey;
 
 const MARSHALLED_AP_REQ: &str = concat!(
     "6E819D30819AA003020105A10302010EA207030500FEDCBA98A35E615C",

@@ -2,16 +2,18 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::kdc_rep::{
-    AS_REP_ENCPART_USAGE, Error, KRB_AS_REP_MSG_TYPE, KRB_TGS_REP_MSG_TYPE,
-    TGS_REP_ENCPART_SESSION_KEY_USAGE, decode_as_rep, decode_enc_kdc_rep_part, decode_tgs_rep,
-    decrypt_as_rep_enc_part, decrypt_tgs_rep_enc_part, encode_as_rep, encode_enc_as_rep_part,
-    encode_enc_tgs_rep_part, encode_tgs_rep, encrypt_as_rep_enc_part,
-    encrypt_as_rep_enc_part_with_confounder, encrypt_tgs_rep_enc_part,
-    encrypt_tgs_rep_enc_part_with_confounder,
+use rskrb5::{
+    crypto::KerberosEtype,
+    kdc_rep::{
+        AS_REP_ENCPART_USAGE, Error, KRB_AS_REP_MSG_TYPE, KRB_TGS_REP_MSG_TYPE,
+        TGS_REP_ENCPART_SESSION_KEY_USAGE, decode_as_rep, decode_enc_kdc_rep_part, decode_tgs_rep,
+        decrypt_as_rep_enc_part, decrypt_tgs_rep_enc_part, encode_as_rep, encode_enc_as_rep_part,
+        encode_enc_tgs_rep_part, encode_tgs_rep, encrypt_as_rep_enc_part,
+        encrypt_as_rep_enc_part_with_confounder, encrypt_tgs_rep_enc_part,
+        encrypt_tgs_rep_enc_part_with_confounder,
+    },
+    keytab::EncryptionKey,
 };
-use rskrb5::keytab::EncryptionKey;
 
 const MARSHALLED_AS_REP: &str = concat!(
     "6B81EA3081E7A003020105A10302010BA22630243010A10302010DA209",

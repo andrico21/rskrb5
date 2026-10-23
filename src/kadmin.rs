@@ -1,13 +1,12 @@
 //! RFC 3244 password-change protocol helpers.
 
-use crate::crypto::KerberosEtype;
-use crate::keytab::EncryptionKey;
 use rasn::prelude::*;
 
 pub use crate::krb_priv::{
     EncKrbPrivPartOptions, KRB_PRIV_ENCPART_USAGE, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO, host_address,
     ipv4_host_address, ipv6_host_address,
 };
+use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
 /// Password-change request protocol version (`0xff80`).
 pub const CHANGE_PASSWORD_REQUEST_VERSION: u16 = 0xff80;

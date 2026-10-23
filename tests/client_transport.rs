@@ -1,20 +1,25 @@
 #![cfg(feature = "tokio")]
 
-use std::env;
-use std::error::Error;
-use std::time::{Duration, Instant, SystemTime};
+use std::{
+    env,
+    error::Error,
+    time::{Duration, Instant, SystemTime},
+};
 
-use rskrb5::client::{
-    AsReqOptions, Error as ClientError, KRB_ERR_RESPONSE_TOO_BIG, KdcEndpoint, KdcEndpointSource,
-    KdcProtocol, PA_ETYPE_INFO2, Principal, TokioKdcTransport, build_tgt_as_req,
+use rskrb5::{
+    client::{
+        AsReqOptions, Error as ClientError, KRB_ERR_RESPONSE_TOO_BIG, KdcEndpoint,
+        KdcEndpointSource, KdcProtocol, PA_ETYPE_INFO2, Principal, TokioKdcTransport,
+        build_tgt_as_req,
+    },
+    config::Config,
+    kadmin::{Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS, Request as KpasswdRequest},
+    keytab::EncryptionKey,
 };
-use rskrb5::config::Config;
-use rskrb5::kadmin::{
-    Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS, Request as KpasswdRequest,
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream, UdpSocket},
 };
-use rskrb5::keytab::EncryptionKey;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
 const MARSHALLED_KPASSWD_REQ: &str = include_str!("fixtures/kpasswd-request.hex");
 const KPASSWD_HEADER_LEN: usize = 6;

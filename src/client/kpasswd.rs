@@ -2,22 +2,20 @@
 
 use std::time::{Duration, SystemTime};
 
-use crate::crypto::KerberosEtype;
-use crate::keytab::EncryptionKey;
+#[cfg(feature = "tokio")]
+use zeroize::Zeroizing;
 
 use super::{
     ApReqOptions, BuiltApReq, Error, TgsRepSession, ap_rep_error, build_ap_req_with_confounder,
     encryption_key_from_rasn, integer_to_u32, kerberos_time_from_system_time,
     system_time_from_kerberos_time,
 };
-
 #[cfg(feature = "tokio")]
 use super::{
     KRB_NT_PRINCIPAL, Principal, TokioClient, TokioClientCredentials, current_preauth_time,
     random_nonce,
 };
-#[cfg(feature = "tokio")]
-use zeroize::Zeroizing;
+use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
 /// Options for constructing a kpasswd request from a service ticket.
 #[derive(Clone, Debug, Eq, PartialEq)]

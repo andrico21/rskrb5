@@ -1,15 +1,19 @@
 #![cfg(feature = "messages")]
 
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use pretty_assertions::assert_eq;
-use rskrb5::config::Config;
-use rskrb5::crypto::AesSha1Etype;
-use rskrb5::keytab::{EncryptionKey, Keytab};
-use rskrb5::pac;
-use rskrb5::service::{
-    ApRepOptions, Error, Principal, ServiceValidator, SharedReplayCache, ValidatedApReq,
+use rskrb5::{
+    config::Config,
+    crypto::AesSha1Etype,
+    keytab::{EncryptionKey, Keytab},
+    pac,
+    service::{
+        ApRepOptions, Error, Principal, ServiceValidator, SharedReplayCache, ValidatedApReq,
+    },
 };
 
 mod common;

@@ -4,19 +4,6 @@
 //! middleware is available with the `tower` feature and validates service-side
 //! `Authorization: Negotiate ...` headers before forwarding requests.
 
-use crate::service::{ServiceValidator, VerifiedApRep};
-use crate::spnego::{self, AcceptedContext};
-use http_types::header::{AUTHORIZATION, HeaderValue, ToStrError, WWW_AUTHENTICATE};
-use http_types::{Request, Response, StatusCode};
-
-#[cfg(feature = "tokio")]
-use crate::client::{BlockingNegotiateClient, NegotiateClient, Principal, TokioClient};
-#[cfg(feature = "tower")]
-use crate::config::Config;
-#[cfg(feature = "tower")]
-use crate::keytab::Keytab;
-#[cfg(feature = "tower")]
-use crate::service::{ApRepOptions, HostAddress, SharedReplayCache};
 #[cfg(feature = "tower")]
 use std::borrow::Cow;
 #[cfg(any(feature = "tokio", feature = "tower"))]
@@ -27,10 +14,28 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 #[cfg(feature = "tower")]
 use std::time::{Duration, SystemTime};
+
+use http_types::{
+    Request, Response, StatusCode,
+    header::{AUTHORIZATION, HeaderValue, ToStrError, WWW_AUTHENTICATE},
+};
 #[cfg(feature = "tower")]
 use tower_layer::Layer;
 #[cfg(feature = "tower")]
 use tower_service::Service;
+
+#[cfg(feature = "tokio")]
+use crate::client::{BlockingNegotiateClient, NegotiateClient, Principal, TokioClient};
+#[cfg(feature = "tower")]
+use crate::config::Config;
+#[cfg(feature = "tower")]
+use crate::keytab::Keytab;
+#[cfg(feature = "tower")]
+use crate::service::{ApRepOptions, HostAddress, SharedReplayCache};
+use crate::{
+    service::{ServiceValidator, VerifiedApRep},
+    spnego::{self, AcceptedContext},
+};
 
 /// HTTP Negotiate adapter result.
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,7 +1,10 @@
+use std::{
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use pretty_assertions::assert_eq;
 use rskrb5::ccache::{CCache, CacheName, Credential, Error, Principal};
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 

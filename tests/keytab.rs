@@ -1,6 +1,9 @@
+use std::{
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use rskrb5::keytab::{EncryptionKey, Entry, Error, Keytab, KeytabName, Principal};
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 

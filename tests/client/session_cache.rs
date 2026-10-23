@@ -739,6 +739,7 @@ where
     F: Fn(rasn_kerberos::TgsReq, &[u8], usize) -> Vec<u8> + Send + 'static,
 {
     use std::sync::atomic::{AtomicUsize, Ordering};
+
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let as_requests = std::sync::Arc::new(AtomicUsize::new(0));

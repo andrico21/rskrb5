@@ -2,12 +2,14 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::keytab::EncryptionKey;
-use rskrb5::ticket::{
-    Error, KDC_REP_TICKET_USAGE, KRB5_TKT_VNO, build_ticket, build_ticket_with_confounder,
-    decode_enc_ticket_part, decode_ticket, decrypt_ticket_enc_part,
-    encode_build_ticket_with_confounder, encode_ticket,
+use rskrb5::{
+    crypto::KerberosEtype,
+    keytab::EncryptionKey,
+    ticket::{
+        Error, KDC_REP_TICKET_USAGE, KRB5_TKT_VNO, build_ticket, build_ticket_with_confounder,
+        decode_enc_ticket_part, decode_ticket, decrypt_ticket_enc_part,
+        encode_build_ticket_with_confounder, encode_ticket,
+    },
 };
 
 const MARSHALLED_TICKET: &str = concat!(

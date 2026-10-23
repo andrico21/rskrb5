@@ -3,19 +3,21 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use pretty_assertions::assert_eq;
-use rskrb5::crypto::{AesSha1Etype, KerberosEtype};
-use rskrb5::keytab::{EncryptionKey, Keytab};
-use rskrb5::pac::{
-    self, CHECKSUM_HMAC_MD5_UNSIGNED, CHECKSUM_HMAC_SHA1_96_AES256, CLAIM_TYPE_ID_INT64,
-    CLAIM_TYPE_ID_STRING, CLAIM_TYPE_ID_UINT64, CLAIMS_COMPRESSION_FORMAT_LZNT1,
-    CLAIMS_COMPRESSION_FORMAT_NONE, CLAIMS_COMPRESSION_FORMAT_XPRESS,
-    CLAIMS_COMPRESSION_FORMAT_XPRESS_HUFF, CLAIMS_SOURCE_TYPE_AD, ClaimValues, ClaimsInfo,
-    ClaimsSetMetadata, ClientInfo, CredentialData, CredentialsInfo, DeviceInfo,
-    INFO_TYPE_CREDENTIALS, INFO_TYPE_PAC_CLIENT_CLAIMS_INFO, INFO_TYPE_PAC_CLIENT_INFO,
-    INFO_TYPE_PAC_DEVICE_CLAIMS_INFO, INFO_TYPE_PAC_DEVICE_INFO, INFO_TYPE_PAC_KDC_SIGNATURE_DATA,
-    INFO_TYPE_PAC_SERVER_SIGNATURE_DATA, INFO_TYPE_S4U_DELEGATION_INFO, INFO_TYPE_UPN_DNS_INFO,
-    KerbValidationInfo, NtlmSupplementalCredential, Pac, S4UDelegationInfo, SignatureData,
-    UpnDnsInfo,
+use rskrb5::{
+    crypto::{AesSha1Etype, KerberosEtype},
+    keytab::{EncryptionKey, Keytab},
+    pac::{
+        self, CHECKSUM_HMAC_MD5_UNSIGNED, CHECKSUM_HMAC_SHA1_96_AES256, CLAIM_TYPE_ID_INT64,
+        CLAIM_TYPE_ID_STRING, CLAIM_TYPE_ID_UINT64, CLAIMS_COMPRESSION_FORMAT_LZNT1,
+        CLAIMS_COMPRESSION_FORMAT_NONE, CLAIMS_COMPRESSION_FORMAT_XPRESS,
+        CLAIMS_COMPRESSION_FORMAT_XPRESS_HUFF, CLAIMS_SOURCE_TYPE_AD, ClaimValues, ClaimsInfo,
+        ClaimsSetMetadata, ClientInfo, CredentialData, CredentialsInfo, DeviceInfo,
+        INFO_TYPE_CREDENTIALS, INFO_TYPE_PAC_CLIENT_CLAIMS_INFO, INFO_TYPE_PAC_CLIENT_INFO,
+        INFO_TYPE_PAC_DEVICE_CLAIMS_INFO, INFO_TYPE_PAC_DEVICE_INFO,
+        INFO_TYPE_PAC_KDC_SIGNATURE_DATA, INFO_TYPE_PAC_SERVER_SIGNATURE_DATA,
+        INFO_TYPE_S4U_DELEGATION_INFO, INFO_TYPE_UPN_DNS_INFO, KerbValidationInfo,
+        NtlmSupplementalCredential, Pac, S4UDelegationInfo, SignatureData, UpnDnsInfo,
+    },
 };
 
 mod common;

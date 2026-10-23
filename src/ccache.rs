@@ -5,10 +5,13 @@
 //! remain opaque DER bytes until the crypto and ASN.1 message layers are wired
 //! together.
 
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
+
 use crate::file_name;
-use std::fmt;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 const CCACHE_FIRST_BYTE: u8 = 5;
 const HEADER_FIELD_TAG_KDC_OFFSET: u16 = 1;

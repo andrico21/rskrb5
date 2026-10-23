@@ -3,12 +3,14 @@
 //! This module covers the MIT keytab file format surface needed before client
 //! and service flows can consume long-term keys.
 
-use crate::crypto::KerberosEtype;
-use crate::file_name;
-use std::fmt;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
-use std::time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH},
+};
+
+use crate::{crypto::KerberosEtype, file_name};
 
 const KEYTAB_FIRST_BYTE: u8 = 5;
 const KRB5_KTNAME_ENV: &str = "KRB5_KTNAME";

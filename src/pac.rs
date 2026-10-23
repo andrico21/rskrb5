@@ -4,23 +4,29 @@
 //! path: the PAC container, KERB_VALIDATION_INFO, client information,
 //! UPN/DNS information, PAC signatures, and AES server checksum verification.
 
-use std::fmt;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    fmt,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use crate::crypto::{self, KerberosEtype};
-use crate::keytab::EncryptionKey;
+use crate::{
+    crypto::{self, KerberosEtype},
+    keytab::EncryptionKey,
+};
 
 mod ndr;
 mod reader;
 
-use self::ndr::{
-    RpcUnicodeStringDescriptor, ensure_zero_trailing, read_counted_supplemental_credentials,
-    read_deferred_claims_arrays, read_deferred_domain_group_memberships,
-    read_deferred_group_memberships, read_deferred_rpc_unicode_strings, read_deferred_sid,
-    read_deferred_sid_and_attributes, read_deferred_u8_array, read_deferred_unicode_string,
-    read_ndr_u16, read_ndr_u32, read_ndr_wrapper,
+use self::{
+    ndr::{
+        RpcUnicodeStringDescriptor, ensure_zero_trailing, read_counted_supplemental_credentials,
+        read_deferred_claims_arrays, read_deferred_domain_group_memberships,
+        read_deferred_group_memberships, read_deferred_rpc_unicode_strings, read_deferred_sid,
+        read_deferred_sid_and_attributes, read_deferred_u8_array, read_deferred_unicode_string,
+        read_ndr_u16, read_ndr_u32, read_ndr_wrapper,
+    },
+    reader::Reader,
 };
-use self::reader::Reader;
 
 /// `AD-IF-RELEVANT` authorization-data type.
 pub const AD_IF_RELEVANT: i32 = 1;

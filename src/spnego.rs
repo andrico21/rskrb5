@@ -9,10 +9,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 
-use crate::client::{ApReqOptions, Principal, TgsRepSession, build_ap_req_with_confounder};
-use crate::crypto::KerberosEtype;
-use crate::keytab::EncryptionKey;
-use crate::service::{ApRepOptions, ServiceValidator, ValidatedApReq, VerifiedApRep};
+use crate::{
+    client::{ApReqOptions, Principal, TgsRepSession, build_ap_req_with_confounder},
+    crypto::KerberosEtype,
+    keytab::EncryptionKey,
+    service::{ApRepOptions, ServiceValidator, ValidatedApReq, VerifiedApRep},
+};
 
 mod der;
 mod oid;

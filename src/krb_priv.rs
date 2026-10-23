@@ -2,8 +2,7 @@
 
 use rasn::types::Integer;
 
-use crate::crypto::KerberosEtype;
-use crate::keytab::EncryptionKey;
+use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
 /// Kerberos protocol version used by KRB-PRIV.
 pub const KRB_PRIV_PVNO: i32 = 5;

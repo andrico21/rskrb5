@@ -2,13 +2,15 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::ap_rep::{
-    AP_REP_ENCPART_USAGE, Error, KRB_AP_REP_MSG_TYPE, build_ap_rep, build_ap_rep_with_confounder,
-    decode_ap_rep, decode_enc_ap_rep_part, decrypt_ap_rep_enc_part, encode_ap_rep,
-    encode_build_ap_rep_with_confounder,
+use rskrb5::{
+    ap_rep::{
+        AP_REP_ENCPART_USAGE, Error, KRB_AP_REP_MSG_TYPE, build_ap_rep,
+        build_ap_rep_with_confounder, decode_ap_rep, decode_enc_ap_rep_part,
+        decrypt_ap_rep_enc_part, encode_ap_rep, encode_build_ap_rep_with_confounder,
+    },
+    crypto::KerberosEtype,
+    keytab::EncryptionKey,
 };
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::keytab::EncryptionKey;
 
 const MARSHALLED_AP_REP: &str = concat!(
     "6F333031A003020105A10302010FA2253023A003020100A103020105A217",

@@ -1,8 +1,7 @@
-use super::reader::Reader;
 use super::{
     CLAIM_TYPE_ID_BOOLEAN, CLAIM_TYPE_ID_INT64, CLAIM_TYPE_ID_STRING, CLAIM_TYPE_ID_UINT64,
     ClaimEntry, ClaimValues, ClaimsArray, DomainGroupMembership, Error, GroupMembership,
-    RpcUnicodeString, SecpkgSupplementalCredential, Sid, SidAndAttributes,
+    RpcUnicodeString, SecpkgSupplementalCredential, Sid, SidAndAttributes, reader::Reader,
 };
 
 const MAX_REASONABLE_NDR_COUNT: u32 = 1_000_000;

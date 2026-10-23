@@ -1,20 +1,22 @@
 //! Tokio-backed KDC transport, endpoint discovery, and network exchanges.
 
-use std::env;
-use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
-use std::time::Duration;
+use std::{
+    env,
+    future::Future,
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
-use crate::config::Config;
-use crate::keytab::{EncryptionKey, Keytab};
 use hickory_resolver::{
     TokioResolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
     net::runtime::TokioRuntimeProvider,
     proto::rr::RData,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, ToSocketAddrs, UdpSocket};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpStream, ToSocketAddrs, UdpSocket},
+};
 
 use super::{
     AsRepSession, AsReqOptions, BuiltAsReq, BuiltTgsReq, Error, KRB_ERR_RESPONSE_TOO_BIG,
@@ -24,6 +26,10 @@ use super::{
     keytab_preauth_request, password_initial_as_rep_session, password_initial_as_req,
     password_preauth_request, principal_matches, process_as_rep, process_tgs_rep,
     process_tgs_rep_with_referral, service_realm, tgt_realm,
+};
+use crate::{
+    config::Config,
+    keytab::{EncryptionKey, Keytab},
 };
 
 #[cfg(feature = "tokio")]

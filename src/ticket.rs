@@ -1,7 +1,6 @@
 //! Ticket decoding and encrypted-part helpers.
 
-use crate::crypto::KerberosEtype;
-use crate::keytab::EncryptionKey;
+use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
 /// Kerberos ticket version.
 pub const KRB5_TKT_VNO: i32 = 5;

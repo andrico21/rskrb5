@@ -1,21 +1,26 @@
 #![cfg(feature = "tokio")]
 
-use std::env;
-use std::error::Error;
-use std::ffi::{OsStr, OsString};
-use std::fs;
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::path::PathBuf;
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use rskrb5::client::{
-    ApReqOptions, KdcProtocol, Principal, TgsRepSession, TokioClient, build_ap_req_with_confounder,
+use std::{
+    env,
+    error::Error,
+    ffi::{OsStr, OsString},
+    fs,
+    net::{TcpListener, TcpStream, ToSocketAddrs},
+    path::PathBuf,
+    sync::Mutex,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use rskrb5::config::Config;
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::keytab::Keytab;
-use rskrb5::service::ServiceValidator;
+
+use rskrb5::{
+    client::{
+        ApReqOptions, KdcProtocol, Principal, TgsRepSession, TokioClient,
+        build_ap_req_with_confounder,
+    },
+    config::Config,
+    crypto::KerberosEtype,
+    keytab::Keytab,
+    service::ServiceValidator,
+};
 
 const USER_REALM: &str = "USER.GOKRB5";
 const RESOURCE_REALM: &str = "RES.GOKRB5";

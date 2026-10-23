@@ -12,21 +12,24 @@ use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, UNIX_EPOCH};
 
-use http_types::header::{HeaderValue, WWW_AUTHENTICATE};
-use http_types::{Request, Response, StatusCode};
-use pretty_assertions::assert_eq;
-use rskrb5::http as krb_http;
-use rskrb5::keytab::{EncryptionKey, Keytab};
-use rskrb5::service::ServiceValidator;
-use rskrb5::spnego::{
-    self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit, SpnegoToken,
+use http_types::{
+    Request, Response, StatusCode,
+    header::{HeaderValue, WWW_AUTHENTICATE},
 };
-
-use rskrb5::client::{AsRepSession, Principal};
+use pretty_assertions::assert_eq;
 #[cfg(feature = "tokio")]
 use rskrb5::client::{BlockingNegotiateClient, KdcProtocol, NegotiateClient, TokioClient};
 #[cfg(any(feature = "tokio", feature = "tower"))]
 use rskrb5::config::Config;
+use rskrb5::{
+    client::{AsRepSession, Principal},
+    http as krb_http,
+    keytab::{EncryptionKey, Keytab},
+    service::ServiceValidator,
+    spnego::{
+        self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit, SpnegoToken,
+    },
+};
 #[cfg(feature = "tower")]
 use tower_layer::Layer;
 #[cfg(feature = "tower")]

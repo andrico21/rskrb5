@@ -4,11 +4,13 @@
 //! later client and service modules: libdefaults, realm host mappings, domain
 //! realm lookup, duration parsing, and configured KDC discovery.
 
-use std::collections::BTreeMap;
-use std::io::Read;
-use std::net::IpAddr;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::{
+    collections::BTreeMap,
+    io::Read,
+    net::IpAddr,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
 #[cfg(target_family = "unix")]
@@ -1768,12 +1770,15 @@ impl IncludeExpansion {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        path::{Path, PathBuf},
+        process::Command,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
     use super::{
         Config, Error, LibDefaults, MAX_INCLUDE_BYTES, MAX_INCLUDE_DEPTH, MAX_INCLUDE_FILES,
     };
-    use std::path::{Path, PathBuf};
-    use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     /// The marker the parent sets when it re-executes this binary as a probe, so
     /// a normal run leaves the probe test inert.

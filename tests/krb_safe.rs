@@ -2,10 +2,12 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::keytab::EncryptionKey;
-use rskrb5::krb_safe::{
-    Error, KRB_SAFE_CHECKSUM_USAGE, KRB_SAFE_MSG_TYPE, build_krb_safe, decode_krb_safe,
-    encode_krb_safe, krb_safe_checksum, verify_krb_safe_checksum,
+use rskrb5::{
+    keytab::EncryptionKey,
+    krb_safe::{
+        Error, KRB_SAFE_CHECKSUM_USAGE, KRB_SAFE_MSG_TYPE, build_krb_safe, decode_krb_safe,
+        encode_krb_safe, krb_safe_checksum, verify_krb_safe_checksum,
+    },
 };
 
 const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";

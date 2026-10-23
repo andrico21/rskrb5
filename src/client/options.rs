@@ -1,12 +1,10 @@
 use std::time::{Duration, SystemTime};
 
-use crate::config::LibDefaults;
-use crate::keytab::EncryptionKey;
-
 use super::{
     DEFAULT_TGS_ENCTYPES, DEFAULT_TICKET_LIFETIME, DEFAULT_TKT_ENCTYPES, KDC_OPTION_CANONICALIZE,
     renewal_kdc_option_bits,
 };
+use crate::{config::LibDefaults, keytab::EncryptionKey};
 
 /// Options for constructing an AS-REQ.
 #[derive(Clone, Debug, Eq, PartialEq)]

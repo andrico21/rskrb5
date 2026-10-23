@@ -1,9 +1,7 @@
 use std::fmt;
 
-use crate::config::Config;
-use crate::keytab::Keytab;
-
 use super::{Error, KdcProtocol, KpasswdRequestOptions, Principal, TokioClient};
+use crate::{config::Config, keytab::Keytab};
 
 /// Small client API for HTTP Negotiate/SPNEGO initiator headers.
 ///

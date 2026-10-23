@@ -2,17 +2,20 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::ap_req;
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::kadmin::{
-    ChangePasswdData, ChangePasswdMessageOptions, ChangePasswordResult, EncKrbPrivPartOptions,
-    Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO,
-    Reply, Request, build_change_password_message, build_change_password_message_with_confounders,
-    build_change_password_request, build_change_password_request_with_confounder, build_krb_priv,
-    build_krb_priv_with_confounder, decode_enc_krb_priv_part, decode_krb_priv,
-    decrypt_krb_priv_enc_part, encode_krb_priv, ipv4_host_address, ipv6_host_address,
+use rskrb5::{
+    ap_req,
+    crypto::KerberosEtype,
+    kadmin::{
+        ChangePasswdData, ChangePasswdMessageOptions, ChangePasswordResult, EncKrbPrivPartOptions,
+        Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO,
+        Reply, Request, build_change_password_message,
+        build_change_password_message_with_confounders, build_change_password_request,
+        build_change_password_request_with_confounder, build_krb_priv,
+        build_krb_priv_with_confounder, decode_enc_krb_priv_part, decode_krb_priv,
+        decrypt_krb_priv_enc_part, encode_krb_priv, ipv4_host_address, ipv6_host_address,
+    },
+    keytab::EncryptionKey,
 };
-use rskrb5::keytab::EncryptionKey;
 const CHG_PASSWD_MSG_AP_REQ_CONFOUNDER: &str = "00112233445566778899aabbccddeeff";
 const CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER: &str = "0a0b0c0d0e0f10111213141516171819";
 

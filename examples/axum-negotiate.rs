@@ -1,19 +1,24 @@
-use std::error::Error;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::{
+    error::Error,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
-use axum::Router;
-use axum::body::Body;
-use axum::extract::{Extension, State};
-use axum::http::header::WWW_AUTHENTICATE;
-use axum::http::{HeaderValue, Request};
-use axum::middleware::{self, Next};
-use axum::response::Response;
-use axum::routing::get;
-use rskrb5::http as krb_http;
-use rskrb5::keytab::Keytab;
-use rskrb5::service::{ApRepOptions, ServiceValidator};
-use rskrb5::spnego::AcceptedContext;
+use axum::{
+    Router,
+    body::Body,
+    extract::{Extension, State},
+    http::{HeaderValue, Request, header::WWW_AUTHENTICATE},
+    middleware::{self, Next},
+    response::Response,
+    routing::get,
+};
+use rskrb5::{
+    http as krb_http,
+    keytab::Keytab,
+    service::{ApRepOptions, ServiceValidator},
+    spnego::AcceptedContext,
+};
 
 #[derive(Clone)]
 struct AppState {

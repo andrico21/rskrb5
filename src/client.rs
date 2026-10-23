@@ -14,13 +14,16 @@ use std::fmt;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::ccache;
-#[cfg(feature = "tokio")]
-use crate::config::Config;
-use crate::crypto::{KerberosEtype, Rc4HmacEtype, kerb_checksum_hmac_md5};
-use crate::keytab::{EncryptionKey, Keytab};
 #[cfg(feature = "tokio")]
 use zeroize::Zeroizing;
+
+#[cfg(feature = "tokio")]
+use crate::config::Config;
+use crate::{
+    ccache,
+    crypto::{KerberosEtype, Rc4HmacEtype, kerb_checksum_hmac_md5},
+    keytab::{EncryptionKey, Keytab},
+};
 
 mod kpasswd;
 #[cfg(all(feature = "tokio", feature = "spnego"))]
@@ -29,16 +32,18 @@ mod options;
 mod principal;
 #[cfg(feature = "tokio")]
 mod transport;
-pub use self::kpasswd::{
-    BuiltKpasswdRequest, KpasswdRequestOptions, VerifiedKpasswdApRep, build_kpasswd_request,
-    build_kpasswd_request_with_confounders, verify_kpasswd_ap_rep,
-};
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 pub use self::negotiate::{BlockingNegotiateClient, NegotiateClient};
-pub use self::options::{ApReqOptions, AsReqOptions, TgsReqOptions};
-pub use self::principal::Principal;
 #[cfg(feature = "tokio")]
 pub use self::transport::{KdcEndpoint, KdcEndpointSource, KdcProtocol, TokioKdcTransport};
+pub use self::{
+    kpasswd::{
+        BuiltKpasswdRequest, KpasswdRequestOptions, VerifiedKpasswdApRep, build_kpasswd_request,
+        build_kpasswd_request_with_confounders, verify_kpasswd_ap_rep,
+    },
+    options::{ApReqOptions, AsReqOptions, TgsReqOptions},
+    principal::Principal,
+};
 
 const KRB5_PVNO: i32 = 5;
 const KRB_NT_PRINCIPAL: i32 = 1;

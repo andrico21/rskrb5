@@ -1,5 +1,7 @@
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use pretty_assertions::assert_eq;
 use rskrb5::config::{Config, Error, parse_duration};

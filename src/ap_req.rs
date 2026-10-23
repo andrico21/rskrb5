@@ -1,7 +1,6 @@
 //! AP-REQ decoding and authenticator helpers.
 
-use crate::crypto::KerberosEtype;
-use crate::keytab::EncryptionKey;
+use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
 const KRB5_PVNO: i32 = 5;
 
