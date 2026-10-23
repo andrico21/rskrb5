@@ -325,6 +325,7 @@ def collect(root: Path, target_dir: Path) -> list[Unit]:
         run_env = (
             dict(
                 env,
+                RUSTFLAGS=env.get("RUSTFLAGS", "") + " --cap-lints=warn",
                 RUSTDOCFLAGS="--cap-lints=warn --emit=dep-info,html-static-files,html-non-static-files",
             )
             if config.startswith("D")
