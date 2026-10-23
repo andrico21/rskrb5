@@ -62,6 +62,7 @@ fn as_req_etypes_are_intersected_with_permitted_enctypes() {
     let defaults = rskrb5::config::LibDefaults {
         default_tkt_enctype_ids: vec![18, 17, 23],
         permitted_enctype_ids: vec![18],
+        permitted_enctypes_explicit: true,
         ..Default::default()
     };
     let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
@@ -74,6 +75,7 @@ fn as_req_with_disjoint_permitted_enctypes_fails_closed() {
     let defaults = rskrb5::config::LibDefaults {
         default_tkt_enctype_ids: vec![18],
         permitted_enctype_ids: vec![17],
+        permitted_enctypes_explicit: true,
         ..Default::default()
     };
     let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
@@ -81,6 +83,54 @@ fn as_req_with_disjoint_permitted_enctypes_fails_closed() {
 
     let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
         .expect_err("an empty request list fails closed");
+    assert!(matches!(error, Error::EmptyEtypes));
+}
+
+#[test]
+fn sha2_request_list_survives_the_implicit_permitted_set() {
+    let defaults = rskrb5::config::LibDefaults {
+        default_tkt_enctype_ids: vec![19, 20],
+        permitted_enctype_ids: vec![18, 17, 23],
+        ..Default::default()
+    };
+    let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+
+    assert_eq!(options.etypes, vec![19, 20]);
+}
+
+#[test]
+fn config_with_sha2_tkt_enctypes_and_no_permitted_line_keeps_the_request_list() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha256-128
+"#,
+    )
+    .expect("config parses");
+    assert!(!config.libdefaults.permitted_enctypes_explicit);
+
+    let options =
+        AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &config.libdefaults);
+    assert_eq!(options.etypes, vec![19]);
+}
+
+#[test]
+fn explicit_permitted_enctypes_still_filters_sha2_requests() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha256-128
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect("config parses");
+    assert!(config.libdefaults.permitted_enctypes_explicit);
+
+    let options =
+        AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &config.libdefaults);
+    assert!(options.etypes.is_empty());
+    let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+        .expect_err("an explicitly narrowed allowlist fails closed");
     assert!(matches!(error, Error::EmptyEtypes));
 }
 

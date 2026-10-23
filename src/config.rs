@@ -310,6 +310,13 @@ pub struct LibDefaults {
     pub permitted_enctypes: Vec<String>,
     /// Permitted enctype IDs implemented by gokrb5-compatible crypto.
     pub permitted_enctype_ids: Vec<i32>,
+    /// Whether `[libdefaults] permitted_enctypes` was explicitly configured.
+    ///
+    /// The seeded default name list is gokrb5-derived and narrower than MIT's
+    /// default (it has no SHA2 enctypes), so the policy is only enforced when
+    /// the operator set it explicitly.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub permitted_enctypes_explicit: bool,
     /// Preferred preauthentication type IDs.
     pub preferred_preauth_types: Vec<i32>,
     /// Whether tickets should be proxiable.
@@ -367,6 +374,7 @@ impl LibDefaults {
             no_addresses: true,
             permitted_enctypes: default_enctypes,
             permitted_enctype_ids: Vec::new(),
+            permitted_enctypes_explicit: false,
             preferred_preauth_types: DEFAULT_PREAUTH_TYPES.to_vec(),
             proxiable: false,
             rdns: true,
@@ -424,7 +432,10 @@ impl LibDefaults {
                 }
                 "kdc_timesync" => self.kdc_time_sync = parse_i32(value, line, key)?,
                 "noaddresses" | "no_addresses" => self.no_addresses = parse_boolean(value)?,
-                "permitted_enctypes" => self.permitted_enctypes = parse_words(value),
+                "permitted_enctypes" => {
+                    self.permitted_enctypes = parse_words(value);
+                    self.permitted_enctypes_explicit = true;
+                }
                 "preferred_preauth_types" => {
                     self.preferred_preauth_types = parse_i32_list(value, line, key)?;
                 }

@@ -58,7 +58,7 @@ impl AsReqOptions {
         } else {
             defaults.default_tkt_enctype_ids.clone()
         };
-        if !defaults.permitted_enctype_ids.is_empty() {
+        if defaults.permitted_enctypes_explicit && !defaults.permitted_enctype_ids.is_empty() {
             options
                 .etypes
                 .retain(|etype| defaults.permitted_enctype_ids.contains(etype));
@@ -160,7 +160,7 @@ impl TgsReqOptions {
         } else {
             defaults.default_tgs_enctype_ids.clone()
         };
-        if !defaults.permitted_enctype_ids.is_empty() {
+        if defaults.permitted_enctypes_explicit && !defaults.permitted_enctype_ids.is_empty() {
             options
                 .etypes
                 .retain(|etype| defaults.permitted_enctype_ids.contains(etype));

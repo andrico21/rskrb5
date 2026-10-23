@@ -457,10 +457,12 @@ impl TokioKdcTransport {
             .send_to_realm(config, protocol, &request.client.realm, &request.der)
             .await?;
         let session = process_as_rep(request, &response, reply_key)?;
-        super::ensure_permitted_enctype(
-            &config.libdefaults.permitted_enctype_ids,
-            session.session_key.etype,
-        )?;
+        if config.libdefaults.permitted_enctypes_explicit {
+            super::ensure_permitted_enctype(
+                &config.libdefaults.permitted_enctype_ids,
+                session.session_key.etype,
+            )?;
+        }
         Ok(session)
     }
 
@@ -491,10 +493,12 @@ impl TokioKdcTransport {
             .send_to_realm(config, protocol, &request.kdc_realm, &request.der)
             .await?;
         let session = process_tgs_rep(request, &response, tgs_session_key)?;
-        super::ensure_permitted_enctype(
-            &config.libdefaults.permitted_enctype_ids,
-            session.session_key.etype,
-        )?;
+        if config.libdefaults.permitted_enctypes_explicit {
+            super::ensure_permitted_enctype(
+                &config.libdefaults.permitted_enctype_ids,
+                session.session_key.etype,
+            )?;
+        }
         Ok(session)
     }
 
