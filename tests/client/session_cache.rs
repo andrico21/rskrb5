@@ -677,6 +677,209 @@ fn tokio_client_refresh_due_uses_current_ticket_life() {
 }
 
 #[cfg(feature = "tokio")]
+fn spawn_counting_kdc(
+    listener: tokio::net::TcpListener,
+    client_principal: Principal,
+    password: Vec<u8>,
+) -> (
+    tokio::task::JoinHandle<()>,
+    std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    std::sync::Arc<std::sync::atomic::AtomicUsize>,
+) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let as_requests = std::sync::Arc::new(AtomicUsize::new(0));
+    let tgs_requests = std::sync::Arc::new(AtomicUsize::new(0));
+    let as_count = as_requests.clone();
+    let tgs_count = tgs_requests.clone();
+    let handle = tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut header = [0u8; 4];
+            if socket.read_exact(&mut header).await.is_err() {
+                continue;
+            }
+            let mut body = vec![0u8; u32::from_be_bytes(header) as usize];
+            if socket.read_exact(&mut body).await.is_err() {
+                continue;
+            }
+            let reply = match body.first().copied() {
+                // AS-REQ and TGS-REQ application tags.
+                Some(0x6a) => {
+                    as_count.fetch_add(1, Ordering::SeqCst);
+                    let decoded: rasn_kerberos::AsReq =
+                        rasn::der::decode(&body).expect("AS-REQ decodes");
+                    let built = built_request_from_der(decoded, &body);
+                    let reply_key = derive_password_reply_key(
+                        &client_principal,
+                        &password,
+                        &password_key_info(),
+                    )
+                    .expect("reply key derives");
+                    synthetic_as_rep_with_reply_key(
+                        &built,
+                        built.nonce,
+                        built.service.clone(),
+                        &reply_key,
+                    )
+                }
+                Some(0x6c) => {
+                    tgs_count.fetch_add(1, Ordering::SeqCst);
+                    krb_error_bytes(32)
+                }
+                _ => continue,
+            };
+            let mut response = Vec::with_capacity(4 + reply.len());
+            response.extend_from_slice(&(reply.len() as u32).to_be_bytes());
+            response.extend_from_slice(&reply);
+            let _ = socket.write_all(&response).await;
+        }
+    });
+    (handle, as_requests, tgs_requests)
+}
+
+#[cfg(feature = "tokio")]
+fn krb_error_bytes(error_code: i32) -> Vec<u8> {
+    let error = rasn_kerberos::KrbError {
+        pvno: rasn::types::Integer::from(5),
+        msg_type: rasn::types::Integer::from(30),
+        ctime: None,
+        cusec: None,
+        stime: kerberos_time(1_893_553_440),
+        susec: rasn::types::Integer::from(0),
+        error_code,
+        crealm: Some(realm("TEST.GOKRB5")),
+        cname: Some(rasn_principal(&Principal::user("TEST.GOKRB5", "testuser1"))),
+        realm: realm("TEST.GOKRB5"),
+        sname: rasn_principal(&Principal::tgt_service("TEST.GOKRB5")),
+        e_text: None,
+        e_data: None,
+    };
+    rasn::der::encode(&error).expect("KRB-ERROR encodes")
+}
+
+#[cfg(feature = "tokio")]
+fn expired_renewable_tgt() -> rskrb5::client::AsRepSession {
+    let now = SystemTime::now();
+    let mut tgt = current_tgt_session(120, 0);
+    tgt.renew_till = Some(
+        now.checked_add(Duration::from_secs(60 * 60))
+            .expect("renew till"),
+    );
+    tgt
+}
+
+#[cfg(feature = "tokio")]
+#[test]
+fn tokio_client_affirm_login_falls_back_to_as_for_expired_renewable_tgt() {
+    runtime().block_on(async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind kdc listener");
+        let addr = listener.local_addr().expect("kdc address");
+        let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
+        let (kdc, as_requests, tgs_requests) = spawn_counting_kdc(
+            listener,
+            client_principal.clone(),
+            TESTUSER_PASSWORD.to_vec(),
+        );
+
+        let mut client = TokioClient::from_tgt_session(
+            config_with_kdc_server(addr.to_string()),
+            KdcProtocol::Tcp,
+            expired_renewable_tgt(),
+        )
+        .with_password_credential(TESTUSER_PASSWORD);
+
+        client
+            .affirm_login()
+            .await
+            .expect("expired renewable TGT recovers through the AS exchange");
+        assert!(as_requests.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+        assert_eq!(
+            tgs_requests.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "an expired TGT with a credential goes straight to the AS exchange"
+        );
+        kdc.abort();
+    });
+}
+
+#[cfg(feature = "tokio")]
+#[test]
+fn tokio_client_refresh_tgt_if_needed_falls_back_to_as_for_expired_renewable_tgt() {
+    runtime().block_on(async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind kdc listener");
+        let addr = listener.local_addr().expect("kdc address");
+        let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
+        let (kdc, as_requests, tgs_requests) = spawn_counting_kdc(
+            listener,
+            client_principal.clone(),
+            TESTUSER_PASSWORD.to_vec(),
+        );
+
+        let mut client = TokioClient::from_tgt_session(
+            config_with_kdc_server(addr.to_string()),
+            KdcProtocol::Tcp,
+            expired_renewable_tgt(),
+        )
+        .with_password_credential(TESTUSER_PASSWORD);
+
+        client
+            .refresh_tgt_if_needed()
+            .await
+            .expect("refresh recovers through the AS exchange");
+        assert!(as_requests.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+        assert_eq!(
+            tgs_requests.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "expired renewable TGTs do not spend a doomed TGS renewal first"
+        );
+        kdc.abort();
+    });
+}
+
+#[cfg(feature = "tokio")]
+#[test]
+fn tokio_client_cache_only_expired_renewable_tgt_keeps_renewal_error() {
+    runtime().block_on(async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind kdc listener");
+        let addr = listener.local_addr().expect("kdc address");
+        let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
+        let (kdc, as_requests, tgs_requests) = spawn_counting_kdc(
+            listener,
+            client_principal.clone(),
+            TESTUSER_PASSWORD.to_vec(),
+        );
+
+        let mut client = TokioClient::from_tgt_session(
+            config_with_kdc_server(addr.to_string()),
+            KdcProtocol::Tcp,
+            expired_renewable_tgt(),
+        );
+
+        client
+            .affirm_login()
+            .await
+            .expect_err("cache-only client keeps the renewal error");
+        assert_eq!(as_requests.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(
+            tgs_requests.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "cache-only clients still attempt the in-grace renewal"
+        );
+        kdc.abort();
+    });
+}
+
+#[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_validates_configuration() {
     let mut dns_config = Config::new();

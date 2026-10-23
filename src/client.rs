@@ -1106,8 +1106,19 @@ impl TokioClient {
             if session_valid_at(&tgt, now) {
                 return Ok(self.tgt.as_ref().expect("TGT was just checked"));
             }
-            if session_renewable_at(&tgt, now) {
-                return self.renew_tgt().await;
+            let has_credentials = self.credentials.is_some();
+            let expired = now >= tgt.end_time;
+            // A conforming KDC refuses renewal once the ticket expired, so an
+            // expired renewable TGT takes the AS exchange when a credential is
+            // configured; any other renewal failure falls through the same way.
+            if session_renewable_at(&tgt, now) && !(expired && has_credentials) {
+                match self.renew_tgt().await.map(|_| ()) {
+                    Ok(()) => {
+                        return Ok(self.tgt.as_ref().expect("renewal installed the TGT"));
+                    }
+                    Err(error) if !has_credentials => return Err(error),
+                    Err(_) => {}
+                }
             }
         }
 
@@ -1359,7 +1370,15 @@ impl TokioClient {
                 return Ok(tgt);
             }
             if session_renewable_at(&tgt, now) {
-                return Ok(self.renew_tgt().await?.clone());
+                let has_credentials = self.credentials.is_some();
+                let expired = now >= tgt.end_time;
+                if !(expired && has_credentials) {
+                    match self.renew_tgt().await.map(|session| session.clone()) {
+                        Ok(session) => return Ok(session),
+                        Err(error) if !has_credentials => return Err(error),
+                        Err(_) => {}
+                    }
+                }
             }
             if session_valid_at(&tgt, now) && self.credentials.is_none() {
                 return Ok(tgt);
