@@ -737,3 +737,22 @@ fn temp_file(name: &str) -> PathBuf {
         std::process::id()
     ))
 }
+
+#[test]
+fn resolve_realm_rejects_bare_prefix_extension() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ mit.edu = ATHENA.MIT.EDU
+"#,
+    )
+    .expect("config parses");
+
+    assert_eq!(config.resolve_realm("notmit.edu"), None);
+    assert_eq!(config.resolve_realm("sub.notmit.edu"), None);
+    assert_eq!(config.resolve_realm("mit.edu"), Some("ATHENA.MIT.EDU"));
+    assert_eq!(config.resolve_realm("sub.mit.edu"), Some("ATHENA.MIT.EDU"));
+}
