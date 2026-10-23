@@ -876,6 +876,77 @@ fn a_later_section_can_repair_an_earlier_conflict() {
     assert_eq!(encoded_as_req_etypes(&config.libdefaults), vec![18]);
 }
 
+/// Write `files` (name, body) into a fresh directory and return its path.
+fn include_fixture_dir(name: &str, files: &[(&str, &str)]) -> PathBuf {
+    let dir = temp_file(name);
+    std::fs::create_dir_all(&dir).expect("fixture directory is created");
+    for (file, body) in files {
+        std::fs::write(dir.join(file), body).expect("fixture file is written");
+    }
+    dir
+}
+
+#[test]
+fn explicit_tkt_list_in_an_included_file_is_validated_against_permitted() {
+    let dir = include_fixture_dir(
+        "include-enctype-reject",
+        &[(
+            "extra.conf",
+            "[libdefaults]\n default_tkt_enctypes = aes128-cts-hmac-sha1-96\n",
+        )],
+    );
+    let extra = dir.join("extra.conf");
+    let main = format!(
+        "[libdefaults]\n permitted_enctypes = aes256-cts-hmac-sha1-96\n\ninclude {}\n",
+        extra.display()
+    );
+    let main_path = dir.join("krb5.conf");
+    std::fs::write(&main_path, main).expect("main config is written");
+
+    let error = Config::load(&main_path)
+        .expect_err("an included explicit request list outside the allowlist is rejected");
+    std::fs::remove_dir_all(&dir).ok();
+
+    assert!(
+        matches!(
+            &error,
+            Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                if enctype == "aes128-cts-hmac-sha1-96"
+        ),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn a_later_included_file_can_repair_an_earlier_conflict() {
+    let dir = include_fixture_dir(
+        "include-enctype-repair",
+        &[
+            (
+                "a.conf",
+                "[libdefaults]\n default_tkt_enctypes = aes128-cts-hmac-sha1-96\n",
+            ),
+            (
+                "b.conf",
+                "[libdefaults]\n default_tkt_enctypes = aes256-cts-hmac-sha1-96\n",
+            ),
+        ],
+    );
+    let main = format!(
+        "[libdefaults]\n permitted_enctypes = aes256-cts-hmac-sha1-96\n\ninclude {}\ninclude {}\n",
+        dir.join("a.conf").display(),
+        dir.join("b.conf").display()
+    );
+    let main_path = dir.join("krb5.conf");
+    std::fs::write(&main_path, main).expect("main config is written");
+
+    let loaded = Config::load(&main_path);
+    std::fs::remove_dir_all(&dir).ok();
+    let config = loaded.expect("the final effective request list is permitted");
+
+    assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18]);
+}
+
 #[test]
 fn rejects_v4_realm_directives() {
     let err = Config::parse(
