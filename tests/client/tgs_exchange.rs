@@ -207,6 +207,7 @@ fn tgs_req_etypes_are_intersected_with_permitted_enctypes() {
     let defaults = rskrb5::config::LibDefaults {
         default_tgs_enctype_ids: vec![18, 17, 23],
         permitted_enctype_ids: vec![18],
+        permitted_enctypes_explicit: true,
         ..Default::default()
     };
     let options = TgsReqOptions::from_libdefaults(timestamp(1_893_553_450), 0x5566_7788, &defaults);
