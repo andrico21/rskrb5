@@ -810,7 +810,19 @@ impl TokioClient {
                 if client.credentials.is_none() && client.tgt.is_none() {
                     return;
                 }
-                if client.refresh_tgt_if_needed().await.is_err() {
+                // A due TGT that cannot make progress is reported back as the
+                // unchanged session; pace that case too instead of spinning
+                // for the rest of the refresh band.
+                let before = client
+                    .tgt
+                    .as_ref()
+                    .map(|tgt| (tgt.ticket.clone(), tgt.session_key.clone()));
+                let refreshed = client.refresh_tgt_if_needed().await.map(|_| ());
+                let after = client
+                    .tgt
+                    .as_ref()
+                    .map(|tgt| (tgt.ticket.clone(), tgt.session_key.clone()));
+                if refreshed.is_err() || after == before {
                     drop(client);
                     tokio::time::sleep(retry_delay).await;
                 }

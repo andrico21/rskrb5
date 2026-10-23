@@ -609,6 +609,46 @@ fn tokio_client_auto_renewal_handle_aborts() {
     });
 }
 
+#[cfg(all(feature = "tokio", target_os = "linux"))]
+#[test]
+fn tokio_client_auto_renewal_paces_cache_only_nonrenewable_tgt() {
+    runtime().block_on(async {
+        // Due (55 min old, 5 min left) but not renewable, and cache-only: the
+        // refresh is a successful no-op.
+        let mut tgt = current_tgt_session(55, 5);
+        tgt.renew_till = None;
+        let client = std::sync::Arc::new(tokio::sync::Mutex::new(TokioClient::from_tgt_session(
+            Config::new(),
+            KdcProtocol::Tcp,
+            tgt,
+        )));
+        let renewal = TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(50));
+
+        let before = process_utime_ticks();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let after = process_utime_ticks();
+        renewal.abort();
+
+        let ticks = after.saturating_sub(before);
+        assert!(
+            ticks < 25,
+            "auto-renewal spun without pacing: {ticks} CPU ticks in 500 ms"
+        );
+    });
+}
+
+#[cfg(all(feature = "tokio", target_os = "linux"))]
+fn process_utime_ticks() -> u64 {
+    let stat = std::fs::read_to_string("/proc/self/stat").expect("proc stat reads");
+    let after_comm = stat
+        .rsplit_once(')')
+        .expect("stat contains the comm field")
+        .1;
+    let fields: Vec<&str> = after_comm.split_whitespace().collect();
+    // Field 14 (utime) is index 11 after the `) <state>` boundary.
+    fields[11].parse().expect("utime parses")
+}
+
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_refresh_due_uses_current_ticket_life() {
