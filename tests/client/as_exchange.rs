@@ -58,6 +58,33 @@ fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
 }
 
 #[test]
+fn as_req_etypes_are_intersected_with_permitted_enctypes() {
+    let defaults = rskrb5::config::LibDefaults {
+        default_tkt_enctype_ids: vec![18, 17, 23],
+        permitted_enctype_ids: vec![18],
+        ..Default::default()
+    };
+    let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+
+    assert_eq!(options.etypes, vec![18]);
+}
+
+#[test]
+fn as_req_with_disjoint_permitted_enctypes_fails_closed() {
+    let defaults = rskrb5::config::LibDefaults {
+        default_tkt_enctype_ids: vec![18],
+        permitted_enctype_ids: vec![17],
+        ..Default::default()
+    };
+    let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+    assert!(options.etypes.is_empty());
+
+    let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+        .expect_err("an empty request list fails closed");
+    assert!(matches!(error, Error::EmptyEtypes));
+}
+
+#[test]
 fn as_req_options_from_libdefaults_sets_canonicalize_flag() {
     let defaults = rskrb5::config::LibDefaults {
         canonicalize: true,

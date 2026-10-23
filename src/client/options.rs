@@ -58,6 +58,11 @@ impl AsReqOptions {
         } else {
             defaults.default_tkt_enctype_ids.clone()
         };
+        if !defaults.permitted_enctype_ids.is_empty() {
+            options
+                .etypes
+                .retain(|etype| defaults.permitted_enctype_ids.contains(etype));
+        }
         options.kdc_option_bits = defaults.kdc_default_options;
         if defaults.canonicalize {
             options.kdc_option_bits |= KDC_OPTION_CANONICALIZE;
@@ -155,6 +160,11 @@ impl TgsReqOptions {
         } else {
             defaults.default_tgs_enctype_ids.clone()
         };
+        if !defaults.permitted_enctype_ids.is_empty() {
+            options
+                .etypes
+                .retain(|etype| defaults.permitted_enctype_ids.contains(etype));
+        }
         options.kdc_option_bits = defaults.kdc_default_options;
         if defaults.canonicalize {
             options.kdc_option_bits |= KDC_OPTION_CANONICALIZE;

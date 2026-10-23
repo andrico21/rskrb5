@@ -109,6 +109,111 @@ fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
     ));
 }
 
+#[cfg(feature = "tokio")]
+#[test]
+fn exchange_as_req_with_config_rejects_session_key_outside_permitted_enctypes() {
+    runtime().block_on(async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind kdc listener");
+        let addr = listener.local_addr().expect("kdc address");
+        let config = Config::parse(&format!(
+            r#"
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = des3-cbc-sha1-kd
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"#
+        ))
+        .expect("config parses");
+        let request = build_tgt_as_req(
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18]),
+        )
+        .expect("AS-REQ builds");
+        let reply_key = reply_key();
+        let response = synthetic_as_rep_with_reply_key(
+            &request,
+            request.nonce,
+            request.service.clone(),
+            &reply_key,
+        );
+        let task = tokio::spawn(async move {
+            let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+            write_tcp_kdc_response(&mut socket, &response).await;
+        });
+
+        let error = TokioKdcTransport::new()
+            .exchange_as_req_with_config(&config, KdcProtocol::Tcp, &request, &reply_key)
+            .await
+            .expect_err("session key outside the permit list is rejected");
+        task.await.expect("kdc task completes");
+        assert!(matches!(error, Error::EnctypeNotPermitted(18)));
+    });
+}
+
+#[cfg(feature = "tokio")]
+#[test]
+fn exchange_tgs_req_with_config_rejects_session_key_outside_permitted_enctypes() {
+    runtime().block_on(async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind kdc listener");
+        let addr = listener.local_addr().expect("kdc address");
+        let config = Config::parse(&format!(
+            r#"
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = des3-cbc-sha1-kd
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"#
+        ))
+        .expect("config parses");
+        let tgt = sample_tgt_session();
+        let request = build_tgs_req_with_confounder(
+            &tgt,
+            sample_service_principal(),
+            TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![18]),
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+        )
+        .expect("TGS-REQ builds");
+        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+        let task = tokio::spawn(async move {
+            let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+            write_tcp_kdc_response(&mut socket, &response).await;
+        });
+
+        let error = TokioKdcTransport::new()
+            .exchange_tgs_req_with_config(&config, KdcProtocol::Tcp, &request, &tgt.session_key)
+            .await
+            .expect_err("session key outside the permit list is rejected");
+        task.await.expect("kdc task completes");
+        assert!(matches!(error, Error::EnctypeNotPermitted(18)));
+    });
+}
+
+#[test]
+fn tgs_req_etypes_are_intersected_with_permitted_enctypes() {
+    let defaults = rskrb5::config::LibDefaults {
+        default_tgs_enctype_ids: vec![18, 17, 23],
+        permitted_enctype_ids: vec![18],
+        ..Default::default()
+    };
+    let options = TgsReqOptions::from_libdefaults(timestamp(1_893_553_450), 0x5566_7788, &defaults);
+
+    assert_eq!(options.etypes, vec![18]);
+}
+
 #[test]
 fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() {
     let defaults = rskrb5::config::LibDefaults {

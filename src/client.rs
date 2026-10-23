@@ -2674,6 +2674,10 @@ pub enum Error {
     #[error("KDC reply enctype {0} was not requested")]
     EnctypeNotRequested(i32),
 
+    /// A KDC reply used an enctype outside the configured permitted list.
+    #[error("KDC reply enctype {0} is not permitted by configuration")]
+    EnctypeNotPermitted(i32),
+
     /// A key did not match the encrypted KDC reply data etype.
     #[error(
         "key etype {key_etype} does not match KDC-REP encrypted data etype {encrypted_data_etype}"
@@ -3331,6 +3335,15 @@ fn enforce_requested_enctypes(requested: &[i32], etype: i32) -> Result<(), Error
         Ok(())
     } else {
         Err(Error::EnctypeNotRequested(etype))
+    }
+}
+
+/// Reject a reply enctype outside a non-empty operator allowlist.
+pub(crate) fn ensure_permitted_enctype(permitted: &[i32], etype: i32) -> Result<(), Error> {
+    if permitted.is_empty() || permitted.contains(&etype) {
+        Ok(())
+    } else {
+        Err(Error::EnctypeNotPermitted(etype))
     }
 }
 
