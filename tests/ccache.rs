@@ -505,6 +505,21 @@ fn rejects_invalid_ccache_inputs() {
         CCache::parse(&[5, 4, 0, 12]).expect_err("truncated header rejected"),
         Error::Truncated { .. }
     ));
+
+    let mut negative_component_count = vec![0x05, 0x04, 0x00, 0x00];
+    negative_component_count.extend_from_slice(&0i32.to_be_bytes());
+    negative_component_count.extend_from_slice(&(-1i32).to_be_bytes());
+    assert!(matches!(
+        CCache::parse(&negative_component_count).expect_err("negative component count rejected"),
+        Error::NegativeLength(-1)
+    ));
+
+    let mut negative_address_count = ccache_prefix_before_address_count();
+    negative_address_count.extend_from_slice(&(-1i32).to_be_bytes());
+    assert!(matches!(
+        CCache::parse(&negative_address_count).expect_err("negative address count rejected"),
+        Error::NegativeLength(-1)
+    ));
 }
 
 #[test]
@@ -514,10 +529,18 @@ fn rejects_impossible_component_count() {
     bytes.extend_from_slice(&i32::MAX.to_be_bytes()); // component count
     bytes.extend_from_slice(&0i32.to_be_bytes()); // realm length
 
+    let error = CCache::parse(&bytes).expect_err("impossible component count rejected");
+    #[cfg(target_pointer_width = "64")]
     assert!(matches!(
-        CCache::parse(&bytes).expect_err("impossible component count rejected"),
-        Error::Truncated { .. }
+        error,
+        Error::Truncated {
+            offset: 12,
+            needed: 8_589_934_588,
+            remaining: 4,
+        }
     ));
+    #[cfg(target_pointer_width = "32")]
+    assert!(matches!(error, Error::LengthOverflow));
 }
 
 #[test]
@@ -525,10 +548,18 @@ fn rejects_impossible_address_count() {
     let mut bytes = ccache_prefix_before_address_count();
     bytes.extend_from_slice(&i32::MAX.to_be_bytes());
 
+    let error = CCache::parse(&bytes).expect_err("impossible address count rejected");
+    #[cfg(target_pointer_width = "64")]
     assert!(matches!(
-        CCache::parse(&bytes).expect_err("impossible address count rejected"),
-        Error::Truncated { .. }
+        error,
+        Error::Truncated {
+            offset: 71,
+            needed: 12_884_901_882,
+            remaining: 0,
+        }
     ));
+    #[cfg(target_pointer_width = "32")]
+    assert!(matches!(error, Error::LengthOverflow));
 }
 
 #[test]
@@ -537,10 +568,18 @@ fn rejects_impossible_auth_data_count() {
     bytes.extend_from_slice(&0i32.to_be_bytes()); // no addresses
     bytes.extend_from_slice(&i32::MAX.to_be_bytes());
 
+    let error = CCache::parse(&bytes).expect_err("impossible auth-data count rejected");
+    #[cfg(target_pointer_width = "64")]
     assert!(matches!(
-        CCache::parse(&bytes).expect_err("impossible auth-data count rejected"),
-        Error::Truncated { .. }
+        error,
+        Error::Truncated {
+            offset: 75,
+            needed: 12_884_901_882,
+            remaining: 0,
+        }
     ));
+    #[cfg(target_pointer_width = "32")]
+    assert!(matches!(error, Error::LengthOverflow));
 }
 
 /// A v4 cache prefix up to a credential's address count: empty header,
