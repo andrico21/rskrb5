@@ -1,7 +1,7 @@
 # Requested mutual authentication is not enforced by HTTP completion classification
 - Severity: medium — likelihood medium, impact medium, confidence not scored in the record (verdict: confirmed, independently reproduced) — fingerprint `src/http.rs:classify_negotiate_challenge:mutual-request-not-enforced`
 - Audit: run-2 `findings.json` record (verdict `confirmed`) + `tools/prior-evidence/dep-repro-mutual-classify3-e8b575.log:180-186` and `agents/vfy-src-http-rs-classify-negot/artifacts/repro-mutual-classify3.log:180-186`
-- Status: planned; not implemented in the fork; no upstream PR yet
+- Status: implemented on branch `fix/mutual-auth-classification` (`8b75cda`); keyless-completion tests fail before and pass after; no upstream PR yet
 
 ## Problem
 When the initiator asks for mutual authentication, `classify_negotiate_challenge` still

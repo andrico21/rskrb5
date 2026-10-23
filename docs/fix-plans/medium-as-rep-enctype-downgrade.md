@@ -2,7 +2,7 @@
 
 - Severity: medium (likelihood low / impact medium / confidence medium) — fingerprint `rskrb5/client/kdc-reply-requested-enctype-binding`
 - Audit: run-2 findings.json record (`verdict: confirmed`) + `agents/vfy-rskrb5-client-kdc-reply-re/artifacts/vfy-enctype-r4:180-189` and `tools/prior-evidence/run-1-consolidated-probes-a42705.log:264`
-- Status: planned; not implemented in the fork; no upstream PR yet
+- Status: implemented on branch `fix/enctype-policy` (`236c4ce`); out-of-list AS-REP tests fail before and pass after; no upstream PR yet
 
 ## Problem
 

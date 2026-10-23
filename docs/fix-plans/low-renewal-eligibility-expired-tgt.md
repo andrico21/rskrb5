@@ -1,7 +1,7 @@
 # Expired-but-"renewable" cached TGT keeps the automatic paths on TGS RENEW
 - Severity: low — likelihood medium, impact low, confidence not scored in the record (verdict: confirmed, independently reproduced) — fingerprint `rskrb5/client/renewal-eligibility-expired-ticket`
 - Audit: run-2 `findings.json` record (verdict `confirmed`) + `agents/vfy-rskrb5-client-renewal-elig/artifacts/vfy-renewal-probe2` (promoted sandbox log, SANDBOX_EXIT=0)
-- Status: planned; not implemented in the fork; no upstream PR yet
+- Status: implemented on branch `fix/client-renewal-series` (`9db3c87`); loopback-KDC recovery tests fail before and pass after; no upstream PR yet
 
 ## Problem
 `session_renewable_at` tests only `renew_till`, ignoring the ticket validity window and the
