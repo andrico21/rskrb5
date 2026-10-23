@@ -233,6 +233,59 @@ fn authorize_request_context_supports_negotiate_client_wrapper() {
 
 #[cfg(feature = "tokio")]
 #[test]
+fn negotiate_http_client_classifies_missing_ap_rep_as_failure_when_mutual_requested() {
+    runtime().block_on(async {
+        let service_ticket = current_service_ticket_session();
+        let service = service_ticket.service.clone();
+        let mut tokio_client = TokioClient::with_password(
+            Config::new(),
+            KdcProtocol::Auto,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            b"unused".to_vec(),
+        );
+        tokio_client.cache_service_ticket(service_ticket);
+        let mut client = NegotiateClient::from_tokio_client(tokio_client);
+        let calls = Rc::new(Cell::new(0usize));
+        let calls_for_sender = Rc::clone(&calls);
+
+        let result = krb_http::send_with_negotiate_options(
+            &mut client,
+            service,
+            InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
+            || {
+                Request::builder()
+                    .method("GET")
+                    .uri("/protected")
+                    .body(Vec::new())
+                    .expect("request builds")
+            },
+            move |_request: Request<Vec<u8>>| {
+                let call = calls_for_sender.get() + 1;
+                calls_for_sender.set(call);
+                let response = if call == 1 {
+                    krb_http::challenge_response::<Vec<u8>>()
+                } else {
+                    response_with_www_authenticate_body(
+                        &spnego::accept_completed_header().expect("accept-completed header"),
+                        b"ok".to_vec(),
+                    )
+                };
+                std::future::ready(Ok::<_, Infallible>(response))
+            },
+        )
+        .await
+        .expect("Negotiate send succeeds");
+
+        assert!(matches!(
+            result.negotiation,
+            Some(krb_http::ClientNegotiateResponse::InvalidToken { .. })
+        ));
+        assert_eq!(calls.get(), 2);
+    });
+}
+
+#[cfg(feature = "tokio")]
+#[test]
 fn negotiate_http_client_retries_challenge_with_replayable_request() {
     runtime().block_on(async {
         let service_ticket = current_service_ticket_session();
@@ -400,6 +453,30 @@ fn blocking_negotiate_http_client_returns_first_response_without_challenge() {
     assert_eq!(*result.response.body(), "public");
     assert_eq!(make_calls.get(), 1);
     assert_eq!(send_calls.get(), 1);
+}
+
+#[test]
+fn classify_rejects_missing_ap_rep_when_mutual_requested() {
+    let variants = [
+        InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
+        InitiatorContextOptions::new().with_context_flags(vec![
+            spnego::CONTEXT_FLAG_INTEG,
+            spnego::CONTEXT_FLAG_MUTUAL,
+        ]),
+    ];
+    for options in variants {
+        let context = initiator_context_with_options(options);
+        let response = response_with_www_authenticate(
+            &spnego::accept_completed_header().expect("accept-completed header"),
+        );
+        assert!(
+            matches!(
+                krb_http::classify_negotiate_response(&context, &response),
+                krb_http::ClientNegotiateResponse::InvalidToken { .. }
+            ),
+            "requested mutual authentication must not accept a completion without an AP-REP"
+        );
+    }
 }
 
 #[test]
@@ -831,9 +908,13 @@ fn raw_krb5_authorization_header() -> String {
 }
 
 fn initiator_context() -> spnego::InitiatorContext {
+    initiator_context_with_options(InitiatorContextOptions::new().with_sequence_number(Some(42)))
+}
+
+fn initiator_context_with_options(options: InitiatorContextOptions) -> spnego::InitiatorContext {
     spnego::init_sec_context_with_confounder(
         &service_ticket_session_from_valid_ap_req(),
-        InitiatorContextOptions::new().with_sequence_number(Some(42)),
+        options,
         timestamp(1_893_553_447),
         123_456,
         &decode_hex(AP_REP_CONFOUNDER),

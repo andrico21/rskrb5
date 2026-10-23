@@ -515,6 +515,15 @@ fn negotiate_challenge(header: &str) -> Option<&str> {
     None
 }
 
+/// RFC 4120 AP option `mutual-required`.
+const AP_OPTION_MUTUAL_REQUIRED: u32 = 0x2000_0000;
+
+/// Whether the initiator asked for mutual authentication in any supported form.
+fn mutual_authentication_requested(context: &spnego::InitiatorContext) -> bool {
+    crate::ap_req::ap_options_to_bits(&context.ap_req.ap_options) & AP_OPTION_MUTUAL_REQUIRED != 0
+        || context.context_flags.contains(&spnego::CONTEXT_FLAG_MUTUAL)
+}
+
 fn classify_negotiate_challenge(
     context: &spnego::InitiatorContext,
     challenge: &str,
@@ -552,6 +561,12 @@ fn classify_negotiate_challenge(
     }
 
     let Some(response_token) = response.response_token else {
+        if mutual_authentication_requested(context) {
+            return ClientNegotiateResponse::InvalidToken {
+                message: "mutual authentication was requested but the peer returned no AP-REP"
+                    .to_owned(),
+            };
+        }
         return ClientNegotiateResponse::Accepted { ap_rep: None };
     };
     let krb5 = match spnego::Krb5MechToken::decode(&response_token) {

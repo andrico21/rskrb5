@@ -15,7 +15,7 @@ compatibility-sensitive.
 | Keytab, ccache, and config files | File-backed keytab and MIT FILE/WRFILE/DIR ccache parsing, serialization, lookup, environment/default-name loading, and redacted metadata JSON are covered by gokrb5 fixtures. |
 | Crypto and Kerberos messages | AES-SHA1, AES-SHA2, DES3, RC4-HMAC, DER wrappers, KDC/AP/KRB-PRIV/KRB-SAFE/KRB-CRED helpers, and kpasswd frames are covered by unit vectors and fixture round-trips. |
 | High-level client | Tokio password/keytab/ccache login, AS/TGS exchange, referrals, renewal, service-ticket caching, S4U2Self/S4U2Proxy, kpasswd, diagnostics, and ccache write-back are implemented. |
-| Service and HTTP Negotiate | AP-REQ validation, replay detection, AP-REP mutual auth, SPNEGO/GSSAPI tokens, HTTP helpers, 401 retry client wrappers, Tower middleware, and an Axum example are implemented. |
+| Service and HTTP Negotiate | AP-REQ validation, replay detection, AP-REP mutual auth with mutual-required enforcement, SPNEGO/GSSAPI tokens, HTTP helpers, 401 retry client wrappers, Tower middleware, and an Axum example are implemented. |
 | PAC and AD parity | PAC container, validation info, UPN/DNS, credentials, delegation/device/claims data, checksums, and AD-shaped credential summaries are implemented with gated AD tests. |
 | Dependency posture | `rasn-kerberos` and `picky-krb` remain evaluation/data-type candidates; AGPL/LGPL Kerberos crates stay out of default/core features. |
 
@@ -75,7 +75,12 @@ let response = result.into_response();
 ```
 
 The request factory may be called twice: once for the initial request and again
-after a `401 WWW-Authenticate: Negotiate` challenge.
+after a `401 WWW-Authenticate: Negotiate` challenge. When mutual authentication
+was requested (`with_ap_option_bits(0x2000_0000)` or `CONTEXT_FLAG_MUTUAL`), a
+completion without a verified AP-REP is classified
+`ClientNegotiateResponse::InvalidToken`; consumers that require mutual
+authentication must inspect `result.negotiation` rather than only the HTTP
+status.
 
 Blocking CLI-style use:
 
