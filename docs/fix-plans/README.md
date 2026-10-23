@@ -28,20 +28,22 @@ an upstream PR yet.
 |---|---|---|
 | [medium-ccache-count-unvalidated.md](medium-ccache-count-unvalidated.md) | Ccache record counts reserve memory from an unvalidated 32-bit count; a 16-byte cache aborts the process on allocator refusal | implemented — `fix/ccache-count-bounds` (`9701864`, + `a37a4d1`) |
 | [medium-kadmin-unauthenticated-krb-error-success.md](medium-kadmin-unauthenticated-krb-error-success.md) | An unsigned KRB-ERROR result code 0 is accepted as kpasswd success and replaces the stored password credential | implemented — `fix/kadmin-unsigned-success` (`a089831`) |
-| [medium-permitted-enctypes-unconsumed.md](medium-permitted-enctypes-unconsumed.md) | `[libdefaults] permitted_enctypes` is parsed but consumed nowhere; requests and reply acceptance ignore the operator allowlist | implemented — `fix/enctype-policy` (`6b64394`) |
+| [medium-permitted-enctypes-unconsumed.md](medium-permitted-enctypes-unconsumed.md) | `[libdefaults] permitted_enctypes` is parsed but consumed nowhere; requests and reply acceptance ignore the operator allowlist | implemented — `fix/enctype-policy` (`6b64394`, explicit-only `f8ffc5e`) |
 | [medium-as-rep-enctype-downgrade.md](medium-as-rep-enctype-downgrade.md) | The initial AS-REP can select a reply/session enctype outside the caller's requested list (RC4 downgrade) | implemented — `fix/enctype-policy` (`236c4ce`) |
 | [medium-renewal-window-auth-time.md](medium-renewal-window-auth-time.md) | Refresh scheduling measures lifetime from `auth_time`; a renewed TGT is immediately due and auto-renewal runs at round-trip rate | implemented — `fix/client-renewal-series` (`29b6a51`) |
 | [medium-mutual-auth-classification.md](medium-mutual-auth-classification.md) | A requested mutual authentication is not enforced by HTTP completion classification (`Accepted { ap_rep: None }`) | implemented — `fix/mutual-auth-classification` (`8b75cda`) |
 
 Cross-plan notes: the two enctype plans both touch `process_as_rep` reply
-acceptance; sequence them together. The renewal plans share `src/client.rs`
-refresh machinery.
+acceptance; sequence them together. `permitted_enctypes` enforcement is opt-in
+by explicit configuration (the seeded gokrb5 default list is narrower than
+MIT's and would otherwise drop SHA2 request lists). The renewal plans share
+`src/client.rs` refresh machinery.
 
 ## Low
 
 | Plan | Problem (one line) | Status |
 |---|---|---|
-| [low-auto-renewal-busy-loop.md](low-auto-renewal-busy-loop.md) | Cache-only nonrenewable TGTs inside the refresh band make `spawn_auto_renewal` busy-loop at zero delay | implemented — `fix/client-renewal-series` (`0a2cf65`) |
+| [low-auto-renewal-busy-loop.md](low-auto-renewal-busy-loop.md) | Cache-only nonrenewable TGTs inside the refresh band make `spawn_auto_renewal` busy-loop at zero delay | implemented — `fix/client-renewal-series` (`0a2cf65`, rework `20541ea`) |
 | [low-renewal-eligibility-expired-tgt.md](low-renewal-eligibility-expired-tgt.md) | An expired-but-"renewable" cached TGT keeps the automatic paths on TGS RENEW, so stored credentials never trigger a re-login | implemented — `fix/client-renewal-series` (`9db3c87`) |
 | [low-host-case-service-principal.md](low-host-case-service-principal.md) | Host-based constructors preserve DNS host case; one DNS peer yields two Kerberos identities | implemented — `fix/host-case-spn` (`50e5284`) |
 | [low-clockskew-not-consumed.md](low-clockskew-not-consumed.md) | `[libdefaults] clockskew` never reaches the acceptor window, which stays at the hardcoded 300 s | implemented — `fix/config-clockskew-handoff` (`3e4c6c5`) |

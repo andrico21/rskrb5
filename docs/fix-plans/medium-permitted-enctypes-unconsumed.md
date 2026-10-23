@@ -2,7 +2,7 @@
 
 - Severity: medium (likelihood medium / impact medium / confidence high) — fingerprint `src/config.rs:permitted_enctype_ids/policy-never-consumed`
 - Audit: run-2 findings.json record (`verdict: confirmed`) + `agents/vfy-src-config-rs-permitted-en/artifacts/permitted-enctype-check2.log:229-234` and `agents/hunt2-transport-config/artifacts/transport-config-checks-5.log:667`
-- Status: implemented on branch `fix/enctype-policy` (`6b64394`); intersection/fail-closed/reply tests fail before and pass after; no upstream PR yet
+- Status: implemented on branch `fix/enctype-policy` (`6b64394`, explicit-only `f8ffc5e`, test fix `79a15db`); enforcement applies only when `permitted_enctypes` is explicitly configured, so SHA2-only request lists are unaffected; intersection/fail-closed/reply tests fail before and pass after; no upstream PR yet
 
 ## Problem
 

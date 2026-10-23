@@ -1,7 +1,7 @@
 # Cache-only nonrenewable TGTs busy-loop auto-renewal with zero delay and no progress
 - Severity: low — likelihood medium, impact low, confidence not scored in the record (verdict: confirmed, independently reproduced) — fingerprint `rskrb5/client/auto-renewal-success-without-progress`
 - Audit: run-2 `findings.json` record (verdict `confirmed`) + `agents/vfy-rskrb5-client-auto-renewal/artifacts/verify-autorenewal3:177-183` and `agents/vfy-rskrb5-client-auto-renewal/artifacts/verify-autorenewal2:174-181`
-- Status: implemented on branch `fix/client-renewal-series` (`0a2cf65`); the Linux CPU-tick test fails before (49 ticks/500 ms) and passes after; no upstream PR yet
+- Status: implemented on branch `fix/client-renewal-series` (`0a2cf65`, rework `20541ea`); a paused-clock test times out before and passes after (the earlier CPU-tick measurement is retired); no upstream PR yet
 
 ## Problem
 For a client with no long-term credentials (`from_ccache` / `from_tgt_session`) whose cached
