@@ -48,6 +48,13 @@ impl AsReqOptions {
     }
 
     /// Construct options from parsed `[libdefaults]`.
+    ///
+    /// When `permitted_enctypes_explicit` is set, the request list is narrowed
+    /// to `permitted_enctype_ids`. `Config::parse` already rejects an explicit
+    /// `default_tkt_enctypes` naming an enctype outside the allowlist, so for
+    /// parsed configs this only narrows the seeded default list that no
+    /// operator requested. A programmatically built `LibDefaults` whose lists
+    /// are disjoint yields an empty list, which the request builders reject.
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
         options.ticket_lifetime = defaults.ticket_lifetime;
@@ -150,6 +157,13 @@ impl TgsReqOptions {
     }
 
     /// Construct options from parsed `[libdefaults]`.
+    ///
+    /// When `permitted_enctypes_explicit` is set, the request list is narrowed
+    /// to `permitted_enctype_ids`. `Config::parse` already rejects an explicit
+    /// `default_tgs_enctypes` naming an enctype outside the allowlist, so for
+    /// parsed configs this only narrows the seeded default list that no
+    /// operator requested. A programmatically built `LibDefaults` whose lists
+    /// are disjoint yields an empty list, which the request builders reject.
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
         options.ticket_lifetime = defaults.ticket_lifetime;

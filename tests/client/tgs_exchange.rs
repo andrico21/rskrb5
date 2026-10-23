@@ -211,8 +211,18 @@ fn tgs_req_etypes_are_intersected_with_permitted_enctypes() {
         ..Default::default()
     };
     let options = TgsReqOptions::from_libdefaults(timestamp(1_893_553_450), 0x5566_7788, &defaults);
+    let request = build_tgs_req_with_confounder(
+        &sample_tgt_session(),
+        sample_service_principal(),
+        options,
+        timestamp(1_893_553_451),
+        654_321,
+        &decode_hex(TGS_REQ_CONFOUNDER),
+    )
+    .expect("TGS-REQ builds");
 
-    assert_eq!(options.etypes, vec![18]);
+    let decoded: rasn_kerberos::TgsReq = rasn::der::decode(&request.der).expect("TGS-REQ decodes");
+    assert_eq!(decoded.0.req_body.etype, vec![18]);
 }
 
 #[test]

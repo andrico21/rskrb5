@@ -148,8 +148,14 @@ impl Config {
     }
 
     /// Parse a `krb5.conf` string.
+    ///
+    /// Fails with [`Error::EnctypeNotPermitted`] when an explicit
+    /// `default_tkt_enctypes` or `default_tgs_enctypes` list names an enctype
+    /// outside an explicit `permitted_enctypes` allowlist. The check runs once,
+    /// on the final values after every `[libdefaults]` section is applied.
     pub fn parse(input: &str) -> Result<Self, Error> {
         let mut config = Self::new();
+        let mut enctypes = EnctypeParseState::default();
         let mut current = SectionKind::Unknown;
         let mut lines = Vec::new();
 
@@ -161,7 +167,7 @@ impl Config {
             }
 
             if let Some(section) = SectionKind::parse(cleaned) {
-                apply_section(&mut config, current, &lines)?;
+                apply_section(&mut config, current, &lines, &mut enctypes)?;
                 current = section;
                 lines.clear();
                 continue;
@@ -175,7 +181,8 @@ impl Config {
             }
         }
 
-        apply_section(&mut config, current, &lines)?;
+        apply_section(&mut config, current, &lines, &mut enctypes)?;
+        config.libdefaults.validate_explicit_enctypes(enctypes)?;
         Ok(config)
     }
 
@@ -397,7 +404,11 @@ impl LibDefaults {
         defaults
     }
 
-    fn parse_lines(&mut self, lines: &[Line]) -> Result<(), Error> {
+    fn parse_lines(
+        &mut self,
+        lines: &[Line],
+        enctypes: &mut EnctypeParseState,
+    ) -> Result<(), Error> {
         for line in lines {
             let (key, value) = parse_assignment(line, "libdefaults")?;
             let key = key.to_ascii_lowercase();
@@ -419,8 +430,14 @@ impl LibDefaults {
                 }
                 "default_keytab_name" => self.default_keytab_name = value.to_owned(),
                 "default_realm" => self.default_realm = value.to_owned(),
-                "default_tgs_enctypes" => self.default_tgs_enctypes = parse_words(value),
-                "default_tkt_enctypes" => self.default_tkt_enctypes = parse_words(value),
+                "default_tgs_enctypes" => {
+                    self.default_tgs_enctypes = parse_words(value);
+                    enctypes.tgs_explicit = true;
+                }
+                "default_tkt_enctypes" => {
+                    self.default_tkt_enctypes = parse_words(value);
+                    enctypes.tkt_explicit = true;
+                }
                 "dns_canonicalize_hostname" => {
                     self.dns_canonicalize_hostname = parse_boolean(value)?;
                 }
@@ -464,6 +481,49 @@ impl LibDefaults {
         }
 
         self.refresh_enctype_ids();
+        Ok(())
+    }
+
+    /// Reject an explicit request list that names an enctype the explicit
+    /// `permitted_enctypes` allowlist does not permit.
+    ///
+    /// Dropping the enctype instead would silently send a narrower request
+    /// list than the operator configured. Seeded (implicit) request lists are
+    /// not checked here; `AsReqOptions::from_libdefaults` and
+    /// `TgsReqOptions::from_libdefaults` narrow them to the allowlist.
+    fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
+        if !self.permitted_enctypes_explicit || self.permitted_enctype_ids.is_empty() {
+            return Ok(());
+        }
+        let request_lists = [
+            (
+                enctypes.tkt_explicit,
+                "default_tkt_enctypes",
+                &self.default_tkt_enctypes,
+            ),
+            (
+                enctypes.tgs_explicit,
+                "default_tgs_enctypes",
+                &self.default_tgs_enctypes,
+            ),
+        ];
+        for (explicit, key, names) in request_lists {
+            if !explicit {
+                continue;
+            }
+            // Names without a supported ID are never requested, so only
+            // supported IDs can be narrowed away.
+            let not_permitted = names.iter().find(|name| {
+                supported_enctype_id(name)
+                    .is_some_and(|id| !self.permitted_enctype_ids.contains(&id))
+            });
+            if let Some(name) = not_permitted {
+                return Err(Error::EnctypeNotPermitted {
+                    key,
+                    enctype: name.clone(),
+                });
+            }
+        }
         Ok(())
     }
 
@@ -633,6 +693,26 @@ pub enum Error {
     /// The requested realm has no configured password-change servers.
     #[error("realm has no configured kpasswd servers: {0}")]
     NoKpasswdServer(String),
+    /// An explicit request enctype list names an enctype outside the explicit
+    /// `permitted_enctypes` allowlist.
+    #[error("[libdefaults] {key} lists {enctype}, which permitted_enctypes does not permit")]
+    EnctypeNotPermitted {
+        /// Request-list key: `default_tkt_enctypes` or `default_tgs_enctypes`.
+        key: &'static str,
+        /// The configured enctype name.
+        enctype: String,
+    },
+}
+
+/// Which `[libdefaults]` request enctype lists one parse set explicitly.
+///
+/// The state spans every `[libdefaults]` section of the parse, so a request
+/// list from an earlier section is still validated against a
+/// `permitted_enctypes` line from a later one.
+#[derive(Clone, Copy, Debug, Default)]
+struct EnctypeParseState {
+    tkt_explicit: bool,
+    tgs_explicit: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -662,9 +742,14 @@ impl SectionKind {
     }
 }
 
-fn apply_section(config: &mut Config, section: SectionKind, lines: &[Line]) -> Result<(), Error> {
+fn apply_section(
+    config: &mut Config,
+    section: SectionKind,
+    lines: &[Line],
+    enctypes: &mut EnctypeParseState,
+) -> Result<(), Error> {
     match section {
-        SectionKind::LibDefaults => config.libdefaults.parse_lines(lines),
+        SectionKind::LibDefaults => config.libdefaults.parse_lines(lines, enctypes),
         SectionKind::Realms => {
             config.realms = parse_realms(lines)?;
             Ok(())

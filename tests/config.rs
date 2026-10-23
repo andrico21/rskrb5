@@ -655,6 +655,115 @@ fn libdefaults_json_without_the_explicit_field_deserializes_as_implicit() {
 }
 
 #[test]
+fn explicit_tkt_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
+    let error = Config::parse(
+        r#"
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect_err("an explicit request list outside the allowlist is rejected");
+
+    assert!(
+        matches!(
+            &error,
+            Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                if enctype == "aes128-cts-hmac-sha1-96"
+        ),
+        "unexpected error: {error:?}"
+    );
+    let message = error.to_string();
+    assert!(message.contains("default_tkt_enctypes"), "{message}");
+    assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
+}
+
+#[test]
+fn explicit_tgs_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
+    let error = Config::parse(
+        r#"
+[libdefaults]
+ default_tgs_enctypes = aes128-cts-hmac-sha1-96
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect_err("an explicit request list outside the allowlist is rejected");
+
+    assert!(
+        matches!(
+            &error,
+            Error::EnctypeNotPermitted { key: "default_tgs_enctypes", enctype }
+                if enctype == "aes128-cts-hmac-sha1-96"
+        ),
+        "unexpected error: {error:?}"
+    );
+    let message = error.to_string();
+    assert!(message.contains("default_tgs_enctypes"), "{message}");
+    assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
+}
+
+#[test]
+fn implicit_default_enctypes_are_filtered_to_permitted() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect("an implicit request list is not validated at parse time");
+
+    assert!(config.libdefaults.permitted_enctypes_explicit);
+    assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18, 17, 23]);
+    #[cfg(feature = "messages")]
+    assert_eq!(encoded_as_req_etypes(&config.libdefaults), vec![18]);
+}
+
+#[test]
+fn explicit_tkt_list_in_an_earlier_libdefaults_section_is_still_validated() {
+    let error = Config::parse(
+        r#"
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha1-96
+
+[domain_realm]
+ .test.gokrb5 = TEST.GOKRB5
+
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect_err("the earlier explicit request list is validated");
+
+    assert!(
+        matches!(
+            &error,
+            Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                if enctype == "aes128-cts-hmac-sha1-96"
+        ),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
+fn a_later_section_can_repair_an_earlier_conflict() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha1-96
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect("the final effective request list is permitted");
+
+    assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18]);
+    #[cfg(feature = "messages")]
+    assert_eq!(encoded_as_req_etypes(&config.libdefaults), vec![18]);
+}
+
+#[test]
 fn rejects_v4_realm_directives() {
     let err = Config::parse(
         r#"

@@ -66,8 +66,11 @@ fn as_req_etypes_are_intersected_with_permitted_enctypes() {
         ..Default::default()
     };
     let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+    let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+        .expect("AS-REQ builds");
 
-    assert_eq!(options.etypes, vec![18]);
+    let decoded: rasn_kerberos::AsReq = rasn::der::decode(&request.der).expect("AS-REQ decodes");
+    assert_eq!(decoded.0.req_body.etype, vec![18]);
 }
 
 #[test]
@@ -115,23 +118,24 @@ fn config_with_sha2_tkt_enctypes_and_no_permitted_line_keeps_the_request_list() 
 }
 
 #[test]
-fn explicit_permitted_enctypes_still_filters_sha2_requests() {
-    let config = Config::parse(
+fn explicit_permitted_enctypes_reject_an_explicit_sha2_request_list() {
+    let error = Config::parse(
         r#"
 [libdefaults]
  default_tkt_enctypes = aes128-cts-hmac-sha256-128
  permitted_enctypes = aes256-cts-hmac-sha1-96
 "#,
     )
-    .expect("config parses");
-    assert!(config.libdefaults.permitted_enctypes_explicit);
+    .expect_err("an explicit SHA2 request list outside the allowlist is rejected");
 
-    let options =
-        AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &config.libdefaults);
-    assert!(options.etypes.is_empty());
-    let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
-        .expect_err("an explicitly narrowed allowlist fails closed");
-    assert!(matches!(error, Error::EmptyEtypes));
+    assert!(
+        matches!(
+            &error,
+            rskrb5::config::Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                if enctype == "aes128-cts-hmac-sha256-128"
+        ),
+        "unexpected error: {error:?}"
+    );
 }
 
 #[test]
