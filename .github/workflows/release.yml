@@ -119,7 +119,7 @@ jobs:
         # Default features, matching the validation the consumer repository
         # ran against the vendored tree; the crate's `evaluation` extras are
         # not part of the shipped shape here.
-        run: cargo publish --dry-run
+        run: cargo publish --dry-run --locked
 
       - name: Publish to crates.io
         id: publish
@@ -130,7 +130,7 @@ jobs:
         run: |
           set -uo pipefail
           TAG="${{ steps.find-tag.outputs.tag }}"
-          OUTPUT=$(cargo publish 2>&1) && STATUS=0 || STATUS=$?
+          OUTPUT=$(cargo publish --locked 2>&1) && STATUS=0 || STATUS=$?
           echo "$OUTPUT"
           if [ "$STATUS" -eq 0 ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
