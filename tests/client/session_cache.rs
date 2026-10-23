@@ -611,6 +611,33 @@ fn tokio_client_auto_renewal_handle_aborts() {
 
 #[cfg(feature = "tokio")]
 #[test]
+fn tokio_client_refresh_due_uses_current_ticket_life() {
+    let now = SystemTime::now();
+    let mut renewed = current_tgt_session(60 * 60, 10 * 60);
+    renewed.start_time = now
+        .checked_sub(Duration::from_secs(60))
+        .expect("recent start time");
+
+    let client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, renewed.clone());
+    assert!(
+        !client.tgt_refresh_due(),
+        "a ticket renewed 60 s ago with 10 h left is not due from a 60 h old auth_time"
+    );
+
+    let mut near_end = renewed;
+    near_end.end_time = now
+        .checked_add(Duration::from_secs(10))
+        .expect("near end time");
+    near_end.key_expiration = Some(near_end.end_time);
+    let client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, near_end);
+    assert!(
+        client.tgt_refresh_due(),
+        "the current life, not auth_time, drives the refresh band"
+    );
+}
+
+#[cfg(feature = "tokio")]
+#[test]
 fn tokio_client_validates_configuration() {
     let mut dns_config = Config::new();
     dns_config.libdefaults.dns_lookup_kdc = true;

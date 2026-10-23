@@ -3642,7 +3642,9 @@ fn session_refresh_due_at(session: &AsRepSession, now: SystemTime) -> bool {
     if now >= session.end_time {
         return true;
     }
-    let Ok(lifetime) = session.end_time.duration_since(session.auth_time) else {
+    // RFC 4120 keeps auth_time fixed across renewals while a renewal advances
+    // start_time, so the current ticket life is end_time - start_time.
+    let Ok(lifetime) = session.end_time.duration_since(session.start_time) else {
         return true;
     };
     if lifetime.is_zero() {
@@ -3660,7 +3662,7 @@ fn session_refresh_delay_at(session: &AsRepSession, now: SystemTime) -> Duration
     if session_refresh_due_at(session, now) {
         return Duration::ZERO;
     }
-    let Ok(lifetime) = session.end_time.duration_since(session.auth_time) else {
+    let Ok(lifetime) = session.end_time.duration_since(session.start_time) else {
         return Duration::ZERO;
     };
     let Some(refresh_at) = session
