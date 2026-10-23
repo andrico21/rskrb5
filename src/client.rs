@@ -1373,7 +1373,7 @@ impl TokioClient {
                 let has_credentials = self.credentials.is_some();
                 let expired = now >= tgt.end_time;
                 if !(expired && has_credentials) {
-                    match self.renew_tgt().await.map(|session| session.clone()) {
+                    match self.renew_tgt().await.cloned() {
                         Ok(session) => return Ok(session),
                         Err(error) if !has_credentials => return Err(error),
                         Err(_) => {}

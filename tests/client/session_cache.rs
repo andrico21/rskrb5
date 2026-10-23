@@ -624,9 +624,9 @@ fn tokio_client_auto_renewal_paces_cache_only_nonrenewable_tgt() {
         )));
         let renewal = TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(50));
 
-        let before = process_utime_ticks();
+        let before = thread_utime_ticks();
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let after = process_utime_ticks();
+        let after = thread_utime_ticks();
         renewal.abort();
 
         let ticks = after.saturating_sub(before);
@@ -638,8 +638,11 @@ fn tokio_client_auto_renewal_paces_cache_only_nonrenewable_tgt() {
 }
 
 #[cfg(all(feature = "tokio", target_os = "linux"))]
-fn process_utime_ticks() -> u64 {
-    let stat = std::fs::read_to_string("/proc/self/stat").expect("proc stat reads");
+fn thread_utime_ticks() -> u64 {
+    // The test runtime is current-thread and the spawned renewal task runs on
+    // this thread, so measure this thread's CPU time: the harness executes
+    // other tests in parallel threads of the same process.
+    let stat = std::fs::read_to_string("/proc/thread-self/stat").expect("thread stat reads");
     let after_comm = stat
         .rsplit_once(')')
         .expect("stat contains the comm field")
