@@ -76,11 +76,17 @@ let response = result.into_response();
 
 The request factory may be called twice: once for the initial request and again
 after a `401 WWW-Authenticate: Negotiate` challenge. When mutual authentication
-was requested (`with_ap_option_bits(0x2000_0000)` or `CONTEXT_FLAG_MUTUAL`), a
-completion without a verified AP-REP is classified
-`ClientNegotiateResponse::InvalidToken`; consumers that require mutual
-authentication must inspect `result.negotiation` rather than only the HTTP
-status.
+is requested through `send_with_negotiate_options` or
+`send_with_blocking_negotiate_options` (`with_ap_option_bits(0x2000_0000)` or
+`CONTEXT_FLAG_MUTUAL`), the wrappers fail closed: unless the final response
+carries an AP-REP that verifies against the initiator context, they return
+`NegotiateHttpError::MutualAuthenticationNotProven`. That covers a final
+response without `WWW-Authenticate`, a final response without a Negotiate
+challenge, a completion without an AP-REP, and a first response that never
+challenged (so no authenticated retry was sent). The error carries the final
+response for diagnostics and the `ClientNegotiateResponse` classification
+(`None` when no retry happened). Without a mutual request the wrappers return
+the final response with its classification in `result.negotiation`.
 
 Blocking CLI-style use:
 
