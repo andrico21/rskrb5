@@ -423,6 +423,65 @@ fn replay_identity_follows_the_accepted_key_identity() {
 }
 
 #[test]
+fn replay_identity_survives_a_shared_key_sname_alias() {
+    let keytab = http_keytab_with_alias();
+    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+    validator
+        .validate_ap_req(&decode_hex(VALID_AP_REQ))
+        .expect("first AP-REQ validates");
+
+    assert!(matches!(
+        validator
+            .validate_ap_req(&alias_ap_req())
+            .expect_err("same authenticator under a shared-key alias is a replay"),
+        Error::Replay
+    ));
+    assert_eq!(validator.replay_cache_mut().len(), 1);
+}
+
+#[test]
+fn shared_replay_cache_rejects_a_shared_key_sname_alias() {
+    let keytab = http_keytab_with_alias();
+    let replay_cache = SharedReplayCache::new();
+    let mut first = ServiceValidator::new(&keytab)
+        .with_now(timestamp(1_893_553_447))
+        .with_shared_replay_cache(replay_cache.clone());
+    let mut second = ServiceValidator::new(&keytab)
+        .with_now(timestamp(1_893_553_447))
+        .with_shared_replay_cache(replay_cache.clone());
+    first
+        .validate_ap_req(&decode_hex(VALID_AP_REQ))
+        .expect("first AP-REQ validates");
+
+    assert!(matches!(
+        second
+            .validate_ap_req(&alias_ap_req())
+            .expect_err("shared cache rejects the same authenticator under an alias"),
+        Error::Replay
+    ));
+    assert_eq!(replay_cache.len().expect("shared cache counts"), 1);
+}
+
+#[test]
+fn clearing_old_entries_also_forgets_authenticator_digests() {
+    let keytab = http_keytab_with_alias();
+    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+    validator
+        .validate_ap_req(&decode_hex(VALID_AP_REQ))
+        .expect("first AP-REQ validates");
+
+    assert_eq!(
+        validator
+            .replay_cache_mut()
+            .clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)),
+        1
+    );
+    validator
+        .validate_ap_req(&alias_ap_req())
+        .expect("expired digest permits the alias presentation");
+}
+
+#[test]
 fn clears_old_replay_cache_entries() {
     let keytab = http_keytab();
     let now = timestamp(1_893_553_447);
@@ -698,6 +757,28 @@ fn rejects_addressless_ticket_when_client_address_is_required() {
 
 fn http_keytab() -> Keytab {
     Keytab::parse(&decode_hex(HTTP_KEYTAB)).expect("HTTP keytab parses")
+}
+
+fn http_keytab_with_alias() -> Keytab {
+    let mut keytab = http_keytab();
+    let mut alias = keytab
+        .entries()
+        .iter()
+        .find(|entry| entry.key.etype == 18 && entry.kvno == 1)
+        .expect("fixture service key exists")
+        .clone();
+    alias.principal.components = vec!["HTTP".to_owned(), "alias.test.gokrb5".to_owned()];
+    keytab.entries_mut().push(alias);
+    keytab
+}
+
+fn alias_ap_req() -> Vec<u8> {
+    let mut alias = valid_ap_req_struct();
+    alias.ticket.sname.string = vec![
+        kerberos_string("HTTP"),
+        kerberos_string("alias.test.gokrb5"),
+    ];
+    rasn::der::encode(&alias).expect("alias AP-REQ encodes")
 }
 
 fn syshttp_keytab() -> Keytab {
