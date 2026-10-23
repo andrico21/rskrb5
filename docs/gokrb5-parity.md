@@ -39,6 +39,44 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   gokrb5 v8.4.4 compares principal components only
   (`types.PrincipalName.Equal`) and exposes authenticator-derived credentials;
   this divergence is deliberate hardening and is revisited if upstream changes.
+- **AS/TGS reply enctypes and `permitted_enctypes` (hardening).** The client
+  rejects an AS-REP whose reply-key enctype, or an AS/TGS reply whose session
+  key enctype, is not in the request's `etype` list
+  (`client::Error::EnctypeNotRequested`). An explicitly configured
+  `[libdefaults] permitted_enctypes` narrows the request lists, rejects
+  session keys outside it in the config-driven exchanges
+  (`client::Error::EnctypeNotPermitted`), and makes an explicit
+  `default_tkt_enctypes`/`default_tgs_enctypes` entry outside it a parse error
+  (`config::Error::EnctypeNotPermitted`); the seeded default list changes
+  nothing. gokrb5 v8.4.4 derives the reply key from the reply's own
+  `EncPart.EType` without consulting the request list
+  (`messages.ASRep.DecryptEncPart`) and parses `PermittedEnctypeIDs` without
+  consuming it. MIT krb5 enforces `permitted_enctypes`; this follows MIT and is
+  revisited if upstream changes.
+- **kpasswd success provenance (hardening).** A kpasswd reply reports success
+  only through a verified AP-REP and KRB-PRIV; a bare KRB-ERROR carrying result
+  code 0 fails with `kadmin::Error::UnauthenticatedSuccess`, and the
+  high-level client keeps its stored password. gokrb5 v8.4.4 reaches the same
+  outcome by a different path (`kadmin.Reply.Decrypt` returns any KRB-ERROR
+  reply as an error), so this entry records a behaviour change against earlier
+  `rskrb5` releases rather than a new gap against gokrb5.
+- **Host-based SPN case (RFC 4120 section 6.2.1).**
+  `Principal::host_based_service` and `host_based_service_in_realm` fold the
+  DNS host component to lower case, so host-case variants name one service
+  principal and share one cached service ticket. Service names, realms and
+  `Principal::parse_service` keep their case. gokrb5 v8.4.4 keeps the host
+  text as given (`spnego.setRequestSPN` lower-cases only a CNAME-resolved
+  name, and `types.NewPrincipalName` never folds).
+- **Mutual authentication in the HTTP wrappers (hardening).** When the
+  initiator requests mutual authentication (the `mutual-required` AP option or
+  `CONTEXT_FLAG_MUTUAL`), a completion without an AP-REP classifies as
+  `InvalidToken`, and `send_with_negotiate_options` and
+  `send_with_blocking_negotiate_options` return
+  `NegotiateHttpError::MutualAuthenticationNotProven` unless the final
+  response carries an AP-REP that verifies against the initiator context.
+  Requests without a mutual flag behave as before. gokrb5 v8.4.4's
+  `spnego.Client.Do` returns the retried response without inspecting a
+  response token; this divergence is deliberate hardening.
 
 ## Parity Gates
 

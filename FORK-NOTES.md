@@ -1,9 +1,10 @@
 # `rskrb5-patched` - a temporary fork of `rskrb5`
 
-This branch (`release/0.2.2`, pushed to `andrico21/rskrb5`) is the source of
-the crates.io crate **`rskrb5-patched` 0.2.2**: upstream `rskrb5` `main` at
+This branch (`release/0.3.0`, pushed to `andrico21/rskrb5`) is the source of
+the crates.io crate **`rskrb5-patched` 0.3.0**: upstream `rskrb5` `main` at
 `6f4abc9` plus the changes below. It exists only so consumers can depend on a
-registry version that carries them - every change is filed or planned upstream.
+registry version that carries them - every code change is filed or planned
+upstream.
 It is not affiliated with the upstream author, and it leaves consumers'
 dependency graphs when upstream ships the same fixes.
 
@@ -15,19 +16,21 @@ changes.
 ## Releases
 
 Cut through GitHub Actions, gated on CI: land the release commit on a
-`release/*` branch, wait for CI to go green, then push the tag (`v0.2.2`) at
+`release/*` branch, wait for CI to go green, then push the tag (`v0.3.0`) at
 the same SHA. The `Release` workflow verifies the tag against the crate
 version, dry-runs, publishes `rskrb5-patched` with the repository's
 `CARGO_REGISTRY_TOKEN` secret, and opens the GitHub release. A re-run of CI on
 the same SHA is the manual recovery path.
 
-This branch is the 0.2.2 release commit (version bumped; `0.2.1` remains
-published): pushing `v0.2.2` at its tip is the publish step. `docs/fix-plans/`
-holds the detailed plans for the remaining audit findings.
+This branch is the 0.3.0 release commit (version bumped; `0.2.1` and `0.2.2`
+remain published): pushing `v0.3.0` at its tip is the publish step. 0.3.0 is a
+breaking release (new error variants, a second type parameter on
+`NegotiateHttpError`, new public struct fields; see `CHANGELOG.md`).
+`docs/fix-plans/` holds the detailed plans for the audit findings it closes.
 
 ## What it changes
 
-| Change | Upstream, 2026-10-07 |
+| Change | Upstream, 2026-10-24 |
 |---|---|
 | Clippy lints reported by Rust 1.98 (so the other changes can pass CI) | **PR [#15](https://github.com/clelange/rskrb5/pull/15)** open |
 | `hex` as a dev-dependency so the crate's own integration tests build | issue #12 - **PR [#16](https://github.com/clelange/rskrb5/pull/16)** open |
@@ -39,15 +42,26 @@ holds the detailed plans for the remaining audit findings.
 | TCP framing and preauth connection reuse: record mark + body written as one segment, `TCP_NODELAY`, pinned stream for the second AS phase (imported from PR [#19](https://github.com/clelange/rskrb5/pull/19)'s branch), plus an `Auto`-fallback pinning extension | **PR [#19](https://github.com/clelange/rskrb5/pull/19)** open (Tcp path); extension stacked as [Gittingc0dez/rskrb5#1](https://github.com/Gittingc0dez/rskrb5/pull/1) |
 | AP-REQ replay identity canonicalized over the advisory name-type; a name-type-only replay is rejected (RFC 4120 section 3.2.3/6.2) | **PR [#20](https://github.com/clelange/rskrb5/pull/20)** open |
 | Authenticator client realm bound to the ticket realm; `ValidatedApReq.client` is ticket-derived (intentional gokrb5 divergence, `docs/gokrb5-parity.md`) | **PR [#21](https://github.com/clelange/rskrb5/pull/21)** open |
+| AP-REQ replay cache also indexes a digest of the authenticator ciphertext, so an authenticator re-presented under a rewritten cleartext ticket `sname` (for example a keytab alias sharing the service key) is rejected | **PR [#20](https://github.com/clelange/rskrb5/pull/20)** open, updated with this commit |
+| Ccache record counts bounded against the remaining input before reserving, so a malformed cache returns `Truncated` instead of aborting on a huge allocation | PR to follow |
+| kpasswd success accepted only with authenticated provenance: an unsigned KRB-ERROR code 0 is rejected (`kadmin::Error::UnauthenticatedSuccess`) and the stored password is kept | PR to follow |
+| `[libdefaults] clockskew` applied on the `Config`-driven acceptors (`ServiceValidator`, `NegotiateLayer`); plain constructors keep 300 s | PR to follow |
+| Host-based service principals fold the DNS host component to lower case (RFC 4120 section 6.2.1), so host-case variants share one SPN and one cached ticket | PR to follow |
+| `[domain_realm]` lookups fold DNS case, and a bare tag covers its subdomains (MIT krb5.conf(5)) | PR to follow |
+| AS/TGS reply and session-key enctypes bound to the requested list (`EnctypeNotRequested`); an explicit `permitted_enctypes` narrows requests and rejects out-of-list session keys (`EnctypeNotPermitted`), and an explicit request list outside it is a parse error; the explicit flag survives serde and include expansion | PR to follow |
+| Renewal series: refresh band from the current ticket life, auto-renewal paced when a refresh makes no progress, and AS recovery when a cached TGT is expired or its renewal is refused | PR to follow |
+| Requested mutual authentication fails closed in the response classifier and in the send wrappers (`NegotiateHttpError::MutualAuthenticationNotProven`) | PR to follow |
+| Lockfile refreshed to the latest Rust 1.88-compatible versions | fork only (lockfile) |
 
 The measurements and the acceptance procedure live in the consumer repository
 (`kpasswd-rs`: `VENDORING.md`).
 
 ## Retirement
 
-When an upstream release carries these fixes, `rskrb5-patched` 0.2.1 and 0.2.2
-are yanked (`cargo yank --version 0.2.2 rskrb5-patched`, likewise for 0.2.1)
-and consumers move back to `rskrb5`. No further versions are planned.
+When an upstream release carries these fixes, `rskrb5-patched` 0.2.1, 0.2.2
+and 0.3.0 are yanked (`cargo yank --version 0.3.0 rskrb5-patched`, likewise for
+0.2.2 and 0.2.1) and consumers move back to `rskrb5`. No further versions are
+planned.
 
 ## Licensing
 
