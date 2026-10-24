@@ -548,6 +548,17 @@ def emit(data: bytes, planned: list[Placement], reason: str) -> bytes:
         inner = place.item is None or place.inner
         if place.item is None:
             position = inner_position(data)
+            if place.lint == "missing_docs":
+                prefix_tokens = tokens(data[:position])
+                for index, token in enumerate(prefix_tokens[:-3]):
+                    if [t.text for t in prefix_tokens[index : index + 4]] == [
+                        "#",
+                        "!",
+                        "[",
+                        "cfg",
+                    ]:
+                        position = token.start
+                        break
         elif place.inner:
             position = inner_position(data[: place.item.end - 1], place.item.body_start)
         else:
@@ -921,6 +932,16 @@ def self_test() -> None:
             "lint-migration: test",
         )
         assert inner.startswith(b"//! docs\n#![deny(warnings)]\n#![expect(")
+        disabled = b'//! docs\n#![deny(warnings)]\n#![cfg(feature = "http")]\n'
+        disabled_emitted = emit(
+            disabled,
+            [Placement("src/lib.rs", None, "missing_docs", "always")],
+            "lint-migration: test",
+        )
+        assert disabled_emitted.index(b"#![expect(") < disabled_emitted.index(
+            b"#![cfg("
+        )
+        assert strip_migrations(disabled_emitted) == disabled
         module = b"mod nested {\n//! module docs\nfn f() {}\n}\n"
         mod_item = scan_items(module)[0]
         emitted_module = emit(
