@@ -9,19 +9,17 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import re
 import shutil
 import subprocess
 import sys
 import tomllib
-from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
+import fork_reference
 
 CONFIGS: Final = (
     ("--all-features",),
@@ -138,6 +136,7 @@ def compare_trees(root: Path, reference: Path, head: Path) -> list[Diagnostic]:
         raise RuntimeError("HEAD has no lint profile; finish todo 14 first")
     with (reference / "Cargo.toml").open("a") as manifest_file:
         manifest_file.write("\n" + "\n".join(tables))
+    fork_reference.compensate_reference(reference)
     run_cargo(reference, [NIGHTLY, "fmt", "--all"])
     normalize(reference, True)
     mappings = {}
@@ -174,6 +173,7 @@ def compare_trees(root: Path, reference: Path, head: Path) -> list[Diagnostic]:
 
 
 def self_test() -> int:
+    fork_reference.self_test()
     with TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "src").mkdir()
@@ -219,7 +219,7 @@ def self_test() -> int:
     )
     assert flags == ["-D", "clippy::all", "-D", "clippy::unwrap_used"]
     print(
-        "fork_lines_gate self-test: ok (masking, K7, removed allow, moved helper, fuzz flags)"
+        "fork_lines_gate self-test: ok (reference dev-dependency, masking, K7, removed allow, moved helper, fuzz flags)"
     )
     return 0
 
