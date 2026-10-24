@@ -924,42 +924,88 @@ fn temp_dir(name: &str) -> PathBuf {
     temp_file(name)
 }
 
-#[expect(
-    clippy::arithmetic_side_effects,
-    clippy::as_conversions,
-    clippy::cast_sign_loss,
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::rest_pattern_accessible_field,
-    clippy::unseparated_literal_suffix,
-    clippy::wildcard_enum_match_arm,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
+/// Property tests for the ccache parser's length bounds and panic freedom.
 #[cfg(test)]
 mod fork_property_tests {
-    use proptest::prelude::*;
+    use proptest::{
+        collection,
+        prelude::{Strategy, TestCaseError, any},
+        prop_assert, prop_assert_eq, prop_oneof, proptest,
+    };
     use rskrb5::ccache::{CCache, Error};
+
+    /// A v4 cache header with an empty header-field block.
+    const V4_EMPTY_HEADER: [u8; 4] = [0x05, 0x04, 0x00, 0x00];
+
+    /// The ccache magic first byte.
+    const CCACHE_MAGIC: u8 = 0x05;
+
+    /// Offset right after the default principal's component count: the
+    /// header, the name type and the count field.
+    const COUNT_END: usize = 12;
 
     /// Minimum encoded size of one principal component: a four-byte length.
     const MIN_COMPONENT_LEN: usize = 4;
 
+    /// Largest generated input: 4 KiB.
+    const MAX_INPUT_LEN: usize = 4096;
+
+    /// Largest tail after the two-byte magic and version prefix, so the whole
+    /// input stays within [`MAX_INPUT_LEN`].
+    const MAX_TAIL_LEN: usize = 4094;
+
+    /// Arbitrary inputs up to [`MAX_INPUT_LEN`]: half fully random, half
+    /// behind the ccache magic byte and a supported version, so the parser
+    /// gets past its first checks.
+    fn arbitrary_input() -> impl Strategy<Value = Vec<u8>> {
+        prop_oneof![
+            collection::vec(any::<u8>(), 0..=MAX_INPUT_LEN),
+            (1_u8..=4_u8, collection::vec(any::<u8>(), 0..=MAX_TAIL_LEN)).prop_map(
+                |(version, tail)| [CCACHE_MAGIC, version].into_iter().chain(tail).collect()
+            ),
+        ]
+    }
+
     proptest! {
         /// Any component count, with the input cut right after the count
-        /// field, is rejected before allocation and never panics.
+        /// field, is rejected before allocation and never panics: on 64-bit
+        /// targets as `Truncated` with `needed == count * 4`, on 32-bit
+        /// targets as `Truncated` or `LengthOverflow`.
         #[test]
-        fn component_count_is_bounded_by_remaining_input(count in 1..=i32::MAX) {
-            let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
-            bytes.extend_from_slice(&0i32.to_be_bytes()); // name type
-            bytes.extend_from_slice(&count.to_be_bytes()); // component count
+        fn component_count_is_bounded_by_remaining_input(
+            name_type in any::<i32>(),
+            count in 1_i32..=i32::MAX,
+        ) {
+            let bytes: Vec<u8> = V4_EMPTY_HEADER
+                .into_iter()
+                .chain(name_type.to_be_bytes())
+                .chain(count.to_be_bytes())
+                .collect();
+            let expected_needed = usize::try_from(count)?.checked_mul(MIN_COMPONENT_LEN);
 
-            let error = CCache::parse(&bytes).expect_err("count exceeds remaining input");
-            match error {
-                Error::Truncated { needed, remaining, .. } => {
-                    prop_assert_eq!(remaining, 0);
-                    prop_assert_eq!(needed, count as usize * MIN_COMPONENT_LEN);
-                }
-                Error::LengthOverflow => prop_assert!(cfg!(target_pointer_width = "32")),
-                other => prop_assert!(false, "unexpected error: {other:?}"),
+            let parsed = CCache::parse(&bytes);
+            if let Err(Error::Truncated { offset, needed, remaining }) = parsed {
+                prop_assert_eq!(offset, COUNT_END);
+                prop_assert_eq!(remaining, 0);
+                prop_assert_eq!(Some(needed), expected_needed);
+            } else if matches!(parsed, Err(Error::LengthOverflow)) {
+                prop_assert!(
+                    cfg!(target_pointer_width = "32") && expected_needed.is_none(),
+                    "LengthOverflow only when count * 4 overflows a 32-bit usize"
+                );
+            } else {
+                return Err(TestCaseError::fail(format!(
+                    "count {count} was not rejected as truncated: {parsed:?}"
+                )));
+            }
+        }
+
+        /// Arbitrary input up to 4 KiB never panics the parser, and every
+        /// rejection renders a non-empty diagnostic.
+        #[test]
+        fn parse_never_panics_on_arbitrary_input(bytes in arbitrary_input()) {
+            if let Err(error) = CCache::parse(&bytes) {
+                prop_assert!(!error.to_string().is_empty(), "empty diagnostic for {error:?}");
             }
         }
     }
