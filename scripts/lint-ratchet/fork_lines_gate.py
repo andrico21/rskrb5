@@ -131,6 +131,7 @@ def compare_trees(root: Path, reference: Path, head: Path) -> list[Diagnostic]:
     shutil.copy2(root / "clippy.toml", reference / "clippy.toml")
     # Equality gate owns validation; copy the actual HEAD tables, including order.
     cargo = (root / "Cargo.toml").read_text()
+    fork_reference.align_msrv(reference, cargo)
     tables = re.findall(r"(?ms)^\[lints\.[^\n]+\n.*?(?=^\[|\Z)", cargo)
     if not tables:
         raise RuntimeError("HEAD has no lint profile; finish todo 14 first")
