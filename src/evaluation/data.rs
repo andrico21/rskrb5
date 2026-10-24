@@ -1,4 +1,4 @@
-use std::fmt;
+use alloc::fmt;
 
 /// Candidate crates evaluated before committing to a standalone `rskrb5`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
