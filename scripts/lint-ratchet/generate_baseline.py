@@ -12,6 +12,7 @@ No original source is written until every compiler run and placement succeeds.
 Manifest counts count attribute occurrences, not repeated compiler diagnostics.
 The scanner API is in scanner.py; this CLI intentionally does not import the
 independently maintained gate scripts or common.py.
+Only the pure module-wrap transition matcher is shared with the gate.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, TypedDict
 
+from baseline_moves import additions
 from scanner import (
     Item,
     ScanError,
@@ -703,18 +705,19 @@ def manifest_text(entries: list[Entry]) -> str:
 
 def refresh(root: Path, rebaseline: bool) -> None:
     current = source_entries(root)
-    previous = {
-        (e.file, e.item, e.lint, e.predicate): e.count
-        for e in read_manifest(root / MANIFEST)
-    }
-    additions = [
-        e
-        for e in current
-        if e.count > previous.get((e.file, e.item, e.lint, e.predicate), 0)
-    ]
-    if additions and not rebaseline:
+    previous = Counter(
+        {
+            (e.file, e.item, e.lint, e.predicate): e.count
+            for e in read_manifest(root / MANIFEST)
+        }
+    )
+    added = additions(
+        previous,
+        Counter({(e.file, e.item, e.lint, e.predicate): e.count for e in current}),
+    )
+    if added and not rebaseline:
         raise BaselineError(
-            f"manifest would add entries; use --rebaseline only for an authorized toolchain migration: {additions}"
+            f"manifest would add entries; use --rebaseline only for an authorized toolchain migration: {added}"
         )
     (root / MANIFEST).write_text(manifest_text(current))
 
@@ -1043,6 +1046,59 @@ def self_test() -> None:
             assert read_manifest(root / MANIFEST) == []
         else:
             raise AssertionError("manifest addition accepted")
+        # Given tree attributes, refresh emits module-wrap keys, not stale keys.
+        fixture = (
+            '#[expect(dead_code, reason = "lint-migration: fixture")]\nfn f() {}\n'
+        )
+        for item in (fixture, fixture.replace("fn f() {}", "struct F;")):
+            path.write_text(item)
+            refresh(root, True)
+            previous = read_manifest(root / MANIFEST)
+            wrapped = "#[cfg(test)]\nmod tests {\n" + item + "}\n"
+            path.write_text(wrapped)
+            refresh(root, False)
+            expected = [
+                Entry(e.file, "mod tests::" + e.item, e.lint, e.predicate, e.count)
+                for e in previous
+            ]
+            assert read_manifest(root / MANIFEST) == expected
+            # Given changed metadata or duplicates, refresh rejects without writing.
+            for invalid in (
+                wrapped.replace("dead_code", "unused"),
+                wrapped.replace(
+                    "expect(dead_code,", "cfg_attr(test, expect(dead_code,"
+                ).replace('fixture")]', 'fixture"))]'),
+                wrapped.replace(
+                    item,
+                    item.replace(
+                        "#[expect",
+                        '#[expect(dead_code, reason = "lint-migration: extra")]\n#[expect',
+                    ),
+                ),
+                wrapped + item,
+                wrapped + wrapped.replace("mod tests", "mod other"),
+                wrapped.replace("fn f", "fn g").replace("struct F", "struct G"),
+            ):
+                (root / MANIFEST).write_text(manifest_text(previous))
+                path.write_text(invalid)
+                try:
+                    refresh(root, False)
+                except BaselineError:
+                    assert read_manifest(root / MANIFEST) == previous
+                else:
+                    raise AssertionError("invalid module-wrap move accepted")
+            # Given a refreshed removal, restoring even the wrapped item fails.
+            path.write_text("")
+            refresh(root, False)
+            path.write_text(wrapped)
+            try:
+                refresh(root, False)
+            except BaselineError:
+                assert read_manifest(root / MANIFEST) == []
+            else:
+                raise AssertionError("removed entry restored by wrapping")
+            refresh(root, True)
+            assert read_manifest(root / MANIFEST) == expected
     result = subprocess.run(
         [sys.executable, __file__, "--failure-fixture"],
         text=True,
