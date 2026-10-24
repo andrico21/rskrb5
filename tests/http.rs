@@ -1224,7 +1224,7 @@ fn current_service_ticket_session() -> AsRepSession {
 }
 
 #[cfg(feature = "tokio")]
-type MutualSendResult = std::result::Result<
+type MutualSendResult = core::result::Result<
     krb_http::NegotiateHttpResponse<Vec<u8>>,
     krb_http::NegotiateHttpError<Infallible, Vec<u8>>,
 >;
