@@ -1778,35 +1778,41 @@ mod ccache_env_load {
         clippy::let_underscore_must_use,
         clippy::let_underscore_untyped,
         clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
         let_underscore_drop,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )]
     /// Pins that the client loads its ccache from `KRB5CCNAME`.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_loads_from_ccache_env() {
-        const TEST_PATH: &str = "session_cache::ccache_env_load::tokio_client_loads_from_ccache_env";
+    fn tokio_client_loads_from_ccache_env() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::ccache_env_load::tokio_client_loads_from_ccache_env";
         if !env::in_child(TEST_PATH) {
             let path = temp_client_ccache_file("load-env");
             let name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(name.as_ref()))]);
-            return;
+            return Ok(());
         }
         let tgt = sample_tgt_session();
         let service_ticket = sample_service_ticket_session(&tgt);
-        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket);
-        let cache = client.to_ccache().expect("client exports ccache");
+        let cache = client
+            .to_ccache()
+            .map_err(|cause| format!("client exports ccache: {cause}"))?;
         let (name, path) = file_name_from_parent("KRB5CCNAME");
-        cache.save_name(&name).expect("ccache saves by name");
+        cache
+            .save_name(&name)
+            .map_err(|cause| format!("ccache saves by name: {cause}"))?;
 
         let loaded = TokioClient::from_ccache_env(Config::new(), KdcProtocol::Tcp)
-            .expect("client loads ccache from env");
+            .map_err(|cause| format!("client loads ccache from env: {cause}"))?;
         let _ = std::fs::remove_file(&path);
 
         assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
         assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
     }
 }
 
@@ -1901,24 +1907,23 @@ mod config_default_ccache_fallback {
         clippy::let_underscore_must_use,
         clippy::let_underscore_untyped,
         clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
         let_underscore_drop,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )]
     /// Pins the configured default ccache when `KRB5CCNAME` is unset.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_uses_config_default_ccache_when_env_is_absent() {
-        const TEST_PATH: &str =
-            "session_cache::config_default_ccache_fallback::tokio_client_uses_config_default_ccache_when_env_is_absent";
+    fn tokio_client_uses_config_default_ccache_when_env_is_absent() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::config_default_ccache_fallback::tokio_client_uses_config_default_ccache_when_env_is_absent";
         if !env::in_child(TEST_PATH) {
             env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
-            return;
+            return Ok(());
         }
         let tgt = sample_tgt_session();
         let service_ticket = sample_service_ticket_session(&tgt);
         let directory = temp_client_ccache_dir("default-ccache-env-fallback");
-        std::fs::create_dir(&directory).expect("temp DIR collection is created");
+        std::fs::create_dir(&directory)
+            .map_err(|cause| format!("temp DIR collection is created: {cause}"))?;
         let name = format!("DIR:{}", directory.display());
         let mut client = TokioClient::from_tgt_session(
             config_with_default_ccache_name(name.clone()),
@@ -1928,14 +1933,16 @@ mod config_default_ccache_fallback {
         client.cache_service_ticket(service_ticket);
         client
             .save_default_ccache()
-            .expect("client saves default ccache");
+            .map_err(|cause| format!("client saves default ccache: {cause}"))?;
 
-        let loaded =
-            TokioClient::from_default_ccache(config_with_default_ccache_name(name), KdcProtocol::Tcp)
-                .expect("client loads default ccache");
+        let loaded = TokioClient::from_default_ccache(
+            config_with_default_ccache_name(name),
+            KdcProtocol::Tcp,
+        )
+        .map_err(|cause| format!("client loads default ccache: {cause}"))?;
         loaded
             .update_default_ccache()
-            .expect("client updates default ccache");
+            .map_err(|cause| format!("client updates default ccache: {cause}"))?;
 
         let _ = std::fs::remove_file(directory.join("tkt"));
         let _ = std::fs::remove_file(directory.join("primary"));
@@ -1943,6 +1950,7 @@ mod config_default_ccache_fallback {
 
         assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
         assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
     }
 }
 
@@ -1957,21 +1965,19 @@ mod env_default_ccache_precedence {
         clippy::let_underscore_must_use,
         clippy::let_underscore_untyped,
         clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
         let_underscore_drop,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )]
     /// Pins that `KRB5CCNAME` overrides the configured default ccache name.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_prefers_env_default_ccache_over_config_name() {
-        const TEST_PATH: &str =
-            "session_cache::env_default_ccache_precedence::tokio_client_prefers_env_default_ccache_over_config_name";
+    fn tokio_client_prefers_env_default_ccache_over_config_name() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::env_default_ccache_precedence::tokio_client_prefers_env_default_ccache_over_config_name";
         if !env::in_child(TEST_PATH) {
             let path = temp_client_ccache_file("default-ccache-env-precedence");
             let env_name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(env_name.as_ref()))]);
-            return;
+            return Ok(());
         }
         let tgt = sample_tgt_session();
         let service_ticket = sample_service_ticket_session(&tgt);
@@ -1985,20 +1991,21 @@ mod env_default_ccache_precedence {
         client.cache_service_ticket(service_ticket);
         client
             .save_default_ccache()
-            .expect("client saves default ccache from env");
+            .map_err(|cause| format!("client saves default ccache from env: {cause}"))?;
 
         let loaded = TokioClient::from_default_ccache(
             config_with_default_ccache_name(config_default),
             KdcProtocol::Tcp,
         )
-        .expect("client loads default ccache from env");
+        .map_err(|cause| format!("client loads default ccache from env: {cause}"))?;
         loaded
             .update_default_ccache()
-            .expect("client updates default ccache from env");
+            .map_err(|cause| format!("client updates default ccache from env: {cause}"))?;
         let _ = std::fs::remove_file(&path);
 
         assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
         assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
     }
 }
 
@@ -2208,11 +2215,9 @@ mod keytab_env_load {
         expect(
             clippy::absolute_paths,
             clippy::default_numeric_fallback,
-            clippy::expect_used,
             clippy::let_underscore_must_use,
             clippy::let_underscore_untyped,
             clippy::missing_panics_doc,
-            clippy::tests_outside_test_module,
             let_underscore_drop,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -2220,29 +2225,33 @@ mod keytab_env_load {
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins that the client loads its keytab from `KRB5_KTNAME`.
     #[test]
-    fn tokio_client_loads_keytab_from_env() {
-        const TEST_PATH: &str = "session_cache::keytab_env_load::tokio_client_loads_keytab_from_env";
+    fn tokio_client_loads_keytab_from_env() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::keytab_env_load::tokio_client_loads_keytab_from_env";
         if !env::in_child(TEST_PATH) {
             let path = temp_client_keytab_file("load-keytab-env");
             let name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
-            return;
+            return Ok(());
         }
         let keytab = keytab_with_reply_key(1);
         let (name, path) = file_name_from_parent("KRB5_KTNAME");
-        keytab.save_name(&name).expect("keytab saves by name");
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
         let client = TokioClient::with_keytab_from_env(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
-        .expect("client loads keytab from env");
+        .map_err(|cause| format!("client loads keytab from env: {cause}"))?;
         let _ = std::fs::remove_file(&path);
 
         let diagnostics = runtime().block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
         assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
     }
 }
 
@@ -2312,11 +2321,9 @@ mod client_keytab_env_load {
         expect(
             clippy::absolute_paths,
             clippy::default_numeric_fallback,
-            clippy::expect_used,
             clippy::let_underscore_must_use,
             clippy::let_underscore_untyped,
             clippy::missing_panics_doc,
-            clippy::tests_outside_test_module,
             let_underscore_drop,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -2324,29 +2331,33 @@ mod client_keytab_env_load {
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins that the client loads its client keytab from `KRB5_CLIENT_KTNAME`.
     #[test]
-    fn tokio_client_loads_client_keytab_from_env() {
-        const TEST_PATH: &str = "session_cache::client_keytab_env_load::tokio_client_loads_client_keytab_from_env";
+    fn tokio_client_loads_client_keytab_from_env() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::client_keytab_env_load::tokio_client_loads_client_keytab_from_env";
         if !env::in_child(TEST_PATH) {
             let path = temp_client_keytab_file("load-client-keytab-env");
             let name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", Some(name.as_ref()))]);
-            return;
+            return Ok(());
         }
         let keytab = keytab_with_reply_key(1);
         let (name, path) = file_name_from_parent("KRB5_CLIENT_KTNAME");
-        keytab.save_name(&name).expect("keytab saves by name");
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
         let client = TokioClient::with_client_keytab_from_env(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
-        .expect("client loads client keytab from env");
+        .map_err(|cause| format!("client loads client keytab from env: {cause}"))?;
         let _ = std::fs::remove_file(&path);
 
         let diagnostics = runtime().block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
         assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
     }
 }
 
@@ -2416,11 +2427,9 @@ mod default_client_keytab_fallback {
         expect(
             clippy::absolute_paths,
             clippy::default_numeric_fallback,
-            clippy::expect_used,
             clippy::let_underscore_must_use,
             clippy::let_underscore_untyped,
             clippy::missing_panics_doc,
-            clippy::tests_outside_test_module,
             let_underscore_drop,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -2428,29 +2437,31 @@ mod default_client_keytab_fallback {
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins the configured default client keytab when `KRB5_CLIENT_KTNAME` is unset.
     #[test]
-    fn tokio_client_loads_default_client_keytab_when_env_is_absent() {
-        const TEST_PATH: &str =
-            "session_cache::default_client_keytab_fallback::tokio_client_loads_default_client_keytab_when_env_is_absent";
+    fn tokio_client_loads_default_client_keytab_when_env_is_absent() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::default_client_keytab_fallback::tokio_client_loads_default_client_keytab_when_env_is_absent";
         if !env::in_child(TEST_PATH) {
             env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
-            return;
+            return Ok(());
         }
         let keytab = keytab_with_reply_key(1);
         let path = temp_client_keytab_file("load-default-client-keytab");
         let name = format!("FILE:{}", path.display());
-        keytab.save_name(&name).expect("keytab saves by name");
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
         let client = TokioClient::with_client_keytab_from_default(
             config_with_client_keytab_name(name),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
-        .expect("client loads default client keytab");
+        .map_err(|cause| format!("client loads default client keytab: {cause}"))?;
         let _ = std::fs::remove_file(&path);
 
         let diagnostics = runtime().block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
         assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
     }
 }
 
@@ -2520,11 +2531,9 @@ mod env_client_keytab_precedence {
         expect(
             clippy::absolute_paths,
             clippy::default_numeric_fallback,
-            clippy::expect_used,
             clippy::let_underscore_must_use,
             clippy::let_underscore_untyped,
             clippy::missing_panics_doc,
-            clippy::tests_outside_test_module,
             let_underscore_drop,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -2532,9 +2541,8 @@ mod env_client_keytab_precedence {
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins that `KRB5_CLIENT_KTNAME` overrides the configured client keytab name.
     #[test]
-    fn tokio_client_prefers_env_client_keytab_over_config_name() {
-        const TEST_PATH: &str =
-            "session_cache::env_client_keytab_precedence::tokio_client_prefers_env_client_keytab_over_config_name";
+    fn tokio_client_prefers_env_client_keytab_over_config_name() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::env_client_keytab_precedence::tokio_client_prefers_env_client_keytab_over_config_name";
         if !env::in_child(TEST_PATH) {
             let path = temp_client_keytab_file("load-env-client-keytab");
             let env_name = format!("FILE:{}", path.display());
@@ -2542,11 +2550,13 @@ mod env_client_keytab_precedence {
                 TEST_PATH,
                 &[("KRB5_CLIENT_KTNAME", Some(env_name.as_ref()))],
             );
-            return;
+            return Ok(());
         }
         let keytab = keytab_with_reply_key(1);
         let (env_name, path) = file_name_from_parent("KRB5_CLIENT_KTNAME");
-        keytab.save_name(&env_name).expect("keytab saves by name");
+        keytab
+            .save_name(&env_name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
         let missing_config_name = format!(
             "FILE:{}",
             temp_client_keytab_file("missing-config-client-keytab").display()
@@ -2557,12 +2567,15 @@ mod env_client_keytab_precedence {
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
-        .expect("client loads env client keytab before config default");
+        .map_err(|cause| {
+            format!("client loads env client keytab before config default: {cause}")
+        })?;
         let _ = std::fs::remove_file(&path);
 
         let diagnostics = runtime().block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
         assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
     }
 }
 

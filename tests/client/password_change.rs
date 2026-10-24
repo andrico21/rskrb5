@@ -189,14 +189,13 @@ mod tokio_cached_changepw {
         clippy::expect_used,
         clippy::missing_panics_doc,
         clippy::shadow_unrelated,
-        clippy::tests_outside_test_module,
         unused_results,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )]
     /// Pins a password change through a cached `kadmin/changepw` ticket against an authenticated reply.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_changes_password_with_cached_changepw_ticket() {
+    fn tokio_client_changes_password_with_cached_changepw_ticket() -> Result<(), TestError> {
         runtime().block_on(async {
             let tgt = sample_tgt_session();
             let changepw = change_password_principal();
@@ -209,9 +208,9 @@ mod tokio_cached_changepw {
                 &decode_hex(TGS_REQ_CONFOUNDER),
             )
             .expect("changepw TGS-REQ builds");
-            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
-            let mut changepw_ticket =
-                process_tgs_rep(&request, &response, &tgt.session_key).expect("TGS-REP validates");
+            let tgs_rep = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+            let mut changepw_ticket = process_tgs_rep(&request, &tgs_rep, &tgt.session_key)
+                .map_err(|cause| format!("TGS-REP validates: {cause}"))?;
             let now = SystemTime::now();
             changepw_ticket.start_time = now
                 .checked_sub(Duration::from_secs(60))
@@ -275,7 +274,8 @@ mod tokio_cached_changepw {
             task.await.expect("kpasswd listener task completes");
             assert_eq!(result.code, KPASSWD_SUCCESS);
             assert_eq!(result.text, "password changed");
-        });
+            Ok(())
+        })
     }
 }
 
@@ -595,7 +595,6 @@ mod negotiate_cached_changepw {
             clippy::missing_panics_doc,
             clippy::shadow_reuse,
             clippy::shadow_unrelated,
-            clippy::tests_outside_test_module,
             let_underscore_drop,
             unused_results,
             reason = "lint-migration: upstream baseline at ee9cb04"
@@ -604,7 +603,7 @@ mod negotiate_cached_changepw {
     #[cfg(all(feature = "tokio", feature = "spnego"))]
     /// Pins a `NegotiateClient` password change through a cached `kadmin/changepw` ticket.
     #[test]
-    fn negotiate_client_changes_password_with_cached_changepw_ticket() {
+    fn negotiate_client_changes_password_with_cached_changepw_ticket() -> Result<(), TestError> {
         runtime().block_on(async {
             let tgt = sample_tgt_session();
             let changepw = change_password_principal();
@@ -617,9 +616,9 @@ mod negotiate_cached_changepw {
                 &decode_hex(TGS_REQ_CONFOUNDER),
             )
             .expect("changepw TGS-REQ builds");
-            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
-            let mut changepw_ticket =
-                process_tgs_rep(&request, &response, &tgt.session_key).expect("TGS-REP validates");
+            let tgs_rep = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+            let mut changepw_ticket = process_tgs_rep(&request, &tgs_rep, &tgt.session_key)
+                .map_err(|cause| format!("TGS-REP validates: {cause}"))?;
             let now = SystemTime::now();
             changepw_ticket.start_time = now
                 .checked_sub(Duration::from_secs(60))
@@ -684,7 +683,8 @@ mod negotiate_cached_changepw {
             task.await.expect("kpasswd listener task completes");
             assert_eq!(result.code, KPASSWD_SUCCESS);
             assert_eq!(result.text, "password changed");
-        });
+            Ok(())
+        })
     }
 }
 
@@ -761,7 +761,6 @@ mod negotiate_explicit_target {
             clippy::missing_panics_doc,
             clippy::shadow_reuse,
             clippy::shadow_unrelated,
-            clippy::tests_outside_test_module,
             clippy::too_many_lines,
             unused_results,
             reason = "lint-migration: upstream baseline at ee9cb04"
@@ -770,7 +769,7 @@ mod negotiate_explicit_target {
     #[cfg(all(feature = "tokio", feature = "spnego"))]
     /// Pins a `NegotiateClient` password change for an explicit target principal.
     #[test]
-    fn negotiate_client_changes_explicit_target_password() {
+    fn negotiate_client_changes_explicit_target_password() -> Result<(), TestError> {
         runtime().block_on(async {
             let tgt = sample_tgt_session();
             let changepw = change_password_principal();
@@ -783,9 +782,9 @@ mod negotiate_explicit_target {
                 &decode_hex(TGS_REQ_CONFOUNDER),
             )
             .expect("changepw TGS-REQ builds");
-            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
-            let mut changepw_ticket =
-                process_tgs_rep(&request, &response, &tgt.session_key).expect("TGS-REP validates");
+            let tgs_rep = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+            let mut changepw_ticket = process_tgs_rep(&request, &tgs_rep, &tgt.session_key)
+                .map_err(|cause| format!("TGS-REP validates: {cause}"))?;
             let now = SystemTime::now();
             changepw_ticket.start_time = now
                 .checked_sub(Duration::from_secs(60))
@@ -845,8 +844,9 @@ mod negotiate_explicit_target {
                         .as_ref()
                         .to_vec(),
                 };
-                let enc_part = rskrb5::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
-                    .expect("KRB-PRIV payload decrypts");
+                let enc_part =
+                    rskrb5::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
+                        .expect("KRB-PRIV payload decrypts");
                 let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
                     .expect("ChangePasswdData decodes");
                 assert_eq!(
@@ -895,7 +895,8 @@ mod negotiate_explicit_target {
             task.await.expect("kpasswd listener task completes");
             assert_eq!(result.code, KPASSWD_SUCCESS);
             assert_eq!(result.text, "password changed");
-        });
+            Ok(())
+        })
     }
 }
 
@@ -972,7 +973,6 @@ mod blocking_negotiate_cached_changepw {
             clippy::missing_panics_doc,
             clippy::shadow_reuse,
             clippy::shadow_unrelated,
-            clippy::tests_outside_test_module,
             clippy::unused_trait_names,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -980,7 +980,8 @@ mod blocking_negotiate_cached_changepw {
     #[cfg(all(feature = "tokio", feature = "spnego"))]
     /// Pins a `BlockingNegotiateClient` password change through a cached `kadmin/changepw` ticket.
     #[test]
-    fn blocking_negotiate_client_changes_password_with_cached_changepw_ticket() {
+    fn blocking_negotiate_client_changes_password_with_cached_changepw_ticket()
+    -> Result<(), TestError> {
         let tgt = sample_tgt_session();
         let changepw = change_password_principal();
         let request = build_tgs_req_with_confounder(
@@ -991,10 +992,10 @@ mod blocking_negotiate_cached_changepw {
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER),
         )
-        .expect("changepw TGS-REQ builds");
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
-        let mut changepw_ticket =
-            process_tgs_rep(&request, &response, &tgt.session_key).expect("TGS-REP validates");
+        .map_err(|cause| format!("changepw TGS-REQ builds: {cause}"))?;
+        let tgs_rep = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+        let mut changepw_ticket = process_tgs_rep(&request, &tgs_rep, &tgt.session_key)
+            .map_err(|cause| format!("TGS-REP validates: {cause}"))?;
         let now = SystemTime::now();
         changepw_ticket.start_time = now
             .checked_sub(Duration::from_secs(60))
@@ -1007,8 +1008,11 @@ mod blocking_negotiate_cached_changepw {
                 .expect("renew time"),
         );
 
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local kpasswd listener");
-        let listener_addr = listener.local_addr().expect("local listener address");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .map_err(|cause| format!("bind local kpasswd listener: {cause}"))?;
+        let listener_addr = listener
+            .local_addr()
+            .map_err(|cause| format!("local listener address: {cause}"))?;
         let mut client = TokioClient::from_tgt_session(
             config_with_kpasswd_server(listener_addr.to_string()),
             KdcProtocol::Tcp,
@@ -1016,7 +1020,9 @@ mod blocking_negotiate_cached_changepw {
         );
         client.cache_service_ticket(changepw_ticket);
         let mut client = BlockingNegotiateClient::new(NegotiateClient::from_tokio_client(client))
-            .expect("blocking negotiate client wraps tokio client");
+            .map_err(|cause| {
+            format!("blocking negotiate client wraps tokio client: {cause}")
+        })?;
 
         let server = std::thread::spawn(move || {
             use std::io::{Read, Write};
@@ -1048,11 +1054,14 @@ mod blocking_negotiate_cached_changepw {
                     ipv4_host_address([127, 0, 0, 1]),
                 ),
             )
-            .expect("change password succeeds");
+            .map_err(|cause| format!("change password succeeds: {cause}"))?;
 
-        server.join().expect("kpasswd listener task completes");
+        server
+            .join()
+            .map_err(|cause| format!("kpasswd listener task completes: {cause:?}"))?;
         assert_eq!(result.code, KPASSWD_SUCCESS);
         assert_eq!(result.text, "password changed");
+        Ok(())
     }
 }
 
@@ -1067,14 +1076,14 @@ mod explicit_target_credentials {
         clippy::expect_used,
         clippy::missing_panics_doc,
         clippy::needless_raw_strings,
-        clippy::tests_outside_test_module,
         clippy::too_many_lines,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )]
     /// Pins that changing an explicit target's password keeps the client's own password credential.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_changes_explicit_target_does_not_rotate_password_credentials() {
+    fn tokio_client_changes_explicit_target_does_not_rotate_password_credentials()
+    -> Result<(), TestError> {
         runtime().block_on(async {
             let old_password = b"old-passwordvalue";
             let new_password = b"new-passwordvalue";
@@ -1203,7 +1212,8 @@ TEST.GOKRB5 = {{
                         etype: 18,
                         value: decode_hex(SESSION_KEY),
                     };
-                    let response = kpasswd_authenticated_success_reply(&request, &session_key, 0x77);
+                    let response =
+                        kpasswd_authenticated_success_reply(&request, &session_key, 0x77);
                     write_tcp_kdc_response(&mut socket, &response).await;
                 }
             });
@@ -1237,7 +1247,8 @@ TEST.GOKRB5 = {{
             assert_eq!(change_target.text, "password changed");
             assert_eq!(change_self.code, KPASSWD_SUCCESS);
             assert_eq!(change_self.text, "password changed");
-        });
+            Ok(())
+        })
     }
 }
 
@@ -1252,14 +1263,13 @@ mod own_password_credentials {
         clippy::expect_used,
         clippy::missing_panics_doc,
         clippy::needless_raw_strings,
-        clippy::tests_outside_test_module,
         clippy::too_many_lines,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )]
     /// Pins that changing the client's own password rotates its stored password credential.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_changes_password_updates_password_credentials() {
+    fn tokio_client_changes_password_updates_password_credentials() -> Result<(), TestError> {
         runtime().block_on(async {
             let old_password = b"old-passwordvalue";
             let new_password = b"new-passwordvalue";
@@ -1337,7 +1347,8 @@ TEST.GOKRB5 = {{
                         etype: 18,
                         value: decode_hex(SESSION_KEY),
                     };
-                    let response = kpasswd_authenticated_success_reply(&request, &session_key, 0x77);
+                    let response =
+                        kpasswd_authenticated_success_reply(&request, &session_key, 0x77);
                     write_tcp_kdc_response(&mut socket, &response).await;
                 }
             });
@@ -1373,7 +1384,8 @@ TEST.GOKRB5 = {{
             assert_eq!(change_self_with_new.text, "password changed");
             assert_eq!(change_self_with_updated.code, KPASSWD_SUCCESS);
             assert_eq!(change_self_with_updated.text, "password changed");
-        });
+            Ok(())
+        })
     }
 }
 
