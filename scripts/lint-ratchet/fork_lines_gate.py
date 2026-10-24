@@ -20,6 +20,7 @@ from typing import Final
 
 import common
 import fork_reference
+import provenance
 
 CONFIGS: Final = (
     ("--all-features",),
@@ -146,7 +147,7 @@ def compare_trees(root: Path, reference: Path, head: Path) -> list[Diagnostic]:
         source = moves.get(rel, rel)
         ref_path = reference / source
         ref = ref_path.read_text() if source and ref_path.is_file() else ""
-        mappings[rel] = common.line_mapping(path.read_text(), ref)
+        mappings[rel] = provenance.mapping(root, rel, (path.read_text(), ref))
     normalize(head, False)
     found = violations(collect(head), collect(reference), mappings, moves)
     flags = lint_flags(tomllib.loads(cargo))

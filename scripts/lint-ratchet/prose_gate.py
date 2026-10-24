@@ -17,6 +17,7 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
+import provenance
 
 CHECKS: Final = (
     "cancel-safety",
@@ -157,7 +158,11 @@ def report(
         ref_path = reference / origin
         upstream = ref_path.read_text() if origin and ref_path.is_file() else ""
         source = path.read_text()
-        mapping = common.line_mapping(source, upstream)
+        mapping = (
+            provenance.mapping(root, relative, (source, upstream))
+            if (root / ".git").exists()
+            else common.line_mapping(source, upstream)
+        )
         hits.extend(
             (gate, relative, line, detail)
             for gate, line, detail in scan(source, mapping, relative.startswith("src/"))
