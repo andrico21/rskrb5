@@ -99,7 +99,8 @@ def run_cargo(root: Path, arguments: list[str]) -> str:
         os.environ,
         CARGO_BUILD_JOBS="1",
         CARGO_BUILD_WARNINGS="allow",
-        CARGO_TARGET_DIR=str(root / "target"),
+        CARGO_TARGET_DIR=os.environ.get("CARGO_TARGET_DIR", str(root / "target")),
+        RUSTFLAGS=os.environ.get("RUSTFLAGS", "") + " --cap-lints=warn",
         RUSTDOCFLAGS="--cap-lints=warn",
     )
     command = ["flock", "/tmp/rskrb5-cargo.lock", "cargo", *arguments]

@@ -677,7 +677,10 @@ def generate(root: Path) -> None:
         )
         for path, data in originals.items():
             (scratch / path).write_bytes(strip_migrations(data))
-        units = collect(scratch, Path(temporary) / "target")
+        units = collect(
+            scratch,
+            Path(os.environ.get("CARGO_TARGET_DIR", str(Path(temporary) / "target"))),
+        )
         planned = placements(scratch, units)
         for path in originals:
             source = scratch / path
