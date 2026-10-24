@@ -106,7 +106,29 @@ def revisions(root: Path, file: str) -> list[Revision]:
 
 
 def mapping(root: Path, file: str, texts: tuple[str, str]) -> dict[int, int]:
-    return chain(*texts, revisions(root, file))
+    aliases = {
+        Path(new).stem: "common"
+        for new, old in common.moved_sources(root).items()
+        if old == "tests/common/mod.rs"
+    }
+    history = revisions(root, file)
+    normalize = lambda text: (
+        renamed_paths(text, aliases) if file.startswith("tests/") else text
+    )
+    return chain(
+        *(normalize(text) for text in texts),
+        [Revision(normalize(r.before), normalize(r.after)) for r in history],
+    )
+
+
+def renamed_paths(source: str, aliases: dict[str, str]) -> str:
+    """Normalize moved helper paths in code only; literals remain significant."""
+    result = source
+    clean = common.strip_comments_and_strings(source)
+    for match in reversed(list(re.finditer(r"\b(\w+)(?=\s*::)", clean))):
+        if match[1] in aliases:
+            result = result[: match.start()] + aliases[match[1]] + result[match.end() :]
+    return result
 
 
 def self_test() -> None:
@@ -122,6 +144,22 @@ def self_test() -> None:
     assert 2 not in chain(edited, upstream, steps)
     assert 4 not in chain(last, upstream, steps)
     assert 2 not in common.line_mapping(last, upstream)
+    # Given the recorded helper moves, when only a call path changes,
+    # then it inherits; a changed argument or string does not.
+    aliases = {"pac_ad_win2k": "common", "pac_trust": "common"}
+    original = 'Keytab::parse(common::DATA).expect("common::fixture");\n'
+    for module in aliases:
+        moved = original.replace("common::DATA", module + "::DATA")
+        assert common.line_mapping(renamed_paths(moved, aliases), original) == {1: 1}
+        assert not common.line_mapping(
+            renamed_paths(moved.replace("DATA", "OTHER"), aliases), original
+        )
+        assert not common.line_mapping(
+            renamed_paths(
+                moved.replace("common::fixture", module + "::fixture"), aliases
+            ),
+            original,
+        )
     print("provenance self-test: ok (chained rewrites, fork edits, fork-only origins)")
 
 
