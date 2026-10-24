@@ -767,7 +767,7 @@ enum ProbeOutcome {
     Closed(String),
 }
 
-impl std::fmt::Display for ProbeOutcome {
+impl core::fmt::Display for ProbeOutcome {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Answered { len, error_code } => {
