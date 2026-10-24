@@ -175,8 +175,14 @@ fn rejects_kpasswd_reply_ap_rep_timestamp_mismatch() {
     ));
 }
 
+/// `TokioClient` password change through a cached `kadmin/changepw` ticket.
 #[cfg(test)]
 #[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tokio_cached_changepw {
     use super::*;
 
@@ -522,8 +528,14 @@ fn tokio_client_changes_explicit_target_password() {
     });
 }
 
+/// `NegotiateClient` password change through a cached `kadmin/changepw` ticket.
 #[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod negotiate_cached_changepw {
     use super::*;
 
@@ -688,8 +700,14 @@ mod negotiate_cached_changepw {
     }
 }
 
+/// `NegotiateClient` password change for an explicit target principal.
 #[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod negotiate_explicit_target {
     use super::*;
 
@@ -900,8 +918,14 @@ mod negotiate_explicit_target {
     }
 }
 
+/// `BlockingNegotiateClient` password change through a cached `kadmin/changepw` ticket.
 #[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod blocking_negotiate_cached_changepw {
     use super::*;
 
@@ -1065,8 +1089,14 @@ mod blocking_negotiate_cached_changepw {
     }
 }
 
+/// Credential handling of a password change for an explicit target.
 #[cfg(test)]
 #[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod explicit_target_credentials {
     use super::*;
 
@@ -1252,8 +1282,14 @@ TEST.GOKRB5 = {{
     }
 }
 
+/// Credential rotation of a password change for the client's own principal.
 #[cfg(test)]
 #[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod own_password_credentials {
     use super::*;
 

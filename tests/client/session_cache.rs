@@ -1767,8 +1767,14 @@ fn negotiate_client_preserves_unsupported_cache_type_error() {
     ));
 }
 
+/// Child-process test of loading a client ccache from `KRB5CCNAME`.
 #[cfg(test)]
 #[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod ccache_env_load {
     use super::*;
 
@@ -1895,8 +1901,14 @@ fn tokio_client_loads_from_config_default_ccache_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+/// Child-process test of the configured default ccache without `KRB5CCNAME`.
 #[cfg(test)]
 #[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod config_default_ccache_fallback {
     use super::*;
 
@@ -1954,8 +1966,14 @@ mod config_default_ccache_fallback {
     }
 }
 
+/// Child-process test of `KRB5CCNAME` precedence over the configured ccache name.
 #[cfg(test)]
 #[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod env_default_ccache_precedence {
     use super::*;
 
@@ -2149,8 +2167,14 @@ fn tokio_client_loads_client_keytab_from_config_name() {
     assert_eq!(diagnostics.keytab_enctypes, [18]);
 }
 
+/// Child-process test of loading a keytab from `KRB5_KTNAME`.
 #[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod keytab_env_load {
     use super::*;
 
@@ -2255,8 +2279,14 @@ mod keytab_env_load {
     }
 }
 
+/// Child-process test of loading a client keytab from `KRB5_CLIENT_KTNAME`.
 #[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod client_keytab_env_load {
     use super::*;
 
@@ -2361,8 +2391,14 @@ mod client_keytab_env_load {
     }
 }
 
+/// Child-process test of the configured client keytab without `KRB5_CLIENT_KTNAME`.
 #[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod default_client_keytab_fallback {
     use super::*;
 
@@ -2465,8 +2501,14 @@ mod default_client_keytab_fallback {
     }
 }
 
+/// Child-process test of `KRB5_CLIENT_KTNAME` precedence over the configured name.
 #[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod env_client_keytab_precedence {
     use super::*;
 
