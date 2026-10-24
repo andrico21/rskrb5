@@ -1989,7 +1989,16 @@ pub fn build_tgs_req_for_realm_with_confounder(
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
     build_tgs_req_for_realm_inner(
-        tgt, kdc_realm, service, options, timestamp, cusec, confounder, None,
+        tgt,
+        kdc_realm,
+        service,
+        options,
+        TgsAuthenticatorContext {
+            timestamp,
+            cusec,
+            confounder,
+            subkey: None,
+        },
     )
     .map(|(request, _ap_req_der)| request)
 }
@@ -2017,10 +2026,12 @@ pub fn build_tgs_req_for_realm_with_subkey(
         kdc_realm,
         service,
         options,
-        timestamp,
-        cusec,
-        &confounder,
-        Some(&subkey),
+        TgsAuthenticatorContext {
+            timestamp,
+            cusec,
+            confounder: &confounder,
+            subkey: Some(&subkey),
+        },
     )?;
     Ok(TgsFastRequestParts {
         request,
@@ -2038,7 +2049,10 @@ pub fn build_tgs_req_for_realm_with_subkey(
 /// shape is this crate's constraint: RFC 6113 lets the two KRB-FX-CF2 inputs
 /// differ in enctype. A subkey of another enctype is
 /// [`Error::ApReqKeyEtypeMismatch`]; one of another length is [`Error::Crypto`].
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "deliberate: client::build_tgs_req_for_realm_with_confounder_and_subkey - public API from fork commit 782dcb8, upstream PR pending"
+)]
 pub fn build_tgs_req_for_realm_with_confounder_and_subkey(
     tgt: &AsRepSession,
     kdc_realm: impl Into<String>,
@@ -2067,10 +2081,12 @@ pub fn build_tgs_req_for_realm_with_confounder_and_subkey(
         kdc_realm,
         service,
         options,
-        timestamp,
-        cusec,
-        confounder,
-        Some(subkey),
+        TgsAuthenticatorContext {
+            timestamp,
+            cusec,
+            confounder,
+            subkey: Some(subkey),
+        },
     )?;
     Ok(TgsFastRequestParts {
         request,
@@ -2089,20 +2105,29 @@ pub(crate) fn random_subkey_for(key: &EncryptionKey) -> Result<EncryptionKey, Er
     })
 }
 
+struct TgsAuthenticatorContext<'request> {
+    timestamp: SystemTime,
+    cusec: u32,
+    confounder: &'request [u8],
+    subkey: Option<&'request EncryptionKey>,
+}
+
 /// Build a TGS-REQ for an explicit KDC realm, timestamp, and confounder, with
 /// an optional authenticator subkey: the request, and the DER of the AP-REQ
 /// that went into its `PA-TGS-REQ` padata.
-#[allow(clippy::too_many_arguments)]
 fn build_tgs_req_for_realm_inner(
     tgt: &AsRepSession,
     kdc_realm: impl Into<String>,
     service: Principal,
     options: TgsReqOptions,
-    timestamp: SystemTime,
-    cusec: u32,
-    confounder: &[u8],
-    subkey: Option<&EncryptionKey>,
+    authenticator_context: TgsAuthenticatorContext<'_>,
 ) -> Result<(BuiltTgsReq, Vec<u8>), Error> {
+    let TgsAuthenticatorContext {
+        timestamp,
+        cusec,
+        confounder,
+        subkey,
+    } = authenticator_context;
     if options.etypes.is_empty() {
         return Err(Error::EmptyEtypes);
     }

@@ -28,6 +28,10 @@ TEST_DOCS: Final = frozenset(
     ("missing_errors_doc", "missing_panics_doc", "too_long_first_doc_paragraph")
 )
 Entry = tuple[str, str, str, str]
+PENDING_SUBKEY_REASON: Final = (
+    "deliberate: client::build_tgs_req_for_realm_with_confounder_and_subkey"
+    " - public API from fork commit 782dcb8, upstream PR pending"
+)
 
 
 def manifest(text: str) -> Counter[Entry]:
@@ -52,9 +56,25 @@ def canonical(predicate: str) -> str:
 
 
 def sanctioned(
-    call: common.AttributeCall, item: common.Item | None, source: str
+    call: common.AttributeCall, item: common.Item | None, source: str, file: str
 ) -> bool:
     lints = {lint.removeprefix("clippy::") for lint in call.lints}
+    if call.reason == PENDING_SUBKEY_REASON:
+        return (
+            file == "src/client.rs"
+            and call.lints == ("clippy::too_many_arguments",)
+            and call.predicate == "always"
+            and item is not None
+            and item.identity == "fn build_tgs_req_for_realm_with_confounder_and_subkey"
+            and bool(re.search(r"\bpub\s+fn\b", source[item.start : item.end]))
+        )
+    if call.reason == "public facade":
+        return (
+            call.lints == ("clippy::pub_use",)
+            and source[call.start : call.start + 3] == "#!["
+            and file == "src/lib.rs"
+            and item is None
+        )
     if re.fullmatch(
         r"deliberate: \w+(?:::\w+)+ - mirrors upstream PR #[1-9]\d*", call.reason
     ):
@@ -100,7 +120,7 @@ def source_entries(root: Path) -> tuple[Counter[Entry], list[str]]:
                 site = item.identity if item is not None else "<crate root>"
                 for lint in call.lints:
                     entries[(rel, site, lint, canonical(call.predicate))] += 1
-            elif not sanctioned(call, item, source):
+            elif not sanctioned(call, item, source, rel):
                 errors.append(
                     f"{rel}:{common.line_of(source, call.start)}: invalid expect reason/item: {call.reason!r}"
                 )
@@ -190,6 +210,29 @@ def self_test() -> int:
         assert source_entries(root)[1]
         path.write_text(
             '#[cfg(test)]\n#[expect(clippy::missing_errors_doc, reason = "test code is not rendered API documentation")]\nmod tests {}\n'
+        )
+        assert source_entries(root)[1] == []
+        client = root / "src/client.rs"
+        fixture = (
+            f'#[expect(clippy::too_many_arguments, reason = "{PENDING_SUBKEY_REASON}")]\n'
+            "pub fn build_tgs_req_for_realm_with_confounder_and_subkey() {}\n"
+        )
+        path.write_text("")
+        client.write_text(fixture)
+        assert source_entries(root)[1] == []
+        for invalid in (
+            fixture.replace("pub fn", "fn"),
+            fixture.replace("clippy::too_many_arguments", "clippy::unwrap_used"),
+            fixture.replace("pub fn build_tgs_req", "pub fn other_tgs_req"),
+            fixture.replace("upstream PR pending", "upstream PR unknown"),
+        ):
+            client.write_text(invalid)
+            assert source_entries(root)[1]
+        client.unlink()
+        path.write_text(fixture)
+        assert source_entries(root)[1]
+        path.write_text(
+            '#![expect(clippy::pub_use, reason = "public facade")]\npub use core::fmt;\n'
         )
         assert source_entries(root)[1] == []
         path.write_text(

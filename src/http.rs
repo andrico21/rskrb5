@@ -14,6 +14,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 #[cfg(feature = "tower")]
 use core::time::Duration;
+#[cfg(feature = "tower")]
 use std::time::SystemTime;
 
 use http_types::{

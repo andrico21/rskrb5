@@ -259,7 +259,6 @@ pub fn build_change_password_request_with_confounder(
 
 /// Build a full kpasswd request message using a service ticket, explicit context,
 /// and explicit confounders for AP-REQ and KRB-PRIV encryption.
-#[allow(clippy::too_many_arguments)]
 pub fn build_change_password_message_with_confounders(
     client_principal: rasn_kerberos::PrincipalName,
     client_realm: &str,
