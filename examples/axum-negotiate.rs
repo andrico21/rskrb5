@@ -1,4 +1,6 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! Axum server on `127.0.0.1:3000` whose middleware validates
+//! `Authorization: Negotiate` headers against the service keytab named by
+//! `KRB5_KTNAME` (default `http.keytab`) and answers with the authenticated client principal.
 extern crate alloc;
 
 use alloc::sync::Arc;

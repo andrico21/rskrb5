@@ -11247,8 +11247,6 @@ pub fn init_sec_context(
     expect(
         clippy::missing_errors_doc,
         clippy::missing_inline_in_public_items,
-        clippy::needless_pass_by_value,
-        clippy::redundant_clone,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
@@ -11290,7 +11288,7 @@ pub fn init_sec_context_with_confounder(
         authenticator_cusec: built_ap_req.authenticator_cusec,
         authenticator_time: built_ap_req.authenticator_time,
         sequence_number: built_ap_req.sequence_number,
-        context_flags: options.context_flags.clone(),
+        context_flags: options.context_flags,
     })
 }
 

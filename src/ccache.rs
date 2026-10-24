@@ -7636,10 +7636,6 @@ fn validate_dir_subsidiary_path(path: &str) -> Result<PathBuf, Error> {
     Ok(path)
 }
 
-#[expect(
-    unused_qualifications,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 #[cfg_attr(
     any(
         all(
@@ -7897,7 +7893,7 @@ fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     let primary_path = directory.join(DIR_PRIMARY_FILE);
     let primary = match std::fs::read_to_string(&primary_path) {
         Ok(contents) => parse_dir_primary_name(&contents)?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
             std::fs::write(
                 &primary_path,
                 format!("{DIR_DEFAULT_PRIMARY_CACHE}\n").as_bytes(),
@@ -16687,9 +16683,6 @@ fn read_u32(bytes: &[u8], offset: &mut usize, endian: Endian) -> Result<u32, Err
     ),
     expect(
         clippy::default_numeric_fallback,
-        clippy::map_err_ignore,
-        clippy::missing_errors_doc,
-        clippy::shadow_reuse,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
@@ -16699,6 +16692,14 @@ fn read_u32(bytes: &[u8], offset: &mut usize, endian: Endian) -> Result<u32, Err
 /// Counts come from the credential-cache bytes themselves, so an unbounded
 /// reservation would let a short malformed input ask the allocator for tens of
 /// gigabytes; every reservation below is gated on this check.
+///
+/// # Errors
+///
+/// Returns the [`read_i32`] error when the count itself is truncated,
+/// [`Error::NegativeLength`] for a negative count, [`Error::LengthOverflow`]
+/// when the count or its byte size does not fit `usize`, and
+/// [`Error::Truncated`] when the remaining input cannot hold that many
+/// elements.
 fn read_count(
     bytes: &[u8],
     offset: &mut usize,
@@ -16709,9 +16710,11 @@ fn read_count(
     if count < 0 {
         return Err(Error::NegativeLength(count));
     }
-    let count: usize = count.try_into().map_err(|_| Error::LengthOverflow)?;
+    let Ok(items) = usize::try_from(count) else {
+        return Err(Error::LengthOverflow);
+    };
     let remaining = bytes.len().saturating_sub(*offset);
-    let needed = count
+    let needed = items
         .checked_mul(min_item_len)
         .ok_or(Error::LengthOverflow)?;
     if needed > remaining {
@@ -16721,7 +16724,7 @@ fn read_count(
             remaining,
         });
     }
-    Ok(count)
+    Ok(items)
 }
 
 #[cfg_attr(

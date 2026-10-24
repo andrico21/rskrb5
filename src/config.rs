@@ -6,170 +6,8 @@
 
 use alloc::collections::BTreeMap;
 use core::{net::IpAddr, time::Duration};
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::unused_trait_names,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 use std::{
-    io::{self, Read},
+    io::{self, Read as _},
     path::{Path, PathBuf},
 };
 
@@ -898,175 +736,14 @@ impl Config {
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a config with no parsed sections, without reading any
     /// environment variable.
     ///
     /// The environment-free twin of [`Config::new`]: the defaults come from
     /// [`LibDefaults::new_without_env`] instead of [`LibDefaults::new`], which
     /// reads `UID` and `HOME`.
+    #[inline]
+    #[must_use]
     pub fn new_without_env() -> Self {
         Self {
             libdefaults: LibDefaults::new_without_env(),
@@ -1233,11 +910,9 @@ impl Config {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
             clippy::missing_errors_doc,
             clippy::missing_inline_in_public_items,
-            clippy::shadow_reuse,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
@@ -1248,9 +923,11 @@ impl Config {
     /// its own name - is [`Error::IncludeCycle`] rather than a recursion that
     /// only runs out of depth.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let path = path.as_ref();
-        let canonical = std::fs::canonicalize(path)?;
-        let input = std::fs::read_to_string(path)?;
+        use std::fs;
+
+        let file = path.as_ref();
+        let canonical = fs::canonicalize(file)?;
+        let input = fs::read_to_string(file)?;
         Self::parse_with_roots(&input, [canonical])
     }
 
@@ -1960,6 +1637,8 @@ impl Config {
         I: IntoIterator<Item = P>,
         P: AsRef<Path>,
     {
+        use std::fs::canonicalize;
+
         let mut input = String::new();
         let mut loaded = 0usize;
         let mut roots = Vec::new();
@@ -1971,7 +1650,7 @@ impl Config {
             if loaded > 0 {
                 input.push('\n');
             }
-            let canonical = std::fs::canonicalize(path)?;
+            let canonical = canonicalize(path)?;
             input.push_str(&std::fs::read_to_string(path)?);
             input.push('\n');
             roots.push(canonical);
@@ -2685,509 +2364,33 @@ impl Config {
         Self::parse_with(input, Self::new)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Parse a `krb5.conf` string without reading any environment variable.
     ///
     /// The environment-free twin of [`Config::parse`]: the same parser, with
     /// the defaults taken from [`Config::new_without_env`]. `parse` reaches
     /// `Config::new` -> `LibDefaults::new` -> `UID`/`HOME`, which is exactly
     /// what a caller that must not read the environment cannot have.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Config::parse`]: an `include` or
+    /// `includedir` the text names that cannot be read, or that breaks a cycle,
+    /// depth, file-count or byte limit, and any line the parser refuses.
+    #[inline]
     pub fn parse_without_env(input: &str) -> Result<Self, Error> {
         Self::parse_with(input, Self::new_without_env)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// The parser both entry points share: they differ in nothing but the
     /// constructor that seeds the defaults.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Config::parse_with_roots_and_seed`].
     fn parse_with(input: &str, seed: fn() -> Self) -> Result<Self, Error> {
         Self::parse_with_roots_and_seed(input, [], seed)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// The parser the string entry point and the two file loaders share: they
     /// differ in nothing but the canonical paths the text came from.
     ///
@@ -3195,6 +2398,10 @@ impl Config {
     /// expanded, which is what makes the configuration's own files cycle
     /// members: a root that includes itself, and a path-list root a child
     /// includes, are [`Error::IncludeCycle`] like any other re-entered file.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Config::parse_with_roots_and_seed`].
     fn parse_with_roots<I>(input: &str, roots: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = PathBuf>,
@@ -3361,8 +2568,6 @@ impl Config {
         ),
         expect(
             clippy::arithmetic_side_effects,
-            clippy::missing_errors_doc,
-            clippy::shadow_reuse,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
@@ -3370,17 +2575,19 @@ impl Config {
     /// the constructor that seeds the defaults (the environment-free twins pass
     /// [`Config::new_without_env`]). The string entry point and the two file
     /// loaders share this; nothing else in the parser branches on either.
-    fn parse_with_roots_and_seed<I>(
-        input: &str,
-        roots: I,
-        seed: fn() -> Self,
-    ) -> Result<Self, Error>
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`IncludeExpansion::expand`] error of an `include` or
+    /// `includedir` the text names, and the error of any line or section the
+    /// parser refuses.
+    fn parse_with_roots_and_seed<I>(text: &str, roots: I, seed: fn() -> Self) -> Result<Self, Error>
     where
         I: IntoIterator<Item = PathBuf>,
     {
         let input = IncludeExpansion::default()
             .with_roots(roots)
-            .expand(input, 0)?;
+            .expand(text, 0)?;
         let mut config = seed();
         let mut enctypes = EnctypeParseState::default();
         let mut current = SectionKind::Unknown;
@@ -3709,171 +2916,6 @@ impl Config {
         self.realms.iter().find(|entry| entry.realm == realm)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::indexing_slicing,
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            clippy::shadow_unrelated,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Resolve a DNS name to a Kerberos realm using `[domain_realm]`.
     ///
     /// DNS names compare case-insensitively (RFC 4120 section 6.1) while realm
@@ -3882,8 +2924,10 @@ impl Config {
     /// where a leading-dot tag covers subdomains only and a bare tag covers the
     /// domain and its subdomains (MIT `krb5.conf(5)`); within one level the
     /// leading-dot tag wins.
-    pub fn resolve_realm(&self, domain_name: &str) -> Option<&str> {
-        let folded = domain_name.trim_end_matches('.').to_ascii_lowercase();
+    #[inline]
+    #[must_use]
+    pub fn resolve_realm(&self, dns_name: &str) -> Option<&str> {
+        let folded = dns_name.trim_end_matches('.').to_ascii_lowercase();
         let domain_name = folded.as_str();
         if let Some(realm) = self.domain_realm.get(domain_name) {
             return Some(realm);
@@ -3891,7 +2935,7 @@ impl Config {
 
         let parts: Vec<_> = domain_name.split('.').collect();
         for start in 1..parts.len() {
-            let bare = parts[start..].join(".");
+            let bare = parts.get(start..).unwrap_or_default().join(".");
             let dotted = format!(".{bare}");
             if let Some(realm) = self.domain_realm.get(&dotted) {
                 return Some(realm);
@@ -4938,7 +3982,6 @@ impl LibDefaults {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
@@ -4946,172 +3989,11 @@ impl LibDefaults {
     )]
     /// Create default libdefaults.
     pub fn new() -> Self {
-        Self::with_uid_and_home(std::env::var("UID").ok(), std::env::var("HOME").ok())
+        use std::env;
+
+        Self::with_uid_and_home(env::var("UID").ok(), env::var("HOME").ok())
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create default libdefaults without reading any environment variable.
     ///
     /// Identical to [`LibDefaults::new`] except for the two fields `new()`
@@ -5125,172 +4007,12 @@ impl LibDefaults {
     /// Every other default is the shared non-env default set, so a caller that
     /// must not read the environment gets one default set rather than a second
     /// divergent one.
+    #[inline]
+    #[must_use]
     pub fn new_without_env() -> Self {
         Self::with_uid_and_home(None, None)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::duration_suboptimal_units,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create default libdefaults from already-read `UID` and `HOME` values, or
     /// from `None` when they must not be read at all.
     fn with_uid_and_home(uid: Option<String>, home: Option<String>) -> Self {
@@ -5335,7 +4057,7 @@ impl LibDefaults {
             realm_try_domains: -1,
             renew_lifetime: Duration::ZERO,
             safe_checksum_type: 8,
-            ticket_lifetime: Duration::from_secs(24 * 60 * 60),
+            ticket_lifetime: Duration::from_hours(24),
             udp_preference_limit: 1465,
             verify_ap_req_nofail: false,
         };
@@ -5502,97 +4224,19 @@ impl LibDefaults {
         ),
         expect(
             clippy::assigning_clones,
-            clippy::missing_errors_doc,
             clippy::semicolon_if_nothing_returned,
             clippy::shadow_reuse,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Apply one `[libdefaults]` section's lines, recording in `enctypes` which
+    /// request enctype lists the section set explicitly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a line that is not an assignment, a `v4_`
+    /// directive, a value the key does not accept, and an explicit request
+    /// enctype list the explicit `permitted_enctypes` allowlist does not permit.
     fn parse_lines(
         &mut self,
         lines: &[Line],
@@ -5673,168 +4317,6 @@ impl LibDefaults {
         Ok(())
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Reject an explicit request list that names an enctype the explicit
     /// `permitted_enctypes` allowlist does not permit.
     ///
@@ -5842,6 +4324,11 @@ impl LibDefaults {
     /// list than the operator configured. Seeded (implicit) request lists are
     /// not checked here; `AsReqOptions::from_libdefaults` and
     /// `TgsReqOptions::from_libdefaults` narrow them to the allowlist.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EnctypeNotPermitted`] naming the first explicit request
+    /// list and enctype outside the allowlist.
     fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
         if !self.permitted_enctypes_explicit || self.permitted_enctype_ids.is_empty() {
             return Ok(());
@@ -6881,10 +5368,6 @@ impl Realm {
     }
 }
 
-#[expect(
-    unused_qualifications,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 #[cfg_attr(
     any(
         all(
@@ -7043,7 +5526,6 @@ impl Realm {
         )
     ),
     expect(
-        clippy::absolute_paths,
         clippy::error_impl_error,
         clippy::exhaustive_enums,
         reason = "lint-migration: upstream baseline at ee9cb04"
@@ -7157,7 +5639,7 @@ pub enum Error {
         /// The file the directive named.
         path: PathBuf,
         /// Why it could not be used.
-        source: std::io::Error,
+        source: io::Error,
     },
     /// An `includedir` directive named a directory that could not be listed.
     #[error("includedir {path} could not be listed: {source}")]
@@ -7165,7 +5647,7 @@ pub enum Error {
         /// The directory the directive named.
         path: PathBuf,
         /// Why it could not be listed.
-        source: std::io::Error,
+        source: io::Error,
     },
     /// An explicit request enctype list names an enctype outside the explicit
     /// `permitted_enctypes` allowlist.
@@ -7178,91 +5660,6 @@ pub enum Error {
     },
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Which `[libdefaults]` request enctype lists one parse set explicitly.
 ///
 /// The state spans every `[libdefaults]` section of the parse, so a request
@@ -7270,7 +5667,9 @@ pub enum Error {
 /// `permitted_enctypes` line from a later one.
 #[derive(Clone, Copy, Debug, Default)]
 struct EnctypeParseState {
+    /// A `default_tkt_enctypes` line was parsed.
     tkt_explicit: bool,
+    /// A `default_tgs_enctypes` line was parsed.
     tgs_explicit: bool,
 }
 
@@ -7718,253 +6117,11 @@ impl SectionKind {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Apply the lines collected for one section to `config`.
+///
+/// # Errors
+///
+/// Returns the error of the section's own parser for a line it refuses.
 fn apply_section(
     config: &mut Config,
     section: SectionKind,
@@ -13970,169 +12127,7 @@ enum IncludeDirective<'line> {
     Directory(&'line str),
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::single_char_lifetime_names,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-impl<'a> IncludeDirective<'a> {
+impl<'line> IncludeDirective<'line> {
     /// The directive a line carries, or `None` when it carries neither.
     ///
     /// Recognized as the first token of the line - which is where MIT's
@@ -14141,7 +12136,7 @@ impl<'a> IncludeDirective<'a> {
     /// column 0; leading whitespace is accepted here too, because a line this
     /// parser does not recognize at the top level is skipped silently, and a
     /// directive must never be ignored silently.
-    fn parse(line: &'a str) -> Option<Self> {
+    fn parse(line: &'line str) -> Option<Self> {
         // `includedir` first: `include` is a prefix of it.
         if let Some(rest) = line.strip_prefix("includedir")
             && starts_with_whitespace(rest)
@@ -14162,173 +12157,12 @@ fn starts_with_whitespace(text: &str) -> bool {
     text.chars().next().is_some_and(char::is_whitespace)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::too_long_first_doc_paragraph,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Whether `name` is one an `includedir` accepts, per MIT's `valid_name`
-/// (`krb5-1.21-final`, `src/util/profile/prof_parse.c:224-243`): dotfiles -
-/// "editor or filesystem artifacts" - are skipped, a name ending in `.conf` is
-/// included, and so is a name made only of alphanumeric characters, dashes and
-/// underscores. Like MIT's, it works on the name's bytes.
+/// Whether `name` is one an `includedir` accepts, per MIT's `valid_name`.
+///
+/// MIT's rule (`krb5-1.21-final`, `src/util/profile/prof_parse.c:224-243`):
+/// dotfiles - "editor or filesystem artifacts" - are skipped, a name ending in
+/// `.conf` is included, and so is a name made only of alphanumeric characters,
+/// dashes and underscores. Like MIT's, it works on the name's bytes.
 fn includedir_name_is_valid(name: &[u8]) -> bool {
     if name.starts_with(b".") {
         return false;
@@ -14378,183 +12212,23 @@ impl IncludeExpansion {
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::arithmetic_side_effects,
-            clippy::default_numeric_fallback,
-            clippy::missing_errors_doc,
-            clippy::unseparated_literal_suffix,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Replace every directive in `input` with what it names, recursively.
     ///
     /// `depth` is the include depth of the text itself: the configuration a
     /// caller handed over is depth 0, and each `include` adds one. A directive
     /// inside a `{ ... }` group is left alone - it is a setting of that group,
     /// and the section parser refuses it by name rather than ignoring it.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`Self::include_file`] or [`Self::include_dir`] error of the
+    /// first directive whose target cannot be read or breaks a limit.
     fn expand(&mut self, input: &str, depth: usize) -> Result<String, Error> {
         let mut expanded = String::with_capacity(input.len());
-        let mut group_level = 0i32;
+        let mut group_level = 0_i32;
         for line in input.lines() {
             let cleaned = strip_comments(line).trim();
-            if group_level == 0
+            if group_level == 0_i32
                 && let Some(directive) = IncludeDirective::parse(cleaned)
             {
                 expanded.push_str(&self.splice(directive, depth)?);
@@ -14562,174 +12236,19 @@ impl IncludeExpansion {
             }
             expanded.push_str(line);
             expanded.push('\n');
-            group_level += brace_delta(cleaned);
+            // Saturating: a nesting count past `i32` is no real configuration,
+            // and it still reads as "inside a group".
+            group_level = group_level.saturating_add(brace_delta(cleaned));
         }
         Ok(expanded)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// What one directive contributes to the expanded text.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`Self::include_file`] or [`Self::include_dir`] error for
+    /// the directive's target.
     fn splice(&mut self, directive: IncludeDirective<'_>, depth: usize) -> Result<String, Error> {
         match directive {
             IncludeDirective::File(argument) => self.include_file(Path::new(argument), depth),
@@ -14737,191 +12256,34 @@ impl IncludeExpansion {
         }
     }
 
-    #[expect(
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::arithmetic_side_effects,
-            clippy::missing_errors_doc,
-            clippy::shadow_reuse,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// One `include`: read the file and expand its own directives in turn.
     ///
     /// A path is used exactly as the configuration spells it, which is what MIT
     /// does (`fopen` on the token, relative to the process's working directory
     /// when it is relative) - no rebasing on the including file's directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncludeTooDeep`] past [`MAX_INCLUDE_DEPTH`],
+    /// [`Error::IncludeFile`] for a file that cannot be resolved or read,
+    /// [`Error::IncludeCycle`] for a file already being expanded, the
+    /// [`Self::read_include`] limit errors, and the errors of its own
+    /// directives.
     fn include_file(&mut self, path: &Path, depth: usize) -> Result<String, Error> {
-        let depth = depth + 1;
-        if depth > MAX_INCLUDE_DEPTH {
+        use std::fs;
+
+        // Saturating: `MAX_INCLUDE_DEPTH` refuses the chain long before
+        // `usize::MAX`.
+        let file_depth = depth.saturating_add(1);
+        if file_depth > MAX_INCLUDE_DEPTH {
             return Err(Error::IncludeTooDeep {
-                depth,
+                depth: file_depth,
                 limit: MAX_INCLUDE_DEPTH,
             });
         }
         // Resolving the path is how a file that does not exist is named rather
         // than skipped; it also gives the cycle check its canonical key.
-        let canonical = std::fs::canonicalize(path).map_err(|source| Error::IncludeFile {
+        let canonical = fs::canonicalize(path).map_err(|source| Error::IncludeFile {
             path: path.to_path_buf(),
             source,
         })?;
@@ -14932,184 +12294,24 @@ impl IncludeExpansion {
         }
         let content = self.read_include(path)?;
         self.open.push(canonical);
-        let expanded = self.expand(&content, depth);
-        self.open.pop();
+        let expanded = self.expand(&content, file_depth);
+        drop(self.open.pop());
         expanded
     }
 
-    #[expect(
-        unused_qualifications,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::arithmetic_side_effects,
-            clippy::as_conversions,
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// One included file's text, counted against the file and byte caps.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncludeTooMany`] past [`MAX_INCLUDE_FILES`],
+    /// [`Error::IncludeTooLarge`] past [`MAX_INCLUDE_BYTES`], and
+    /// [`Error::IncludeFile`] for a file that cannot be opened or read, or that
+    /// is not UTF-8 text.
     fn read_include(&mut self, path: &Path) -> Result<String, Error> {
-        let count = self.files + 1;
+        use std::fs::File;
+
+        // Saturating: `MAX_INCLUDE_FILES` refuses long before `usize::MAX`.
+        let count = self.files.saturating_add(1);
         if count > MAX_INCLUDE_FILES {
             return Err(Error::IncludeTooMany {
                 count,
@@ -15119,204 +12321,43 @@ impl IncludeExpansion {
         // Read at most one byte past what is left of the budget, so an oversize
         // file is refused without reading it into memory first.
         let remaining = MAX_INCLUDE_BYTES.saturating_sub(self.bytes);
-        let file = std::fs::File::open(path).map_err(|source| Error::IncludeFile {
+        let file = File::open(path).map_err(|source| Error::IncludeFile {
             path: path.to_path_buf(),
             source,
         })?;
+        // Saturating: the limit plus one is what is read, and a `usize` budget
+        // past `u64` is clamped rather than wrapped.
+        let limit = u64::try_from(remaining)
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
         let mut bytes = Vec::new();
-        file.take(remaining as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|source| Error::IncludeFile {
-                path: path.to_path_buf(),
-                source,
-            })?;
+        let _: usize =
+            file.take(limit)
+                .read_to_end(&mut bytes)
+                .map_err(|source| Error::IncludeFile {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
         if bytes.len() > remaining {
             return Err(Error::IncludeTooLarge {
-                bytes: self.bytes + bytes.len(),
+                bytes: self.bytes.saturating_add(bytes.len()),
                 limit: MAX_INCLUDE_BYTES,
             });
         }
         let content = String::from_utf8(bytes).map_err(|error| Error::IncludeFile {
             path: path.to_path_buf(),
-            source: std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
                 format!("not UTF-8 text: {error}"),
             ),
         })?;
         self.files = count;
-        self.bytes += content.len();
+        // Saturating: the byte check above keeps the total within
+        // `MAX_INCLUDE_BYTES`.
+        self.bytes = self.bytes.saturating_add(content.len());
         Ok(content)
     }
 
-    #[expect(
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::arithmetic_side_effects,
-            clippy::missing_errors_doc,
-            clippy::shadow_reuse,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// One `includedir`: every accepted name, in alphanumeric order.
     ///
     /// The file cap is enforced while the directory is scanned, so a directory
@@ -15330,8 +12371,18 @@ impl IncludeExpansion {
     /// path the configuration spelled, rather than a chain that only runs out of
     /// depth. The path is used exactly as the configuration spells it, as an
     /// `include` path is (`fopen` on the token, MIT's own rule).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncludeDir`] for a directory that cannot be resolved or
+    /// listed, [`Error::IncludeCycle`] for a directory already being expanded,
+    /// [`Error::IncludeTooMany`] once its accepted names pass
+    /// [`MAX_INCLUDE_FILES`], and the [`Self::include_file`] error of any
+    /// accepted file.
     fn include_dir(&mut self, dir: &Path, depth: usize) -> Result<String, Error> {
-        let canonical = std::fs::canonicalize(dir).map_err(|source| Error::IncludeDir {
+        use std::fs;
+
+        let canonical = fs::canonicalize(dir).map_err(|source| Error::IncludeDir {
             path: dir.to_path_buf(),
             source,
         })?;
@@ -15340,13 +12391,13 @@ impl IncludeExpansion {
                 path: dir.to_path_buf(),
             });
         }
-        let entries = std::fs::read_dir(dir).map_err(|source| Error::IncludeDir {
+        let entries = fs::read_dir(dir).map_err(|source| Error::IncludeDir {
             path: dir.to_path_buf(),
             source,
         })?;
         let mut names = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|source| Error::IncludeDir {
+        for listed in entries {
+            let entry = listed.map_err(|source| Error::IncludeDir {
                 path: dir.to_path_buf(),
                 source,
             })?;
@@ -15355,7 +12406,9 @@ impl IncludeExpansion {
             // the one the directory entry carries.
             let name = entry.file_name();
             if includedir_name_is_valid(name.as_encoded_bytes()) {
-                let count = self.files + names.len() + 1;
+                // Saturating: `MAX_INCLUDE_FILES` refuses long before
+                // `usize::MAX`.
+                let count = self.files.saturating_add(names.len()).saturating_add(1);
                 if count > MAX_INCLUDE_FILES {
                     return Err(Error::IncludeTooMany {
                         count,
@@ -15373,7 +12426,7 @@ impl IncludeExpansion {
         for name in names {
             expanded.push_str(&self.include_file(&dir.join(name), depth)?);
         }
-        self.open.pop();
+        drop(self.open.pop());
         Ok(expanded)
     }
 }
@@ -15381,213 +12434,11 @@ impl IncludeExpansion {
 #[cfg(test)]
 mod tests {
     use std::{
-        path::{Path, PathBuf},
-        process::Command,
+        path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{
-        Config, Error, LibDefaults, MAX_INCLUDE_BYTES, MAX_INCLUDE_DEPTH, MAX_INCLUDE_FILES,
-    };
-
-    /// The marker the parent sets when it re-executes this binary as a probe, so
-    /// a normal run leaves the probe test inert.
-    const PROBE_MARKER: &str = "RSKRB5_ENV_FREE_PROBE";
-    /// Every probe line carries this prefix, so the parent can ignore the test
-    /// harness's own output.
-    const PROBE_PREFIX: &str = "rskrb5-probe:";
-    /// This probe test's name in this binary, for the child's `--exact`.
-    const PROBE_TEST: &str = "config::tests::env_free_fields_probe_child";
-    /// The hostile `UID` the parent gives the child.
-    const HOSTILE_UID: &str = "4242";
-    /// The hostile `HOME` the parent gives the child.
-    const HOSTILE_HOME: &str = "/attacker/home";
-
-    /// The `UID`-derived default the environment-free constructors must produce:
-    /// the path `LibDefaults::new` builds when `UID` is unset.
-    const ENV_FREE_CLIENT_KEYTAB: &str = "/usr/local/var/krb5/user/0/client.keytab";
-
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            clippy::print_stdout,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// The environment-free constructor's fields, and - as the control - the
-    /// environment-reading constructor's, printed for the parent to assert on.
-    #[test]
-    fn env_free_fields_probe_child() {
-        if std::env::var_os(PROBE_MARKER).is_none() {
-            return;
-        }
-        let config = Config::new_without_env();
-        let defaults = LibDefaults::new_without_env();
-        let parsed = Config::parse_without_env("[libdefaults]\n").expect("empty config parses");
-        let reading = LibDefaults::new();
-        for (name, keytab, k5login) in [
-            (
-                "config",
-                &config.libdefaults.default_client_keytab_name,
-                &config.libdefaults.k5login_directory,
-            ),
-            (
-                "defaults",
-                &defaults.default_client_keytab_name,
-                &defaults.k5login_directory,
-            ),
-            (
-                "parsed",
-                &parsed.libdefaults.default_client_keytab_name,
-                &parsed.libdefaults.k5login_directory,
-            ),
-            (
-                "reading",
-                &reading.default_client_keytab_name,
-                &reading.k5login_directory,
-            ),
-        ] {
-            println!("{PROBE_PREFIX}{name}_client_keytab={keytab}");
-            println!("{PROBE_PREFIX}{name}_k5login={k5login}");
-        }
-    }
-
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// Run this binary as a child with a hostile `UID`/`HOME` - a child process,
-    /// never this one's environment - and return the probe lines it
-    /// printed.
-    fn hostile_env_probe() -> Vec<String> {
-        let executable = std::env::current_exe().expect("current_exe resolves");
-        let output = Command::new(executable)
-            .args(["--exact", PROBE_TEST, "--nocapture"])
-            .env_clear()
-            .env(PROBE_MARKER, "1")
-            .env("UID", HOSTILE_UID)
-            .env("HOME", HOSTILE_HOME)
-            .output()
-            .expect("probe child spawns");
-        assert!(
-            output.status.success(),
-            "the probe child must exit 0: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(|line| line.strip_prefix(PROBE_PREFIX))
-            .map(str::to_owned)
-            .collect()
-    }
-
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            clippy::panic,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// The value of one probe line, if the child printed it.
-    fn probe_field(lines: &[String], key: &str) -> String {
-        lines
-            .iter()
-            .find_map(|line| line.strip_prefix(key)?.strip_prefix('=').map(str::to_owned))
-            .unwrap_or_else(|| panic!("the probe must print {key}: {lines:?}"))
-    }
-
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            clippy::too_long_first_doc_paragraph,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// The control, asserted by every test below: the child's environment really
-    /// is hostile, so `LibDefaults::new` in that child follows it. Without this,
-    /// an inert probe would make the env-free assertions pass for the wrong
-    /// reason.
-    fn assert_the_child_environment_is_hostile(lines: &[String]) {
-        assert_eq!(
-            probe_field(lines, "reading_client_keytab"),
-            format!("/usr/local/var/krb5/user/{HOSTILE_UID}/client.keytab"),
-            "the environment-reading constructor must follow the hostile UID"
-        );
-        assert_eq!(probe_field(lines, "reading_k5login"), HOSTILE_HOME);
-    }
-
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// `Config::new_without_env` reads neither `UID` nor `HOME`: hostile values
-    /// in the process environment leave both derived fields at their
-    /// deterministic non-env values.
-    #[test]
-    fn env_free_config_constructor_does_not_read_uid_or_home() {
-        let lines = hostile_env_probe();
-        assert_the_child_environment_is_hostile(&lines);
-        assert_eq!(
-            probe_field(&lines, "config_client_keytab"),
-            ENV_FREE_CLIENT_KEYTAB,
-            "the env-free config's keytab default is the UID-fallback path"
-        );
-        assert_eq!(probe_field(&lines, "config_k5login"), "");
-    }
-
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// The same for the `LibDefaults` constructor the two env-free config
-    /// constructors share.
-    #[test]
-    fn env_free_libdefaults_constructor_does_not_read_uid_or_home() {
-        let lines = hostile_env_probe();
-        assert_the_child_environment_is_hostile(&lines);
-        assert_eq!(
-            probe_field(&lines, "defaults_client_keytab"),
-            ENV_FREE_CLIENT_KEYTAB
-        );
-        assert_eq!(probe_field(&lines, "defaults_k5login"), "");
-    }
-
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// `Config::parse_without_env` must not reach `Config::parse` ->
-    /// `Config::new` -> `LibDefaults::new`: it shares the parser, not the
-    /// constructor.
-    #[test]
-    fn parse_without_env_does_not_read_uid_or_home() {
-        let lines = hostile_env_probe();
-        assert_the_child_environment_is_hostile(&lines);
-        assert_eq!(
-            probe_field(&lines, "parsed_client_keytab"),
-            ENV_FREE_CLIENT_KEYTAB
-        );
-        assert_eq!(probe_field(&lines, "parsed_k5login"), "");
-    }
+    use super::{Config, Error};
 
     #[cfg_attr(
         test,
@@ -15702,83 +12553,239 @@ mod tests {
             std::process::id()
         ))
     }
+}
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::too_long_first_doc_paragraph,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use core::error;
+    use std::{
+        env, fs,
+        io::{self, Write as _},
+        path::{Path, PathBuf},
+        process::{self, Command},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::{
+        Config, Error, LibDefaults, MAX_INCLUDE_BYTES, MAX_INCLUDE_DEPTH, MAX_INCLUDE_FILES,
+    };
+
+    /// The marker the parent sets when it re-executes this binary as a probe, so
+    /// a normal run leaves the probe test inert.
+    const PROBE_MARKER: &str = "RSKRB5_ENV_FREE_PROBE";
+    /// Every probe line carries this prefix, so the parent can ignore the test
+    /// harness's own output.
+    const PROBE_PREFIX: &str = "rskrb5-probe:";
+    /// This probe test's name in this binary, for the child's `--exact`.
+    const PROBE_TEST: &str = "config::fork_tests::env_free_fields_probe_child";
+    /// The hostile `UID` the parent gives the child.
+    const HOSTILE_UID: &str = "4242";
+    /// The hostile `HOME` the parent gives the child.
+    const HOSTILE_HOME: &str = "/attacker/home";
+
+    /// The `UID`-derived default the environment-free constructors must produce:
+    /// the path `LibDefaults::new` builds when `UID` is unset.
+    const ENV_FREE_CLIENT_KEYTAB: &str = "/usr/local/var/krb5/user/0/client.keytab";
+
+    /// The environment-free constructor's fields, and - as the control - the
+    /// environment-reading constructor's, printed for the parent to assert on.
+    #[test]
+    fn env_free_fields_probe_child() -> Result<(), Box<dyn error::Error>> {
+        if env::var_os(PROBE_MARKER).is_none() {
+            return Ok(());
+        }
+        let config = Config::new_without_env();
+        let defaults = LibDefaults::new_without_env();
+        let parsed = Config::parse_without_env("[libdefaults]\n")?;
+        let reading = LibDefaults::new();
+        let mut stdout = io::stdout().lock();
+        for (name, keytab, k5login) in [
+            (
+                "config",
+                &config.libdefaults.default_client_keytab_name,
+                &config.libdefaults.k5login_directory,
+            ),
+            (
+                "defaults",
+                &defaults.default_client_keytab_name,
+                &defaults.k5login_directory,
+            ),
+            (
+                "parsed",
+                &parsed.libdefaults.default_client_keytab_name,
+                &parsed.libdefaults.k5login_directory,
+            ),
+            (
+                "reading",
+                &reading.default_client_keytab_name,
+                &reading.k5login_directory,
+            ),
+        ] {
+            writeln!(stdout, "{PROBE_PREFIX}{name}_client_keytab={keytab}")?;
+            writeln!(stdout, "{PROBE_PREFIX}{name}_k5login={k5login}")?;
+        }
+        Ok(())
+    }
+
+    /// Run this binary as a child with a hostile `UID`/`HOME` - a child process,
+    /// never this one's environment - and return the probe lines it
+    /// printed.
+    fn hostile_env_probe() -> Result<Vec<String>, Box<dyn error::Error>> {
+        let executable = env::current_exe()?;
+        let output = Command::new(executable)
+            .args(["--exact", PROBE_TEST, "--nocapture"])
+            .env_clear()
+            .env(PROBE_MARKER, "1")
+            .env("UID", HOSTILE_UID)
+            .env("HOME", HOSTILE_HOME)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "the probe child must exit 0: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.strip_prefix(PROBE_PREFIX))
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// The value of one probe line, or an error naming the line the child did
+    /// not print.
+    fn probe_field(lines: &[String], key: &str) -> Result<String, Box<dyn error::Error>> {
+        lines
+            .iter()
+            .find_map(|line| line.strip_prefix(key)?.strip_prefix('=').map(str::to_owned))
+            .ok_or_else(|| format!("the probe must print {key}: {lines:?}").into())
+    }
+
+    /// The control, asserted by every test below: the child's environment really
+    /// is hostile, so `LibDefaults::new` in that child follows it. Without this,
+    /// an inert probe would make the env-free assertions pass for the wrong
+    /// reason.
+    fn assert_the_child_environment_is_hostile(
+        lines: &[String],
+    ) -> Result<(), Box<dyn error::Error>> {
+        assert_eq!(
+            probe_field(lines, "reading_client_keytab")?,
+            format!("/usr/local/var/krb5/user/{HOSTILE_UID}/client.keytab"),
+            "the environment-reading constructor must follow the hostile UID"
+        );
+        assert_eq!(probe_field(lines, "reading_k5login")?, HOSTILE_HOME);
+        Ok(())
+    }
+
+    /// `Config::new_without_env` reads neither `UID` nor `HOME`: hostile values
+    /// in the process environment leave both derived fields at their
+    /// deterministic non-env values.
+    #[test]
+    fn env_free_config_constructor_does_not_read_uid_or_home() -> Result<(), Box<dyn error::Error>>
+    {
+        let lines = hostile_env_probe()?;
+        assert_the_child_environment_is_hostile(&lines)?;
+        assert_eq!(
+            probe_field(&lines, "config_client_keytab")?,
+            ENV_FREE_CLIENT_KEYTAB,
+            "the env-free config's keytab default is the UID-fallback path"
+        );
+        assert_eq!(probe_field(&lines, "config_k5login")?, "");
+        Ok(())
+    }
+
+    /// The same for the `LibDefaults` constructor the two env-free config
+    /// constructors share.
+    #[test]
+    fn env_free_libdefaults_constructor_does_not_read_uid_or_home()
+    -> Result<(), Box<dyn error::Error>> {
+        let lines = hostile_env_probe()?;
+        assert_the_child_environment_is_hostile(&lines)?;
+        assert_eq!(
+            probe_field(&lines, "defaults_client_keytab")?,
+            ENV_FREE_CLIENT_KEYTAB
+        );
+        assert_eq!(probe_field(&lines, "defaults_k5login")?, "");
+        Ok(())
+    }
+
+    /// `Config::parse_without_env` must not reach `Config::parse` ->
+    /// `Config::new` -> `LibDefaults::new`: it shares the parser, not the
+    /// constructor.
+    #[test]
+    fn parse_without_env_does_not_read_uid_or_home() -> Result<(), Box<dyn error::Error>> {
+        let lines = hostile_env_probe()?;
+        assert_the_child_environment_is_hostile(&lines)?;
+        assert_eq!(
+            probe_field(&lines, "parsed_client_keytab")?,
+            ENV_FREE_CLIENT_KEYTAB
+        );
+        assert_eq!(probe_field(&lines, "parsed_k5login")?, "");
+        Ok(())
+    }
+
     /// A fresh directory for one fixture tree, unique per process and call.
-    fn fixture_dir(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
+    fn fixture_dir(name: &str) -> Result<PathBuf, Box<dyn error::Error>> {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let dir = env::temp_dir().join(format!(
             "rskrb5-config-include-{name}-{}-{nanos}",
-            std::process::id()
+            process::id()
         ));
-        std::fs::create_dir_all(&dir).expect("fixture directory is created");
-        dir
+        fs::create_dir_all(&dir)?;
+        Ok(dir)
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Write `contents` to `dir/name`.
+    fn write_file(dir: &Path, name: &str, contents: &str) -> Result<(), Box<dyn error::Error>> {
+        fs::write(dir.join(name), contents)?;
+        Ok(())
+    }
+
     /// Write `contents` to `dir/name` and return the path it wrote.
-    fn write_fixture(dir: &Path, name: &str, contents: &str) -> PathBuf {
+    fn write_fixture(
+        dir: &Path,
+        name: &str,
+        contents: &str,
+    ) -> Result<PathBuf, Box<dyn error::Error>> {
         let path = dir.join(name);
-        std::fs::write(&path, contents).expect("fixture file writes");
-        path
+        fs::write(&path, contents)?;
+        Ok(path)
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::let_underscore_must_use,
-            clippy::let_underscore_untyped,
-            let_underscore_drop,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    /// Remove a fixture tree. Cleanup never fails a test.
+    /// Remove a fixture tree. Cleanup never fails a test: a tree that cannot be
+    /// removed is left in the temporary directory.
     fn remove_fixture(dir: &Path) {
-        let _ = std::fs::remove_dir_all(dir);
+        fs::remove_dir_all(dir).unwrap_or_default();
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            clippy::too_long_first_doc_paragraph,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// The error a load that must be refused returned, or a test failure saying
+    /// what was expected when it loaded instead.
+    fn refusal(
+        loaded: Result<Config, Error>,
+        expected: &str,
+    ) -> Result<Error, Box<dyn error::Error>> {
+        loaded.err().ok_or_else(|| expected.into())
+    }
+
     /// `include` splices the named file at the directive site, so a
     /// fragment's settings are in the configuration and a setting the parent
     /// writes *after* the directive still wins - the splice is positional, not a
     /// merge of two independently parsed files.
     #[test]
-    fn include_file_splices_settings_at_directive_site() {
-        let dir = fixture_dir("splice");
+    fn include_file_splices_settings_at_directive_site() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("splice")?;
         let fragment = write_fixture(
             &dir,
             "fragment.conf",
             "[libdefaults]\n default_realm = FRAGMENT.EXAMPLE\n\
              [realms]\n FRAGMENT.EXAMPLE = {\n  kdc = kdc.fragment.example:88\n }\n",
-        );
+        )?;
         let root = write_fixture(
             &dir,
             "krb5.conf",
@@ -15786,9 +12793,9 @@ mod tests {
                 "include {}\n[libdefaults]\n default_realm = PARENT.EXAMPLE\n",
                 fragment.display()
             ),
-        );
+        )?;
 
-        let config = Config::load(&root).expect("the split configuration loads");
+        let config = Config::load(&root)?;
         remove_fixture(&dir);
 
         assert!(
@@ -15799,19 +12806,9 @@ mod tests {
             config.libdefaults.default_realm, "PARENT.EXAMPLE",
             "a setting after the directive site still wins, so the splice is positional"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            unused_results,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// `includedir` applies MIT's filename filter - a `.conf` name or a
     /// name made only of alphanumerics, dashes and underscores, never a dotfile -
     /// and reads the accepted names in alphanumeric order.
@@ -15821,65 +12818,58 @@ mod tests {
     /// list: only the two rejected names carry a `[realms]` section, so a realm
     /// appearing at all would mean one of them was read.
     #[test]
-    fn includedir_filters_names_like_mit_and_sorts_alphanumerically() {
-        let dir = fixture_dir("filter");
+    fn includedir_filters_names_like_mit_and_sorts_alphanumerically()
+    -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("filter")?;
         let fragments = dir.join("fragments");
-        std::fs::create_dir_all(&fragments).expect("fragment directory is created");
-        write_fixture(
+        fs::create_dir_all(&fragments)?;
+        write_file(
             &fragments,
             "10-first.conf",
             "[libdefaults]\n default_realm = FIRST.EXAMPLE\n",
-        );
-        write_fixture(
+        )?;
+        write_file(
             &fragments,
             "20-flag",
             "[libdefaults]\n udp_preference_limit = 1\n",
-        );
-        write_fixture(
+        )?;
+        write_file(
             &fragments,
             "30-last.conf",
             "[libdefaults]\n default_realm = LAST.EXAMPLE\n",
-        );
-        write_fixture(
+        )?;
+        write_file(
             &fragments,
             "40-dotfile-suffix.bak",
             "[realms]\n REJECTED.EXAMPLE = {\n  kdc = kdc.rejected.example:88\n }\n",
-        );
-        write_fixture(
+        )?;
+        write_file(
             &fragments,
             ".50-hidden.conf",
             "[realms]\n HIDDEN.EXAMPLE = {\n  kdc = kdc.hidden.example:88\n }\n",
-        );
+        )?;
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("includedir {}\n", fragments.display()),
-        );
+        )?;
 
-        let config = Config::load(&root).expect("the split configuration loads");
+        let config = Config::load(&root)?;
         remove_fixture(&dir);
 
         assert_eq!(
             config.libdefaults.default_realm, "LAST.EXAMPLE",
             "the accepted names are read in alphanumeric order, so the last one wins"
         );
-        assert_eq!(config.libdefaults.udp_preference_limit, 1);
+        assert_eq!(config.libdefaults.udp_preference_limit, 1_i32);
         assert!(
             config.realms.is_empty(),
             "a `.bak` name and a dotfile are not included: {:?}",
             config.realms
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// An include chain that returns to a file it is already reading is a
     /// named cycle error, not unbounded recursion.
     ///
@@ -15888,51 +12878,40 @@ mod tests {
     /// names. Before the root was tracked the parser read `a.conf` a second time
     /// and detected the cycle one level further down, at `b.conf`.
     #[test]
-    fn include_cycle_is_a_named_error() {
-        let dir = fixture_dir("cycle");
-        let second = write_fixture(&dir, "b.conf", "");
-        let first = write_fixture(&dir, "a.conf", &format!("include {}\n", second.display()));
-        std::fs::write(&second, format!("include {}\n", first.display()))
-            .expect("the second fixture writes");
+    fn include_cycle_is_a_named_error() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("cycle")?;
+        let second = write_fixture(&dir, "b.conf", "")?;
+        let first = write_fixture(&dir, "a.conf", &format!("include {}\n", second.display()))?;
+        fs::write(&second, format!("include {}\n", first.display()))?;
 
-        let error = Config::load(&first).expect_err("a cycle is refused");
+        let error = refusal(Config::load(&first), "a cycle is refused")?;
         remove_fixture(&dir);
 
         assert!(
             matches!(&error, Error::IncludeCycle { path } if path == &first),
             "the cycle names the file it returned to, which is already being read: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::expect_used,
-            clippy::indexing_slicing,
-            clippy::missing_panics_doc,
-            clippy::shadow_reuse,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Nesting past [`MAX_INCLUDE_DEPTH`] is a named error carrying the
     /// depth it reached and the limit.
     #[test]
-    fn include_depth_limit_is_named() {
-        let dir = fixture_dir("depth");
-        let mut paths = Vec::new();
-        for level in 1..=10 {
-            paths.push(write_fixture(&dir, &format!("level{level}.conf"), ""));
-        }
+    fn include_depth_limit_is_named() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("depth")?;
+        let paths = (1..=10_u8)
+            .map(|level| write_fixture(&dir, &format!("level{level}.conf"), ""))
+            .collect::<Result<Vec<_>, _>>()?;
         for (index, path) in paths.iter().enumerate() {
-            let next = paths.get(index + 1);
-            let contents =
-                next.map_or_else(String::new, |next| format!("include {}\n", next.display()));
-            std::fs::write(path, contents).expect("the fixture writes");
+            let next = paths.get(index.saturating_add(1));
+            let contents = next.map_or_else(String::new, |target| {
+                format!("include {}\n", target.display())
+            });
+            fs::write(path, contents)?;
         }
+        let first = paths.first().ok_or("the chain has ten files")?;
 
-        let error = Config::load(&paths[0]).expect_err("a chain past the limit is refused");
+        let error = refusal(Config::load(first), "a chain past the limit is refused")?;
         remove_fixture(&dir);
 
         assert!(
@@ -15945,38 +12924,29 @@ mod tests {
             ),
             "eight levels of include are read; the ninth is past the limit of {MAX_INCLUDE_DEPTH}: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            unused_results,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// More included files than [`MAX_INCLUDE_FILES`] is a named error.
     #[test]
-    fn include_file_count_limit_is_named() {
-        let dir = fixture_dir("count");
+    fn include_file_count_limit_is_named() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("count")?;
         let fragments = dir.join("fragments");
-        std::fs::create_dir_all(&fragments).expect("fragment directory is created");
+        fs::create_dir_all(&fragments)?;
         for index in 0..=MAX_INCLUDE_FILES {
-            write_fixture(
+            write_file(
                 &fragments,
                 &format!("f{index:02}.conf"),
                 "[libdefaults]\n default_realm = COUNT.EXAMPLE\n",
-            );
+            )?;
         }
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("includedir {}\n", fragments.display()),
-        );
+        )?;
 
-        let error = Config::load(&root).expect_err("too many included files are refused");
+        let error = refusal(Config::load(&root), "too many included files are refused")?;
         remove_fixture(&dir);
 
         assert!(
@@ -15989,110 +12959,77 @@ mod tests {
             ),
             "the 65th file is past the limit of {MAX_INCLUDE_FILES}: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            clippy::rest_pattern_accessible_field,
-            unused_results,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// An `includedir` with more accepted names than the file cap is refused while
     /// the directory is scanned: its first entry cannot be read, and the cap is
     /// still what is reported, so no file was opened.
     #[test]
-    fn includedir_past_the_file_cap_is_refused_before_any_file_is_read() {
-        let dir = fixture_dir("count-early");
+    fn includedir_past_the_file_cap_is_refused_before_any_file_is_read()
+    -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("count-early")?;
         let fragments = dir.join("fragments");
-        std::fs::create_dir_all(fragments.join("f00.conf"))
-            .expect("an unreadable first entry is created");
+        fs::create_dir_all(fragments.join("f00.conf"))?;
         for index in 1..=MAX_INCLUDE_FILES {
-            write_fixture(&fragments, &format!("f{index:02}.conf"), "[libdefaults]\n");
+            write_file(&fragments, &format!("f{index:02}.conf"), "[libdefaults]\n")?;
         }
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("includedir {}\n", fragments.display()),
-        );
+        )?;
 
-        let error = Config::load(&root).expect_err("too many accepted names are refused");
+        let error = refusal(Config::load(&root), "too many accepted names are refused")?;
         remove_fixture(&dir);
 
         assert!(
             matches!(
                 error,
                 Error::IncludeTooMany {
-                    limit: MAX_INCLUDE_FILES,
-                    ..
+                    count: _,
+                    limit: MAX_INCLUDE_FILES
                 }
             ),
             "the cap is reported before the unreadable first entry is opened: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// `includedir` matches names as bytes, like MIT's `valid_name`: a `.conf`
     /// name that is not UTF-8 is included. Linux only, because some filesystems
     /// refuse such names.
     #[cfg(target_os = "linux")]
     #[test]
-    fn includedir_matches_names_as_bytes_like_mit() {
-        #[cfg_attr(
-            test,
-            expect(
-                clippy::unused_trait_names,
-                reason = "lint-migration: upstream baseline at ee9cb04"
-            )
-        )]
-        use std::os::unix::ffi::OsStrExt;
-        let dir = fixture_dir("byte-names");
+    fn includedir_matches_names_as_bytes_like_mit() -> Result<(), Box<dyn error::Error>> {
+        use std::{ffi::OsStr, os::unix::ffi::OsStrExt as _};
+
+        let dir = fixture_dir("byte-names")?;
         let fragments = dir.join("fragments");
-        std::fs::create_dir_all(&fragments).expect("fragment directory is created");
-        let name = std::ffi::OsStr::from_bytes(b"\xff-realm.conf");
-        std::fs::write(
+        fs::create_dir_all(&fragments)?;
+        let name = OsStr::from_bytes(b"\xff-realm.conf");
+        fs::write(
             fragments.join(name),
             "[libdefaults]\n default_realm = BYTES.EXAMPLE\n",
-        )
-        .expect("a .conf name that is not UTF-8 is created");
+        )?;
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("includedir {}\n", fragments.display()),
-        );
+        )?;
 
-        let config = Config::load(&root).expect("the directory loads");
+        let config = Config::load(&root)?;
         remove_fixture(&dir);
 
         assert_eq!(config.libdefaults.default_realm, "BYTES.EXAMPLE");
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::decimal_literal_representation,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Included bytes past [`MAX_INCLUDE_BYTES`] are a named error - and the
     /// oversize file is refused rather than read into memory whole.
     #[test]
-    fn include_total_byte_limit_is_named() {
-        let dir = fixture_dir("bytes");
+    fn include_total_byte_limit_is_named() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("bytes")?;
         let oversize = write_fixture(
             &dir,
             "big.conf",
@@ -16100,109 +13037,87 @@ mod tests {
                 "#{}\n[libdefaults]\n default_realm = BIG.EXAMPLE\n",
                 "x".repeat(MAX_INCLUDE_BYTES)
             ),
-        );
+        )?;
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("include {}\n", oversize.display()),
-        );
+        )?;
 
-        let error = Config::load(&root).expect_err("an oversize include is refused");
+        let error = refusal(Config::load(&root), "an oversize include is refused")?;
         remove_fixture(&dir);
 
         assert!(
             matches!(
                 error,
                 Error::IncludeTooLarge {
-                    bytes: 1_048_577,
+                    // `MAX_INCLUDE_BYTES` (1 MiB) plus one: 1_048_577.
+                    bytes: 0x0010_0001,
                     limit: MAX_INCLUDE_BYTES
                 }
             ),
             "the read stops one byte past the limit of {MAX_INCLUDE_BYTES}: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// An `include` naming a file that cannot be read is a named error
     /// carrying the path - MIT's `PROF_FAIL_INCLUDE_FILE`, never a silent skip.
     #[test]
-    fn unreadable_include_file_is_named() {
-        let dir = fixture_dir("unreadable-file");
+    fn unreadable_include_file_is_named() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("unreadable-file")?;
         let missing = dir.join("missing.conf");
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("include {}\n", missing.display()),
-        );
+        )?;
 
-        let error = Config::load(&root).expect_err("a missing include is refused");
+        let error = refusal(Config::load(&root), "a missing include is refused")?;
         remove_fixture(&dir);
 
         assert!(
-            matches!(&error, Error::IncludeFile { path, source } if path == &missing && source.kind() == std::io::ErrorKind::NotFound),
+            matches!(&error, Error::IncludeFile { path, source } if path == &missing && source.kind() == io::ErrorKind::NotFound),
             "the error names the file the directive named: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// An `includedir` naming a directory that cannot be listed is a named
     /// error - MIT's `PROF_FAIL_INCLUDE_DIR`.
     #[test]
-    fn unreadable_includedir_is_named() {
-        let dir = fixture_dir("unreadable-dir");
+    fn unreadable_includedir_is_named() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("unreadable-dir")?;
         let missing = dir.join("missing-dir");
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("includedir {}\n", missing.display()),
-        );
+        )?;
 
-        let error = Config::load(&root).expect_err("a missing includedir is refused");
+        let error = refusal(Config::load(&root), "a missing includedir is refused")?;
         remove_fixture(&dir);
 
         assert!(
-            matches!(&error, Error::IncludeDir { path, source } if path == &missing && source.kind() == std::io::ErrorKind::NotFound),
+            matches!(&error, Error::IncludeDir { path, source } if path == &missing && source.kind() == io::ErrorKind::NotFound),
             "the error names the directory the directive named: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::default_numeric_fallback,
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// A `KRB5_CONFIG` path list keeps MIT's order with an include in it -
     /// files are read in list order, each file's includes are expanded where the
     /// directive sits, and a later file's settings still win.
     #[test]
-    fn krb5_config_path_list_preserves_mit_order_with_includes() {
-        let dir = fixture_dir("path-list");
+    fn krb5_config_path_list_preserves_mit_order_with_includes() -> Result<(), Box<dyn error::Error>>
+    {
+        let dir = fixture_dir("path-list")?;
         let fragment = write_fixture(
             &dir,
             "fragment.conf",
             "[libdefaults]\n default_realm = INCLUDE.EXAMPLE\n\
              [realms]\n INCLUDE.EXAMPLE = {\n  kdc = kdc.include.example:88\n }\n",
-        );
+        )?;
         let first = write_fixture(
             &dir,
             "first.conf",
@@ -16210,14 +13125,14 @@ mod tests {
                 "include {}\n[libdefaults]\n udp_preference_limit = 1\n",
                 fragment.display()
             ),
-        );
+        )?;
         let second = write_fixture(
             &dir,
             "second.conf",
             "[libdefaults]\n default_realm = SECOND.EXAMPLE\n udp_preference_limit = 2\n",
-        );
+        )?;
 
-        let config = Config::load_paths([first, second]).expect("the path list loads");
+        let config = Config::load_paths([first, second])?;
         remove_fixture(&dir);
 
         assert_eq!(
@@ -16225,26 +13140,16 @@ mod tests {
             "the later file in the list wins over the included fragment"
         );
         assert_eq!(
-            config.libdefaults.udp_preference_limit, 2,
+            config.libdefaults.udp_preference_limit, 2_i32,
             "and over the file that carried the include"
         );
         assert!(
             config.realm("INCLUDE.EXAMPLE").is_some(),
             "the include inside the first file was expanded at its directive site"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::expect_used,
-            clippy::indexing_slicing,
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// A root file that includes itself is a cycle, and the root is what
     /// the cycle returns to - so the root is on the open stack before its own
     /// directives expand.
@@ -16254,83 +13159,63 @@ mod tests {
     /// limit allows. Without the root on the open stack the recursion runs one
     /// level past [`MAX_INCLUDE_DEPTH`] and is named as merely deep.
     #[test]
-    fn a_root_file_including_itself_is_a_cycle() {
-        let dir = fixture_dir("root-self");
-        let root = write_fixture(&dir, "krb5.conf", "");
-        let mut chain = Vec::new();
-        for level in 1..=7 {
-            chain.push(write_fixture(&dir, &format!("level{level}.conf"), ""));
-        }
+    fn a_root_file_including_itself_is_a_cycle() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("root-self")?;
+        let root = write_fixture(&dir, "krb5.conf", "")?;
+        let chain = (1..=7_u8)
+            .map(|level| write_fixture(&dir, &format!("level{level}.conf"), ""))
+            .collect::<Result<Vec<_>, _>>()?;
         for (index, path) in chain.iter().enumerate() {
-            let next = chain
-                .get(index + 1)
-                .cloned()
-                .unwrap_or_else(|| root.clone());
-            std::fs::write(path, format!("include {}\n", next.display()))
-                .expect("the chain writes");
+            let next = chain.get(index.saturating_add(1)).unwrap_or(&root);
+            fs::write(path, format!("include {}\n", next.display()))?;
         }
-        std::fs::write(&root, format!("include {}\n", chain[0].display()))
-            .expect("the root writes");
+        let first = chain.first().ok_or("the chain has seven files")?;
+        fs::write(&root, format!("include {}\n", first.display()))?;
 
-        let error = Config::load(&root).expect_err("a root that includes itself is refused");
+        let error = refusal(
+            Config::load(&root),
+            "a root that includes itself is refused",
+        )?;
         remove_fixture(&dir);
 
         assert!(
             matches!(&error, Error::IncludeCycle { path } if path == &root),
             "the root file is already being read, so returning to it is a cycle: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::expect_used,
-            clippy::missing_panics_doc,
-            clippy::too_long_first_doc_paragraph,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// A path-list root that a child includes is the same cycle. Every
     /// top-level file is on the open stack before the text it contributed is
     /// expanded, so a child's `include` of the root is named rather than the
     /// root being read a second time.
     #[test]
-    fn a_path_list_root_included_by_a_child_is_a_cycle() {
-        let dir = fixture_dir("path-list-root");
+    fn a_path_list_root_included_by_a_child_is_a_cycle() -> Result<(), Box<dyn error::Error>> {
+        let dir = fixture_dir("path-list-root")?;
         let first = write_fixture(
             &dir,
             "first.conf",
             "[libdefaults]\n default_realm = FIRST.EXAMPLE\n",
-        );
+        )?;
         let second = write_fixture(
             &dir,
             "second.conf",
             &format!("include {}\n", first.display()),
-        );
+        )?;
 
-        let error = Config::load_paths([&first, &second])
-            .expect_err("a path-list root a child includes is refused");
+        let error = refusal(
+            Config::load_paths([&first, &second]),
+            "a path-list root a child includes is refused",
+        )?;
         remove_fixture(&dir);
 
         assert!(
             matches!(&error, Error::IncludeCycle { path } if path == &first),
             "the root of the path list is already being read: {error:?}"
         );
+        Ok(())
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::expect_used,
-            clippy::indexing_slicing,
-            clippy::missing_panics_doc,
-            clippy::too_long_first_doc_paragraph,
-            unused_results,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// An `includedir` reached again through a symlink while its files
     /// are being expanded is a cycle, named at the path the directive spelled -
     /// the canonical directories being expanded are tracked, so the chain is
@@ -16341,50 +13226,42 @@ mod tests {
     /// the file-level check.
     #[cfg(target_family = "unix")]
     #[test]
-    fn a_symlinked_includedir_cycle_is_named() {
-        let dir = fixture_dir("symlinked-dir");
+    fn a_symlinked_includedir_cycle_is_named() -> Result<(), Box<dyn error::Error>> {
+        use std::os::unix::fs::symlink;
+
+        let dir = fixture_dir("symlinked-dir")?;
         let top = dir.join("top");
-        std::fs::create_dir_all(&top).expect("the included directory is created");
-        std::os::unix::fs::symlink(&top, top.join("up")).expect("the symlink is created");
-        write_fixture(
+        fs::create_dir_all(&top)?;
+        symlink(&top, top.join("up"))?;
+        write_file(
             &top,
             "00.conf",
             "[libdefaults]\n udp_preference_limit = 1\n",
-        );
-        let mut chain = Vec::new();
-        for level in 1..=7 {
-            chain.push(top.join(format!("tmp{level}.conf")));
+        )?;
+        let chain: Vec<PathBuf> = (1..=7_u8)
+            .map(|level| top.join(format!("tmp{level}.conf")))
+            .collect();
+        let last = chain.last().ok_or("the chain has seven files")?;
+        fs::write(last, format!("includedir {}\n", top.join("up").display()))?;
+        for (path, next) in chain.iter().zip(chain.iter().skip(1)).rev() {
+            fs::write(path, format!("include {}\n", next.display()))?;
         }
-        std::fs::write(
-            &chain[6],
-            format!("includedir {}\n", top.join("up").display()),
-        )
-        .expect("the chain writes");
-        for index in (0..6).rev() {
-            std::fs::write(
-                &chain[index],
-                format!("include {}\n", chain[index + 1].display()),
-            )
-            .expect("the chain writes");
-        }
-        write_fixture(
-            &top,
-            "10.conf",
-            &format!("include {}\n", chain[0].display()),
-        );
+        let first = chain.first().ok_or("the chain has seven files")?;
+        write_file(&top, "10.conf", &format!("include {}\n", first.display()))?;
         let cycle = top.join("up");
         let root = write_fixture(
             &dir,
             "krb5.conf",
             &format!("includedir {}\n", top.display()),
-        );
+        )?;
 
-        let error = Config::load(&root).expect_err("the symlinked cycle is refused");
+        let error = refusal(Config::load(&root), "the symlinked cycle is refused")?;
         remove_fixture(&dir);
 
         assert!(
             matches!(&error, Error::IncludeCycle { path } if path == &cycle),
             "the symlink names the directory that is already being read: {error:?}"
         );
+        Ok(())
     }
 }
