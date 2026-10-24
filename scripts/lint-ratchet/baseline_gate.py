@@ -20,7 +20,8 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
-from baseline_moves import additions
+from baseline_moves import Move, additions
+from baseline_sources import prove
 
 MANIFEST: Final = "scripts/lint-ratchet/baseline.toml"
 API_LINTS: Final = frozenset(
@@ -144,11 +145,14 @@ def source_entries(root: Path) -> tuple[Counter[Entry], list[str]]:
 
 
 def transition(
-    previous: Counter[Entry], current: Counter[Entry], label: str
+    previous: Counter[Entry],
+    current: Counter[Entry],
+    label: str,
+    proven: frozenset[Move] = frozenset(),
 ) -> list[str]:
     return [
         f"{label}: baseline addition/restoration {key} (+{count})"
-        for key, count in additions(previous, current).items()
+        for key, count in additions(previous, current, proven).items()
     ]
 
 
@@ -174,9 +178,20 @@ def ratchet(root: Path, current: Counter[Entry]) -> tuple[list[str], int]:
         root, "log", "--reverse", "--format=%H", f"{base}..HEAD", "--", MANIFEST
     ).splitlines():
         now = manifest(common.git(root, "show", f"{commit}:{MANIFEST}"))
-        errors.extend(transition(previous, now, commit))
+        errors.extend(
+            transition(
+                previous, now, commit, prove(root, (previous, now), (base, commit))
+            )
+        )
         previous = now
-    errors.extend(transition(previous, current, "working tree"))
+    errors.extend(
+        transition(
+            previous,
+            current,
+            "working tree",
+            prove(root, (previous, current), (base, None)),
+        )
+    )
     return errors, base_count
 
 
@@ -249,7 +264,8 @@ def self_test() -> int:
         assert transition(actual, actual + actual, "increase")
         # Given a baseline item, when only a wrapper prefix is gained, it moves.
         wrapped = Counter({("src/lib.rs", "mod tests::fn f", "dead_code", "always"): 1})
-        assert transition(actual, wrapped, "wrap") == []
+        proof = frozenset({(("src/lib.rs", "fn f"), ("src/lib.rs", "mod tests::fn f"))})
+        assert transition(actual, wrapped, "wrap", proof) == []
         assert transition(wrapped, actual, "unwrap")
         # Changed identities/counts, new entries and duplication remain additions.
         for invalid in (

@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Final, TypedDict
 
 from baseline_moves import additions
+from baseline_sources import prove, ratchet_base
 from scanner import (
     Item,
     ScanError,
@@ -711,10 +712,13 @@ def refresh(root: Path, rebaseline: bool) -> None:
             for e in read_manifest(root / MANIFEST)
         }
     )
-    added = additions(
-        previous,
-        Counter({(e.file, e.item, e.lint, e.predicate): e.count for e in current}),
-    )
+    now = Counter({(e.file, e.item, e.lint, e.predicate): e.count for e in current})
+    proof = frozenset()
+    if not rebaseline and now - previous and (root / ".git").exists():
+        base = ratchet_base(root)
+        if base is not None:
+            proof = prove(root, (previous, now), (base, None))
+    added = additions(previous, now, proof)
     if added and not rebaseline:
         raise BaselineError(
             f"manifest would add entries; use --rebaseline only for an authorized toolchain migration: {added}"
@@ -1051,8 +1055,24 @@ def self_test() -> None:
             '#[expect(dead_code, reason = "lint-migration: fixture")]\nfn f() {}\n'
         )
         for item in (fixture, fixture.replace("fn f() {}", "struct F;")):
+            import common
+
+            if not (root / ".git").exists():
+                common.git(root, "init")
             path.write_text(item)
             refresh(root, True)
+            common.git(root, "add", ".")
+            common.git(
+                root,
+                "-c",
+                "user.name=fixture",
+                "-c",
+                "user.email=fixture@local",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "lint: adopt the rmcp-server-kit strictest profile fixture",
+            )
             previous = read_manifest(root / MANIFEST)
             wrapped = "#[cfg(test)]\nmod tests {\n" + item + "}\n"
             path.write_text(wrapped)
