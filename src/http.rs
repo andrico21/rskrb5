@@ -1031,7 +1031,7 @@ where
 {
     type Response = Response<ResBody>;
     type Error = TowerError<S::Error>;
-    type Future = Pin<Box<dyn Future<Output = std::result::Result<Self::Response, Self::Error>>>>;
+    type Future = Pin<Box<dyn Future<Output = core::result::Result<Self::Response, Self::Error>>>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<std::result::Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(TowerError::Inner)
