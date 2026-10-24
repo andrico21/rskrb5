@@ -18,6 +18,7 @@ from typing import Final
 
 import common
 import provenance
+from prose_infallible import infallible_test
 
 CHECKS: Final = (
     "cancel-safety",
@@ -27,28 +28,6 @@ CHECKS: Final = (
     "emptiness-message",
     "credential-mutating",
 )
-
-
-def infallible_upstream_test(body: str, inherited_signature: bool) -> bool:
-    """Do not force unnecessary_wraps on touched upstream assertion-only tests.
-
-    Assertions consume their Result/Option values themselves (including Err
-    assertions); they are not propagation sites. Unknown calls outside assertions
-    conservatively keep the Result requirement. Entirely fork-authored tests keep
-    the existing rule, even when infallible.
-    """
-    if not inherited_signature:
-        return False
-    ranges = []
-    for match in re.finditer(
-        r"\b(?:assert|assert_eq|assert_ne|debug_assert|debug_assert_eq|debug_assert_ne)!\s*\(",
-        body,
-    ):
-        closing = common.match_bracket(body, match.end() - 1)
-        if closing is not None:
-            ranges.append((match.start(), closing + 1))
-    remaining = common.blank_ranges(body, ranges)
-    return not re.search(r"\?|\b\w+\s*(?:!\s*)?\(|\.\s*\w+\s*::\s*<", remaining)
 
 
 def scan(
@@ -125,9 +104,8 @@ def scan(
                 if (
                     not any(attr.startswith("should_panic") for attr in attrs)
                     and not re.search(r"->\s*(?:[\w]+::)*Result\s*<", signature)
-                    and not infallible_upstream_test(
+                    and not infallible_test(
                         stripped[item.keyword : item.end].partition("{")[2],
-                        line in mapping,
                     )
                 ):
                     hits.append(("test-result", line, f"fn {item.name}"))
@@ -209,7 +187,7 @@ def self_test() -> int:
     source = (
         "pub(crate) async fn prose_probe() {}\n"
         "/// # Cancel safety\n/// NOT cancel-safe: mutates credentials.\nasync fn change_password_ok() {}\n"
-        "\n\n\n\n\n\n\nasync fn set_password_bad() {}\n#[test]\nfn test_bad() {}\n"
+        "\n\n\n\n\n\n\nasync fn set_password_bad() {}\n#[test]\nfn test_bad() { work(); }\n"
         "/// proves something\n#[test]\nfn test_good() -> Result<(), Error> { Ok(()) }\n"
         "/// deliberately panics\n#[test]\n#[should_panic]\nfn panics() {}\n"
         "impl Drop for Guard { fn drop(&mut self) {} }\n"
@@ -223,12 +201,32 @@ def self_test() -> int:
     assert sum(g == "drop-audit" for g, _, _ in hits) == 1
     assert sum(g == "emptiness-message" for g, _, _ in hits) == 1
     # Given a touched upstream test with only construction and assertions,
-    # when scanned, Result is optional; fallible calls and new tests still fail.
+    # when scanned, Result is optional for inherited and fork-authored tests.
     upstream_test = "/// checks status\n#[test]\nfn status() {\n let result = Status { code: 1 };\n assert!(matches!(result.ensure_success(), Err(_)));\n}\n"
     touched_test = upstream_test.replace("code: 1", "code: 1, text_raw: &[]")
     inherited = common.line_mapping(touched_test, upstream_test)
     assert not scan(touched_test, inherited, False)
-    assert any(g == "test-result" for g, _, _ in scan(touched_test, {}, False))
+    # Given literal/field ownership conversions, only nested fallible calls
+    # should introduce a propagation site when the inherited test is scanned.
+    for conversion in (
+        '"failure".to_owned()',
+        'b"failure".to_vec()',
+        '"failure".to_string()',
+        '"failure".into()',
+        'String::from("failure")',
+        'Vec::from(b"failure")',
+    ):
+        converted = touched_test.replace("text_raw: &[]", "text_raw: " + conversion)
+        assert not scan(converted, common.line_mapping(converted, upstream_test), False)
+    for call in ("String::from(read_file())", "read_file().to_owned()", "read_file()"):
+        converted = touched_test.replace("text_raw: &[]", "text_raw: " + call)
+        assert any(
+            g == "test-result"
+            for g, _, _ in scan(
+                converted, common.line_mapping(converted, upstream_test), False
+            )
+        )
+    assert not scan(touched_test, {}, False)
     fallible = touched_test.replace(
         " let result", ' read_file().expect("fixture");\n let result'
     )
