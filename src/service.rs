@@ -314,8 +314,8 @@ impl SharedReplayCache {
 
 /// AP-REQ validator backed by a service keytab.
 #[derive(Debug)]
-pub struct ServiceValidator<'a> {
-    keytab: Cow<'a, Keytab>,
+pub struct ServiceValidator<'keytab> {
+    keytab: Cow<'keytab, Keytab>,
     max_clock_skew: Duration,
     now: Option<SystemTime>,
     keytab_principal: Option<Vec<String>>,

@@ -1,8 +1,8 @@
 use super::{Error, FileTime};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Reader<'a> {
-    bytes: &'a [u8],
+pub(super) struct Reader<'buffer> {
+    bytes: &'buffer [u8],
     offset: usize,
 }
 

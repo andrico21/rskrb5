@@ -12,9 +12,9 @@ pub(super) const TAG_CONTEXT_2: u8 = 0xa2;
 pub(super) const TAG_CONTEXT_3: u8 = 0xa3;
 
 #[derive(Clone, Copy)]
-pub(super) struct Tlv<'a> {
+pub(super) struct Tlv<'buffer> {
     pub(super) tag: u8,
-    pub(super) value: &'a [u8],
+    pub(super) value: &'buffer [u8],
 }
 
 pub(super) struct DerReader<'a> {

@@ -1101,13 +1101,13 @@ pub fn parse_supported_enctype_ids(enctypes: &[String], allow_weak_crypto: bool)
 
 #[cfg(feature = "serde")]
 #[derive(serde::Serialize)]
-struct ConfigJson<'a> {
+struct ConfigJson<'config> {
     #[serde(rename = "LibDefaults")]
-    libdefaults: LibDefaultsJson<'a>,
+    libdefaults: LibDefaultsJson<'config>,
     #[serde(rename = "Realms")]
-    realms: Vec<RealmJson<'a>>,
+    realms: Vec<RealmJson<'config>>,
     #[serde(rename = "DomainRealm")]
-    domain_realm: &'a BTreeMap<String, String>,
+    domain_realm: &'config BTreeMap<String, String>,
 }
 
 #[cfg(feature = "serde")]
@@ -1123,7 +1123,7 @@ impl<'a> From<&'a Config> for ConfigJson<'a> {
 
 #[cfg(feature = "serde")]
 #[derive(serde::Serialize)]
-struct LibDefaultsJson<'a> {
+struct LibDefaultsJson<'config> {
     #[serde(rename = "AllowWeakCrypto")]
     allow_weak_crypto: bool,
     #[serde(rename = "Canonicalize")]
@@ -1133,21 +1133,21 @@ struct LibDefaultsJson<'a> {
     #[serde(rename = "Clockskew")]
     clockskew: u128,
     #[serde(rename = "DefaultCCacheName")]
-    default_ccache_name: &'a str,
+    default_ccache_name: &'config str,
     #[serde(rename = "DefaultClientKeytabName")]
-    default_client_keytab_name: &'a str,
+    default_client_keytab_name: &'config str,
     #[serde(rename = "DefaultKeytabName")]
-    default_keytab_name: &'a str,
+    default_keytab_name: &'config str,
     #[serde(rename = "DefaultRealm")]
-    default_realm: &'a str,
+    default_realm: &'config str,
     #[serde(rename = "DefaultTGSEnctypes")]
-    default_tgs_enctypes: &'a [String],
+    default_tgs_enctypes: &'config [String],
     #[serde(rename = "DefaultTktEnctypes")]
-    default_tkt_enctypes: &'a [String],
+    default_tkt_enctypes: &'config [String],
     #[serde(rename = "DefaultTGSEnctypeIDs")]
-    default_tgs_enctype_ids: &'a [i32],
+    default_tgs_enctype_ids: &'config [i32],
     #[serde(rename = "DefaultTktEnctypeIDs")]
-    default_tkt_enctype_ids: &'a [i32],
+    default_tkt_enctype_ids: &'config [i32],
     #[serde(rename = "DNSCanonicalizeHostname")]
     dns_canonicalize_hostname: bool,
     #[serde(rename = "DNSLookupKDC")]
@@ -1163,7 +1163,7 @@ struct LibDefaultsJson<'a> {
     #[serde(rename = "K5LoginAuthoritative")]
     k5login_authoritative: bool,
     #[serde(rename = "K5LoginDirectory")]
-    k5login_directory: &'a str,
+    k5login_directory: &'config str,
     #[serde(rename = "KDCDefaultOptions")]
     kdc_default_options: KerberosBitStringJson,
     #[serde(rename = "KDCTimeSync")]
@@ -1171,11 +1171,11 @@ struct LibDefaultsJson<'a> {
     #[serde(rename = "NoAddresses")]
     no_addresses: bool,
     #[serde(rename = "PermittedEnctypes")]
-    permitted_enctypes: &'a [String],
+    permitted_enctypes: &'config [String],
     #[serde(rename = "PermittedEnctypeIDs")]
-    permitted_enctype_ids: &'a [i32],
+    permitted_enctype_ids: &'config [i32],
     #[serde(rename = "PreferredPreauthTypes")]
-    preferred_preauth_types: &'a [i32],
+    preferred_preauth_types: &'config [i32],
     #[serde(rename = "Proxiable")]
     proxiable: bool,
     #[serde(rename = "RDNS")]
@@ -1238,19 +1238,19 @@ impl<'a> From<&'a LibDefaults> for LibDefaultsJson<'a> {
 
 #[cfg(feature = "serde")]
 #[derive(serde::Serialize)]
-struct RealmJson<'a> {
+struct RealmJson<'config> {
     #[serde(rename = "Realm")]
-    realm: &'a str,
+    realm: &'config str,
     #[serde(rename = "AdminServer")]
-    admin_server: Option<&'a [String]>,
+    admin_server: Option<&'config [String]>,
     #[serde(rename = "DefaultDomain")]
-    default_domain: &'a str,
+    default_domain: &'config str,
     #[serde(rename = "KDC")]
-    kdc: Option<&'a [String]>,
+    kdc: Option<&'config [String]>,
     #[serde(rename = "KPasswdServer")]
-    kpasswd_server: Option<&'a [String]>,
+    kpasswd_server: Option<&'config [String]>,
     #[serde(rename = "MasterKDC")]
-    master_kdc: Option<&'a [String]>,
+    master_kdc: Option<&'config [String]>,
 }
 
 #[cfg(feature = "serde")]
@@ -1510,12 +1510,12 @@ fn is_weak_enctype(value: &str) -> bool {
 
 /// One `include`/`includedir` directive, split from its argument.
 #[derive(Clone, Copy, Debug)]
-enum IncludeDirective<'a> {
+enum IncludeDirective<'line> {
     /// `include <file>`: splice one file.
-    File(&'a str),
+    File(&'line str),
     /// `includedir <dir>`: splice every file MIT's filter accepts, in
     /// alphanumeric order.
-    Directory(&'a str),
+    Directory(&'line str),
 }
 
 impl<'a> IncludeDirective<'a> {

@@ -751,8 +751,8 @@ fn response_with_www_authenticate<B: Default>(
 /// Tower layer for service-side HTTP Negotiate validation.
 #[cfg(feature = "tower")]
 #[derive(Clone, Debug)]
-pub struct NegotiateLayer<'a> {
-    keytab: Cow<'a, Keytab>,
+pub struct NegotiateLayer<'keytab> {
+    keytab: Cow<'keytab, Keytab>,
     validator: ValidatorOptions,
     response: NegotiateResponseOptions,
 }
@@ -897,9 +897,9 @@ impl<'layer, S> Layer<S> for NegotiateLayer<'layer> {
 /// Tower service for service-side HTTP Negotiate validation.
 #[cfg(feature = "tower")]
 #[derive(Debug)]
-pub struct NegotiateService<'a, S> {
+pub struct NegotiateService<'keytab, S> {
     inner: S,
-    validator: ServiceValidator<'a>,
+    validator: ServiceValidator<'keytab>,
     response: NegotiateResponseOptions,
 }
 

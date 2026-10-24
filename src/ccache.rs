@@ -38,13 +38,13 @@ pub enum CacheName {
 /// MIT stores cache metadata as synthetic credentials with realm
 /// `X-CACHECONF:`. The configuration value is the credential's ticket field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ConfigEntry<'a> {
+pub struct ConfigEntry<'cache> {
     /// Configuration key.
-    pub key: &'a str,
+    pub key: &'cache str,
     /// Optional associated principal string.
-    pub principal: Option<&'a str>,
+    pub principal: Option<&'cache str>,
     /// Raw configuration value bytes.
-    pub value: &'a [u8],
+    pub value: &'cache [u8],
 }
 
 impl CacheName {
