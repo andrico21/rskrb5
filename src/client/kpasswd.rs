@@ -788,10 +788,6 @@ pub struct VerifiedKpasswdApRep {
     pub sequence_number: Option<u32>,
 }
 
-#[expect(
-    unused_qualifications,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 #[cfg_attr(
     any(
         all(
@@ -928,7 +924,6 @@ pub struct VerifiedKpasswdApRep {
         )
     ),
     expect(
-        clippy::absolute_paths,
         clippy::missing_errors_doc,
         clippy::missing_inline_in_public_items,
         clippy::needless_pass_by_value,
@@ -938,7 +933,7 @@ pub struct VerifiedKpasswdApRep {
 /// Build a complete kpasswd request with explicit confounders.
 pub fn build_kpasswd_request_with_confounders(
     service_ticket: &TgsRepSession,
-    change_data: &crate::kadmin::ChangePasswdData,
+    change_data: &kadmin::ChangePasswdData,
     reply_key: EncryptionKey,
     options: KpasswdRequestOptions,
     ap_req_confounder: &[u8],
@@ -951,7 +946,7 @@ pub fn build_kpasswd_request_with_confounders(
         ap_req_confounder,
     )?;
     let krb_priv_options = kpasswd_krb_priv_options(&options)?;
-    let built_request = crate::kadmin::build_change_password_request_with_confounder(
+    let built_request = kadmin::build_change_password_request_with_confounder(
         ap_req.message.clone(),
         change_data,
         reply_key,
@@ -967,10 +962,6 @@ pub fn build_kpasswd_request_with_confounders(
     })
 }
 
-#[expect(
-    unused_qualifications,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 #[cfg_attr(
     any(
         all(
@@ -1107,7 +1098,6 @@ pub fn build_kpasswd_request_with_confounders(
         )
     ),
     expect(
-        clippy::absolute_paths,
         clippy::missing_errors_doc,
         clippy::missing_inline_in_public_items,
         clippy::needless_pass_by_value,
@@ -1117,7 +1107,7 @@ pub fn build_kpasswd_request_with_confounders(
 /// Build a complete kpasswd request with generated reply key and confounders.
 pub fn build_kpasswd_request(
     service_ticket: &TgsRepSession,
-    change_data: &crate::kadmin::ChangePasswdData,
+    change_data: &kadmin::ChangePasswdData,
     options: KpasswdRequestOptions,
 ) -> Result<BuiltKpasswdRequest, Error> {
     let etype = KerberosEtype::from_etype_id(service_ticket.session_key.etype)
@@ -1137,7 +1127,7 @@ pub fn build_kpasswd_request(
         &ap_req_confounder,
     )?;
     let krb_priv_options = kpasswd_krb_priv_options(&options)?;
-    let built_request = crate::kadmin::build_change_password_request(
+    let built_request = kadmin::build_change_password_request(
         ap_req.message.clone(),
         change_data,
         reply_key,
@@ -1383,10 +1373,6 @@ fn build_kpasswd_ap_req_with_confounder(
     )
 }
 
-#[expect(
-    unused_qualifications,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 #[cfg_attr(
     any(
         all(
@@ -1523,7 +1509,6 @@ fn build_kpasswd_ap_req_with_confounder(
         )
     ),
     expect(
-        clippy::absolute_paths,
         clippy::missing_errors_doc,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
@@ -1604,24 +1589,19 @@ fn build_kpasswd_ap_req_with_confounder(
 )]
 fn kpasswd_krb_priv_options(
     options: &KpasswdRequestOptions,
-) -> Result<crate::kadmin::EncKrbPrivPartOptions, Error> {
-    let mut krb_priv_options =
-        crate::kadmin::EncKrbPrivPartOptions::new(options.sender_address.clone())
-            .with_timestamp(
-                kerberos_time_from_system_time(options.timestamp)?,
-                options.cusec,
-            )
-            .with_sequence_number(options.sequence_number);
+) -> Result<kadmin::EncKrbPrivPartOptions, Error> {
+    let mut krb_priv_options = kadmin::EncKrbPrivPartOptions::new(options.sender_address.clone())
+        .with_timestamp(
+            kerberos_time_from_system_time(options.timestamp)?,
+            options.cusec,
+        )
+        .with_sequence_number(options.sequence_number);
     if let Some(recipient_address) = &options.recipient_address {
         krb_priv_options = krb_priv_options.with_recipient_address(recipient_address.clone());
     }
     Ok(krb_priv_options)
 }
 
-#[expect(
-    unused_qualifications,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 #[cfg_attr(
     any(
         all(
@@ -1770,7 +1750,7 @@ fn kpasswd_krb_priv_options(
 /// replies must echo the AP-REQ authenticator timestamp and are encrypted with
 /// the kpasswd service-ticket session key.
 pub fn verify_kpasswd_ap_rep(
-    reply: &crate::kadmin::Reply,
+    reply: &kadmin::Reply,
     request: &BuiltKpasswdRequest,
 ) -> Result<Option<VerifiedKpasswdApRep>, Error> {
     if reply.is_krb_error() {
@@ -1805,10 +1785,6 @@ pub fn verify_kpasswd_ap_rep(
 
 #[cfg(feature = "tokio")]
 impl TokioClient {
-    #[expect(
-        unused_qualifications,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     #[cfg_attr(
         any(
             all(
@@ -1945,7 +1921,6 @@ impl TokioClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
             clippy::missing_errors_doc,
             clippy::missing_inline_in_public_items,
@@ -1953,11 +1928,18 @@ impl TokioClient {
         )
     )]
     /// Change this client's password using generated timestamp and sequence metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password(
         &mut self,
         new_password: impl AsRef<[u8]>,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let (timestamp, cusec) = current_preauth_time()?;
         let sequence_number = random_nonce()?;
         self.change_password_for_with_options(
@@ -1968,10 +1950,6 @@ impl TokioClient {
         .await
     }
 
-    #[expect(
-        unused_qualifications,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     #[cfg_attr(
         any(
             all(
@@ -2108,7 +2086,6 @@ impl TokioClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
             clippy::missing_errors_doc,
             clippy::missing_inline_in_public_items,
@@ -2117,12 +2094,19 @@ impl TokioClient {
     )]
     /// Change the given target principal's password using generated timestamp and
     /// sequence metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password_for(
         &mut self,
         target: Principal,
         new_password: impl AsRef<[u8]>,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let (timestamp, cusec) = current_preauth_time()?;
         let sequence_number = random_nonce()?;
         self.change_password_for_with_options(
@@ -2133,10 +2117,6 @@ impl TokioClient {
         .await
     }
 
-    #[expect(
-        unused_qualifications,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     #[cfg_attr(
         any(
             all(
@@ -2273,7 +2253,6 @@ impl TokioClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
             clippy::missing_errors_doc,
             clippy::missing_inline_in_public_items,
@@ -2281,19 +2260,22 @@ impl TokioClient {
         )
     )]
     /// Change this client's password using explicit kpasswd request metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password_with_options(
         &mut self,
         new_password: impl AsRef<[u8]>,
         options: KpasswdRequestOptions,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         self.change_password_for_with_options(self.client.clone(), new_password, options)
             .await
     }
 
-    #[expect(
-        unused_qualifications,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     #[cfg_attr(
         any(
             all(
@@ -2430,7 +2412,6 @@ impl TokioClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
             clippy::missing_errors_doc,
             clippy::missing_inline_in_public_items,
@@ -2439,12 +2420,19 @@ impl TokioClient {
         )
     )]
     /// Change the given target principal's password using explicit request metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,
         new_password: impl AsRef<[u8]>,
         options: KpasswdRequestOptions,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let new_password = new_password.as_ref().to_vec();
         let client = self.client.clone();
         let service = Principal::new(
@@ -2481,7 +2469,7 @@ impl TokioClient {
             }
             None => self.get_service_ticket(service).await?,
         };
-        let change_data = crate::kadmin::ChangePasswdData::for_target(
+        let change_data = kadmin::ChangePasswdData::for_target(
             &new_password,
             target.name_type,
             target.components.iter().map(String::as_str),

@@ -2618,6 +2618,12 @@ impl TokioKdcTransport {
         )
     )]
     /// Send an encoded KDC request over RFC 4120 TCP framing.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future closes any socket it opened and abandons the request, which the
+    /// caller can send again.
     pub async fn send_tcp<A>(&self, addr: A, request: &[u8]) -> Result<Vec<u8>, Error>
     where
         A: ToSocketAddrs,
@@ -2627,151 +2633,23 @@ impl TokioKdcTransport {
             .map(|(response, _)| response)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Perform a TCP exchange and keep the stream open for a follow-up request.
     ///
     /// RFC 4120 section 7.2.2 permits the KDC to leave the stream open when it
     /// expects a follow-up, which lets a two-phase AS exchange avoid a second
     /// connect.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] when the connection or the stream fails,
+    /// [`Error::TransportTimeout`] when the exchange exceeds the transport
+    /// timeout, and the framing errors of [`Self::exchange_tcp`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future closes any socket it opened and abandons the request, which the
+    /// caller can send again.
     async fn send_tcp_pinned<A>(
         &self,
         addr: A,
@@ -2788,151 +2666,21 @@ impl TokioKdcTransport {
         .await
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Open a KDC stream with Nagle disabled.
     ///
     /// Applies no timeout of its own; callers wrap this in
     /// [`Self::with_transport_timeout`] together with the exchanges they intend
     /// to perform, so one logical request keeps one timeout budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] when the connection or `TCP_NODELAY` cannot be
+    /// set up.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: dropping the future drops the half-open socket and changes no
+    /// state.
     async fn connect_tcp<A>(addr: A) -> Result<TcpStream, Error>
     where
         A: ToSocketAddrs,
@@ -3082,10 +2830,8 @@ impl TokioKdcTransport {
             )
         ),
         expect(
-            clippy::arithmetic_side_effects,
             clippy::as_conversions,
             clippy::map_err_ignore,
-            clippy::missing_errors_doc,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
@@ -3095,6 +2841,19 @@ impl TokioKdcTransport {
     /// splitting them leaves the body waiting on the peer's delayed-ACK timer
     /// before Nagle will release it. Applies no timeout of its own; see
     /// [`Self::connect_tcp`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TcpRequestTooLarge`] when `request` does not fit a record
+    /// mark, [`Error::Io`] when the stream fails, [`Error::TcpResponseTooLarge`]
+    /// when the reply exceeds the configured limit, and
+    /// [`Error::EmptyKdcResponse`] for an empty reply.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe for `stream`: dropping the future mid-exchange can leave a
+    /// partial record written to or unread from the stream. Discard the stream
+    /// then instead of reusing it.
     async fn exchange_tcp(&self, stream: &mut TcpStream, request: &[u8]) -> Result<Vec<u8>, Error> {
         let request_len: u32 = request
             .len()
@@ -3102,7 +2861,7 @@ impl TokioKdcTransport {
             .map_err(|_| Error::TcpRequestTooLarge {
                 actual: request.len(),
             })?;
-        let mut framed = Vec::with_capacity(TCP_RECORD_MARK_LEN + request.len());
+        let mut framed = Vec::with_capacity(request.len().saturating_add(TCP_RECORD_MARK_LEN));
         framed.extend_from_slice(&request_len.to_be_bytes());
         framed.extend_from_slice(request);
         stream.write_all(&framed).await?;
@@ -3123,153 +2882,24 @@ impl TokioKdcTransport {
         non_empty_kdc_response(response)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::shadow_unrelated,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Send an encoded KDC request and keep a TCP stream open for a follow-up.
     ///
     /// Returns no stream for [`KdcProtocol::Udp`], which has none. For
     /// [`KdcProtocol::Auto`] a stream exists exactly when the request fell back
     /// to TCP, so a follow-up reuses the connection that answered instead of
     /// probing UDP again and opening a second connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of the transport that carried the request: those of
+    /// [`Self::send_udp`] for [`KdcProtocol::Udp`], and those of the TCP exchange
+    /// for [`KdcProtocol::Tcp`] and for an [`KdcProtocol::Auto`] fallback.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future closes any socket it opened and abandons the request, which the
+    /// caller can send again.
     async fn send_pinned<A>(
         &self,
         protocol: KdcProtocol,
@@ -3292,7 +2922,7 @@ impl TokioKdcTransport {
                 Ok(response) if kdc_error_code(&response) == Some(KRB_ERR_RESPONSE_TOO_BIG) => self
                     .send_tcp_pinned(addr, request)
                     .await
-                    .map(|(response, stream)| (response, Some(stream))),
+                    .map(|(tcp_response, stream)| (tcp_response, Some(stream))),
                 Ok(response) => Ok((response, None)),
                 Err(_) => self
                     .send_tcp_pinned(addr, request)
@@ -3302,146 +2932,6 @@ impl TokioKdcTransport {
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Send a follow-up request on a stream pinned by an earlier exchange.
     ///
     /// Returns `Ok(None)` when there is no pinned stream, or when the KDC closed
@@ -3450,6 +2940,18 @@ impl TokioKdcTransport {
     /// treated as fatal, so the caller retries on a fresh connection. Protocol
     /// errors would recur on a new connection, so they propagate instead of
     /// spending another round trip.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TransportTimeout`] when the follow-up exceeds the
+    /// transport timeout, and the framing errors of [`Self::exchange_tcp`]; a
+    /// closed stream is `Ok(None)` instead.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe for the pinned stream: dropping the future mid-exchange can leave a
+    /// partial record written to or unread from the stream. Discard the stream
+    /// then instead of reusing it.
     async fn send_follow_up(
         &self,
         pinned: Option<&mut TcpStream>,
@@ -4128,6 +3630,12 @@ impl TokioKdcTransport {
         )
     )]
     /// Send an encoded request to the first reachable KDC discovered from config.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future closes any socket it opened and abandons the request, which the
+    /// caller can send again.
     pub async fn send_to_realm(
         &self,
         config: &Config,
@@ -4140,150 +3648,21 @@ impl TokioKdcTransport {
             .map(|(response, _)| response)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Send to a realm's KDC and keep a TCP stream open for a follow-up request.
     ///
     /// Discovery runs once here rather than once per request, so a two-phase AS
     /// exchange no longer repeats the DNS SRV lookup.
+    ///
+    /// # Errors
+    ///
+    /// Returns the discovery errors of [`Self::discover_kdcs`] and the errors of
+    /// [`Self::send_to_endpoints_pinned`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future closes any socket it opened and abandons the request, which the
+    /// caller can send again.
     async fn send_to_realm_pinned(
         &self,
         config: &Config,
@@ -5846,6 +5225,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Send an AS-REQ through a config-discovered KDC and process the AS-REP.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future abandons the exchange and closes its sockets; a KDC that already
+    /// answered keeps no state the caller depends on, so the exchange can be
+    /// repeated.
     pub async fn exchange_as_req_with_config(
         &self,
         config: &Config,
@@ -6164,6 +5550,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Send a TGS-REQ through a config-discovered KDC and process the TGS-REP.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future abandons the exchange and closes its sockets; a KDC that already
+    /// answered keeps no state the caller depends on, so the exchange can be
+    /// repeated.
     pub async fn exchange_tgs_req_with_config(
         &self,
         config: &Config,
@@ -8438,6 +7831,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Perform an AS login for an explicit service using password credentials and KDC preauth hints.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future abandons the exchange and closes its sockets; a KDC that already
+    /// answered keeps no state the caller depends on, so the exchange can be
+    /// repeated.
     pub async fn login_as_service_with_password<A>(
         &self,
         protocol: KdcProtocol,
@@ -8768,6 +8168,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Perform a password AS login for an explicit service using KDCs discovered from `krb5.conf`.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future abandons the exchange and closes its sockets; a KDC that already
+    /// answered keeps no state the caller depends on, so the exchange can be
+    /// repeated.
     pub async fn login_as_service_with_password_config(
         &self,
         config: &Config,
@@ -9099,6 +8506,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Perform an AS login for an explicit service using keytab credentials and KDC preauth hints.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future abandons the exchange and closes its sockets; a KDC that already
+    /// answered keeps no state the caller depends on, so the exchange can be
+    /// repeated.
     pub async fn login_as_service_with_keytab<A>(
         &self,
         protocol: KdcProtocol,
@@ -9427,6 +8841,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Perform a keytab AS login for an explicit service using KDCs discovered from `krb5.conf`.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future abandons the exchange and closes its sockets; a KDC that already
+    /// answered keeps no state the caller depends on, so the exchange can be
+    /// repeated.
     pub async fn login_as_service_with_keytab_config(
         &self,
         config: &Config,
@@ -10424,6 +9845,8 @@ impl TokioKdcTransport {
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
+    // cancel-safe: it takes `&self` and changes no client state; dropping the
+    // future abandons the request and closes any socket it opened.
     async fn send_to_endpoints(
         &self,
         realm: &str,
@@ -10436,150 +9859,21 @@ impl TokioKdcTransport {
             .map(|(response, _)| response)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Try each endpoint in turn, keeping the winning TCP stream open.
     ///
     /// Failover still triggers on a failed exchange rather than on a failed
     /// connect, so the endpoint that answers is the one that gets pinned.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NoKdcEndpoints`] when `endpoints` is empty, and
+    /// [`Error::KdcEndpointFailures`] when every endpoint fails.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future closes any socket it opened and abandons the request, which the
+    /// caller can send again.
     async fn send_to_endpoints_pinned(
         &self,
         realm: &str,
