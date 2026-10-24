@@ -395,6 +395,9 @@ def predicate(firing: set[Build], compiled: set[Build]) -> str:
     normal = {build for build in compiled if build.mode != "doc"}
     if normal and normal <= firing:
         return "always"
+    for mode in ("test", "not(test)"):
+        if firing == {build for build in normal if build.mode == mode}:
+            return mode
     terms = set()
     for build in firing:
         if build.mode == "doc":
@@ -767,6 +770,10 @@ def self_test() -> None:
             "K2", "not(test)", ("default", "messages", "serde", "spnego", "tokio")
         )
         b = Build("K3", "not(test)", ())
+        test_a = Build("K2", "test", a.features)
+        test_b = Build("K3", "test", ())
+        assert predicate({test_a, test_b}, {a, b, test_a, test_b}) == "test"
+        assert predicate({test_a}, {a, b, test_a, test_b}) != "test"
 
         def diagnostic(name: bytes, lint: str = "dead_code") -> Diagnostic:
             return {
