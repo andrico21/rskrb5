@@ -1,3 +1,4 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -12,6 +13,14 @@ const KEYTAB_TESTUSER1_TEST_GOKRB5: &str = "05020000003b0001000b544553542e474f4b
 const KTUTIL_USER_KEYTAB: &str = "0502000000460001000b4558414d504c452e4f5247000475736572000000015e5e3d001f001200206e88eb2b3931ef17c92e780a4ee421f1411ff5b104e3f75b50dd13f9ed04f9c60000001f000000360001000b4558414d504c452e4f5247000475736572000000015e5e3d001f001100109bb7d5ba0f554412558441a31f2377120000001f000000360001000b4558414d504c452e4f5247000475736572000000015e5e3d001f00170010110d0c51e144d36fb7e4f9e012fbb8880000001f";
 const KTUTIL_SERVICE_KEYTAB: &str = "0502000000570002000b4558414d504c452e4f5247000448545450000f7777772e6578616d706c652e6f7267000000015e5e3d820a001200203824a933909d899427d7ead4b4bb6deac4eb83949ac350d724c6a2eef0d627440000000a000000470002000b4558414d504c452e4f5247000448545450000f7777772e6578616d706c652e6f7267000000015e5e3d820a001100103a5cce80f2111d63b1ccf445691384230000000a000000470002000b4558414d504c452e4f5247000448545450000f7777772e6578616d706c652e6f7267000000015e5e3d820a00170010b3f6ed87c7d13879ac3f86b4991099740000000a";
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_gokrb5_keytab_fixture() {
     let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
@@ -34,6 +43,12 @@ fn parses_gokrb5_keytab_fixture() {
     assert_eq!(first.principal.name_type, 1);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn roundtrips_gokrb5_keytab_fixture() {
     let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
@@ -41,6 +56,14 @@ fn roundtrips_gokrb5_keytab_fixture() {
     assert_eq!(keytab.to_bytes().expect("keytab serializes"), bytes);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn generates_gokrb5_user_keytab_entries_from_password() {
     let expected = decode_hex(KTUTIL_USER_KEYTAB);
@@ -58,6 +81,14 @@ fn generates_gokrb5_user_keytab_entries_from_password() {
     assert_eq!(keytab.to_bytes().expect("keytab serializes"), expected);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn generates_gokrb5_service_keytab_entries_from_password() {
     let expected = decode_hex(KTUTIL_SERVICE_KEYTAB);
@@ -75,6 +106,16 @@ fn generates_gokrb5_service_keytab_entries_from_password() {
     assert_eq!(keytab.to_bytes().expect("keytab serializes"), expected);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn generates_gokrb5_keytab_entries_from_principal_name() {
     let expected = decode_hex(KTUTIL_SERVICE_KEYTAB);
@@ -102,6 +143,16 @@ fn generates_gokrb5_keytab_entries_from_principal_name() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_keytab_file() {
     let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
@@ -115,6 +166,16 @@ fn saves_and_loads_keytab_file() {
     assert_eq!(loaded, keytab);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_keytab_from_env() {
     const TEST_PATH: &str = "saves_and_loads_keytab_from_env";
@@ -139,6 +200,13 @@ fn saves_and_loads_keytab_from_env() {
     assert_eq!(loaded, keytab);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_missing_keytab_env_name() {
     const TEST_PATH: &str = "rejects_missing_keytab_env_name";
@@ -158,6 +226,14 @@ fn rejects_missing_keytab_env_name() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::literal_string_with_formatting_args,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolves_file_keytab_names() {
     assert_eq!(
@@ -195,6 +271,13 @@ fn resolves_file_keytab_names() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_typed_file_keytab_names() {
     let parsed = KeytabName::parse("FILE:/etc/krb5.keytab").expect("FILE keytab name parses");
@@ -210,6 +293,14 @@ fn parses_typed_file_keytab_names() {
     assert_eq!(parsed.file_path(), PathBuf::from("C:\\temp\\krb5.keytab"));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_unsupported_keytab_names() {
     assert!(matches!(
@@ -231,6 +322,11 @@ fn rejects_unsupported_keytab_names() {
     ));
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn encryption_key_debug_redacts_value() {
     let key = EncryptionKey {
@@ -243,6 +339,73 @@ fn encryption_key_debug_redacts_value() {
     assert!(!debug.contains("1, 2, 3, 4"));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "serde")]
 #[test]
 fn keytab_metadata_json_redacts_key_values() {
@@ -264,6 +427,16 @@ fn keytab_metadata_json_redacts_key_values() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_file_keytab_name() {
     let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
@@ -278,6 +451,14 @@ fn saves_and_loads_file_keytab_name() {
     assert_eq!(loaded, keytab);
 }
 
+#[expect(
+    clippy::assertions_on_result_states,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn finds_matching_key_by_principal_kvno_and_etype() {
     let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
@@ -300,6 +481,13 @@ fn finds_matching_key_by_principal_kvno_and_etype() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn finds_rc4_hmac_and_des3_keys_from_gokrb5_fixture() {
     let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
@@ -326,6 +514,12 @@ fn finds_rc4_hmac_and_des3_keys_from_gokrb5_fixture() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn kvno_zero_selects_newest_matching_key() {
     let mut keytab = Keytab::new();
@@ -342,6 +536,12 @@ fn kvno_zero_selects_newest_matching_key() {
     assert_eq!(kvno, 2);
 }
 
+#[expect(
+    clippy::assertions_on_result_states,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_invalid_keytab_inputs() {
     assert!(Keytab::parse(&[]).is_err());
@@ -351,6 +551,11 @@ fn rejects_invalid_keytab_inputs() {
     assert!(Keytab::parse(&[5, 2, 0, 0, 0, 16]).is_err());
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn synthetic_entry(component: &str, kvno: u32, etype: i32, timestamp: u32) -> Entry {
     Entry {
         principal: Principal {
@@ -368,6 +573,12 @@ fn synthetic_entry(component: &str, kvno: u32, etype: i32, timestamp: u32) -> En
     }
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::integer_division_remainder_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
@@ -383,6 +594,13 @@ fn decode_hex(input: &str) -> Vec<u8> {
         .collect()
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::default_numeric_fallback,
+    clippy::indexing_slicing,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn encode_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -393,6 +611,12 @@ fn encode_hex(bytes: &[u8]) -> String {
     out
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn hex_value(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',
@@ -402,6 +626,12 @@ fn hex_value(byte: u8) -> u8 {
     }
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn temp_file(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)

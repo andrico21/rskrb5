@@ -1,3 +1,4 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 extern crate alloc;
 
 use alloc::sync::Arc;
@@ -20,11 +21,19 @@ use rskrb5::{
     spnego::AcceptedContext,
 };
 
+#[expect(
+    clippy::missing_docs_in_private_items,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[derive(Clone)]
 struct AppState {
     validator: Arc<Mutex<ServiceValidator<'static>>>,
 }
 
+#[expect(
+    clippy::absolute_paths,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let keytab = Box::leak(Box::new(load_keytab()?));
@@ -42,6 +51,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[expect(
+    clippy::missing_docs_in_private_items,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 async fn index(Extension(context): Extension<AcceptedContext>) -> String {
     format!(
         "authenticated as {}@{}\n",
@@ -50,6 +63,13 @@ async fn index(Extension(context): Extension<AcceptedContext>) -> String {
     )
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_docs_in_private_items,
+    clippy::missing_panics_doc,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 async fn negotiate(
     State(state): State<AppState>,
     mut request: Request<Body>,
@@ -85,6 +105,14 @@ async fn negotiate(
     response
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::map_unwrap_or,
+    clippy::missing_docs_in_private_items,
+    clippy::missing_errors_doc,
+    clippy::shadow_reuse,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn load_keytab() -> Result<Keytab, Box<dyn Error>> {
     let path = std::env::var_os("KRB5_KTNAME")
         .map(PathBuf::from)

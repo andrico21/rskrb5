@@ -1,3 +1,4 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -39,6 +40,14 @@ const CCACHE_TEST: &str = concat!(
     "23f7da22a8e73359d9c322b8e1cc00000000"
 );
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_gokrb5_ccache_fixture() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -59,6 +68,12 @@ fn parses_gokrb5_ccache_fixture() {
     assert!(cache.contains_server(&["HTTP", "host.test.gokrb5"]));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn roundtrips_gokrb5_ccache_fixture() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -66,6 +81,16 @@ fn roundtrips_gokrb5_ccache_fixture() {
     assert_eq!(cache.to_bytes().expect("ccache serializes"), bytes);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_ccache_file() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -79,6 +104,16 @@ fn saves_and_loads_ccache_file() {
     assert_eq!(loaded, cache);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_ccache_from_env() {
     const TEST_PATH: &str = "saves_and_loads_ccache_from_env";
@@ -103,6 +138,13 @@ fn saves_and_loads_ccache_from_env() {
     assert_eq!(loaded, cache);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_missing_ccache_env_name() {
     const TEST_PATH: &str = "rejects_missing_ccache_env_name";
@@ -126,6 +168,14 @@ fn rejects_missing_ccache_env_name() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::literal_string_with_formatting_args,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolves_file_cache_names() {
     assert_eq!(
@@ -178,6 +228,13 @@ fn resolves_file_cache_names() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_typed_file_cache_names() {
     let parsed = CacheName::parse("FILE:/tmp/krb5cc_1000").expect("FILE cache name parses");
@@ -202,6 +259,12 @@ fn parses_typed_file_cache_names() {
     assert_eq!(parsed.file_path(), PathBuf::from("C:\\temp\\krb5cc"));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_unsupported_cache_names() {
     assert!(matches!(
@@ -243,6 +306,12 @@ fn rejects_unsupported_cache_names() {
     }
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn encryption_key_debug_redacts_value() {
     let key = rskrb5::ccache::EncryptionKey {
@@ -255,6 +324,73 @@ fn encryption_key_debug_redacts_value() {
     assert!(!debug.contains("1, 2, 3, 4"));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "serde")]
 #[test]
 fn ccache_metadata_json_redacts_key_and_ticket_values() {
@@ -284,6 +420,16 @@ fn ccache_metadata_json_redacts_key_and_ticket_values() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_file_cache_name() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -298,6 +444,17 @@ fn saves_and_loads_file_cache_name() {
     assert_eq!(loaded, cache);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_dir_subsidiary_cache_name() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -317,6 +474,17 @@ fn saves_and_loads_dir_subsidiary_cache_name() {
     assert_eq!(loaded, cache);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn saves_and_loads_dir_primary_collection_cache_name() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -340,6 +508,17 @@ fn saves_and_loads_dir_primary_collection_cache_name() {
     let _ = std::fs::remove_dir(&directory);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn dir_primary_collection_uses_existing_primary_file() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -361,6 +540,17 @@ fn dir_primary_collection_uses_existing_primary_file() {
     let _ = std::fs::remove_dir(&directory);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn dir_primary_collection_rejects_invalid_primary_file() {
     let directory = temp_dir("invalid-dir-primary");
@@ -377,6 +567,13 @@ fn dir_primary_collection_rejects_invalid_primary_file() {
     let _ = std::fs::remove_dir(&directory);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn gets_client_and_server_entries() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -398,6 +595,13 @@ fn gets_client_and_server_entries() {
     assert_eq!(entry.second_ticket.len(), 0);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn entries_filter_out_x_cacheconf_credentials() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -430,6 +634,15 @@ fn entries_filter_out_x_cacheconf_credentials() {
     );
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::redundant_clone,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_and_upserts_x_cacheconf_entries() {
     let client = Principal::new("TEST.GOKRB5", 1, vec!["testuser1".to_owned()]);
@@ -468,6 +681,14 @@ fn builds_and_upserts_x_cacheconf_entries() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn upserts_and_removes_client_entries_without_dropping_config() {
     let bytes = decode_hex(CCACHE_TEST);
@@ -503,6 +724,15 @@ fn upserts_and_removes_client_entries_without_dropping_config() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::rest_pattern_accessible_field,
+    clippy::tests_outside_test_module,
+    clippy::unseparated_literal_suffix,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_invalid_ccache_inputs() {
     assert!(matches!(
@@ -538,6 +768,14 @@ fn rejects_invalid_ccache_inputs() {
     ));
 }
 
+#[expect(
+    clippy::decimal_literal_representation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::unseparated_literal_suffix,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_impossible_component_count() {
     let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
@@ -559,6 +797,12 @@ fn rejects_impossible_component_count() {
     assert!(matches!(error, Error::LengthOverflow));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_impossible_address_count() {
     let mut bytes = ccache_prefix_before_address_count();
@@ -578,6 +822,13 @@ fn rejects_impossible_address_count() {
     assert!(matches!(error, Error::LengthOverflow));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::unseparated_literal_suffix,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_impossible_auth_data_count() {
     let mut bytes = ccache_prefix_before_address_count();
@@ -598,6 +849,10 @@ fn rejects_impossible_auth_data_count() {
     assert!(matches!(error, Error::LengthOverflow));
 }
 
+#[expect(
+    clippy::unseparated_literal_suffix,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// A v4 cache prefix up to a credential's address count: empty header,
 /// empty default/client/server principals, no key, zero times and flags.
 fn ccache_prefix_before_address_count() -> Vec<u8> {
@@ -613,6 +868,11 @@ fn ccache_prefix_before_address_count() -> Vec<u8> {
     bytes
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::integer_division_remainder_used,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
@@ -628,6 +888,12 @@ fn decode_hex(input: &str) -> Vec<u8> {
         .collect()
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn hex_value(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',
@@ -637,6 +903,12 @@ fn hex_value(byte: u8) -> u8 {
     }
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn temp_file(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -652,6 +924,17 @@ fn temp_dir(name: &str) -> PathBuf {
     temp_file(name)
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_sign_loss,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::rest_pattern_accessible_field,
+    clippy::unseparated_literal_suffix,
+    clippy::wildcard_enum_match_arm,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(test)]
 mod fork_property_tests {
     use proptest::prelude::*;

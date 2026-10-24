@@ -1,5 +1,14 @@
 use super::*;
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_returns_cached_service_ticket_from_ccache() {
@@ -41,6 +50,13 @@ fn tokio_client_returns_cached_service_ticket_from_ccache() {
     assert_eq!(returned.ticket, service_ticket.ticket);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exposes_and_removes_cached_service_ticket() {
@@ -79,6 +95,13 @@ fn tokio_client_exposes_and_removes_cached_service_ticket() {
     );
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn cached_service_ticket_identity_is_case_folded() {
@@ -116,6 +139,13 @@ fn cached_service_ticket_identity_is_case_folded() {
     assert_eq!(client.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prefers_freshest_cached_service_ticket() {
@@ -162,6 +192,12 @@ fn tokio_client_prefers_freshest_cached_service_ticket() {
     assert_eq!(client.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_clears_service_ticket_cache_without_dropping_tgt() {
@@ -177,6 +213,14 @@ fn tokio_client_clears_service_ticket_cache_without_dropping_tgt() {
     assert_eq!(client.tgt_session().expect("TGT remains cached"), &tgt);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_cached_service_ticket_resolves_empty_realm_and_ignores_expired_entries() {
@@ -214,6 +258,13 @@ fn tokio_client_cached_service_ticket_resolves_empty_realm_and_ignores_expired_e
     assert_eq!(client.cached_service_ticket_count(), 0);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() {
@@ -282,6 +333,11 @@ fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() {
     );
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prunes_expired_nonrenewable_primary_tgt() {
@@ -305,6 +361,12 @@ fn tokio_client_prunes_expired_nonrenewable_primary_tgt() {
     assert!(PrunedSessions::default().is_empty());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_destroy_clears_credentials_sessions_and_cache() {
@@ -330,6 +392,14 @@ fn tokio_client_destroy_clears_credentials_sessions_and_cache() {
     assert!(matches!(error, Error::NoClientCredentials));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_ignores_other_client_credentials() {
@@ -392,6 +462,14 @@ fn tokio_client_from_ccache_ignores_other_client_credentials() {
     assert_eq!(returned.session_key, service_ticket.session_key);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_keeps_freshest_duplicate_service_ticket() {
@@ -439,6 +517,14 @@ fn tokio_client_from_ccache_keeps_freshest_duplicate_service_ticket() {
     assert_eq!(returned.ticket, fresh_service_ticket.ticket);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_prefers_current_tgt_over_future_duplicate() {
@@ -478,6 +564,14 @@ fn tokio_client_from_ccache_prefers_current_tgt_over_future_duplicate() {
     assert_eq!(loaded_tgt.session_key, current_tgt.session_key);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_login_returns_current_cache_only_tgt() {
@@ -506,6 +600,14 @@ fn tokio_client_login_returns_current_cache_only_tgt() {
     assert_eq!(session.session_key, tgt.session_key);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_affirm_login_returns_current_cache_only_tgt() {
@@ -534,6 +636,13 @@ fn tokio_client_affirm_login_returns_current_cache_only_tgt() {
     assert_eq!(session.session_key, tgt.session_key);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_affirm_login_reuses_valid_tgt_with_attached_credentials() {
@@ -563,6 +672,11 @@ fn tokio_client_affirm_login_reuses_valid_tgt_with_attached_credentials() {
     assert_eq!(session.session_key.value, decode_hex(SESSION_KEY));
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exposes_assume_preauthentication_setting() {
@@ -577,6 +691,11 @@ fn tokio_client_exposes_assume_preauthentication_setting() {
     assert!(client.assume_preauthentication());
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exposes_fast_negotiation_setting() {
@@ -591,6 +710,11 @@ fn tokio_client_exposes_fast_negotiation_setting() {
     assert!(!client.fast_negotiation());
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_reports_tgt_refresh_due_window() {
@@ -615,6 +739,12 @@ fn tokio_client_reports_tgt_refresh_due_window() {
     assert!(expired.tgt_refresh_due());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_refresh_tgt_if_needed_reuses_fresh_cache_only_tgt() {
@@ -629,6 +759,13 @@ fn tokio_client_refresh_tgt_if_needed_reuses_fresh_cache_only_tgt() {
     assert_eq!(refreshed.ticket, tgt.ticket);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_alloc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_auto_renewal_handle_aborts() {
@@ -646,6 +783,15 @@ fn tokio_client_auto_renewal_handle_aborts() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_alloc,
+    clippy::tests_outside_test_module,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_auto_renewal_paces_cache_only_nonrenewable_tgt() {
@@ -680,6 +826,13 @@ fn tokio_client_auto_renewal_paces_cache_only_nonrenewable_tgt() {
         .expect("the auto-renewal loop paces instead of spinning");
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_refresh_due_uses_current_ticket_life() {
@@ -707,6 +860,13 @@ fn tokio_client_refresh_due_uses_current_ticket_life() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::std_instead_of_alloc,
+    clippy::std_instead_of_core,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 fn spawn_counting_kdc(
     listener: tokio::net::TcpListener,
@@ -722,6 +882,24 @@ fn spawn_counting_kdc(
     })
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::clone_on_ref_ptr,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_alloc,
+    clippy::std_instead_of_core,
+    clippy::unseparated_literal_suffix,
+    let_underscore_drop,
+    unused_qualifications,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// Counting KDC that answers each TGS-REQ through `tgs_reply`, which receives
 /// the decoded request, its DER and the number of AS-REQs served before it.
 #[cfg(feature = "tokio")]
@@ -740,6 +918,11 @@ where
 {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
+    #[expect(
+        clippy::unused_trait_names,
+        redundant_imports,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let as_requests = std::sync::Arc::new(AtomicUsize::new(0));
@@ -796,6 +979,13 @@ where
     (handle, as_requests, tgs_requests)
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 fn krb_error_bytes(error_code: i32) -> Vec<u8> {
     let error = rasn_kerberos::KrbError {
@@ -816,6 +1006,13 @@ fn krb_error_bytes(error_code: i32) -> Vec<u8> {
     rasn::der::encode(&error).expect("KRB-ERROR encodes")
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 fn expired_renewable_tgt() -> rskrb5::client::AsRepSession {
     let now = SystemTime::now();
@@ -827,6 +1024,16 @@ fn expired_renewable_tgt() -> rskrb5::client::AsRepSession {
     tgt
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_core,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_affirm_login_falls_back_to_as_for_expired_renewable_tgt() {
@@ -863,6 +1070,16 @@ fn tokio_client_affirm_login_falls_back_to_as_for_expired_renewable_tgt() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_core,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_refresh_tgt_if_needed_falls_back_to_as_for_expired_renewable_tgt() {
@@ -899,6 +1116,16 @@ fn tokio_client_refresh_tgt_if_needed_falls_back_to_as_for_expired_renewable_tgt
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_core,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_cache_only_expired_renewable_tgt_keeps_renewal_error() {
@@ -934,6 +1161,15 @@ fn tokio_client_cache_only_expired_renewable_tgt_keeps_renewal_error() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_core,
+    unused_qualifications,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// Run `test` on a paused current-thread runtime in its own thread and return
 /// its report, failing after 10 s of real time so a spinning loop cannot hang.
 #[cfg(feature = "tokio")]
@@ -964,6 +1200,11 @@ fn is_renewal_request(request: &rasn_kerberos::TgsReq) -> bool {
         .is_ok_and(|options| u32::from_be_bytes(options) & KDC_OPTION_RENEW != 0)
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 fn unix_seconds(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH)
@@ -971,6 +1212,15 @@ fn unix_seconds(time: SystemTime) -> u64 {
         .as_secs()
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::arithmetic_side_effects,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::too_long_first_doc_paragraph,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// TGS-REP renewing the primary TGT the way RFC 4120 renewal does: `auth_time`
 /// stays 60 h old while `start_time` restarts a 10 h ticket life now. The
 /// session key is unchanged, so every later renewal decrypts with it too.
@@ -1031,6 +1281,20 @@ fn renewed_tgt_reply_keeping_auth_time(request: rasn_kerberos::TgsReq, der: &[u8
     rasn::der::encode(&tgs_rep).expect("TGS-REP encodes")
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::clone_on_ref_ptr,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_reuse,
+    clippy::std_instead_of_alloc,
+    clippy::tests_outside_test_module,
+    closure_returning_async_block,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// After a renewal that keeps an old `auth_time`, auto-renewal measures the
 /// refresh band from the renewed ticket's own life and sleeps instead of
 /// renewing again.
@@ -1099,6 +1363,18 @@ fn tokio_client_auto_renewal_paces_after_renewal() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_alloc,
+    clippy::tests_outside_test_module,
+    closure_returning_async_block,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// When the KDC refuses to renew a due TGT, auto-renewal with a configured
 /// password falls back to a fresh AS exchange instead of retrying the renewal.
 #[cfg(feature = "tokio")]
@@ -1157,6 +1433,14 @@ fn tokio_client_auto_renewal_uses_as_when_renewal_refused() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// `get_service_ticket` with an expired renewable TGT and a password skips the
 /// renewal a conforming KDC refuses, logs in through AS, then requests the
 /// service ticket with the fresh TGT.
@@ -1211,6 +1495,12 @@ fn tokio_client_get_service_ticket_falls_back_to_as_for_expired_renewable_tgt() 
     });
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_validates_configuration() {
@@ -1273,6 +1563,72 @@ fn tokio_client_validates_configuration() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_diagnostics_reports_keytab_and_kdc_state() {
@@ -1314,6 +1670,14 @@ fn tokio_client_diagnostics_reports_keytab_and_kdc_state() {
     assert!(json.contains(r#""TCPKDCs": ["#));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_login_rejects_expired_cache_only_tgt() {
@@ -1340,6 +1704,14 @@ fn tokio_client_login_rejects_expired_cache_only_tgt() {
     assert!(matches!(error, Error::NoClientCredentials));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_prefers_current_service_ticket_over_future_duplicate() {
@@ -1389,6 +1761,14 @@ fn tokio_client_from_ccache_prefers_current_service_ticket_over_future_duplicate
     assert_eq!(returned.ticket, current_service_ticket.ticket);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_rejects_expired_tgt_without_live_credentials() {
@@ -1415,6 +1795,14 @@ fn tokio_client_from_ccache_rejects_expired_tgt_without_live_credentials() {
     assert!(matches!(error, Error::NoClientCredentials));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_rejects_expired_service_ticket() {
@@ -1453,6 +1841,14 @@ fn tokio_client_from_ccache_rejects_expired_service_ticket() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_expired_renewable_cached_service_ticket() {
@@ -1523,6 +1919,15 @@ fn tokio_client_renews_expired_renewable_cached_service_ticket() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_ccache_loaded_renewable_service_ticket() {
@@ -1601,6 +2006,14 @@ fn tokio_client_renews_ccache_loaded_renewable_service_ticket() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_cached_referral_tgt_before_reusing_it() {
@@ -1705,6 +2118,13 @@ fn tokio_client_renews_cached_referral_tgt_before_reusing_it() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_tgt_session_for_realm() {
@@ -1776,6 +2196,17 @@ fn tokio_client_renews_tgt_session_for_realm() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::redundant_clone,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exports_and_saves_ccache() {
@@ -1811,6 +2242,16 @@ fn tokio_client_exports_and_saves_ccache() {
     assert_eq!(loaded_by_name, cache);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_loads_from_ccache_name() {
@@ -1831,6 +2272,76 @@ fn tokio_client_loads_from_ccache_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
@@ -1848,6 +2359,76 @@ fn negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
     rskrb5::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn blocking_negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
@@ -1864,6 +2445,71 @@ fn blocking_negotiate_client_builds_authorization_header_for_host_from_ccache_na
     rskrb5::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn negotiate_client_preserves_unsupported_cache_type_error() {
@@ -1877,6 +2523,16 @@ fn negotiate_client_preserves_unsupported_cache_type_error() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_loads_from_ccache_env() {
@@ -1907,6 +2563,17 @@ fn tokio_client_loads_from_ccache_env() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_saves_and_loads_dir_collection_ccache_name() {
@@ -1932,6 +2599,17 @@ fn tokio_client_saves_and_loads_dir_collection_ccache_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_loads_from_config_default_ccache_name() {
@@ -1964,6 +2642,17 @@ fn tokio_client_loads_from_config_default_ccache_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_uses_config_default_ccache_when_env_is_absent() {
@@ -2003,6 +2692,16 @@ fn tokio_client_uses_config_default_ccache_when_env_is_absent() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prefers_env_default_ccache_over_config_name() {
@@ -2047,6 +2746,13 @@ fn tokio_client_prefers_env_default_ccache_over_config_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_rejects_missing_config_default_ccache_name() {
@@ -2088,6 +2794,76 @@ fn tokio_client_rejects_missing_config_default_ccache_name() {
     assert!(matches!(error, Error::NoDefaultCCacheName));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_client_keytab_from_config_name() {
@@ -2109,6 +2885,76 @@ fn tokio_client_loads_client_keytab_from_config_name() {
     assert_eq!(diagnostics.keytab_enctypes, [18]);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_keytab_from_env() {
@@ -2140,6 +2986,76 @@ fn tokio_client_loads_keytab_from_env() {
     assert_eq!(diagnostics.keytab_enctypes, [18]);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_client_keytab_from_env() {
@@ -2172,6 +3088,76 @@ fn tokio_client_loads_client_keytab_from_env() {
     assert_eq!(diagnostics.keytab_enctypes, [18]);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_default_client_keytab_when_env_is_absent() {
@@ -2199,6 +3185,76 @@ fn tokio_client_loads_default_client_keytab_when_env_is_absent() {
     assert_eq!(diagnostics.keytab_enctypes, [18]);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_prefers_env_client_keytab_over_config_name() {
@@ -2240,6 +3296,12 @@ fn tokio_client_prefers_env_client_keytab_over_config_name() {
     assert_eq!(diagnostics.keytab_enctypes, [18]);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_reports_missing_client_keytab_env() {
@@ -2258,6 +3320,12 @@ fn tokio_client_reports_missing_client_keytab_env() {
     assert!(matches!(error, Error::DefaultClientKeytabName(_)));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_tracks_multiple_tgt_sessions() {
@@ -2319,6 +3387,12 @@ fn tokio_client_tracks_multiple_tgt_sessions() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_rejects_non_tgt_session_cache_insert() {
@@ -2336,6 +3410,13 @@ fn tokio_client_rejects_non_tgt_session_cache_insert() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::redundant_clone,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prefers_freshest_cached_tgt_session() {
@@ -2419,6 +3500,72 @@ fn tokio_client_prefers_freshest_cached_tgt_session() {
     );
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::redundant_clone,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_json_snapshots_match_gokrb5_shapes() {
@@ -2458,6 +3605,17 @@ fn tokio_client_json_snapshots_match_gokrb5_shapes() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_updates_ccache_file_without_duplicate_tickets() {
@@ -2551,6 +3709,14 @@ fn tokio_client_updates_ccache_file_without_duplicate_tickets() {
     );
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn service_realm_resolution_folds_dns_case() {

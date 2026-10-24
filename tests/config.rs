@@ -1,3 +1,4 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 use core::time::Duration;
 use std::{
     path::PathBuf,
@@ -10,6 +11,10 @@ use rskrb5::config::{Config, Error, parse_duration};
 #[path = "support/env.rs"]
 mod env;
 
+#[expect(
+    clippy::needless_raw_strings,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 const KRB5_CONF: &str = r#"[libdefaults]
   default_realm = TEST.GOKRB5
   dns_lookup_realm = false
@@ -40,6 +45,10 @@ const KRB5_CONF: &str = r#"[libdefaults]
  resdom.gokrb5 = RESDOM.GOKRB5
  "#;
 
+#[expect(
+    clippy::needless_raw_strings,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 const COMPLEX_KRB5_CONF: &str = r#"
 [logging]
  default = FILE:/var/log/kerberos/krb5libs.log
@@ -92,6 +101,11 @@ const COMPLEX_KRB5_CONF: &str = r#"
  }
 "#;
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn libdefaults_defaults_match_gokrb5() {
     let config = Config::new();
@@ -102,6 +116,14 @@ fn libdefaults_defaults_match_gokrb5() {
     assert!(config.libdefaults.no_addresses);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_gokrb5_integration_config_fixture() {
     let config = Config::parse(KRB5_CONF).expect("config parses");
@@ -139,6 +161,16 @@ fn parses_gokrb5_integration_config_fixture() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn loads_config_file() {
     let path = temp_file("load");
@@ -154,6 +186,17 @@ fn loads_config_file() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn loads_config_path_list_in_order() {
     let first = temp_file("load-list-first");
@@ -197,6 +240,17 @@ fn loads_config_path_list_in_order() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn loads_config_path_list_from_env() {
     const TEST_PATH: &str = "loads_config_path_list_from_env";
@@ -236,6 +290,17 @@ fn loads_config_path_list_from_env() {
     assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn load_default_prefers_krb5_config_env() {
     const TEST_PATH: &str = "load_default_prefers_krb5_config_env";
@@ -269,6 +334,12 @@ fn load_default_prefers_krb5_config_env() {
     assert_eq!(fallback.libdefaults.default_realm, "ENV.GOKRB5");
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_empty_config_path_list() {
     assert!(matches!(
@@ -281,6 +352,12 @@ fn rejects_empty_config_path_list() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_missing_config_env() {
     const TEST_PATH: &str = "rejects_missing_config_env";
@@ -294,6 +371,14 @@ fn rejects_missing_config_env() {
     ));
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_complex_gokrb5_config_semantics() {
     let config = Config::parse(COMPLEX_KRB5_CONF).expect("config parses");
@@ -356,6 +441,15 @@ fn parses_complex_gokrb5_config_semantics() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_gokrb5_config_without_blank_lines() {
     let config = Config::parse(
@@ -405,6 +499,13 @@ fn parses_gokrb5_config_without_blank_lines() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_gokrb5_config_with_tabs_and_reordered_sections() {
     let config = Config::parse(
@@ -463,6 +564,13 @@ fn parses_gokrb5_config_with_tabs_and_reordered_sections() {
     );
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn duration_formats_match_gokrb5() {
     let cases = [
@@ -486,6 +594,12 @@ fn duration_formats_match_gokrb5() {
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolve_realm_matches_gokrb5_specificity() {
     let config = Config::parse(COMPLEX_KRB5_CONF).expect("config parses");
@@ -509,6 +623,13 @@ fn resolve_realm_matches_gokrb5_specificity() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolve_realm_folds_dns_case() {
     let config = Config::parse(
@@ -544,6 +665,13 @@ fn resolve_realm_folds_dns_case() {
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolve_realm_applies_bare_domain_tags_to_subdomains() {
     // MIT's own three-tag example; expected values match the MIT 1.22.1
@@ -582,6 +710,13 @@ fn resolve_realm_applies_bare_domain_tags_to_subdomains() {
     assert_eq!(config.resolve_realm("notmit.edu"), None);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolve_realm_dot_tag_does_not_match_the_domain_itself() {
     let config = Config::parse(
@@ -602,6 +737,13 @@ fn resolve_realm_dot_tag_does_not_match_the_domain_itself() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolve_realm_prefers_dot_tag_over_bare_at_the_same_level() {
     // Reference precedence: MIT resolves dev.mit.edu from the bare tag and
@@ -623,6 +765,13 @@ fn resolve_realm_prefers_dot_tag_over_bare_at_the_same_level() {
     assert_eq!(config.resolve_realm("a.b.dev.mit.edu"), Some("DOT.REALM"));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() {
     let config = Config::parse(
@@ -645,6 +794,14 @@ fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn libdefaults_keys_are_case_insensitive_and_extra_addresses_are_comma_separated() {
     let config = Config::parse(
@@ -670,6 +827,14 @@ fn libdefaults_keys_are_case_insensitive_and_extra_addresses_are_comma_separated
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn maps_rc4_hmac_enctype_aliases() {
     let config = Config::parse(
@@ -685,6 +850,74 @@ fn maps_rc4_hmac_enctype_aliases() {
     assert_eq!(config.libdefaults.default_tgs_enctype_ids, [23]);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        clippy::unseparated_literal_suffix,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "serde")]
 #[test]
 fn config_json_matches_gokrb5_shape() {
@@ -728,6 +961,74 @@ fn config_json_matches_gokrb5_shape() {
     );
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::needless_raw_strings,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "serde")]
 #[test]
 fn permitted_enctypes_explicit_survives_a_serde_round_trip() {
@@ -750,6 +1051,72 @@ fn permitted_enctypes_explicit_survives_a_serde_round_trip() {
     assert_eq!(encoded_as_req_etypes(&decoded), vec![18]);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "serde")]
 #[test]
 fn implicit_permitted_enctypes_round_trip_stays_implicit() {
@@ -764,6 +1131,74 @@ fn implicit_permitted_enctypes_round_trip_stays_implicit() {
     assert_eq!(decoded, config.libdefaults);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::needless_raw_strings,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "serde")]
 #[test]
 fn libdefaults_json_without_the_explicit_field_deserializes_as_implicit() {
@@ -788,6 +1223,13 @@ fn libdefaults_json_without_the_explicit_field_deserializes_as_implicit() {
     assert_eq!(decoded.permitted_enctype_ids, vec![18]);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn explicit_tkt_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
     let error = Config::parse(
@@ -812,6 +1254,13 @@ fn explicit_tkt_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
     assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn explicit_tgs_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
     let error = Config::parse(
@@ -836,6 +1285,14 @@ fn explicit_tgs_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
     assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn implicit_default_enctypes_are_filtered_to_permitted() {
     let config = Config::parse(
@@ -852,6 +1309,13 @@ fn implicit_default_enctypes_are_filtered_to_permitted() {
     assert_eq!(encoded_as_req_etypes(&config.libdefaults), vec![18]);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn explicit_tkt_list_in_an_earlier_libdefaults_section_is_still_validated() {
     let error = Config::parse(
@@ -878,6 +1342,14 @@ fn explicit_tkt_list_in_an_earlier_libdefaults_section_is_still_validated() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn a_later_section_can_repair_an_earlier_conflict() {
     let config = Config::parse(
@@ -897,6 +1369,12 @@ fn a_later_section_can_repair_an_earlier_conflict() {
     assert_eq!(encoded_as_req_etypes(&config.libdefaults), vec![18]);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// Write `files` (name, body) into a fresh directory and return its path.
 fn include_fixture_dir(name: &str, files: &[(&str, &str)]) -> PathBuf {
     let dir = temp_file(name);
@@ -907,6 +1385,15 @@ fn include_fixture_dir(name: &str, files: &[(&str, &str)]) -> PathBuf {
     dir
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::unused_result_ok,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn explicit_tkt_list_in_an_included_file_is_validated_against_permitted() {
     let dir = include_fixture_dir(
@@ -938,6 +1425,16 @@ fn explicit_tkt_list_in_an_included_file_is_validated_against_permitted() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::unused_result_ok,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn a_later_included_file_can_repair_an_earlier_conflict() {
     let dir = include_fixture_dir(
@@ -968,6 +1465,13 @@ fn a_later_included_file_can_repair_an_earlier_conflict() {
     assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18]);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_v4_realm_directives() {
     let err = Config::parse(
@@ -988,6 +1492,12 @@ fn rejects_v4_realm_directives() {
     assert!(matches!(err, Error::UnsupportedDirective(_)));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn temp_file(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -999,6 +1509,13 @@ fn temp_file(name: &str) -> PathBuf {
     ))
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn resolve_realm_rejects_bare_prefix_extension() {
     let config = Config::parse(
@@ -1018,6 +1535,83 @@ fn resolve_realm_rejects_bare_prefix_extension() {
     assert_eq!(config.resolve_realm("sub.mit.edu"), Some("ATHENA.MIT.EDU"));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "messages")]
 fn encoded_as_req_etypes(defaults: &rskrb5::config::LibDefaults) -> Vec<i32> {
     let options = rskrb5::client::AsReqOptions::from_libdefaults(

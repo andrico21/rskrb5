@@ -1,5 +1,12 @@
 use super::*;
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_tgs_rep_rejects_session_key_outside_requested_enctypes() {
     let tgt = sample_tgt_session();
@@ -19,6 +26,16 @@ fn process_tgs_rep_rejects_session_key_outside_requested_enctypes() {
     assert!(matches!(error, Error::EnctypeNotRequested(18)));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
     let tgt = sample_tgt_session();
@@ -109,6 +126,16 @@ fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn exchange_as_req_with_config_rejects_session_key_outside_permitted_enctypes() {
@@ -156,6 +183,16 @@ fn exchange_as_req_with_config_rejects_session_key_outside_permitted_enctypes() 
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn exchange_tgs_req_with_config_rejects_session_key_outside_permitted_enctypes() {
@@ -202,6 +239,14 @@ fn exchange_tgs_req_with_config_rejects_session_key_outside_permitted_enctypes()
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn tgs_req_etypes_are_intersected_with_permitted_enctypes() {
     let defaults = rskrb5::config::LibDefaults {
@@ -225,6 +270,13 @@ fn tgs_req_etypes_are_intersected_with_permitted_enctypes() {
     assert_eq!(decoded.0.req_body.etype, vec![18]);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() {
     let defaults = rskrb5::config::LibDefaults {
@@ -256,6 +308,14 @@ fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgs_req_for_explicit_kdc_realm() {
     let tgt = sample_tgt_session();
@@ -287,6 +347,15 @@ fn builds_tgs_req_for_explicit_kdc_realm() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_s4u2self_tgs_req_with_pa_for_user() {
     let mut service_tgt = sample_tgt_session();
@@ -343,6 +412,15 @@ fn builds_s4u2self_tgs_req_with_pa_for_user() {
     assert_eq!(pa_for_user.cksum.checksum.as_ref(), expected_checksum);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_s4u2proxy_tgs_req_with_evidence_ticket() {
     let user_tgt = sample_tgt_session();
@@ -392,6 +470,16 @@ fn builds_s4u2proxy_tgs_req_with_evidence_ticket() {
     assert_eq!(padata[0].r#type, PA_TGS_REQ);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_s4u2proxy_tgs_req_with_pac_options() {
     let user_tgt = sample_tgt_session();
@@ -428,6 +516,15 @@ fn builds_s4u2proxy_tgs_req_with_pac_options() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::unseparated_literal_suffix,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_service_ap_req_with_subkey_and_sequence_number() {
     let tgt = sample_tgt_session();
@@ -503,6 +600,15 @@ fn builds_service_ap_req_with_subkey_and_sequence_number() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgt_renewal_req_sets_renew_options() {
     let tgt = sample_tgt_session();
@@ -537,6 +643,15 @@ fn builds_tgt_renewal_req_sets_renew_options() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_ticket_renewal_req_sets_service_and_renew_options() {
     let tgt = sample_tgt_session();
@@ -572,6 +687,14 @@ fn builds_ticket_renewal_req_sets_service_and_renew_options() {
     );
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn processes_tgs_rep_and_exports_ccache_credential() {
     let tgt = sample_tgt_session();
@@ -606,6 +729,12 @@ fn processes_tgs_rep_and_exports_ccache_credential() {
     assert!(!credential.ticket.is_empty());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_tgs_rep_surfaces_kdc_error_response() {
     let tgt = sample_tgt_session();
@@ -623,6 +752,15 @@ fn process_tgs_rep_surfaces_kdc_error_response() {
     ));
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::rest_pattern_accessible_field,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_tgs_rep_with_referral_accepts_intermediate_tgt() {
     let tgt = sample_tgt_session();
@@ -643,6 +781,12 @@ fn process_tgs_rep_with_referral_accepts_intermediate_tgt() {
     assert!(!session.ticket.is_empty());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn exchange_tgs_req_uses_transport_boundary() {
     let tgt = sample_tgt_session();
@@ -662,6 +806,13 @@ fn exchange_tgs_req_uses_transport_boundary() {
     assert_eq!(session.service, sample_service_principal());
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn s4u2self_uses_transport_boundary() {
     let mut service_tgt = sample_tgt_session();
@@ -687,6 +838,13 @@ fn s4u2self_uses_transport_boundary() {
     assert_eq!(session.service, service_tgt.client);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn s4u2proxy_uses_transport_boundary() {
     let user_tgt = sample_tgt_session();
@@ -716,6 +874,13 @@ fn s4u2proxy_uses_transport_boundary() {
     assert_eq!(session.service, target_service);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_transport_s4u2self_uses_tcp_kdc() {
@@ -752,6 +917,13 @@ fn tokio_transport_s4u2self_uses_tcp_kdc() {
     });
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_s4u2self_uses_current_service_tgt_without_service_cache() {
@@ -791,6 +963,13 @@ fn tokio_client_s4u2self_uses_current_service_tgt_without_service_cache() {
     });
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_transport_s4u2proxy_uses_tcp_kdc() {
@@ -831,6 +1010,13 @@ fn tokio_transport_s4u2proxy_uses_tcp_kdc() {
     });
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache() {
@@ -874,6 +1060,14 @@ fn tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache() {
     });
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn renew_tgt_uses_transport_boundary() {
     let tgt = sample_tgt_session();
@@ -896,6 +1090,14 @@ fn renew_tgt_uses_transport_boundary() {
     assert!(!session.ticket.is_empty());
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn renew_ticket_uses_transport_boundary() {
     let tgt = sample_tgt_session();
@@ -919,6 +1121,18 @@ fn renew_ticket_uses_transport_boundary() {
     assert!(!session.ticket.is_empty());
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::too_long_first_doc_paragraph,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// RFC 6113 section 5.4.2: a TGS request that will be FAST-armored with the TGT
 /// in `PA-TGS-REQ` must carry a subkey in its authenticator, because the
 /// implicit TGS armor key is
@@ -982,6 +1196,18 @@ fn tgs_req_authenticator_carries_subkey_for_implicit_armor() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::too_long_first_doc_paragraph,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// The seam exposes the AP-REQ DER that the outer `PA-TGS-REQ` padata carries:
 /// those are the bytes RFC 6113 section 5.4.2 keys the FAST `req-checksum` over,
 /// so a caller must be able to name them without re-encoding the request.
@@ -1022,6 +1248,16 @@ fn tgs_req_exposes_pa_tgs_req_ap_req_bytes() {
     assert_eq!(ap_req.msg_type, rasn::types::Integer::from(14));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// The unarmored builders keep the shape every existing caller has: no subkey.
 #[test]
 fn legacy_tgs_builder_stays_unarmored_for_existing_callers() {
@@ -1057,6 +1293,15 @@ fn legacy_tgs_builder_stays_unarmored_for_existing_callers() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::missing_panics_doc,
+    clippy::rest_pattern_accessible_field,
+    clippy::tests_outside_test_module,
+    unused_qualifications,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// The deterministic builder only accepts a subkey shaped like the random-subkey
 /// builder's, in the TGT session key's enctype and length; anything else is refused.
 #[test]

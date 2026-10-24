@@ -1,6 +1,12 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 use pretty_assertions::assert_eq;
 use rskrb5::crypto::{Error, KerberosEtype, Rc4HmacEtype};
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn reports_rc4_hmac_metadata_and_dispatch() {
     let etype = Rc4HmacEtype;
@@ -29,6 +35,12 @@ fn reports_rc4_hmac_metadata_and_dispatch() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rc4_hmac_string_to_key_matches_gokrb5_vector() {
     let key = Rc4HmacEtype
@@ -38,6 +50,12 @@ fn rc4_hmac_string_to_key_matches_gokrb5_vector() {
     assert_eq!(hex_encode(&key), "ac8e657f83df82beea5d43bdaf7800cc");
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rc4_hmac_checksum_matches_gokrb5_vector() {
     let etype = Rc4HmacEtype;
@@ -51,6 +69,12 @@ fn rc4_hmac_checksum_matches_gokrb5_vector() {
     assert!(!etype.verify_checksum(&key, b"kerberos rc4 tampered", &checksum, 2));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rc4_hmac_message_encryption_matches_gokrb5_vector() {
     let etype = Rc4HmacEtype;
@@ -79,6 +103,13 @@ fn rc4_hmac_message_encryption_matches_gokrb5_vector() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rc4_hmac_rejects_invalid_inputs_and_tampering() {
     let etype = Rc4HmacEtype;
@@ -121,6 +152,11 @@ fn rc4_hmac_rejects_invalid_inputs_and_tampering() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::integer_division_remainder_used,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
@@ -132,6 +168,13 @@ fn decode_hex(input: &str) -> Vec<u8> {
         .collect()
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::default_numeric_fallback,
+    clippy::indexing_slicing,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -142,6 +185,12 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn hex_value(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',

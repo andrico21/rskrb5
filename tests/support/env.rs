@@ -9,11 +9,21 @@ use std::{env, ffi::OsStr, process::Command};
 /// Marks the child process and names the one test it runs.
 const CHILD_TEST_ENV: &str = "RSKRB5_TEST_CHILD";
 
+#[expect(
+    unreachable_pub,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// Returns whether this process is the child run of `test_path`.
 pub fn in_child(test_path: &str) -> bool {
     env::var_os(CHILD_TEST_ENV) == Some(test_path.into())
 }
 
+#[expect(
+    clippy::expect_used,
+    unreachable_pub,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 /// Runs the test `test_path` alone in a child process of this test binary.
 ///
 /// Each `(key, Some(value))` sets `key` and each `(key, None)` removes `key`

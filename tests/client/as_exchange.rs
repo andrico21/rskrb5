@@ -1,5 +1,14 @@
 use super::*;
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgt_as_req_with_expected_fields() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -36,6 +45,14 @@ fn builds_tgt_as_req_with_expected_fields() {
     assert!(body.additional_tickets.is_none());
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -57,6 +74,14 @@ fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn as_req_etypes_are_intersected_with_permitted_enctypes() {
     let defaults = rskrb5::config::LibDefaults {
@@ -73,6 +98,15 @@ fn as_req_etypes_are_intersected_with_permitted_enctypes() {
     assert_eq!(decoded.0.req_body.etype, vec![18]);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn as_req_with_disjoint_permitted_enctypes_fails_closed() {
     let defaults = rskrb5::config::LibDefaults {
@@ -89,6 +123,13 @@ fn as_req_with_disjoint_permitted_enctypes_fails_closed() {
     assert!(matches!(error, Error::EmptyEtypes));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn sha2_request_list_survives_the_implicit_permitted_set() {
     let defaults = rskrb5::config::LibDefaults {
@@ -101,6 +142,14 @@ fn sha2_request_list_survives_the_implicit_permitted_set() {
     assert_eq!(options.etypes, vec![19, 20]);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn config_with_sha2_tkt_enctypes_and_no_permitted_line_keeps_the_request_list() {
     let config = Config::parse(
@@ -117,6 +166,14 @@ fn config_with_sha2_tkt_enctypes_and_no_permitted_line_keeps_the_request_list() 
     assert_eq!(options.etypes, vec![19]);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn explicit_permitted_enctypes_reject_an_explicit_sha2_request_list() {
     let error = Config::parse(
@@ -138,6 +195,13 @@ fn explicit_permitted_enctypes_reject_an_explicit_sha2_request_list() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn as_req_options_from_libdefaults_sets_canonicalize_flag() {
     let defaults = rskrb5::config::LibDefaults {
@@ -160,6 +224,15 @@ fn as_req_options_from_libdefaults_sets_canonicalize_flag() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_reuse,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_preauthenticated_as_req_for_explicit_service() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -189,6 +262,14 @@ fn builds_preauthenticated_as_req_for_explicit_service() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_and_encrypts_pa_enc_timestamp() {
     let key = reply_key();
@@ -232,6 +313,14 @@ fn builds_and_encrypts_pa_enc_timestamp() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_pa_for_user_padata_with_s4u_checksum() {
     let user = Principal::new("ATHENA.MIT.EDU", 1, ["hftsai", "extra"]);
@@ -266,6 +355,15 @@ fn builds_pa_for_user_padata_with_s4u_checksum() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn processes_as_rep_and_exports_ccache_credential() {
     let request = sample_request();
@@ -301,6 +399,13 @@ fn processes_as_rep_and_exports_ccache_credential() {
     assert!(credential.second_ticket.is_empty());
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_rejects_session_key_outside_requested_enctypes() {
     let request = build_tgt_as_req(
@@ -321,6 +426,12 @@ fn process_as_rep_rejects_session_key_outside_requested_enctypes() {
     assert!(matches!(error, Error::EnctypeNotRequested(18)));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_validates_pa_req_enc_pa_rep_checksum() {
     let request = sample_request_with_pa_req_enc_pa_rep();
@@ -343,6 +454,12 @@ fn process_as_rep_validates_pa_req_enc_pa_rep_checksum() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_rejects_invalid_pa_req_enc_pa_rep_checksum() {
     let request = sample_request_with_pa_req_enc_pa_rep();
@@ -363,6 +480,12 @@ fn process_as_rep_rejects_invalid_pa_req_enc_pa_rep_checksum() {
     assert!(matches!(error, Error::FastNegotiationChecksumMismatch));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_requires_fast_marker_with_pa_req_enc_pa_rep_checksum() {
     let request = sample_request_with_pa_req_enc_pa_rep();
@@ -381,6 +504,12 @@ fn process_as_rep_requires_fast_marker_with_pa_req_enc_pa_rep_checksum() {
     assert!(matches!(error, Error::InvalidFastNegotiationResponse));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_surfaces_kdc_error_response() {
     let request = sample_request();
@@ -393,6 +522,12 @@ fn process_as_rep_surfaces_kdc_error_response() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_as_rep_nonce_mismatch() {
     let request = sample_request();
@@ -410,6 +545,12 @@ fn rejects_as_rep_nonce_mismatch() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_as_rep_ticket_service_mismatch() {
     let request = sample_request();
@@ -431,6 +572,12 @@ fn rejects_as_rep_ticket_service_mismatch() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn exchange_as_req_uses_transport_boundary() {
     let request = sample_request();
@@ -449,12 +596,30 @@ fn exchange_as_req_uses_transport_boundary() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn exported_padata_constants_match_their_registrations() {
     assert_eq!(rskrb5::client::PA_FX_COOKIE, 133);
     assert_eq!(rskrb5::client::PA_AS_FRESHNESS, 150);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::map_with_unused_argument_over_ranges,
+    clippy::missing_asserts_for_indexing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn random_nonce_keeps_the_top_bit_clear_and_varies() {
     let draws: Vec<u32> = (0..8)

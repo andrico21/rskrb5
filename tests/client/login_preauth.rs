@@ -1,5 +1,12 @@
 use super::*;
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn parses_kdc_preauth_required_error_and_selects_etype_info2() {
     let error_bytes = synthetic_preauth_required_error();
@@ -34,6 +41,13 @@ fn parses_kdc_preauth_required_error_and_selects_etype_info2() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn selects_and_derives_rc4_hmac_preauth_key_info() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -67,6 +81,13 @@ fn selects_and_derives_rc4_hmac_preauth_key_info() {
     );
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_tgt_with_password_retries_after_preauth_required() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -85,6 +106,13 @@ fn login_tgt_with_password_retries_after_preauth_required() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_tgt_with_password_can_disable_fast_negotiation_marker() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -105,6 +133,13 @@ fn login_tgt_with_password_can_disable_fast_negotiation_marker() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_as_service_with_password_retries_for_explicit_service() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -129,6 +164,13 @@ fn login_as_service_with_password_retries_for_explicit_service() {
     assert_eq!(session.service, service);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_tgt_with_password_can_assume_preauthentication() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -153,6 +195,13 @@ fn login_tgt_with_password_can_assume_preauthentication() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_tgt_with_keytab_retries_with_selected_keytab_kvno() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -168,6 +217,13 @@ fn login_tgt_with_keytab_retries_with_selected_keytab_kvno() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_tgt_with_keytab_can_disable_fast_negotiation_marker() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -185,6 +241,13 @@ fn login_tgt_with_keytab_can_disable_fast_negotiation_marker() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn initial_as_rep_outside_requested_enctypes_is_rejected() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -206,6 +269,13 @@ fn initial_as_rep_outside_requested_enctypes_is_rejected() {
     assert_eq!(transport.calls, 1);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn keytab_initial_as_rep_outside_requested_enctypes_is_rejected() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -239,6 +309,13 @@ fn keytab_initial_as_rep_outside_requested_enctypes_is_rejected() {
     assert_eq!(transport.calls, 1);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_as_service_with_keytab_retries_for_explicit_service() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -261,6 +338,13 @@ fn login_as_service_with_keytab_retries_for_explicit_service() {
     assert_eq!(session.service, service);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn login_tgt_with_keytab_can_assume_preauthentication() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");

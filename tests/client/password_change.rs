@@ -1,5 +1,12 @@
 use super::*;
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_kpasswd_request_with_subkey_encrypted_payload() {
     let tgt = sample_tgt_session();
@@ -78,6 +85,13 @@ fn builds_kpasswd_request_with_subkey_encrypted_payload() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_kpasswd_request_with_generated_reply_key() {
     let tgt = sample_tgt_session();
@@ -119,6 +133,12 @@ fn builds_kpasswd_request_with_generated_reply_key() {
     assert_eq!(enc_part.seq_number, Some(42));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn verifies_kpasswd_reply_ap_rep_timestamp() {
     let built = sample_built_kpasswd_request();
@@ -135,6 +155,13 @@ fn verifies_kpasswd_reply_ap_rep_timestamp() {
     assert_eq!(verified.sequence_number, Some(99));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::rest_pattern_accessible_field,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_kpasswd_reply_ap_rep_timestamp_mismatch() {
     let built = sample_built_kpasswd_request();
@@ -148,6 +175,19 @@ fn rejects_kpasswd_reply_ap_rep_timestamp_mismatch() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_changes_password_with_cached_changepw_ticket() {
@@ -232,6 +272,19 @@ fn tokio_client_changes_password_with_cached_changepw_ticket() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_changes_password_uses_kpasswd_ap_rep_subkey_for_result() {
@@ -326,6 +379,20 @@ fn tokio_client_changes_password_uses_kpasswd_ap_rep_subkey_for_result() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    clippy::too_many_lines,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_changes_explicit_target_password() {
@@ -448,6 +515,80 @@ fn tokio_client_changes_explicit_target_password() {
     });
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::default_numeric_fallback,
+        clippy::duration_suboptimal_units,
+        clippy::expect_used,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::shadow_reuse,
+        clippy::shadow_unrelated,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn negotiate_client_changes_password_with_cached_changepw_ticket() {
@@ -533,6 +674,80 @@ fn negotiate_client_changes_password_with_cached_changepw_ticket() {
     });
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::default_numeric_fallback,
+        clippy::duration_suboptimal_units,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::shadow_reuse,
+        clippy::shadow_unrelated,
+        clippy::tests_outside_test_module,
+        clippy::too_many_lines,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn negotiate_client_changes_explicit_target_password() {
@@ -663,6 +878,79 @@ fn negotiate_client_changes_explicit_target_password() {
     });
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::default_numeric_fallback,
+        clippy::duration_suboptimal_units,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::shadow_reuse,
+        clippy::shadow_unrelated,
+        clippy::tests_outside_test_module,
+        clippy::unused_trait_names,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn blocking_negotiate_client_changes_password_with_cached_changepw_ticket() {
@@ -740,6 +1028,16 @@ fn blocking_negotiate_client_changes_password_with_cached_changepw_ticket() {
     assert_eq!(result.text, "password changed");
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    clippy::too_many_lines,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_changes_explicit_target_does_not_rotate_password_credentials() {
@@ -908,6 +1206,16 @@ TEST.GOKRB5 = {{
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    clippy::too_many_lines,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_changes_password_updates_password_credentials() {
@@ -1027,6 +1335,16 @@ TEST.GOKRB5 = {{
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::needless_raw_strings,
+    clippy::tests_outside_test_module,
+    clippy::unseparated_literal_suffix,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_rejects_unsigned_kpasswd_success() {
