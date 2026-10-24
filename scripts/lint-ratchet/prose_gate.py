@@ -17,6 +17,7 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
+import provenance
 
 CHECKS: Final = (
     "cancel-safety",
@@ -26,6 +27,28 @@ CHECKS: Final = (
     "emptiness-message",
     "credential-mutating",
 )
+
+
+def infallible_upstream_test(body: str, inherited_signature: bool) -> bool:
+    """Do not force unnecessary_wraps on touched upstream assertion-only tests.
+
+    Assertions consume their Result/Option values themselves (including Err
+    assertions); they are not propagation sites. Unknown calls outside assertions
+    conservatively keep the Result requirement. Entirely fork-authored tests keep
+    the existing rule, even when infallible.
+    """
+    if not inherited_signature:
+        return False
+    ranges = []
+    for match in re.finditer(
+        r"\b(?:assert|assert_eq|assert_ne|debug_assert|debug_assert_eq|debug_assert_ne)!\s*\(",
+        body,
+    ):
+        closing = common.match_bracket(body, match.end() - 1)
+        if closing is not None:
+            ranges.append((match.start(), closing + 1))
+    remaining = common.blank_ranges(body, ranges)
+    return not re.search(r"\?|\b\w+\s*(?:!\s*)?\(|\.\s*\w+\s*::\s*<", remaining)
 
 
 def scan(
@@ -99,9 +122,14 @@ def scan(
             if is_test and not any(a <= item.keyword <= b for a, b in proptest_ranges):
                 if not re.search(r"(?m)^\s*///", prefix):
                     hits.append(("test-docs", line, f"fn {item.name}"))
-                if not any(
-                    attr.startswith("should_panic") for attr in attrs
-                ) and not re.search(r"->\s*(?:[\w]+::)*Result\s*<", signature):
+                if (
+                    not any(attr.startswith("should_panic") for attr in attrs)
+                    and not re.search(r"->\s*(?:[\w]+::)*Result\s*<", signature)
+                    and not infallible_upstream_test(
+                        stripped[item.keyword : item.end].partition("{")[2],
+                        line in mapping,
+                    )
+                ):
                     hits.append(("test-result", line, f"fn {item.name}"))
         if (
             production
@@ -157,7 +185,11 @@ def report(
         ref_path = reference / origin
         upstream = ref_path.read_text() if origin and ref_path.is_file() else ""
         source = path.read_text()
-        mapping = common.line_mapping(source, upstream)
+        mapping = (
+            provenance.mapping(root, relative, (source, upstream))
+            if (root / ".git").exists()
+            else common.line_mapping(source, upstream)
+        )
         hits.extend(
             (gate, relative, line, detail)
             for gate, line, detail in scan(source, mapping, relative.startswith("src/"))
@@ -190,6 +222,22 @@ def self_test() -> int:
     assert sum(g == "test-result" for g, _, _ in hits) == 1
     assert sum(g == "drop-audit" for g, _, _ in hits) == 1
     assert sum(g == "emptiness-message" for g, _, _ in hits) == 1
+    # Given a touched upstream test with only construction and assertions,
+    # when scanned, Result is optional; fallible calls and new tests still fail.
+    upstream_test = "/// checks status\n#[test]\nfn status() {\n let result = Status { code: 1 };\n assert!(matches!(result.ensure_success(), Err(_)));\n}\n"
+    touched_test = upstream_test.replace("code: 1", "code: 1, text_raw: &[]")
+    inherited = common.line_mapping(touched_test, upstream_test)
+    assert not scan(touched_test, inherited, False)
+    assert any(g == "test-result" for g, _, _ in scan(touched_test, {}, False))
+    fallible = touched_test.replace(
+        " let result", ' read_file().expect("fixture");\n let result'
+    )
+    assert any(
+        g == "test-result"
+        for g, _, _ in scan(
+            fallible, common.line_mapping(fallible, upstream_test), False
+        )
+    )
     with TemporaryDirectory() as directory:
         root, reference = Path(directory) / "head", Path(directory) / "ref"
         (root / "tests/support").mkdir(parents=True)

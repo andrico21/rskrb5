@@ -8,10 +8,25 @@
 
 from __future__ import annotations
 
+import json
+import re
 import sys
 import tomllib
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+
+def align_msrv(root: Path, head_manifest: str) -> None:
+    """Use the same MSRV lint gates, without changing either original manifest."""
+    version = tomllib.loads(head_manifest)["package"]["rust-version"]
+    path = root / "Cargo.toml"
+    source = path.read_text()
+    package = re.search(r"(?ms)^\[package\]\n.*?(?=^\[|\Z)", source)
+    if package is None:
+        raise RuntimeError("reference manifest has no package table")
+    table = re.sub(r"(?m)^rust-version\s*=.*\n?", "", package[0])
+    table += "rust-version = " + json.dumps(version) + "\n"
+    path.write_text(source[: package.start()] + table + source[package.end() :])
 
 
 def compensate_reference(root: Path) -> None:
@@ -64,6 +79,18 @@ def self_test() -> int:
             assert manifest["dependencies"] == tomllib.loads(source)["dependencies"]
             compensate_reference(root)
             assert path.read_text() == result
+        # Given different package MSRVs and unrelated dependency metadata,
+        # when aligned, only the disposable package's MSRV changes.
+        for old in ('rust-version = "1.88"\n', ""):
+            path.write_text(
+                '[package]\nname = "ref"\n' + old + '[dependencies]\nhex = "0.4"\n'
+            )
+            head = '[package]\nname = "head"\nrust-version = "1.99"\n'
+            align_msrv(root, head)
+            assert tomllib.loads(path.read_text()) == {
+                "package": {"name": "ref", "rust-version": "1.99"},
+                "dependencies": {"hex": "0.4"},
+            }
     print(
         "fork_reference self-test: ok (missing dev-dependency, preservation, idempotence)"
     )

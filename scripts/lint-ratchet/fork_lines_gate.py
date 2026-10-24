@@ -20,6 +20,7 @@ from typing import Final
 
 import common
 import fork_reference
+import provenance
 
 CONFIGS: Final = (
     ("--all-features",),
@@ -131,6 +132,7 @@ def compare_trees(root: Path, reference: Path, head: Path) -> list[Diagnostic]:
     shutil.copy2(root / "clippy.toml", reference / "clippy.toml")
     # Equality gate owns validation; copy the actual HEAD tables, including order.
     cargo = (root / "Cargo.toml").read_text()
+    fork_reference.align_msrv(reference, cargo)
     tables = re.findall(r"(?ms)^\[lints\.[^\n]+\n.*?(?=^\[|\Z)", cargo)
     if not tables:
         raise RuntimeError("HEAD has no lint profile; finish todo 14 first")
@@ -145,7 +147,7 @@ def compare_trees(root: Path, reference: Path, head: Path) -> list[Diagnostic]:
         source = moves.get(rel, rel)
         ref_path = reference / source
         ref = ref_path.read_text() if source and ref_path.is_file() else ""
-        mappings[rel] = common.line_mapping(path.read_text(), ref)
+        mappings[rel] = provenance.mapping(root, rel, (path.read_text(), ref))
     normalize(head, False)
     found = violations(collect(head), collect(reference), mappings, moves)
     flags = lint_flags(tomllib.loads(cargo))

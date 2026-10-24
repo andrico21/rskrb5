@@ -4,6 +4,7 @@
 # dependencies = []
 # ///
 # How to run: python3 scripts/lint-ratchet/baseline_gate.py --self-test
+# noqa: SIZE_OK - Gate CLI retains its inline ownership and transition regression fixtures.
 """Check suppression ownership, manifest equality, and every ratchet transition."""
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
+from baseline_moves import Move, additions
+from baseline_sources import prove
 
 MANIFEST: Final = "scripts/lint-ratchet/baseline.toml"
 API_LINTS: Final = frozenset(
@@ -142,11 +145,14 @@ def source_entries(root: Path) -> tuple[Counter[Entry], list[str]]:
 
 
 def transition(
-    previous: Counter[Entry], current: Counter[Entry], label: str
+    previous: Counter[Entry],
+    current: Counter[Entry],
+    label: str,
+    proven: frozenset[Move] = frozenset(),
 ) -> list[str]:
     return [
         f"{label}: baseline addition/restoration {key} (+{count})"
-        for key, count in (current - previous).items()
+        for key, count in additions(previous, current, proven).items()
     ]
 
 
@@ -172,9 +178,20 @@ def ratchet(root: Path, current: Counter[Entry]) -> tuple[list[str], int]:
         root, "log", "--reverse", "--format=%H", f"{base}..HEAD", "--", MANIFEST
     ).splitlines():
         now = manifest(common.git(root, "show", f"{commit}:{MANIFEST}"))
-        errors.extend(transition(previous, now, commit))
+        errors.extend(
+            transition(
+                previous, now, commit, prove(root, (previous, now), (base, commit))
+            )
+        )
         previous = now
-    errors.extend(transition(previous, current, "working tree"))
+    errors.extend(
+        transition(
+            previous,
+            current,
+            "working tree",
+            prove(root, (previous, current), (base, None)),
+        )
+    )
     return errors, base_count
 
 
@@ -245,6 +262,26 @@ def self_test() -> int:
         assert transition(actual, Counter(), "remove") == []
         assert transition(Counter(), actual, "restore")
         assert transition(actual, actual + actual, "increase")
+        # Given a baseline item, when only a wrapper prefix is gained, it moves.
+        wrapped = Counter({("src/lib.rs", "mod tests::fn f", "dead_code", "always"): 1})
+        proof = frozenset({(("src/lib.rs", "fn f"), ("src/lib.rs", "mod tests::fn f"))})
+        assert transition(actual, wrapped, "wrap", proof) == []
+        assert transition(wrapped, actual, "unwrap")
+        # Changed identities/counts, new entries and duplication remain additions.
+        for invalid in (
+            Counter({("other.rs", "mod tests::fn f", "dead_code", "always"): 1}),
+            Counter({("src/lib.rs", "mod tests::fn f", "unused", "always"): 1}),
+            Counter({("src/lib.rs", "mod tests::fn f", "dead_code", "test"): 1}),
+            wrapped + wrapped,
+            Counter({("src/lib.rs", "mod tests::fn g", "dead_code", "always"): 1}),
+            actual + wrapped,
+            wrapped
+            + Counter({("src/lib.rs", "mod other::fn f", "dead_code", "always"): 1}),
+        ):
+            assert transition(actual, invalid, "invalid move")
+        # Given a removal transition, a later wrapped restoration has no sponsor.
+        assert transition(actual, Counter(), "remove") == []
+        assert transition(Counter(), wrapped, "wrapped restore")
         row = '[[baseline]]\nfile = "src/lib.rs"\nitem = "fn f"\nlint = "dead_code"\npredicate = "always"\ncount = 1\n'
         assert manifest(row) == actual
         path.write_text(
@@ -255,7 +292,7 @@ def self_test() -> int:
             {("src/lib.rs", "<crate root>", "dead_code_pub_in_binary", "test"): 1}
         )
     print(
-        "baseline_gate self-test: ok (invariant, non-test exception, ownership, restoration, counts)"
+        "baseline_gate self-test: ok (invariant, ownership, restoration, counts, module-wrap moves)"
     )
     return 0
 
