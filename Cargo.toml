@@ -9,7 +9,18 @@ repository = "https://github.com/andrico21/rskrb5"
 readme = "README.md"
 keywords = ["kerberos", "krb5", "spnego", "gssapi", "authentication"]
 categories = ["authentication", "cryptography", "network-programming"]
-exclude = [".github/", "docs/fix-plans/", "docs/scratch-log.md", "fuzz/", ".cargo/", "scripts/lint-ratchet/", "RUST_GUIDELINES.md", "docs/rust-guidelines/", "supply-chain/", ".taplo.toml"]
+exclude = [
+  ".github/",
+  "docs/fix-plans/",
+  "docs/scratch-log.md",
+  "fuzz/",
+  ".cargo/",
+  "scripts/lint-ratchet/",
+  "RUST_GUIDELINES.md",
+  "docs/rust-guidelines/",
+  "supply-chain/",
+  ".taplo.toml",
+]
 
 # The lib target keeps the upstream name, so consumers' `use rskrb5::…` paths
 # (and the dependency key) stay unchanged - see FORK-NOTES.md.
@@ -279,7 +290,7 @@ precedence_bits = "deny"
 print_stderr = "deny"
 print_stdout = "deny"
 pub_use = "deny"
-pub_without_shorthand = "deny"   # keeps pub(crate) / pub(super), the form rustfmt writes
+pub_without_shorthand = "deny"                # keeps pub(crate) / pub(super), the form rustfmt writes
 rc_buffer = "deny"
 rc_mutex = "deny"
 redundant_test_prefix = "deny"

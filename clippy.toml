@@ -1,7 +1,7 @@
 # clippy.toml - workspace root
-avoid-breaking-exported-api = false   # report even when the fix changes public API
-check-private-items = true            # missing_*_doc lints cover private items too
-allow-unwrap-in-tests = false         # tests follow the same panic rules
+avoid-breaking-exported-api = false       # report even when the fix changes public API
+check-private-items = true                # missing_*_doc lints cover private items too
+allow-unwrap-in-tests = false             # tests follow the same panic rules
 allow-expect-in-tests = false
 allow-panic-in-tests = false
 allow-dbg-in-tests = false
@@ -9,11 +9,11 @@ allow-print-in-tests = false
 allow-indexing-slicing-in-tests = false
 warn-on-all-wildcard-imports = true
 allow-mixed-uninlined-format-args = false
-cognitive-complexity-threshold = 25   # drives `cognitive_complexity`
-too-many-lines-threshold = 100        # drives `too_many_lines`
-max-fn-params-bools = 3               # drives `fn_params_excessive_bools`
-enum-variant-size-threshold = 200     # drives `large_enum_variant`
-doc-valid-idents = [".."]             # ".." keeps Clippy's defaults; append proper nouns
+cognitive-complexity-threshold = 25       # drives `cognitive_complexity`
+too-many-lines-threshold = 100            # drives `too_many_lines`
+max-fn-params-bools = 3                   # drives `fn_params_excessive_bools`
+enum-variant-size-threshold = 200         # drives `large_enum_variant`
+doc-valid-idents = [".."]                 # ".." keeps Clippy's defaults; append proper nouns
 
 # Every unavoidable duplicate, mirrored in deny.toml `[bans] skip`; each
 # chain was reported by `cargo tree -i <crate>@<version> -e normal --all-features`.
