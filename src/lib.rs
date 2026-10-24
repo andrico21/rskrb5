@@ -89,7 +89,7 @@ pub use client::{BlockingNegotiateClient, NegotiateClient};
 pub use config::Config;
 
 /// Current crate-level result type.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// Crate-level error type.
 #[derive(Debug, thiserror::Error)]

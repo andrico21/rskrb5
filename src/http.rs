@@ -40,7 +40,7 @@ use crate::{
 };
 
 /// HTTP Negotiate adapter result.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// HTTP Negotiate adapter error.
 #[derive(Debug, thiserror::Error)]
