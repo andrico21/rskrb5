@@ -6,8 +6,11 @@
 //! together.
 
 use alloc::fmt;
-use core::str::FromStr;
-use std::path::{Path, PathBuf};
+use core::str::{FromStr, Utf8Error};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use crate::file_name;
 
@@ -918,7 +921,7 @@ impl AuthorizationDataEntry {
 pub enum Error {
     /// File loading failed.
     #[error("credential cache file could not be read: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     /// The default cache name could not be read from `KRB5CCNAME`.
     #[error("default credential cache name could not be read from KRB5CCNAME: {0}")]
     DefaultCacheName(std::env::VarError),
@@ -963,7 +966,7 @@ pub enum Error {
     LengthOverflow,
     /// Principal strings must be valid UTF-8.
     #[error("invalid credential cache string: {0}")]
-    InvalidString(#[from] std::str::Utf8Error),
+    InvalidString(#[from] Utf8Error),
     /// A v4 header field is malformed.
     #[error("invalid credential cache header field tag {tag} with length {length}")]
     InvalidHeaderField {

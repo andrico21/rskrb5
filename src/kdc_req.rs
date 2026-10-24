@@ -1,5 +1,7 @@
 //! AS-REQ/TGS-REQ decoding and request-body helpers.
 
+use crate::crypto;
+
 const KRB5_PVNO: i32 = 5;
 
 /// AS-REQ message type.
@@ -226,5 +228,5 @@ pub enum Error {
 
     /// Crypto operation failed.
     #[error("crypto error: {0}")]
-    Crypto(#[from] crate::crypto::Error),
+    Crypto(#[from] crypto::Error),
 }

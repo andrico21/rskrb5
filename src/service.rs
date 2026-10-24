@@ -8,7 +8,7 @@
 //! authenticator timestamp.
 
 use alloc::{borrow::Cow, sync::Arc};
-use core::time::Duration;
+use core::{str::Utf8Error, time::Duration};
 use std::{
     collections::HashMap,
     sync::Mutex,
@@ -19,7 +19,8 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     config::Config,
-    keytab::{EncryptionKey, Keytab},
+    crypto,
+    keytab::{self, EncryptionKey, Keytab},
     pac::{self, Pac},
 };
 
@@ -672,7 +673,7 @@ pub enum Error {
 
     /// ASN.1 string value was not valid UTF-8.
     #[error("invalid Kerberos string: {0}")]
-    InvalidString(#[from] std::str::Utf8Error),
+    InvalidString(#[from] Utf8Error),
 
     /// A Kerberos integer could not fit in the expected Rust type.
     #[error("integer field {field} is out of range: {value}")]
@@ -733,11 +734,11 @@ pub enum Error {
 
     /// Keytab lookup failed.
     #[error("keytab error: {0}")]
-    Keytab(#[from] crate::keytab::Error),
+    Keytab(#[from] keytab::Error),
 
     /// Crypto operation failed.
     #[error("crypto error: {0}")]
-    Crypto(#[from] crate::crypto::Error),
+    Crypto(#[from] crypto::Error),
 
     /// Random byte generation failed.
     #[error("random byte generation failed: {0}")]
@@ -745,7 +746,7 @@ pub enum Error {
 
     /// PAC parsing or verification failed.
     #[error("PAC error: {0}")]
-    Pac(#[from] crate::pac::Error),
+    Pac(#[from] pac::Error),
 
     /// Ticket has not become valid or carries the invalid ticket flag.
     #[error("ticket for {service}@{realm} is not yet valid")]

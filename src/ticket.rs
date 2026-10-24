@@ -1,6 +1,9 @@
 //! Ticket decoding and encrypted-part helpers.
 
-use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
+use crate::{
+    crypto::{self, KerberosEtype},
+    keytab::EncryptionKey,
+};
 
 /// Kerberos ticket version.
 pub const KRB5_TKT_VNO: i32 = 5;
@@ -209,5 +212,5 @@ pub enum Error {
 
     /// Crypto operation failed.
     #[error("crypto error: {0}")]
-    Crypto(#[from] crate::crypto::Error),
+    Crypto(#[from] crypto::Error),
 }

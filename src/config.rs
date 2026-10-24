@@ -7,7 +7,7 @@
 use alloc::collections::BTreeMap;
 use core::{net::IpAddr, time::Duration};
 use std::{
-    io::Read,
+    io::{self, Read},
     path::{Path, PathBuf},
 };
 
@@ -769,7 +769,7 @@ impl Realm {
 pub enum Error {
     /// File loading failed.
     #[error("configuration file could not be read: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     /// The default config path list could not be read from `KRB5_CONFIG`.
     #[error("default configuration path list is not set in KRB5_CONFIG")]
     DefaultConfigName,

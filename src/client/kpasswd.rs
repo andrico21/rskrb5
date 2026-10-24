@@ -16,7 +16,7 @@ use super::{
     KRB_NT_PRINCIPAL, Principal, TokioClient, TokioClientCredentials, current_preauth_time,
     random_nonce,
 };
-use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
+use crate::{crypto::KerberosEtype, kadmin, keytab::EncryptionKey};
 
 /// Options for constructing a kpasswd request from a service ticket.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -61,7 +61,7 @@ impl KpasswdRequestOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BuiltKpasswdRequest {
     /// Parsed kpasswd request.
-    pub request: crate::kadmin::Request,
+    pub request: kadmin::Request,
     /// Encoded kpasswd request frame.
     pub der: Vec<u8>,
     /// Authenticator subkey used to encrypt request KRB-PRIV payloads and reply KRB-PRIV payloads

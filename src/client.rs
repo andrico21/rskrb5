@@ -10,20 +10,27 @@
 use alloc::collections::BTreeMap;
 #[cfg(feature = "tokio")]
 use alloc::fmt;
-use core::time::Duration;
+use core::{str::Utf8Error, time::Duration};
 #[cfg(feature = "tokio")]
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    io,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[cfg(feature = "tokio")]
 use zeroize::Zeroizing;
 
 #[cfg(feature = "tokio")]
 use crate::config::Config;
+#[cfg(feature = "spnego")]
+use crate::spnego;
 use crate::{
-    ccache,
-    crypto::{KerberosEtype, Rc4HmacEtype, kerb_checksum_hmac_md5},
-    keytab::{EncryptionKey, Keytab},
+    ccache, config,
+    crypto::{self, KerberosEtype, Rc4HmacEtype, kerb_checksum_hmac_md5},
+    kadmin,
+    keytab::{self, EncryptionKey, Keytab},
+    messages,
 };
 
 mod kpasswd;
@@ -2848,7 +2855,7 @@ pub enum Error {
 
     /// ASN.1 string value was not valid UTF-8.
     #[error("invalid Kerberos string: {0}")]
-    InvalidString(#[from] std::str::Utf8Error),
+    InvalidString(#[from] Utf8Error),
 
     /// A Kerberos string value could not be constructed.
     #[error("invalid Kerberos string value: {0}")]
@@ -3057,31 +3064,31 @@ pub enum Error {
     /// SPNEGO/GSSAPI token processing failed.
     #[cfg(feature = "spnego")]
     #[error("SPNEGO error: {0}")]
-    Spnego(#[from] crate::spnego::Error),
+    Spnego(#[from] spnego::Error),
 
     /// Crypto operation failed.
     #[error("crypto error: {0}")]
-    Crypto(#[from] crate::crypto::Error),
+    Crypto(#[from] crypto::Error),
 
     /// Keytab operation failed.
     #[error("keytab error: {0}")]
-    Keytab(#[from] crate::keytab::Error),
+    Keytab(#[from] keytab::Error),
 
     /// Configuration parsing or lookup failed.
     #[error("config error: {0}")]
-    Config(#[from] crate::config::Error),
+    Config(#[from] config::Error),
 
     /// Credential cache operation failed.
     #[error("ccache error: {0}")]
-    CCache(#[from] crate::ccache::Error),
+    CCache(#[from] ccache::Error),
 
     /// kadmin protocol processing failed.
     #[error("kadmin error: {0}")]
-    Kadmin(#[from] crate::kadmin::Error),
+    Kadmin(#[from] kadmin::Error),
 
     /// Kerberos message helper failed.
     #[error("message error: {0}")]
-    Message(#[from] crate::messages::Error),
+    Message(#[from] messages::Error),
 
     /// Random byte generation failed.
     #[error("random byte generation failed: {0}")]
@@ -3105,7 +3112,7 @@ pub enum Error {
     /// Tokio transport I/O failed.
     #[cfg(feature = "tokio")]
     #[error("KDC transport I/O failed: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 
     /// A configured KDC endpoint could not be parsed.
     #[cfg(feature = "tokio")]

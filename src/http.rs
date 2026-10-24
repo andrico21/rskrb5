@@ -19,7 +19,7 @@ use std::time::SystemTime;
 
 use http_types::{
     Request, Response, StatusCode,
-    header::{AUTHORIZATION, HeaderValue, ToStrError, WWW_AUTHENTICATE},
+    header::{AUTHORIZATION, HeaderValue, InvalidHeaderValue, ToStrError, WWW_AUTHENTICATE},
 };
 #[cfg(feature = "tower")]
 use tower_layer::Layer;
@@ -27,11 +27,11 @@ use tower_layer::Layer;
 use tower_service::Service;
 
 #[cfg(feature = "tokio")]
-use crate::client::{BlockingNegotiateClient, NegotiateClient, Principal, TokioClient};
+use crate::client::{self, BlockingNegotiateClient, NegotiateClient, Principal, TokioClient};
 #[cfg(feature = "tower")]
 use crate::config::Config;
 #[cfg(feature = "tower")]
-use crate::keytab::Keytab;
+use crate::keytab::{self, Keytab};
 #[cfg(feature = "tower")]
 use crate::service::{ApRepOptions, HostAddress, SharedReplayCache};
 use crate::{
@@ -63,21 +63,21 @@ pub enum Error {
 
     /// A response header value could not be constructed.
     #[error("invalid HTTP response header value: {0}")]
-    InvalidHeaderValue(#[from] http_types::header::InvalidHeaderValue),
+    InvalidHeaderValue(#[from] InvalidHeaderValue),
 
     /// SPNEGO/GSSAPI token processing failed.
     #[error("SPNEGO error: {0}")]
-    Spnego(#[from] crate::spnego::Error),
+    Spnego(#[from] spnego::Error),
 
     /// Tokio client processing failed while building an HTTP request.
     #[cfg(feature = "tokio")]
     #[error("client error: {0}")]
-    Client(#[from] crate::client::Error),
+    Client(#[from] client::Error),
 
     /// Keytab loading failed while constructing HTTP middleware.
     #[cfg(feature = "tower")]
     #[error("keytab error: {0}")]
-    Keytab(#[from] crate::keytab::Error),
+    Keytab(#[from] keytab::Error),
 }
 
 /// Tower Negotiate middleware error.

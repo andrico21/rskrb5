@@ -1,6 +1,6 @@
 //! Kerberos message/type wrappers that need gokrb5-compatible DER behavior.
 
-use core::time::Duration;
+use core::{str::Utf8Error, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::prelude::*;
@@ -304,7 +304,7 @@ pub enum Error {
 
     /// ASN.1 string value was not valid UTF-8.
     #[error("invalid Kerberos string: {0}")]
-    InvalidString(#[from] std::str::Utf8Error),
+    InvalidString(#[from] Utf8Error),
 
     /// A Kerberos integer could not fit in the expected Rust type.
     #[error("integer field {field} is out of range: {value}")]

@@ -4,13 +4,20 @@
 //! and service flows can consume long-term keys.
 
 use alloc::fmt;
-use core::{str::FromStr, time::Duration};
+use core::{
+    str::{FromStr, Utf8Error},
+    time::Duration,
+};
 use std::{
+    io,
     path::{Path, PathBuf},
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use crate::{crypto::KerberosEtype, file_name};
+use crate::{
+    crypto::{self, KerberosEtype},
+    file_name,
+};
 
 const KEYTAB_FIRST_BYTE: u8 = 5;
 const KRB5_KTNAME_ENV: &str = "KRB5_KTNAME";
@@ -568,7 +575,7 @@ impl KeytabEntryMetadata {
 pub enum Error {
     /// File loading or saving failed.
     #[error("keytab file could not be read or written: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     /// The default keytab name could not be read from `KRB5_KTNAME`.
     #[error("default keytab name could not be read from KRB5_KTNAME: {0}")]
     DefaultKeytabName(std::env::VarError),
@@ -620,13 +627,13 @@ pub enum Error {
     TimestampOverflow,
     /// Principal strings must be valid UTF-8.
     #[error("invalid keytab string: {0}")]
-    InvalidString(#[from] std::str::Utf8Error),
+    InvalidString(#[from] Utf8Error),
     /// The encrypted data etype is not implemented yet.
     #[error("unsupported encryption type: {0}")]
     UnsupportedEtype(i32),
     /// Key derivation failed.
     #[error("crypto error: {0}")]
-    Crypto(#[from] crate::crypto::Error),
+    Crypto(#[from] crypto::Error),
     /// Key lookup did not find a matching entry.
     #[error("matching key not found in keytab for {principal}@{realm}, kvno {kvno}, etype {etype}")]
     NoMatchingKey {

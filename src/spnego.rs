@@ -12,9 +12,9 @@ use base64::Engine as _;
 
 use crate::{
     client::{ApReqOptions, Principal, TgsRepSession, build_ap_req_with_confounder},
-    crypto::KerberosEtype,
+    crypto::{self, KerberosEtype},
     keytab::EncryptionKey,
-    service::{ApRepOptions, ServiceValidator, ValidatedApReq, VerifiedApRep},
+    service::{self, ApRepOptions, ServiceValidator, ValidatedApReq, VerifiedApRep},
 };
 
 mod der;
@@ -1614,7 +1614,7 @@ pub enum Error {
 
     /// Crypto operation failed.
     #[error("crypto error: {0}")]
-    Crypto(#[from] crate::crypto::Error),
+    Crypto(#[from] crypto::Error),
 
     /// Random byte generation failed.
     #[error("random byte generation failed: {0}")]
@@ -1635,7 +1635,7 @@ pub enum Error {
 
     /// Service AP-REQ validation failed.
     #[error("service validation error: {0}")]
-    Service(#[from] crate::service::Error),
+    Service(#[from] service::Error),
 
     /// Client AP-REQ construction failed.
     #[error("client AP-REQ construction error: {0}")]
