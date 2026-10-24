@@ -34,8 +34,9 @@ def infallible_upstream_test(body: str, inherited_signature: bool) -> bool:
 
     Assertions consume their Result/Option values themselves (including Err
     assertions); they are not propagation sites. Unknown calls outside assertions
-    conservatively keep the Result requirement. Entirely fork-authored tests keep
-    the existing rule, even when infallible.
+    conservatively keep the Result requirement. Infallible ownership conversions
+    (also in struct fields) do not propagate, but their arguments still can.
+    Entirely fork-authored tests keep the existing rule, even when infallible.
     """
     if not inherited_signature:
         return False
@@ -48,6 +49,11 @@ def infallible_upstream_test(body: str, inherited_signature: bool) -> bool:
         if closing is not None:
             ranges.append((match.start(), closing + 1))
     remaining = common.blank_ranges(body, ranges)
+    remaining = re.sub(
+        r"\.\s*(?:to_owned|to_vec|to_string|into)\s*\(|\b(?:String|Vec)\s*::\s*from\s*\(",
+        "(",
+        remaining,
+    )
     return not re.search(r"\?|\b\w+\s*(?:!\s*)?\(|\.\s*\w+\s*::\s*<", remaining)
 
 
@@ -228,6 +234,26 @@ def self_test() -> int:
     touched_test = upstream_test.replace("code: 1", "code: 1, text_raw: &[]")
     inherited = common.line_mapping(touched_test, upstream_test)
     assert not scan(touched_test, inherited, False)
+    # Given literal/field ownership conversions, only nested fallible calls
+    # should introduce a propagation site when the inherited test is scanned.
+    for conversion in (
+        '"failure".to_owned()',
+        'b"failure".to_vec()',
+        '"failure".to_string()',
+        '"failure".into()',
+        'String::from("failure")',
+        'Vec::from(b"failure")',
+    ):
+        converted = touched_test.replace("text_raw: &[]", "text_raw: " + conversion)
+        assert not scan(converted, common.line_mapping(converted, upstream_test), False)
+    for call in ("String::from(read_file())", "read_file().to_owned()", "read_file()"):
+        converted = touched_test.replace("text_raw: &[]", "text_raw: " + call)
+        assert any(
+            g == "test-result"
+            for g, _, _ in scan(
+                converted, common.line_mapping(converted, upstream_test), False
+            )
+        )
     assert any(g == "test-result" for g, _, _ in scan(touched_test, {}, False))
     fallible = touched_test.replace(
         " let result", ' read_file().expect("fixture");\n let result'
