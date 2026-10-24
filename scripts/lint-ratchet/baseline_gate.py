@@ -247,6 +247,13 @@ def self_test() -> int:
         assert transition(actual, actual + actual, "increase")
         row = '[[baseline]]\nfile = "src/lib.rs"\nitem = "fn f"\nlint = "dead_code"\npredicate = "always"\ncount = 1\n'
         assert manifest(row) == actual
+        path.write_text(
+            '//! docs\n#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "lint-migration: upstream baseline at abc1234"))]\npub fn f() {}\n'
+        )
+        actual, errors = source_entries(root)
+        assert not errors and actual == Counter(
+            {("src/lib.rs", "<crate root>", "dead_code_pub_in_binary", "test"): 1}
+        )
     print(
         "baseline_gate self-test: ok (invariant, non-test exception, ownership, restoration, counts)"
     )

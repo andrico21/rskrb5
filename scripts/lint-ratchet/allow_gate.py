@@ -44,6 +44,10 @@ def self_test() -> int:
         (root / "fuzz/fuzz_targets/probe.rs").write_text("#![allow(unused)]")
         assert len(scan(list(common.iter_rust_files(root)))) == 1
         assert main(["--enforce", "--files", str(path)]) == 1
+        path.write_text(
+            '//! docs\n#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "lint-migration: upstream baseline at abc1234"))]\npub fn f() {}\n'
+        )
+        assert scan([path]) == []
     print("allow_gate self-test: ok")
     return 0
 

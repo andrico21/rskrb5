@@ -97,6 +97,7 @@ class Unit:
     build: Build
     files: frozenset[str]
     diagnostics: tuple[Diagnostic, ...]
+    crate_root: str = ""
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -377,6 +378,7 @@ def collect(root: Path, target_dir: Path) -> list[Unit]:
                     Build(config, mode, features),
                     files,
                     diagnostics,
+                    local_file(root, target["src_path"]) or "",
                 )
             )
     return units
@@ -434,6 +436,11 @@ def placements(root: Path, units: list[Unit]) -> list[Placement]:
             if span is None:
                 continue
             file, offset = span
+            crate_only = code["code"] == "dead_code_pub_in_binary"
+            if crate_only:
+                if not unit.crate_root:
+                    raise BaselineError("dead_code_pub_in_binary: missing crate root")
+                file, offset = unit.crate_root, 0
             if file not in sources or file not in unit.files:
                 raise BaselineError(
                     f"{file}: diagnostic not covered by compiled source dep-info"
@@ -448,9 +455,13 @@ def placements(root: Path, units: list[Unit]) -> list[Placement]:
             # rustc points a missing crate doc at byte zero, even when a use
             # starts there. Its semantic owner is the crate, not that first item.
             if (
-                code["code"] == "missing_docs"
-                and diagnostic["message"] == "missing documentation for the crate"
-            ) or code["code"] == "rustdoc::missing_crate_level_docs":
+                (
+                    code["code"] == "missing_docs"
+                    and diagnostic["message"] == "missing documentation for the crate"
+                )
+                or code["code"] == "rustdoc::missing_crate_level_docs"
+                or crate_only
+            ):
                 item = None
             if (
                 item is not None
@@ -591,7 +602,7 @@ def source_entries(root: Path, report: bool = False) -> list[Entry]:
             name = owner.name if owner else "<crate root>"
             if attr.inner and report:
                 print(
-                    f"{file}:{data.count(bytes([10]), 0, attr.start) + 1}: {name}: inner attribute; no enclosing item for crate/module-doc diagnostic"
+                    f"{file}:{data.count(bytes([10]), 0, attr.start) + 1}: {name}: inner attribute; crate-level or module-doc diagnostic: {', '.join(attr.lints)} [{attr.predicate}]"
                 )
             for lint in attr.lints:
                 counts[file, name, lint, canonical(attr.predicate)] += 1
@@ -793,6 +804,41 @@ def self_test() -> None:
             emit(strip_migrations(generated), plan, "lint-migration: test") == generated
         )
         path.write_bytes(data)
+        # Given an unused public item in an out-of-line module, rustc requires
+        # the expectation on the target root, only in the firing test unit.
+        nested = root / "src/nested.rs"
+        nested.write_bytes(b"pub fn unused() {}\n")
+        crate_lint = diagnostic(b"fn a", "dead_code_pub_in_binary")
+        crate_lint["spans"][0].update(file_name="src/nested.rs", byte_start=0)
+        test_build = Build("K2", "test", a.features)
+        compiled_files = frozenset({"src/lib.rs", "src/nested.rs"})
+        crate_plan = placements(
+            root,
+            [
+                Unit("lib", a, compiled_files, (), "src/lib.rs"),
+                Unit("lib", test_build, compiled_files, (crate_lint,), "src/lib.rs"),
+            ],
+        )
+        assert len(crate_plan) == 1
+        assert crate_plan[0].file == "src/lib.rs" and crate_plan[0].item is None
+        assert (
+            "test" in crate_plan[0].predicate
+            and "not(test)" not in crate_plan[0].predicate
+        )
+        crate_source = emit(data, crate_plan, "lint-migration: test")
+        assert crate_source.startswith(b"//! docs\n#![deny(warnings)]\n#![cfg_attr(")
+        path.write_bytes(crate_source)
+        assert source_entries(root, report=True) == [
+            Entry(
+                "src/lib.rs",
+                "<crate root>",
+                "dead_code_pub_in_binary",
+                crate_plan[0].predicate,
+            )
+        ]
+        assert strip_migrations(crate_source) == data
+        path.write_bytes(data)
+        nested.unlink()
         # Given a crate diagnostic sharing byte zero with an import, its owner
         # must remain the crate; import-path diagnostics require source rewrites.
         data = b"use std::time::Duration;\npub struct Borrowed<'a>(&'a str);\n"
