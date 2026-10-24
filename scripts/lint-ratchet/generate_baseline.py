@@ -450,7 +450,7 @@ def placements(root: Path, units: list[Unit]) -> list[Placement]:
             if (
                 code["code"] == "missing_docs"
                 and diagnostic["message"] == "missing documentation for the crate"
-            ):
+            ) or code["code"] == "rustdoc::missing_crate_level_docs":
                 item = None
             if (
                 item is not None
@@ -546,7 +546,9 @@ def emit(data: bytes, planned: list[Placement], reason: str) -> bytes:
         ):
             groups[position, inner, place.predicate].add("clippy::useless_attribute")
     changes: dict[int, list[bytes]] = defaultdict(list)
-    for (position, inner, pred), lints in sorted(groups.items()):
+    for (position, inner, pred), lints in sorted(
+        groups.items(), key=lambda group: (group[0][0], not group[0][1], group[0][2])
+    ):
         call = f"expect({', '.join(sorted(lints))}, reason = {json.dumps(reason)})"
         if pred != "always":
             call = f"cfg_attr({pred}, {call})"
@@ -814,6 +816,32 @@ def self_test() -> None:
         )
         assert len(measured) == 2
         assert next(p for p in measured if p.lint == "missing_docs").item is None
+        # Given rustdoc also points at the first token, its expectation must
+        # precede an outer expectation inserted at that same byte offset.
+        rustdoc = diagnostic(b"use", "rustdoc::missing_crate_level_docs")
+        doc_plan = placements(
+            root,
+            [
+                Unit(
+                    "lib",
+                    Build("D1", "doc", FEATURES),
+                    frozenset({"src/lib.rs"}),
+                    (rustdoc,),
+                )
+            ],
+        )
+        assert doc_plan[0].item is None
+        first_item = scan_items(data)[0]
+        combined = emit(
+            data,
+            [
+                *doc_plan,
+                Placement("src/lib.rs", first_item, "unused_imports", "always"),
+            ],
+            "lint-migration: test",
+        )
+        assert combined.startswith(b"#![cfg_attr(doc,")
+        assert strip_migrations(combined) == data
         assert (
             next(
                 p for p in measured if p.lint.endswith("single_char_lifetime_names")
