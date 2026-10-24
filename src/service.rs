@@ -7,11 +7,12 @@
 //! builds and verifies AP-REP mutual-auth replies using the AP-REQ
 //! authenticator timestamp.
 
+use alloc::{borrow::Cow, sync::Arc};
+use core::time::Duration;
 use std::{
-    borrow::Cow,
     collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use sha2::{Digest, Sha256};

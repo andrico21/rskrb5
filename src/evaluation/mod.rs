@@ -2,7 +2,7 @@
 
 mod data;
 
-use std::fmt::Write as _;
+use core::fmt::Write as _;
 
 pub use data::{
     ASN1_FIXTURES, ASSESSMENTS, Asn1Fixture, Candidate, CandidateAssessment, CandidateReport,

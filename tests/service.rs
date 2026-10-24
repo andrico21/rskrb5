@@ -1,8 +1,9 @@
 #![cfg(feature = "messages")]
 
+use core::time::Duration;
 use std::{
     path::PathBuf,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use pretty_assertions::assert_eq;

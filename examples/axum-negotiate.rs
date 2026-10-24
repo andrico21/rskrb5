@@ -1,8 +1,8 @@
-use std::{
-    error::Error,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+extern crate alloc;
+
+use alloc::sync::Arc;
+use core::error::Error;
+use std::{path::PathBuf, sync::Mutex};
 
 use axum::{
     Router,

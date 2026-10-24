@@ -3,11 +3,11 @@
 //! This module covers the MIT keytab file format surface needed before client
 //! and service flows can consume long-term keys.
 
+use alloc::fmt;
+use core::{str::FromStr, time::Duration};
 use std::{
-    fmt,
     path::{Path, PathBuf},
-    str::FromStr,
-    time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH},
+    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
 use crate::{crypto::KerberosEtype, file_name};

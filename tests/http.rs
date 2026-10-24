@@ -1,16 +1,20 @@
 #![cfg(feature = "http")]
 
 #[cfg(feature = "tokio")]
-use std::cell::{Cell, RefCell};
-#[cfg(any(feature = "tokio", feature = "tower"))]
-use std::convert::Infallible;
-#[cfg(feature = "tower")]
-use std::future::Future;
+extern crate alloc;
+
 #[cfg(feature = "tokio")]
-use std::rc::Rc;
+use alloc::rc::Rc;
+#[cfg(feature = "tokio")]
+use core::cell::{Cell, RefCell};
+#[cfg(any(feature = "tokio", feature = "tower"))]
+use core::convert::Infallible;
 #[cfg(feature = "tower")]
-use std::task::{Context, Poll, Waker};
-use std::time::{Duration, UNIX_EPOCH};
+use core::future::Future;
+#[cfg(feature = "tower")]
+use core::task::{Context, Poll, Waker};
+use core::time::Duration;
+use std::time::UNIX_EPOCH;
 
 use http_types::{
     Request, Response, StatusCode,

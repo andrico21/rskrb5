@@ -1,6 +1,6 @@
 //! KRB-CRED decoding and encrypted-part helpers.
 
-use std::str;
+use alloc::str;
 
 use crate::{ccache, crypto::KerberosEtype, keytab::EncryptionKey};
 

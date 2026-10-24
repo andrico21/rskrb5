@@ -1,14 +1,14 @@
 #![cfg(feature = "tokio")]
 
+use core::{error::Error, net::Ipv4Addr, time::Duration};
 use std::{
-    error::Error,
     fs,
     io::{Read, Write},
-    net::{Ipv4Addr, TcpStream, ToSocketAddrs},
+    net::{TcpStream, ToSocketAddrs},
     path::PathBuf,
     process::{Command, Stdio},
     sync::Mutex,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use rskrb5::{

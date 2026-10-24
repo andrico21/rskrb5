@@ -1,11 +1,11 @@
 //! Tokio-backed KDC transport, endpoint discovery, and network exchanges.
 
-use std::{
-    env,
+use core::{
     future::Future,
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
+use std::env;
 
 use hickory_resolver::{
     TokioResolver,

@@ -4,12 +4,11 @@
 //! later client and service modules: libdefaults, realm host mappings, domain
 //! realm lookup, duration parsing, and configured KDC discovery.
 
+use alloc::collections::BTreeMap;
+use core::{net::IpAddr, time::Duration};
 use std::{
-    collections::BTreeMap,
     io::Read,
-    net::IpAddr,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";

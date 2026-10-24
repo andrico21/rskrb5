@@ -1,6 +1,7 @@
 //! Client-side kpasswd request helpers and high-level password changes.
 
-use std::time::{Duration, SystemTime};
+use core::time::Duration;
+use std::time::SystemTime;
 
 #[cfg(feature = "tokio")]
 use zeroize::Zeroizing;

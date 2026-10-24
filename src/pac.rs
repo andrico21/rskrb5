@@ -4,10 +4,9 @@
 //! path: the PAC container, KERB_VALIDATION_INFO, client information,
 //! UPN/DNS information, PAC signatures, and AES server checksum verification.
 
-use std::{
-    fmt,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use alloc::fmt;
+use core::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     crypto::{self, KerberosEtype},

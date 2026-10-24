@@ -5,11 +5,9 @@
 //! remain opaque DER bytes until the crypto and ASN.1 message layers are wired
 //! together.
 
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use alloc::fmt;
+use core::str::FromStr;
+use std::path::{Path, PathBuf};
 
 use crate::file_name;
 

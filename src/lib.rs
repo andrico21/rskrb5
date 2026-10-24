@@ -36,6 +36,9 @@
 //! [`ccache::Error::UnsupportedCacheType`].
 
 #![forbid(unsafe_code)]
+#![expect(clippy::pub_use, reason = "public facade")]
+
+extern crate alloc;
 
 #[cfg(feature = "evaluation")]
 pub mod evaluation;

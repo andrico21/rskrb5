@@ -1,6 +1,7 @@
 #![cfg(feature = "evaluation")]
 
-use std::time::{Duration, UNIX_EPOCH};
+use core::time::Duration;
+use std::time::UNIX_EPOCH;
 
 use pretty_assertions::assert_eq;
 use rskrb5::{

@@ -1,4 +1,6 @@
-use std::collections::BTreeSet;
+extern crate alloc;
+
+use alloc::collections::BTreeSet;
 
 #[test]
 fn gokrb5_parity_manifest_has_expected_target_and_areas() {

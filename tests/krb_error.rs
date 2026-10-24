@@ -1,6 +1,7 @@
 #![cfg(feature = "messages")]
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use core::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;

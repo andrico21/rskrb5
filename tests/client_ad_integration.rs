@@ -1,14 +1,14 @@
 #![cfg(feature = "tokio")]
 
+use core::{error::Error, time::Duration};
 use std::{
     env,
-    error::Error,
     ffi::OsStr,
     fs,
     net::{TcpListener, TcpStream, ToSocketAddrs},
     path::PathBuf,
     sync::Mutex,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use rskrb5::{

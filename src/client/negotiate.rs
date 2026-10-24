@@ -1,4 +1,4 @@
-use std::fmt;
+use alloc::fmt;
 
 use super::{Error, KdcProtocol, KpasswdRequestOptions, Principal, TokioClient};
 use crate::{config::Config, keytab::Keytab};

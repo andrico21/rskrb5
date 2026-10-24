@@ -1,9 +1,9 @@
 #![cfg(feature = "tokio")]
 
+use core::{error::Error, time::Duration};
 use std::{
     env,
-    error::Error,
-    time::{Duration, Instant, SystemTime},
+    time::{Instant, SystemTime},
 };
 
 use rskrb5::{

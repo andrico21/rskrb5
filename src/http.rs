@@ -5,15 +5,16 @@
 //! `Authorization: Negotiate ...` headers before forwarding requests.
 
 #[cfg(feature = "tower")]
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 #[cfg(any(feature = "tokio", feature = "tower"))]
-use std::future::Future;
+use core::future::Future;
 #[cfg(feature = "tower")]
-use std::pin::Pin;
+use core::pin::Pin;
 #[cfg(feature = "tower")]
-use std::task::{Context, Poll};
+use core::task::{Context, Poll};
 #[cfg(feature = "tower")]
-use std::time::{Duration, SystemTime};
+use core::time::Duration;
+use std::time::SystemTime;
 
 use http_types::{
     Request, Response, StatusCode,

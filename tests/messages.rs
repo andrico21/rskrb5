@@ -1,6 +1,7 @@
 #![cfg(feature = "messages")]
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use core::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rskrb5::messages::{
     EncryptedData, Error, KrbErrorInfo, PaForUser, PaPacOptions, PaReqEncPaRep, decode_der,

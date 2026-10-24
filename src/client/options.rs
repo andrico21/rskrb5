@@ -1,4 +1,5 @@
-use std::time::{Duration, SystemTime};
+use core::time::Duration;
+use std::time::SystemTime;
 
 use super::{
     DEFAULT_TGS_ENCTYPES, DEFAULT_TICKET_LIFETIME, DEFAULT_TKT_ENCTYPES, KDC_OPTION_CANONICALIZE,

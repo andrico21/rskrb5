@@ -7,12 +7,13 @@
 //! `krb5.conf`-driven KDC discovery.
 
 #[cfg(feature = "tokio")]
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
 #[cfg(feature = "tokio")]
-use std::fmt;
+use alloc::fmt;
+use core::time::Duration;
 #[cfg(feature = "tokio")]
 use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "tokio")]
 use zeroize::Zeroizing;

@@ -738,7 +738,7 @@ fn spawn_counting_kdc_with_tgs_reply<F>(
 where
     F: Fn(rasn_kerberos::TgsReq, &[u8], usize) -> Vec<u8> + Send + 'static,
 {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -1038,7 +1038,7 @@ fn renewed_tgt_reply_keeping_auth_time(request: rasn_kerberos::TgsReq, der: &[u8
 #[test]
 fn tokio_client_auto_renewal_paces_after_renewal() {
     let (as_requests, renewal_requests) = run_on_paused_runtime(|| async {
-        use std::sync::atomic::Ordering;
+        use core::sync::atomic::Ordering;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -1105,7 +1105,7 @@ fn tokio_client_auto_renewal_paces_after_renewal() {
 #[test]
 fn tokio_client_auto_renewal_uses_as_when_renewal_refused() {
     let (as_requests, renewal_requests) = run_on_paused_runtime(|| async {
-        use std::sync::atomic::Ordering;
+        use core::sync::atomic::Ordering;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -1164,7 +1164,7 @@ fn tokio_client_auto_renewal_uses_as_when_renewal_refused() {
 #[test]
 fn tokio_client_get_service_ticket_falls_back_to_as_for_expired_renewable_tgt() {
     runtime().block_on(async {
-        use std::sync::atomic::Ordering;
+        use core::sync::atomic::Ordering;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await

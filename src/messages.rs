@@ -1,6 +1,7 @@
 //! Kerberos message/type wrappers that need gokrb5-compatible DER behavior.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use core::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::prelude::*;
 
