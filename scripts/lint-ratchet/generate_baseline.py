@@ -146,6 +146,9 @@ CARGO_LINTS: Final = frozenset(
     )
 )
 MANIFEST: Final = Path("scripts/lint-ratchet/baseline.toml")
+IMPORT_REWRITES: Final = frozenset(
+    ("clippy::std_instead_of_core", "clippy::std_instead_of_alloc")
+)
 
 
 def rust_files(root: Path) -> list[Path]:
@@ -258,6 +261,9 @@ def associate(
 
 def run_command(root: Path, args: list[str], env: dict[str, str]) -> str:
     command = (["flock", "/tmp/rskrb5-cargo.lock"] if shutil.which("flock") else []) + [
+        "timeout",
+        "--kill-after=10s",
+        "1800s",
         "cargo",
         *args,
     ]
@@ -439,6 +445,20 @@ def placements(root: Path, units: list[Unit]) -> list[Placement]:
                 key=lambda i: i.end - i.start,
                 default=None,
             )
+            # rustc points a missing crate doc at byte zero, even when a use
+            # starts there. Its semantic owner is the crate, not that first item.
+            if (
+                code["code"] == "missing_docs"
+                and diagnostic["message"] == "missing documentation for the crate"
+            ):
+                item = None
+            if (
+                item is not None
+                and item.kind == "use"
+                and code["code"] in IMPORT_REWRITES
+            ):
+                print(f"rewrite required: {file}: {item.name}: {code['code']}")
+                continue
             name = item.name if item else "<crate root>"
             if (
                 item is not None
@@ -519,6 +539,12 @@ def emit(data: bytes, planned: list[Placement], reason: str) -> bytes:
         else:
             position = place.item.start
         groups[position, inner, place.predicate].add(place.lint)
+        if (
+            place.item is not None
+            and place.item.kind == "use"
+            and place.lint == "clippy::pub_use"
+        ):
+            groups[position, inner, place.predicate].add("clippy::useless_attribute")
     changes: dict[int, list[bytes]] = defaultdict(list)
     for (position, inner, pred), lints in sorted(groups.items()):
         call = f"expect({', '.join(sorted(lints))}, reason = {json.dumps(reason)})"
@@ -764,6 +790,37 @@ def self_test() -> None:
         assert (
             emit(strip_migrations(generated), plan, "lint-migration: test") == generated
         )
+        path.write_bytes(data)
+        # Given a crate diagnostic sharing byte zero with an import, its owner
+        # must remain the crate; import-path diagnostics require source rewrites.
+        data = b"use std::time::Duration;\npub struct Borrowed<'a>(&'a str);\n"
+        path.write_bytes(data)
+        crate_doc = diagnostic(b"use", "missing_docs")
+        crate_doc["message"] = "missing documentation for the crate"
+        measured = placements(
+            root,
+            [
+                Unit(
+                    "lib",
+                    a,
+                    frozenset({"src/lib.rs"}),
+                    (
+                        crate_doc,
+                        diagnostic(b"std", "clippy::std_instead_of_core"),
+                        diagnostic(b"'a", "clippy::single_char_lifetime_names"),
+                    ),
+                )
+            ],
+        )
+        assert len(measured) == 2
+        assert next(p for p in measured if p.lint == "missing_docs").item is None
+        assert (
+            next(
+                p for p in measured if p.lint.endswith("single_char_lifetime_names")
+            ).item.kind
+            == "struct"
+        )
+        data = b"//! docs\n#![deny(warnings)]\nuse std::time::Duration;\nfn a() {}\nfn b() {}\n"
         path.write_bytes(data)
         merged = emit(
             data,
