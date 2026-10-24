@@ -439,6 +439,20 @@ def placements(root: Path, units: list[Unit]) -> list[Placement]:
             if span is None:
                 continue
             file, offset = span
+            if code["code"] == "clippy::mod_module_files":
+                module_name = Path(file).parent.name
+                declarations = [
+                    (candidate, item.start)
+                    for candidate in unit.files
+                    if candidate in items
+                    for item in items[candidate]
+                    if item.kind == "mod" and item.name == f"mod {module_name}"
+                ]
+                if len(declarations) != 1:
+                    raise BaselineError(
+                        f"{file}: ambiguous module declaration ownership"
+                    )
+                file, offset = declarations[0]
             crate_only = code["code"] == "dead_code_pub_in_binary"
             if crate_only:
                 if not unit.crate_root:
@@ -857,6 +871,29 @@ def self_test() -> None:
         assert strip_migrations(crate_source) == data
         path.write_bytes(data)
         nested.unlink()
+        data = b"pub mod nested;\n"
+        path.write_bytes(data)
+        (root / "src/nested").mkdir()
+        module_path = root / "src/nested/mod.rs"
+        module_path.write_bytes(b"pub fn f() {}\n")
+        module_lint = diagnostic(b"mod", "clippy::mod_module_files")
+        module_lint["spans"][0].update(file_name="src/nested/mod.rs", byte_start=0)
+        module_plan = placements(
+            root,
+            [
+                Unit(
+                    "lib",
+                    a,
+                    frozenset({"src/lib.rs", "src/nested/mod.rs"}),
+                    (module_lint,),
+                    "src/lib.rs",
+                )
+            ],
+        )
+        assert module_plan[0].file == "src/lib.rs"
+        assert module_plan[0].item.name == "mod nested"
+        assert not emit(data, module_plan, "lint-migration: test").startswith(b"#![")
+        module_path.unlink()
         # Given a crate diagnostic sharing byte zero with an import, its owner
         # must remain the crate; import-path diagnostics require source rewrites.
         data = b"use std::time::Duration;\npub struct Borrowed<'a>(&'a str);\n"
