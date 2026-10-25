@@ -358,12 +358,13 @@ jobs:
         with:
           # The gates rebuild the upstream reference tree from git history.
           fetch-depth: 0
-      # Dated nightly first (rustfmt of the reference tree), stable last so it
-      # stays the default for the K1-K7 clippy and rustdoc runs.
+      # Dated nightly first (rustfmt of the reference tree, clippy for the fuzz
+      # crate pass), stable last so it stays the default for the K1-K7 clippy
+      # and rustdoc runs.
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: nightly-2026-10-03
-          components: rustfmt
+          components: rustfmt, clippy
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: clippy
