@@ -2,7 +2,7 @@
 
 - Severity: medium (likelihood medium / impact medium / confidence high) — fingerprint `src/config.rs:permitted_enctype_ids/policy-never-consumed`
 - Audit: run-2 findings.json record (`verdict: confirmed`) + `agents/vfy-src-config-rs-permitted-en/artifacts/permitted-enctype-check2.log:229-234` and `agents/hunt2-transport-config/artifacts/transport-config-checks-5.log:667`
-- Status: implemented on branch `fix/enctype-policy` (`6b64394`, explicit-only `f8ffc5e`, test fix `79a15db`); enforcement applies only when `permitted_enctypes` is explicitly configured, so SHA2-only request lists are unaffected; intersection/fail-closed/reply tests fail before and pass after; no upstream PR yet
+- Status: implemented on branch `fix/enctype-policy` @ `7c2c297` (`6b64394`, explicit-only `f8ffc5e`, test fix `79a15db`, serde flag `31e5910`, reject-not-narrow `7c2c297`); enforcement applies only when `permitted_enctypes` is explicitly configured, so SHA2-only request lists are unaffected; the explicit flag survives serde; an explicit request list outside an explicit `permitted_enctypes` is a parse error; intersection/fail-closed/reply/parse tests fail before and pass after; on the release line `07f1eb3` validates explicitness across `include`/`includedir` files; upstream PR [#27](https://github.com/clelange/rskrb5/pull/27); merged into `release/0.3.0`
 
 ## Problem
 
@@ -82,8 +82,27 @@ if !permitted.is_empty() && !permitted.contains(&session.session_key.etype) {
     return Err(Error::EnctypeNotPermitted(session.session_key.etype)); // dedicated named error
 }
 // TGS twin: same check on TgsRepSession::session_key after process_tgs_rep;
-// optionally also check the decoded returned ticket's enc_part etype.
+// The returned ticket's enc_part etype is not checked (see Risks).
 ```
+
+As implemented on `fix/enctype-policy`, two rules refine the steps above:
+
+- **Explicit only.** Enforcement applies only when `permitted_enctypes` is set
+  explicitly (`LibDefaults.permitted_enctypes_explicit`, `f8ffc5e`). The flag
+  survives serde (`31e5910`; JSON without it deserializes as implicit), and
+  code that builds `LibDefaults` by hand must set it to get the allowlist.
+- **Reject, never silently narrow** (Kerberos overlay, "Apply enctype
+  allowlists", `7c2c297`). An explicitly configured `default_tkt_enctypes` or
+  `default_tgs_enctypes` that contains an id outside an explicit
+  `permitted_enctypes` is a parse error, `config::Error::EnctypeNotPermitted`,
+  naming the key and the enctype. The check runs once, on the final effective
+  values after every `[libdefaults]` section (and, on the release line, every
+  included file, `07f1eb3`), so a later section can repair an earlier
+  conflict. Only implicit defaults are still intersected with the allowlist,
+  because nobody asked for them.
+- **Encoded-request assertions.** The intersection tests build the AS-REQ and
+  TGS-REQ with the real builders, decode the DER, and compare
+  `req_body.etype`, instead of reading the options object back.
 
 ## Regression tests
 
@@ -133,6 +152,13 @@ cargo test --all-features --test client_transport
   deliberate (the finding notes the library constructors seed it), but confirm
   no in-tree construction path leaves both the permitted set and the request
   list empty in a way that silently disables the new filter.
-- Whether to also validate the returned ticket's `enc_part` etype (not just the
-  session key) is left open; the finding names only the two enforcement points
-  implemented above.
+- Decided: the returned ticket's `enc_part` etype is not checked, only the
+  session key. The client never uses the service key that encrypts the ticket,
+  so it cannot be downgraded through it; the session key is the only enctype
+  the client uses, and it is already bound to the request list
+  (`EnctypeNotRequested`) and to an explicit allowlist (`EnctypeNotPermitted`).
+- Open, outside this plan: when an explicit `permitted_enctypes` names only
+  enctypes the crate does not implement, `permitted_enctype_ids` resolves to
+  zero ids and the empty-set exemption above applies, so the allowlist fails
+  open (pre-existing in `79a15db`). The MIT name `des3-cbc-sha1` is also not
+  recognized by the name parser. Both are tracked in `CHECKLIST.md`.

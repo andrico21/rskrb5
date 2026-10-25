@@ -1,7 +1,7 @@
 # Cache-only nonrenewable TGTs busy-loop auto-renewal with zero delay and no progress
 - Severity: low — likelihood medium, impact low, confidence not scored in the record (verdict: confirmed, independently reproduced) — fingerprint `rskrb5/client/auto-renewal-success-without-progress`
 - Audit: run-2 `findings.json` record (verdict `confirmed`) + `agents/vfy-rskrb5-client-auto-renewal/artifacts/verify-autorenewal3:177-183` and `agents/vfy-rskrb5-client-auto-renewal/artifacts/verify-autorenewal2:174-181`
-- Status: implemented on branch `fix/client-renewal-series` (`0a2cf65`, rework `20541ea`); a paused-clock test times out before and passes after (the earlier CPU-tick measurement is retired); no upstream PR yet
+- Status: implemented on branch `fix/client-renewal-series` @ `fbf4320` (`0a2cf65`, rework `20541ea`); a paused-clock test times out before and passes after (the earlier CPU-tick measurement is retired); `fbf4320` adds `tokio_client_auto_renewal_paces_after_renewal` (exactly one renewal in 600 s of virtual time after a renewal), which fails before; upstream PR [#28](https://github.com/clelange/rskrb5/pull/28); merged into `release/0.3.0`
 
 ## Problem
 For a client with no long-term credentials (`from_ccache` / `from_tgt_session`) whose cached

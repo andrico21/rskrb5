@@ -1,7 +1,7 @@
 # Requested mutual authentication is not enforced by HTTP completion classification
 - Severity: medium — likelihood medium, impact medium, confidence not scored in the record (verdict: confirmed, independently reproduced) — fingerprint `src/http.rs:classify_negotiate_challenge:mutual-request-not-enforced`
 - Audit: run-2 `findings.json` record (verdict `confirmed`) + `tools/prior-evidence/dep-repro-mutual-classify3-e8b575.log:180-186` and `agents/vfy-src-http-rs-classify-negot/artifacts/repro-mutual-classify3.log:180-186`
-- Status: implemented on branch `fix/mutual-auth-classification` (`8b75cda`); keyless-completion tests fail before and pass after; no upstream PR yet
+- Status: implemented on branch `fix/mutual-auth-classification` @ `71cc63b` (`8b75cda`); keyless-completion tests fail before and pass after; `71cc63b` resolves the open decision: with mutual authentication requested, the send wrappers fail closed with `NegotiateHttpError::MutualAuthenticationNotProven` (the response is kept in the error), and default-option wrappers are unchanged; upstream PR [#29](https://github.com/clelange/rskrb5/pull/29); merged into `release/0.3.0`
 
 ## Problem
 When the initiator asks for mutual authentication, `classify_negotiate_challenge` still

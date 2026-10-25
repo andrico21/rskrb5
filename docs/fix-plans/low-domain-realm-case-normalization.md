@@ -2,7 +2,7 @@
 
 - Severity: low — likelihood medium / impact low / confidence high — fingerprint `src/config.rs:resolve_realm/asymmetric-domain-case-normalization`
 - Audit: run-2 `findings.json` record `src/config.rs:resolve_realm/asymmetric-domain-case-normalization` + primary evidence `run-2/agents/vfy-src-config-rs-resolve-re-be1675/artifacts/probe-case-verify2.log`, corroborated by `run-2/run-1/agents/smoke/artifacts/consolidated-probes.log`
-- Status: implemented on branch `fix/domain-realm-normalization` (`9ede05a`); case-fold tests fail before and pass after; no upstream PR yet
+- Status: implemented on branch `fix/domain-realm-normalization` @ `20e48ab` (`9ede05a`); case-fold tests fail before and pass after; `20e48ab` adds the client-path test `service_realm_resolution_folds_dns_case`, which fails before; upstream PR [#26](https://github.com/clelange/rskrb5/pull/26); merged into `release/0.3.0`
 
 ## Problem
 

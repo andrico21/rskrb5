@@ -2,7 +2,7 @@
 
 - Severity: medium (likelihood medium / impact medium / confidence high) — fingerprint `rskrb5/ccache/parse/count-before-input-bound`
 - Audit: run-2 findings.json record (`verdict: confirmed`) + `agents/vfy-rskrb5-ccache-parse-count-/artifacts/ccache-parse-count-verify5:50-73`
-- Status: implemented on branch `fix/ccache-count-bounds` (`9701864`, lint follow-up `a37a4d1`); regression tests fail before (allocator abort under RLIMIT_AS) and pass after; no upstream PR yet
+- Status: implemented on branch `fix/ccache-count-bounds` @ `fdf641a` (`9701864`, lint follow-up `a37a4d1`); `fdf641a` pins the exact up-front bound (`Truncated { offset, needed, remaining }` on 64-bit, `LengthOverflow` on 32-bit) and adds negative-count controls, so the three `rejects_impossible_*` tests fail before the fix even with `vm.overcommit_memory=1` (earlier they failed only under `RLIMIT_AS`); upstream PR [#22](https://github.com/clelange/rskrb5/pull/22); merged into `release/0.3.0`
 
 ## Problem
 

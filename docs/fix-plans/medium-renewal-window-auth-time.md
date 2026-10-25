@@ -1,7 +1,7 @@
 # Refresh band computed from `auth_time`, so a renewed TGT is immediately due
 - Severity: medium — likelihood medium, impact medium, confidence not scored in the record (verdict: confirmed, independently reproduced) — fingerprint `rskrb5/client/renewal-window-original-auth-time`
 - Audit: run-2 `findings.json` record (verdict `confirmed`) + `agents/vfy-rskrb5-client-renewal-wind/artifacts/vfy-renewal-window-3` (promoted sandbox log)
-- Status: implemented on branch `fix/client-renewal-series` (`29b6a51`); test fails before and passes after; no upstream PR yet
+- Status: implemented on branch `fix/client-renewal-series` @ `fbf4320` (`29b6a51`); test fails before and passes after; the pacing-after-renewal test of `fbf4320` covers a renewed TGT whose `auth_time` is old; upstream PR [#28](https://github.com/clelange/rskrb5/pull/28); merged into `release/0.3.0`
 
 ## Problem
 `session_refresh_due_at` and `session_refresh_delay_at` derive the refresh band from

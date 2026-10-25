@@ -138,14 +138,14 @@ on these APIs (project overlay deviation 6):
 | AP-REQ replay identity canonicalized over the advisory name-type; a name-type-only replay is rejected (RFC 4120 section 3.2.3/6.2) | **PR [#20](https://github.com/clelange/rskrb5/pull/20)** open |
 | Authenticator client realm bound to the ticket realm; `ValidatedApReq.client` is ticket-derived (intentional gokrb5 divergence, `docs/gokrb5-parity.md`) | **PR [#21](https://github.com/clelange/rskrb5/pull/21)** open |
 | AP-REQ replay cache also indexes a digest of the authenticator ciphertext, so an authenticator re-presented under a rewritten cleartext ticket `sname` (for example a keytab alias sharing the service key) is rejected | **PR [#20](https://github.com/clelange/rskrb5/pull/20)** open, updated with this commit |
-| Ccache record counts bounded against the remaining input before reserving, so a malformed cache returns `Truncated` instead of aborting on a huge allocation | PR to follow |
-| kpasswd success accepted only with authenticated provenance: an unsigned KRB-ERROR code 0 is rejected (`kadmin::Error::UnauthenticatedSuccess`) and the stored password is kept | PR to follow |
-| `[libdefaults] clockskew` applied on the `Config`-driven acceptors (`ServiceValidator`, `NegotiateLayer`); plain constructors keep 300 s | PR to follow |
-| Host-based service principals fold the DNS host component to lower case (RFC 4120 section 6.2.1), so host-case variants share one SPN and one cached ticket | PR to follow |
-| `[domain_realm]` lookups fold DNS case, and a bare tag covers its subdomains (MIT krb5.conf(5)) | PR to follow |
-| AS/TGS reply and session-key enctypes bound to the requested list (`EnctypeNotRequested`); an explicit `permitted_enctypes` narrows requests and rejects out-of-list session keys (`EnctypeNotPermitted`), and an explicit request list outside it is a parse error; the explicit flag survives serde and include expansion | PR to follow |
-| Renewal series: refresh band from the current ticket life, auto-renewal paced when a refresh makes no progress, and AS recovery when a cached TGT is expired or its renewal is refused | PR to follow |
-| Requested mutual authentication fails closed in the response classifier and in the send wrappers (`NegotiateHttpError::MutualAuthenticationNotProven`) | PR to follow |
+| Ccache record counts bounded against the remaining input before reserving, so a malformed cache returns `Truncated` instead of aborting on a huge allocation | **PR [#22](https://github.com/clelange/rskrb5/pull/22)** open |
+| kpasswd success accepted only with authenticated provenance: an unsigned KRB-ERROR code 0 is rejected (`kadmin::Error::UnauthenticatedSuccess`) and the stored password is kept | **PR [#23](https://github.com/clelange/rskrb5/pull/23)** open |
+| `[libdefaults] clockskew` applied on the `Config`-driven acceptors (`ServiceValidator`, `NegotiateLayer`); plain constructors keep 300 s | **PR [#24](https://github.com/clelange/rskrb5/pull/24)** open |
+| Host-based service principals fold the DNS host component to lower case (RFC 4120 section 6.2.1), so host-case variants share one SPN and one cached ticket | **PR [#25](https://github.com/clelange/rskrb5/pull/25)** open |
+| `[domain_realm]` lookups fold DNS case, and a bare tag covers its subdomains (MIT krb5.conf(5)) | **PR [#26](https://github.com/clelange/rskrb5/pull/26)** open |
+| AS/TGS reply and session-key enctypes bound to the requested list (`EnctypeNotRequested`); an explicit `permitted_enctypes` narrows requests and rejects out-of-list session keys (`EnctypeNotPermitted`), and an explicit request list outside it is a parse error; the explicit flag survives serde and include expansion | **PR [#27](https://github.com/clelange/rskrb5/pull/27)** open |
+| Renewal series: refresh band from the current ticket life, auto-renewal paced when a refresh makes no progress, and AS recovery when a cached TGT is expired or its renewal is refused | **PR [#28](https://github.com/clelange/rskrb5/pull/28)** open |
+| Requested mutual authentication fails closed in the response classifier and in the send wrappers (`NegotiateHttpError::MutualAuthenticationNotProven`) | **PR [#29](https://github.com/clelange/rskrb5/pull/29)** open |
 | Lockfile refreshed to the latest Rust 1.99-compatible versions | fork only (lockfile) |
 
 The measurements and the acceptance procedure live in the consumer repository

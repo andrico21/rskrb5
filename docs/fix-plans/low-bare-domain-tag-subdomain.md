@@ -2,7 +2,7 @@
 
 - Severity: low — likelihood medium / impact low / confidence high — fingerprint `src/config.rs:resolve_realm/bare-domain-tag-subdomain-miss`
 - Audit: run-2 `findings.json` record `src/config.rs:resolve_realm/bare-domain-tag-subdomain-miss` + primary evidence `run-2/agents/vfy-src-config-rs-resolve-re-77c6c5/artifacts/target-repro.log` and MIT-reference calibration `run-2/agents/vfy-src-config-rs-resolve-re-77c6c5/artifacts/mit-semantics2.log`
-- Status: implemented on branch `fix/domain-realm-normalization` (`9ede05a`); MIT-reference rows fail before and pass after; no upstream PR yet
+- Status: implemented on branch `fix/domain-realm-normalization` @ `20e48ab` (`9ede05a`); MIT-reference rows fail before and pass after; `20e48ab` adds `resolve_realm_rejects_bare_prefix_extension` (`notmit.edu` is not under `mit.edu`), proven by an over-broad `ends_with` mutation; upstream PR [#26](https://github.com/clelange/rskrb5/pull/26); merged into `release/0.3.0`
 
 ## Problem
 

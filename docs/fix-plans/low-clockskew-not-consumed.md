@@ -2,7 +2,7 @@
 
 - Severity: low — likelihood low / impact low / confidence high — fingerprint `src/config.rs:LibDefaults:clockskew-not-consumed-by-acceptor-skew-check`
 - Audit: run-2 `findings.json` record `src/config.rs:LibDefaults:clockskew-not-consumed-by-acceptor-skew-check` + primary evidence `run-2/agents/vfy-src-config-rs-libdefaults-/artifacts/vfy-clockskew-probe.log` (two-stage reproduction + candidate fix), corroborated by `run-2/agents/hunt4-acceptor-policy/artifacts/wave4-policy-probe.log`
-- Status: implemented on branch `fix/config-clockskew-handoff` (`3e4c6c5`); new tests fail before and pass after; no upstream PR yet
+- Status: implemented on branch `fix/config-clockskew-handoff` (`3e4c6c5`); new tests fail before and pass after; upstream PR [#24](https://github.com/clelange/rskrb5/pull/24); merged into `release/0.3.0`
 
 ## Problem
 

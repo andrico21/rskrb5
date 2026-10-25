@@ -2,7 +2,7 @@
 
 - Severity: medium (likelihood low / impact medium / confidence medium) — fingerprint `rskrb5/client/kdc-reply-requested-enctype-binding`
 - Audit: run-2 findings.json record (`verdict: confirmed`) + `agents/vfy-rskrb5-client-kdc-reply-re/artifacts/vfy-enctype-r4:180-189` and `tools/prior-evidence/run-1-consolidated-probes-a42705.log:264`
-- Status: implemented on branch `fix/enctype-policy` (`236c4ce`); out-of-list AS-REP tests fail before and pass after; no upstream PR yet
+- Status: implemented on branch `fix/enctype-policy` @ `7c2c297` (`236c4ce`); out-of-list AS-REP tests fail before and pass after; the ticket `enc_part` etype is deliberately not checked (see `medium-permitted-enctypes-unconsumed.md`, Risks); upstream PR [#27](https://github.com/clelange/rskrb5/pull/27); merged into `release/0.3.0`
 
 ## Problem
 
