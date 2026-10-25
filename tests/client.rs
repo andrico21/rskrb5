@@ -1,7 +1,9 @@
 #![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "messages")]
 
-use core::time::Duration;
+extern crate alloc;
+
+use core::{error, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "tokio")]
@@ -128,6 +130,28 @@ use tokio::net::TcpListener;
 #[cfg(feature = "tokio")]
 #[path = "support/env.rs"]
 mod env;
+
+/// The error a fallible test returns; returning it fails the test.
+type TestError = Box<dyn error::Error + Send + Sync>;
+
+/// The `FILE:` name a parent test passed to this child run in `key`, and its file path.
+///
+/// # Panics
+///
+/// Panics if `key` does not hold a `FILE:` name, which means the test did not run
+/// as the child of `env::run_in_child`.
+#[cfg(feature = "tokio")]
+fn file_name_from_parent(key: &str) -> (String, String) {
+    use std::env::var;
+
+    let name = var(key).unwrap_or_default();
+    assert!(
+        name.starts_with("FILE:"),
+        "the parent test sets {key} to a FILE: name, not {name:?}"
+    );
+    let file = name.trim_start_matches("FILE:").to_owned();
+    (name, file)
+}
 
 const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
 const SESSION_KEY: &str = "8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07";
@@ -5002,106 +5026,42 @@ async fn write_tcp_kdc_response(socket: &mut tokio::net::TcpStream, response: &[
     socket.write_all(response).await.expect("write response");
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Answers a kpasswd `request` as the fake server would: a success result in
+/// a KRB-PRIV under an AP-REP whose subkey repeats `response_key_byte`.
+///
+/// A request whose AP-REQ authenticator does not decrypt under `session_key`
+/// gets a `KPASSWD_AUTHERROR` KRB-ERROR reply naming the failure, as a real
+/// server would answer, so the client under test reports it.
 #[cfg(feature = "tokio")]
 fn kpasswd_authenticated_success_reply(
     request: &[u8],
     session_key: &EncryptionKey,
     response_key_byte: u8,
 ) -> Vec<u8> {
-    let parsed = KpasswdRequest::parse(request).expect("kpasswd request parses");
-    let authenticator = rskrb5::ap_req::decrypt_ap_req_authenticator(
-        &parsed.ap_req,
-        session_key,
-        AP_REQ_AUTHENTICATOR_USAGE,
-    )
-    .expect("AP-REQ authenticator decrypts");
-    let response_key = EncryptionKey {
-        etype: 18,
-        value: vec![response_key_byte; 32],
-    };
-    kpasswd_success_reply_with_ap_rep_subkey(
-        &authenticator,
-        session_key,
-        &response_key,
-        KPASSWD_SUCCESS,
-        "password changed",
-    )
+    use rskrb5::{ap_req::decrypt_ap_req_authenticator, kadmin::KPASSWD_AUTHERROR};
+
+    KpasswdRequest::parse(request)
+        .map_err(|error| error.to_string())
+        .and_then(|parsed| {
+            decrypt_ap_req_authenticator(&parsed.ap_req, session_key, AP_REQ_AUTHENTICATOR_USAGE)
+                .map_err(|error| error.to_string())
+        })
+        .map_or_else(
+            |reason| kpasswd_reply_frame(0, &kpasswd_result_krb_error(KPASSWD_AUTHERROR, &reason)),
+            |authenticator| {
+                let response_key = EncryptionKey {
+                    etype: 18,
+                    value: vec![response_key_byte; 32],
+                };
+                kpasswd_success_reply_with_ap_rep_subkey(
+                    &authenticator,
+                    session_key,
+                    &response_key,
+                    KPASSWD_SUCCESS,
+                    "password changed",
+                )
+            },
+        )
 }
 
 #[cfg_attr(

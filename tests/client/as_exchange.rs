@@ -76,127 +76,6 @@ fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
 
 #[expect(
     clippy::absolute_paths,
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn as_req_etypes_are_intersected_with_permitted_enctypes() {
-    let defaults = rskrb5::config::LibDefaults {
-        default_tkt_enctype_ids: vec![18, 17, 23],
-        permitted_enctype_ids: vec![18],
-        permitted_enctypes_explicit: true,
-        ..Default::default()
-    };
-    let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
-    let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
-        .expect("AS-REQ builds");
-
-    let decoded: rasn_kerberos::AsReq = rasn::der::decode(&request.der).expect("AS-REQ decodes");
-    assert_eq!(decoded.0.req_body.etype, vec![18]);
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::assert_is_empty,
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn as_req_with_disjoint_permitted_enctypes_fails_closed() {
-    let defaults = rskrb5::config::LibDefaults {
-        default_tkt_enctype_ids: vec![18],
-        permitted_enctype_ids: vec![17],
-        permitted_enctypes_explicit: true,
-        ..Default::default()
-    };
-    let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
-    assert!(options.etypes.is_empty());
-
-    let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
-        .expect_err("an empty request list fails closed");
-    assert!(matches!(error, Error::EmptyEtypes));
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::default_numeric_fallback,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn sha2_request_list_survives_the_implicit_permitted_set() {
-    let defaults = rskrb5::config::LibDefaults {
-        default_tkt_enctype_ids: vec![19, 20],
-        permitted_enctype_ids: vec![18, 17, 23],
-        ..Default::default()
-    };
-    let options = AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
-
-    assert_eq!(options.etypes, vec![19, 20]);
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn config_with_sha2_tkt_enctypes_and_no_permitted_line_keeps_the_request_list() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- default_tkt_enctypes = aes128-cts-hmac-sha256-128
-"#,
-    )
-    .expect("config parses");
-    assert!(!config.libdefaults.permitted_enctypes_explicit);
-
-    let options =
-        AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &config.libdefaults);
-    assert_eq!(options.etypes, vec![19]);
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn explicit_permitted_enctypes_reject_an_explicit_sha2_request_list() {
-    let error = Config::parse(
-        r#"
-[libdefaults]
- default_tkt_enctypes = aes128-cts-hmac-sha256-128
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect_err("an explicit SHA2 request list outside the allowlist is rejected");
-
-    assert!(
-        matches!(
-            &error,
-            rskrb5::config::Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
-                if enctype == "aes128-cts-hmac-sha256-128"
-        ),
-        "unexpected error: {error:?}"
-    );
-}
-
-#[expect(
-    clippy::absolute_paths,
     clippy::expect_used,
     clippy::missing_panics_doc,
     clippy::tests_outside_test_module,
@@ -400,33 +279,6 @@ fn processes_as_rep_and_exports_ccache_credential() {
 }
 
 #[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn process_as_rep_rejects_session_key_outside_requested_enctypes() {
-    let request = build_tgt_as_req(
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![23]),
-    )
-    .expect("AS-REQ builds");
-    let reply_key = reply_key();
-    let response = synthetic_as_rep_with_reply_key(
-        &request,
-        request.nonce,
-        request.service.clone(),
-        &reply_key,
-    );
-
-    let error = process_as_rep(&request, &response, &reply_key)
-        .expect_err("a session key outside the requested list is rejected");
-    assert!(matches!(error, Error::EnctypeNotRequested(18)));
-}
-
-#[expect(
     clippy::expect_used,
     clippy::missing_panics_doc,
     clippy::tests_outside_test_module,
@@ -596,35 +448,170 @@ fn exchange_as_req_uses_transport_boundary() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+/// Fork-authored AS exchange tests: permitted enctypes, PA-DATA constants and nonces.
+#[cfg(test)]
 #[expect(
-    clippy::absolute_paths,
-    clippy::default_numeric_fallback,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn exported_padata_constants_match_their_registrations() {
-    assert_eq!(rskrb5::client::PA_FX_COOKIE, 133);
-    assert_eq!(rskrb5::client::PA_AS_FRESHNESS, 150);
-}
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use core::iter;
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::map_with_unused_argument_over_ranges,
-    clippy::missing_asserts_for_indexing,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn random_nonce_keeps_the_top_bit_clear_and_varies() {
-    let draws: Vec<u32> = (0..8)
-        .map(|_| rskrb5::client::random_nonce().expect("nonce draws"))
-        .collect();
-    assert!(draws.iter().all(|nonce| nonce & 0x8000_0000 == 0));
-    assert!(draws.windows(2).any(|pair| pair[0] != pair[1]));
+    use rasn::der;
+    use rskrb5::{
+        client::{PA_AS_FRESHNESS, PA_FX_COOKIE, random_nonce},
+        config::{Error as ConfigError, LibDefaults},
+    };
+
+    use super::*;
+
+    /// Pins that an explicit `permitted_enctypes` line narrows the AS-REQ etype list.
+    #[test]
+    fn as_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![18_i32, 17_i32, 23_i32],
+            permitted_enctype_ids: vec![18_i32],
+            permitted_enctypes_explicit: true,
+            ..Default::default()
+        };
+        let options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+        let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
+
+        let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
+        assert_eq!(decoded.0.req_body.etype, vec![18_i32]);
+        Ok(())
+    }
+
+    /// Pins that a request list disjoint from the permitted set fails closed.
+    #[test]
+    fn as_req_with_disjoint_permitted_enctypes_fails_closed() -> Result<(), TestError> {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![18_i32],
+            permitted_enctype_ids: vec![17_i32],
+            permitted_enctypes_explicit: true,
+            ..Default::default()
+        };
+        let options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+        assert!(
+            options.etypes.is_empty(),
+            "no requested etype is permitted: {:?}",
+            options.etypes
+        );
+
+        let Err(error) = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+        else {
+            return Err("an empty request list must fail closed".into());
+        };
+        assert!(matches!(error, Error::EmptyEtypes));
+        Ok(())
+    }
+
+    /// Pins that SHA2 request etypes survive when `permitted_enctypes` is implicit.
+    #[test]
+    fn sha2_request_list_survives_the_implicit_permitted_set() {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![19_i32, 20_i32],
+            permitted_enctype_ids: vec![18_i32, 17_i32, 23_i32],
+            ..Default::default()
+        };
+        let options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+
+        assert_eq!(options.etypes, vec![19_i32, 20_i32]);
+    }
+
+    /// Pins that a parsed config with only SHA2 `default_tkt_enctypes` keeps that list.
+    #[test]
+    fn config_with_sha2_tkt_enctypes_and_no_permitted_line_keeps_the_request_list()
+    -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha256-128
+",
+        )?;
+        assert!(!config.libdefaults.permitted_enctypes_explicit);
+
+        let options = AsReqOptions::from_libdefaults(
+            timestamp(1_893_553_447),
+            0x1122_3344,
+            &config.libdefaults,
+        );
+        assert_eq!(options.etypes, vec![19_i32]);
+        Ok(())
+    }
+
+    /// Pins that an explicit SHA2 request list outside an explicit allowlist is rejected.
+    #[test]
+    fn explicit_permitted_enctypes_reject_an_explicit_sha2_request_list() -> Result<(), TestError> {
+        let Err(error) = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha256-128
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        ) else {
+            return Err(
+                "an explicit SHA2 request list outside the allowlist must be rejected".into(),
+            );
+        };
+
+        assert!(
+            matches!(
+                &error,
+                ConfigError::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                    if enctype == "aes128-cts-hmac-sha256-128"
+            ),
+            "unexpected error: {error:?}"
+        );
+        Ok(())
+    }
+
+    /// Pins that an AS-REP session key outside the requested etypes is rejected.
+    #[test]
+    fn process_as_rep_rejects_session_key_outside_requested_enctypes() -> Result<(), TestError> {
+        let request = build_tgt_as_req(
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![23_i32]),
+        )?;
+        let reply_key = reply_key();
+        let response = synthetic_as_rep_with_reply_key(
+            &request,
+            request.nonce,
+            request.service.clone(),
+            &reply_key,
+        );
+
+        let Err(error) = process_as_rep(&request, &response, &reply_key) else {
+            return Err("a session key outside the requested list must be rejected".into());
+        };
+        assert!(matches!(error, Error::EnctypeNotRequested(18_i32)));
+        Ok(())
+    }
+
+    /// Pins the IANA registrations of the exported `PA-FX-COOKIE` and `PA-AS-FRESHNESS`.
+    #[test]
+    fn exported_padata_constants_match_their_registrations() {
+        assert_eq!(PA_FX_COOKIE, 133_i32);
+        assert_eq!(PA_AS_FRESHNESS, 150_i32);
+    }
+
+    /// Pins that nonces keep the top bit clear and are not constant.
+    #[test]
+    fn random_nonce_keeps_the_top_bit_clear_and_varies() -> Result<(), TestError> {
+        let draws = iter::repeat_with(random_nonce)
+            .take(8)
+            .collect::<Result<Vec<u32>, _>>()?;
+        assert!(draws.iter().all(|nonce| nonce & 0x8000_0000 == 0));
+        assert!(
+            draws
+                .windows(2)
+                .any(|pair| matches!(pair, [first, second] if first != second))
+        );
+        Ok(())
+    }
 }

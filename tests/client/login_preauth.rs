@@ -249,74 +249,6 @@ fn login_tgt_with_keytab_can_disable_fast_negotiation_marker() {
     reason = "lint-migration: upstream baseline at ee9cb04"
 )]
 #[test]
-fn initial_as_rep_outside_requested_enctypes_is_rejected() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
-        .with_etypes(vec![18])
-        .with_assume_preauthentication(true);
-    let aes128_key_info = PreauthKeyInfo {
-        etype: 17,
-        salt: None,
-        s2kparams: None,
-    };
-    let aes128_reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &aes128_key_info)
-        .expect("AES128 reply key derives");
-    let mut transport = AssumedPreauthTransport::new(aes128_reply_key, None);
-
-    let error = login_tgt_with_password(&mut transport, client, TESTUSER_PASSWORD, options)
-        .expect_err("an AS-REP outside the requested enctypes is rejected");
-    assert!(matches!(error, Error::EnctypeNotRequested(17)));
-    assert_eq!(transport.calls, 1);
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn keytab_initial_as_rep_outside_requested_enctypes_is_rejected() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
-        .with_etypes(vec![18])
-        .with_assume_preauthentication(true);
-    let mut keytab = keytab_with_reply_key(4);
-    let aes128_key_info = PreauthKeyInfo {
-        etype: 17,
-        salt: None,
-        s2kparams: None,
-    };
-    let aes128_reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &aes128_key_info)
-        .expect("AES128 reply key derives");
-    keytab.entries_mut().push(KeytabEntry {
-        principal: KeytabPrincipal {
-            realm: "TEST.GOKRB5".to_owned(),
-            components: vec!["testuser1".to_owned()],
-            name_type: 1,
-        },
-        timestamp: 1_893_553_440,
-        kvno8: 4,
-        key: aes128_reply_key.clone(),
-        kvno: 4,
-    });
-    let mut transport = AssumedPreauthTransport::new(aes128_reply_key, Some(4));
-
-    let error = login_tgt_with_keytab(&mut transport, client, &keytab, options)
-        .expect_err("an out-of-list keytab reply is rejected");
-    assert!(matches!(error, Error::EnctypeNotRequested(17)));
-    assert_eq!(transport.calls, 1);
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
 fn login_as_service_with_keytab_retries_for_explicit_service() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
     let service = change_password_principal();
@@ -360,4 +292,78 @@ fn login_tgt_with_keytab_can_assume_preauthentication() {
     assert_eq!(transport.calls, 1);
     assert_eq!(session.client, client);
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+}
+
+/// Fork-authored login tests: AS-REP session keys outside the requested enctypes.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use super::*;
+
+    /// Pins that a password login rejects an assumed-preauth AS-REP keyed outside the requested etypes.
+    #[test]
+    fn initial_as_rep_outside_requested_enctypes_is_rejected() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
+            .with_etypes(vec![18_i32])
+            .with_assume_preauthentication(true);
+        let aes128_key_info = PreauthKeyInfo {
+            etype: 17,
+            salt: None,
+            s2kparams: None,
+        };
+        let aes128_reply_key =
+            derive_password_reply_key(&client, TESTUSER_PASSWORD, &aes128_key_info)?;
+        let mut transport = AssumedPreauthTransport::new(aes128_reply_key, None);
+
+        let Err(error) =
+            login_tgt_with_password(&mut transport, client, TESTUSER_PASSWORD, options)
+        else {
+            return Err("an AS-REP outside the requested enctypes must be rejected".into());
+        };
+        assert!(matches!(error, Error::EnctypeNotRequested(17_i32)));
+        assert_eq!(transport.calls, 1);
+        Ok(())
+    }
+
+    /// Pins that a keytab login rejects an assumed-preauth AS-REP keyed outside the requested etypes.
+    #[test]
+    fn keytab_initial_as_rep_outside_requested_enctypes_is_rejected() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
+            .with_etypes(vec![18_i32])
+            .with_assume_preauthentication(true);
+        let mut keytab = keytab_with_reply_key(4);
+        let aes128_key_info = PreauthKeyInfo {
+            etype: 17,
+            salt: None,
+            s2kparams: None,
+        };
+        let aes128_reply_key =
+            derive_password_reply_key(&client, TESTUSER_PASSWORD, &aes128_key_info)?;
+        keytab.entries_mut().push(KeytabEntry {
+            principal: KeytabPrincipal {
+                realm: "TEST.GOKRB5".to_owned(),
+                components: vec!["testuser1".to_owned()],
+                name_type: 1,
+            },
+            timestamp: 1_893_553_440,
+            kvno8: 4,
+            key: aes128_reply_key.clone(),
+            kvno: 4,
+        });
+        let mut transport = AssumedPreauthTransport::new(aes128_reply_key, Some(4));
+
+        let Err(error) = login_tgt_with_keytab(&mut transport, client, &keytab, options) else {
+            return Err("an out-of-list keytab reply must be rejected".into());
+        };
+        assert!(matches!(error, Error::EnctypeNotRequested(17_i32)));
+        assert_eq!(transport.calls, 1);
+        Ok(())
+    }
 }
