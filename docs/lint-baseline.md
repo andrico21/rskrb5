@@ -119,15 +119,18 @@ unless `--rebaseline` is passed.
 
 - Every `lint-migration:` attribute in the tree matches a manifest entry by
   file, item, lint and predicate.
-- The ratchet base is the most recent commit touching the manifest whose
-  subject starts with `lint: rebaseline for Rust ` or
-  `lint: adopt the rmcp-server-kit strictest profile`. Today that is
-  `473ca10`.
-- Every later commit that touches the manifest, and finally the working tree,
+- The reviewed ratchet anchor is pinned in `baseline_gate.py` as
+  `1b54b82020611d79b79cdc1800b486346005b086`, the integration commit introducing
+  `clean-paths.txt`. It must be a first-parent ancestor of HEAD. A missing
+  anchor, a reverse merge bypassing it, or a shallow repository fails closed;
+  fetch complete history (`fetch-depth: 0` in CI).
+- Every later first-parent snapshot that touches the manifest, and finally the working tree,
   may only remove entries or lower counts. An entry added after the base
   fails, including one removed earlier and restored later.
-- One kind of re-keying counts as a move, not an addition (exception (m)
-  below).
+- There are no move credits: renaming, moving or wrapping an identity counts
+  as an addition. Remove its expectations before moving code.
+- The same first-parent walk enforces grow-only `clean-paths.txt` and
+  shrink-only `facade-exceptions.txt`.
 - Every other `expect` reason must be a `deliberate:` reason for an
   API-shaping lint, or one of the core-sanctioned pairs on a matching item.
   `invariant:` reasons and anything else fail.
@@ -146,10 +149,17 @@ mirrors the fast ones as pre-push hooks.
 | `profile_eq.py --clippy-toml` | `[lints]` equals the vendored core profile; `clippy.toml` equals the core sample apart from the two append-only keys | `lint-gates` | `lint-gates` |
 | `completeness_check.py` | the profile is complete for the current stable: the rustc and `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions | `lint-gates` | `lint-gates` |
 | `baseline_gate.py --enforce` | the ratchet rules above | `lint-gates` | `lint-gates` |
-| `fork_lines_gate.py --enforce` | no lint diagnostic caused by fork code (below) | `fork-lines` | none (slow) |
-| `prose_gate.py --enforce` | the core's non-lint rules on fork-touched items (below) | `fork-lines` | none (slow) |
+| `facade_gate.py --enforce` | no public re-exports outside the crate-root facade except the shrinking exception list | `lint-gates` | none |
+| `prose_gate.py --enforce --paths-file scripts/lint-ratchet/clean-paths.txt` | the core's non-lint rules on every item in selected files | `lint-gates`, `clean-paths` | none |
+| `closure_report.py --enforce --paths-file scripts/lint-ratchet/clean-paths.txt --ignore-lints <API-SET>` | scoped unsuppressed lints and hard errors anywhere, across every feature closure | `lint-gates`, `clean-paths` | none (slow) |
+| `fuzz_lint.py --enforce` | root lint profile on the nightly fuzz crate in a disposable copy (no generated lockfile left in the checkout) | `lint-gates` | none (slow) |
 
-### Fork-lines gate semantics
+The `clean-paths` job also passes `closure_report.py --lints-only`. This is a
+compatibility flag with no effect: path filters and `--ignore-lints` scope only
+lint diagnostics with or without it. Hard errors are always counted and always
+fail `--enforce`. The `fork-lines` job and `fork_lines_gate.py` are retired.
+
+### Historical fork-lines gate semantics (retired)
 
 `fork_lines_gate.py` compares diagnostics between two disposable trees:
 
@@ -643,7 +653,7 @@ feature, and supplies canonical Cargo arguments to both strict runs and
 tree, preserving source line numbers, and reports real diagnostics across every
 closure. Hard compilation errors always count, independently of path or lint
 filters. A report is informational; `--enforce` fails on scoped lints or any hard
-error. `--lints-only` never suppresses hard errors.
+error. `--lints-only` is a retained compatibility no-op; hard errors always count.
 
 `clean-paths.txt` starts empty. Compliance work adds sorted, unique path globs;
 they may only grow. An omitted path filter means the whole tree; an empty paths
@@ -662,7 +672,9 @@ path and statement names rather than filenames. Exceptions may only disappear.
 All other public re-exports outside the crate-root facade fail, including
 cfg-disabled statements.
 
-The ratchet starts at the first-parent commit introducing `clean-paths.txt`.
+The ratchet starts at the explicitly pinned reviewed integration commit
+`1b54b82020611d79b79cdc1800b486346005b086`, introducing `clean-paths.txt`.
+It must remain on HEAD's first-parent chain; shallow repositories fail closed.
 Earlier migrations are grandfathered. Every subsequent first-parent snapshot
 and the working tree must remove only baseline entries, grow only clean paths,
 and remove only facade exceptions. Changed or moved baseline identities count

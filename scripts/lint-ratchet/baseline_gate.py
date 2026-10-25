@@ -23,6 +23,8 @@ import common
 from baseline_sources import additions
 
 MANIFEST: Final = "scripts/lint-ratchet/baseline.toml"
+# Reviewed integration commit introducing clean-paths.txt; never rediscover from HEAD.
+RATCHET_ANCHOR: Final = "1b54b82020611d79b79cdc1800b486346005b086"
 API_LINTS: Final = frozenset(
     "exhaustive_structs exhaustive_enums pub_use module_name_repetitions partial_pub_fields error_impl_error impl_trait_in_params too_many_arguments struct_excessive_bools fn_params_excessive_bools same_name_method".split()
 )
@@ -172,17 +174,23 @@ def transition(
     ]
 
 
-def ratchet(root: Path, current: Counter[Entry]) -> tuple[list[str], int]:
+def ratchet(
+    root: Path, current: Counter[Entry], anchor: str = RATCHET_ANCHOR
+) -> tuple[list[str], int]:
     clean = "scripts/lint-ratchet/clean-paths.txt"
     facade = "scripts/lint-ratchet/facade-exceptions.txt"
-    history = common.git(
-        root, "log", "--first-parent", "--diff-filter=A", "--format=%H", "--", clean
-    ).splitlines()
-    base = history[-1] if history else None
-    if base is None:
+    if common.git(root, "rev-parse", "--is-shallow-repository").strip() != "false":
         return [
-            "no first-parent clean-paths introduction found; commit transition files first"
+            "shallow repository: ratchet requires complete history (CI fetch-depth: 0)"
         ], 0
+    if (
+        anchor
+        not in common.git(root, "rev-list", "--first-parent", "HEAD").splitlines()
+    ):
+        return [
+            f"pinned ratchet anchor {anchor} is not a first-parent ancestor of HEAD"
+        ], 0
+    base = anchor
     previous = manifest(common.git(root, "show", f"{base}:{MANIFEST}"))
     previous_clean = ratchet_lines(common.git(root, "show", f"{base}:{clean}"))
     previous_facade = ratchet_lines(common.git(root, "show", f"{base}:{facade}"))
@@ -340,7 +348,6 @@ def self_test() -> int:
         assert transition(actual, actual + actual, "increase")
         # Given a baseline item, when only a wrapper prefix is gained, it moves.
         wrapped = Counter({("src/lib.rs", "mod tests::fn f", "dead_code", "always"): 1})
-        proof = frozenset({(("src/lib.rs", "fn f"), ("src/lib.rs", "mod tests::fn f"))})
         assert transition(actual, wrapped, "wrap")
         assert transition(wrapped, actual, "unwrap")
         # Changed identities/counts, new entries and duplication remain additions.
@@ -367,6 +374,10 @@ def self_test() -> int:
         assert not errors and actual == Counter(
             {("src/lib.rs", "<crate root>", "dead_code_pub_in_binary", "test"): 1}
         )
+    common.git(common.ROOT, "merge-base", "--is-ancestor", RATCHET_ANCHOR, "HEAD")
+    from ratchet_fixtures import self_test as history_self_test
+
+    history_self_test()
     print(
         "baseline_gate self-test: ok (invariant, ownership, restoration, counts, module-wrap moves)"
     )

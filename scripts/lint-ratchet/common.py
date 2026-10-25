@@ -5,7 +5,7 @@
 # ///
 # ─── How to run ───
 # python3 scripts/lint-ratchet/common.py --self-test (no installation needed)
-"""Shared provenance mapping; parser API ported from rmcp-server-kit (MIT/Apache-2.0).
+"""Shared source helpers; parser API ported from rmcp-server-kit (MIT/Apache-2.0).
 
 The item-scanner adapter imports todo 13's scanner explicitly.
 Offsets here are Python character offsets, never compiler UTF-8 byte offsets.
@@ -13,12 +13,10 @@ Offsets here are Python character offsets, never compiler UTF-8 byte offsets.
 
 from __future__ import annotations
 
-import difflib
 import fnmatch
 import re
 import subprocess
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Iterator
@@ -82,44 +80,6 @@ def migration_ranges(text: str) -> list[tuple[int, int]]:
     return sorted(ranges)
 
 
-def line_mapping(head: str, reference: str) -> dict[int, int]:
-    """Map real HEAD lines to upstream lines; baseline-only lines disappear."""
-    ranges = migration_ranges(head)
-    masked = blank_ranges(head, ranges).splitlines(keepends=True)
-    lines: list[tuple[int, str]] = []
-    offset = 0
-    range_index = 0
-    for number, text in enumerate(head.splitlines(keepends=True), 1):
-        while range_index < len(ranges) and ranges[range_index][1] <= offset:
-            range_index += 1
-        visible = masked[number - 1]
-        overlaps = range_index < len(ranges) and ranges[range_index][0] < offset + len(
-            text
-        )
-        if visible.strip() or not overlaps:
-            lines.append((number, "".join(visible.split())))
-        offset += len(text)
-    matcher = difflib.SequenceMatcher(
-        None,
-        ["".join(x.split()) for x in reference.splitlines()],
-        [value for _, value in lines],
-        autojunk=False,
-    )
-    return {
-        lines[j + delta][0]: i + delta + 1
-        for tag, i, stop, j, _ in matcher.get_opcodes()
-        if tag == "equal"
-        for delta in range(stop - i)
-    }
-
-
-def moved_sources(root: Path) -> dict[str, str]:
-    path = root / "scripts/lint-ratchet/moves.toml"
-    if not path.exists():
-        return {}
-    return {row["new"]: row["from"] for row in tomllib.loads(path.read_text())["move"]}
-
-
 @dataclass(frozen=True, slots=True)
 class Item:
     start: int
@@ -181,17 +141,13 @@ def self_test() -> int:
     assert len(calls) == 1 and calls[0].lints == ("dead_code",)
     assert calls[0].predicate == "test"
     assert len(strip_comments_and_strings(source)) == len(source)
-    upstream = "async fn f() {}\n#[test]\nfn test_f() {}\n"
-    head = '#[expect(dead_code, reason = "lint-migration: baseline")]\n' + upstream
-    assert line_mapping(head, upstream) == {2: 1, 3: 2, 4: 3}
-    assert 2 not in line_mapping(head.replace("f() {}", "f() { work(); }"), upstream)
     assert (
         attribute_calls(
             "#[cfg_attr(test, cfg_attr(unix, allow(x)), allow(y), derive(Debug))]"
         )[0].predicate
         == "all(test, unix)"
     )
-    print("common self-test: ok (cfg_attr siblings, lexemes, baseline provenance)")
+    print("common self-test: ok (cfg_attr siblings, lexemes)")
     return 0
 
 
