@@ -53,10 +53,10 @@ use http_types::{
 };
 use pretty_assertions::assert_eq;
 #[cfg(feature = "tokio")]
-use rskrb5::client::{BlockingNegotiateClient, KdcProtocol, NegotiateClient, TokioClient};
+use rskrb5_ng::client::{BlockingNegotiateClient, KdcProtocol, NegotiateClient, TokioClient};
 #[cfg(any(feature = "tokio", feature = "tower"))]
-use rskrb5::config::Config;
-use rskrb5::{
+use rskrb5_ng::config::Config;
+use rskrb5_ng::{
     client::{AsRepSession, Principal},
     http as krb_http,
     keytab::{EncryptionKey, Keytab},
@@ -3066,7 +3066,7 @@ mod fork_tests {
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use pretty_assertions::assert_eq;
     #[cfg(feature = "tokio")]
-    use rskrb5::service::ApRepOptions;
+    use rskrb5_ng::service::ApRepOptions;
 
     use super::*;
 

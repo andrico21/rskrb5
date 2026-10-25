@@ -8,7 +8,7 @@ use std::{
 };
 
 use pretty_assertions::assert_eq;
-use rskrb5::{
+use rskrb5_ng::{
     config::Config,
     crypto::AesSha1Etype,
     keytab::{EncryptionKey, Keytab},
@@ -1279,7 +1279,7 @@ fn rejects_tampered_ap_rep() {
         validated
             .verify_ap_rep(&ap_rep)
             .expect_err("tampered AP-REP rejected"),
-        Error::Crypto(rskrb5::crypto::Error::IntegrityCheckFailed)
+        Error::Crypto(rskrb5_ng::crypto::Error::IntegrityCheckFailed)
     ));
 }
 
@@ -3376,7 +3376,7 @@ mod fork_tests {
 
     use pretty_assertions::assert_eq;
     use rasn::der;
-    use rskrb5::ticket::decrypt_ticket_enc_part;
+    use rskrb5_ng::ticket::decrypt_ticket_enc_part;
 
     use super::*;
 

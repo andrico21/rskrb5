@@ -3,7 +3,7 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::{
+use rskrb5_ng::{
     keytab::EncryptionKey,
     krb_safe::{
         Error, KRB_SAFE_CHECKSUM_USAGE, KRB_SAFE_MSG_TYPE, build_krb_safe, decode_krb_safe,

@@ -5,7 +5,7 @@ use core::time::Duration;
 use std::time::UNIX_EPOCH;
 
 use pretty_assertions::assert_eq;
-use rskrb5::{
+use rskrb5_ng::{
     client::{AsRepSession, Principal},
     crypto::AesSha1Etype,
     keytab::{EncryptionKey, Keytab},
@@ -325,7 +325,7 @@ fn decodes_and_roundtrips_gokrb5_krb5_mech_token() {
 
     assert_eq!(token.oid, ObjectIdentifier::krb5());
     assert_eq!(token.token_id, Krb5TokenId::ApReq);
-    let ap_req = rskrb5::ap_req::decode_ap_req(&token.message).expect("AP-REQ decodes");
+    let ap_req = rskrb5_ng::ap_req::decode_ap_req(&token.message).expect("AP-REQ decodes");
     assert_eq!(ap_req.msg_type, 14.into());
     assert_eq!(ap_req.authenticator.etype, 18);
     assert_eq!(

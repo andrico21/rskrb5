@@ -2,7 +2,7 @@
 #![cfg(feature = "evaluation")]
 
 use picky_asn1::wrapper::Asn1SequenceOf;
-use rskrb5::evaluation::{ASN1_FIXTURES, DerType, Support};
+use rskrb5_ng::evaluation::{ASN1_FIXTURES, DerType, Support};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Probe {
@@ -492,11 +492,11 @@ fn rasn_decode(der_type: DerType, bytes: &[u8]) -> Probe {
         DerType::PaDataSequence => rasn_decode_type::<rasn_kerberos::MethodData>(bytes),
         DerType::TypedData => rasn_decode_type::<rasn_kerberos::TypedData>(bytes),
         DerType::PaEncTsEnc => rasn_decode_type::<rasn_kerberos::PaEncTsEnc>(bytes),
-        DerType::PaForUser => rasn_decode_type::<rskrb5::messages::PaForUser>(bytes),
+        DerType::PaForUser => rasn_decode_type::<rskrb5_ng::messages::PaForUser>(bytes),
         DerType::EtypeInfo => rasn_decode_type::<rasn_kerberos::EtypeInfo>(bytes),
         DerType::EtypeInfo2 => rasn_decode_type::<rasn_kerberos::EtypeInfo2>(bytes),
-        DerType::EncryptedData => rasn_decode_type::<rskrb5::messages::EncryptedData>(bytes),
-        DerType::ChangePasswdData => rasn_decode_type::<rskrb5::kadmin::ChangePasswdData>(bytes),
+        DerType::EncryptedData => rasn_decode_type::<rskrb5_ng::messages::EncryptedData>(bytes),
+        DerType::ChangePasswdData => rasn_decode_type::<rskrb5_ng::kadmin::ChangePasswdData>(bytes),
     }
 }
 
@@ -558,11 +558,13 @@ fn rasn_roundtrip(der_type: DerType, bytes: &[u8]) -> Probe {
         DerType::PaDataSequence => rasn_roundtrip_type::<rasn_kerberos::MethodData>(bytes),
         DerType::TypedData => rasn_roundtrip_type::<rasn_kerberos::TypedData>(bytes),
         DerType::PaEncTsEnc => rasn_roundtrip_type::<rasn_kerberos::PaEncTsEnc>(bytes),
-        DerType::PaForUser => rasn_roundtrip_type::<rskrb5::messages::PaForUser>(bytes),
+        DerType::PaForUser => rasn_roundtrip_type::<rskrb5_ng::messages::PaForUser>(bytes),
         DerType::EtypeInfo => rasn_roundtrip_type::<rasn_kerberos::EtypeInfo>(bytes),
         DerType::EtypeInfo2 => rasn_roundtrip_type::<rasn_kerberos::EtypeInfo2>(bytes),
-        DerType::EncryptedData => rasn_roundtrip_type::<rskrb5::messages::EncryptedData>(bytes),
-        DerType::ChangePasswdData => rasn_roundtrip_type::<rskrb5::kadmin::ChangePasswdData>(bytes),
+        DerType::EncryptedData => rasn_roundtrip_type::<rskrb5_ng::messages::EncryptedData>(bytes),
+        DerType::ChangePasswdData => {
+            rasn_roundtrip_type::<rskrb5_ng::kadmin::ChangePasswdData>(bytes)
+        }
     }
 }
 

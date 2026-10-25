@@ -6,7 +6,7 @@ use std::{
 };
 
 use pretty_assertions::assert_eq;
-use rskrb5::config::{Config, Error, parse_duration};
+use rskrb5_ng::config::{Config, Error, parse_duration};
 
 #[path = "support/env.rs"]
 mod env;
@@ -111,9 +111,9 @@ mod fork_property_tests {
     use proptest::{collection, prelude::any, prop_assert_eq, proptest, sample};
     #[cfg(feature = "serde")]
     use proptest::{prelude::Strategy, prop_assert};
-    use rskrb5::config::Config;
+    use rskrb5_ng::config::Config;
     #[cfg(feature = "serde")]
-    use rskrb5::config::LibDefaults;
+    use rskrb5_ng::config::LibDefaults;
 
     /// Every supported enctype name, aliases included, with its enctype ID.
     #[cfg(feature = "serde")]
@@ -1019,9 +1019,9 @@ mod fork_tests {
     #[cfg(feature = "messages")]
     use rasn::der;
     #[cfg(any(feature = "serde", feature = "messages"))]
-    use rskrb5::config::LibDefaults;
+    use rskrb5_ng::config::LibDefaults;
     #[cfg(feature = "messages")]
-    use rskrb5::{
+    use rskrb5_ng::{
         Principal,
         client::{AsReqOptions, build_tgt_as_req},
     };

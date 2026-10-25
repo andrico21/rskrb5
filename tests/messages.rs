@@ -4,7 +4,7 @@
 use core::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rskrb5::messages::{
+use rskrb5_ng::messages::{
     EncryptedData, Error, KrbErrorInfo, PaForUser, PaPacOptions, PaReqEncPaRep, decode_der,
     encode_der,
 };

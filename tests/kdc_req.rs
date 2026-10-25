@@ -3,7 +3,7 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::kdc_req::{
+use rskrb5_ng::kdc_req::{
     KRB_AS_REQ_MSG_TYPE, KRB_TGS_REQ_MSG_TYPE, build_as_req, build_tgs_req, decode_as_req,
     decode_kdc_req_body, decode_tgs_req, encode_as_req, encode_build_as_req, encode_build_tgs_req,
     encode_kdc_req_body, encode_tgs_req,

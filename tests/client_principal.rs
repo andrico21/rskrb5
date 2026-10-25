@@ -2,7 +2,7 @@
 #![cfg(feature = "messages")]
 
 use pretty_assertions::assert_eq;
-use rskrb5::client::{Error, Principal};
+use rskrb5_ng::client::{Error, Principal};
 
 #[cfg_attr(
     any(

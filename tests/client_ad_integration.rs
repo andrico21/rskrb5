@@ -86,7 +86,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rskrb5::{
+use rskrb5_ng::{
     client::{
         ApReqOptions, KdcProtocol, Principal, TgsRepSession, TokioClient,
         build_ap_req_with_confounder,
@@ -1571,7 +1571,7 @@ fn validate_service_ticket<const N: usize>(
     ticket: &TgsRepSession,
     keytab: &Keytab,
     keytab_principal: [&str; N],
-) -> Result<rskrb5::service::ValidatedApReq, Box<dyn Error>> {
+) -> Result<rskrb5_ng::service::ValidatedApReq, Box<dyn Error>> {
     let etype =
         KerberosEtype::from_etype_id(ticket.session_key.etype).expect("ticket etype is supported");
     let confounder = vec![0x42; etype.confounder_len()];

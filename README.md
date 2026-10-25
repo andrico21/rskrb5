@@ -1,9 +1,8 @@
-> **This is a patched fork.** The published crate is **`rskrb5-patched`** - a
-> temporary fork of upstream `rskrb5`; please prefer
-> [upstream](https://github.com/clelange/rskrb5) unless you need one of the
-> patches listed in [FORK-NOTES.md](FORK-NOTES.md).
+# rskrb5-ng
 
-# rskrb5
+`rskrb5-ng` (library `rskrb5_ng`) is a pure-Rust Kerberos 5 client and service
+library. It continues [`rskrb5`](https://github.com/clelange/rskrb5)
+independently.
 
 `rskrb5` is a pure-Rust Kerberos v5 client/service library grown from a
 `gokrb5` v8 compatibility effort.
@@ -46,8 +45,8 @@ testing and integration work, but their Rust APIs can change before `1.0`.
 Async HTTP Negotiate from a FILE ccache:
 
 ```rust
-let config = rskrb5::Config::load_default()?;
-let mut client = rskrb5::NegotiateClient::from_ccache_name(
+let config = rskrb5_ng::Config::load_default()?;
+let mut client = rskrb5_ng::NegotiateClient::from_ccache_name(
     config,
     "FILE:/tmp/krb5cc",
 )?;
@@ -60,8 +59,8 @@ Transport-agnostic 401 retry wrapper with a replayable request factory
 (`http` feature, plus `tokio` when default features are disabled):
 
 ```rust
-let service = rskrb5::Principal::host_based_service("HTTP", "auth.cern.ch")?;
-let result = rskrb5::http::send_with_negotiate(
+let service = rskrb5_ng::Principal::host_based_service("HTTP", "auth.cern.ch")?;
+let result = rskrb5_ng::http::send_with_negotiate(
     &mut client,
     service,
     || {
@@ -96,16 +95,16 @@ the final response with its classification in `result.negotiation`.
 Blocking CLI-style use:
 
 ```rust
-let config = rskrb5::Config::load_default_or_parse(include_str!("krb5.conf"))?;
-let mut client = rskrb5::BlockingNegotiateClient::from_default_ccache(config)?;
+let config = rskrb5_ng::Config::load_default_or_parse(include_str!("krb5.conf"))?;
+let mut client = rskrb5_ng::BlockingNegotiateClient::from_default_ccache(config)?;
 let header = client.authorization_header_for_host("HTTP", "auth.cern.ch")?;
 ```
 
 Unsupported credential stores remain typed:
 
 ```rust
-let error = rskrb5::NegotiateClient::from_ccache_name(
-    rskrb5::Config::new(),
+let error = rskrb5_ng::NegotiateClient::from_ccache_name(
+    rskrb5_ng::Config::new(),
     "API:",
 )
 .expect_err("API caches are not implemented");
@@ -114,7 +113,7 @@ let error = rskrb5::NegotiateClient::from_ccache_name(
 Generate the compatibility report:
 
 ```sh
-cargo run --no-default-features --features evaluation --bin rskrb5-compat-report
+cargo run --no-default-features --features evaluation --bin rskrb5-ng-compat-report
 ```
 
 The report records the gokrb5 v8 test contract and the current support matrix

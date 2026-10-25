@@ -8,9 +8,9 @@
 //! Negotiate/SPNEGO header generation and retry wrappers.
 //!
 //! ```ignore
-//! let config = rskrb5::Config::load_default()?;
+//! let config = rskrb5_ng::Config::load_default()?;
 //! let mut client =
-//!     rskrb5::NegotiateClient::from_ccache_name(config, "FILE:/tmp/krb5cc")?;
+//!     rskrb5_ng::NegotiateClient::from_ccache_name(config, "FILE:/tmp/krb5cc")?;
 //! let header = client
 //!     .authorization_header_for_host("HTTP", "auth.cern.ch")
 //!     .await?;

@@ -5,7 +5,7 @@ The rules themselves are the vendored universal guidelines under
 `docs/rust-guidelines/`; the vendored core is
 [`docs/rust-guidelines/RUST_GUIDELINES.md`](docs/rust-guidelines/RUST_GUIDELINES.md).
 This index and the vendored directory are development-only. `package.exclude` in
-`Cargo.toml` keeps them out of the published `rskrb5-patched` crate.
+`Cargo.toml` keeps them out of the published `rskrb5-ng` crate.
 
 **Precedence: strictest wins.** Where the core, a domain overlay, the project overlay or a
 practice the project overlay adopts pull apart, the stricter rule applies. No file here

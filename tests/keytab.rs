@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rskrb5::keytab::{EncryptionKey, Entry, Error, Keytab, KeytabName, Principal};
+use rskrb5_ng::keytab::{EncryptionKey, Entry, Error, Keytab, KeytabName, Principal};
 
 #[path = "support/env.rs"]
 mod env;
@@ -143,7 +143,7 @@ fn generates_gokrb5_keytab_entries_from_principal_name() {
     assert_eq!(keytab.to_bytes().expect("keytab serializes"), expected);
     assert!(matches!(
         Principal::from_name("EXAMPLE.ORG", 1, "HTTP/").expect_err("empty component rejected"),
-        rskrb5::keytab::Error::InvalidPrincipalName
+        rskrb5_ng::keytab::Error::InvalidPrincipalName
     ));
 }
 
@@ -339,20 +339,20 @@ fn parses_typed_file_keytab_names() {
 fn rejects_unsupported_keytab_names() {
     assert!(matches!(
         Keytab::file_path_from_keytab_name("").expect_err("empty name rejected"),
-        rskrb5::keytab::Error::InvalidKeytabName
+        rskrb5_ng::keytab::Error::InvalidKeytabName
     ));
     assert!(matches!(
         Keytab::file_path_from_keytab_name("FILE:").expect_err("empty FILE path rejected"),
-        rskrb5::keytab::Error::InvalidKeytabName
+        rskrb5_ng::keytab::Error::InvalidKeytabName
     ));
     assert!(matches!(
         Keytab::file_path_from_keytab_name("DIR:/tmp/krb5.keytab")
             .expect_err("DIR keytab rejected"),
-        rskrb5::keytab::Error::UnsupportedKeytabType { keytab_type } if keytab_type == "DIR"
+        rskrb5_ng::keytab::Error::UnsupportedKeytabType { keytab_type } if keytab_type == "DIR"
     ));
     assert!(matches!(
         Keytab::file_path_from_keytab_name("MEMORY:test").expect_err("MEMORY keytab rejected"),
-        rskrb5::keytab::Error::UnsupportedKeytabType { keytab_type } if keytab_type == "MEMORY"
+        rskrb5_ng::keytab::Error::UnsupportedKeytabType { keytab_type } if keytab_type == "MEMORY"
     ));
 }
 

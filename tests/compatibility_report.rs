@@ -1,7 +1,7 @@
 #![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "evaluation")]
 
-use rskrb5::evaluation::{ASN1_FIXTURES, ASSESSMENTS, REPORTS, V8_CONTRACT, render_markdown};
+use rskrb5_ng::evaluation::{ASN1_FIXTURES, ASSESSMENTS, REPORTS, V8_CONTRACT, render_markdown};
 
 #[cfg_attr(
     any(

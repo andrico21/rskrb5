@@ -7,14 +7,14 @@ use core::{error, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "tokio")]
-use rskrb5::ccache;
+use rskrb5_ng::ccache;
 #[cfg(all(feature = "tokio", feature = "spnego"))]
-use rskrb5::client::{BlockingNegotiateClient, NegotiateClient};
+use rskrb5_ng::client::{BlockingNegotiateClient, NegotiateClient};
 #[cfg(feature = "tokio")]
-use rskrb5::client::{KdcProtocol, PrunedSessions, TokioClient, TokioKdcTransport};
+use rskrb5_ng::client::{KdcProtocol, PrunedSessions, TokioClient, TokioKdcTransport};
 #[cfg(feature = "tokio")]
-use rskrb5::config::Config;
-use rskrb5::{
+use rskrb5_ng::config::Config;
+use rskrb5_ng::{
     client::{
         AP_REP_ENCPART_USAGE, AP_REQ_AUTHENTICATOR_USAGE, AS_REP_ENCPART_USAGE,
         AS_REQ_CHECKSUM_USAGE, AS_REQ_PA_ENC_TIMESTAMP_USAGE, ApReqOptions, AsReqOptions,
@@ -368,7 +368,7 @@ impl KdcTransport for S4uTransport {
         assert_eq!(padata.len(), 2);
         assert_eq!(padata[0].r#type, PA_TGS_REQ);
         assert_eq!(padata[1].r#type, PA_FOR_USER);
-        let pa_for_user = rskrb5::messages::PaForUser::decode_der(padata[1].value.as_ref())
+        let pa_for_user = rskrb5_ng::messages::PaForUser::decode_der(padata[1].value.as_ref())
             .expect("PA-FOR-USER decodes");
         assert_eq!(
             principal_from_parts(&pa_for_user.user_realm, &pa_for_user.user_name),
@@ -1351,7 +1351,7 @@ fn sample_request_with_pa_req_enc_pa_rep() -> BuiltAsReq {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-fn sample_tgt_session() -> rskrb5::client::AsRepSession {
+fn sample_tgt_session() -> rskrb5_ng::client::AsRepSession {
     let request = sample_request();
     let response = synthetic_as_rep(&request, request.nonce);
     process_as_rep(&request, &response, &reply_key()).expect("sample TGT validates")
@@ -1431,7 +1431,7 @@ fn sample_tgt_session() -> rskrb5::client::AsRepSession {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-fn sample_referral_tgt_session(realm: &str) -> rskrb5::client::AsRepSession {
+fn sample_referral_tgt_session(realm: &str) -> rskrb5_ng::client::AsRepSession {
     let mut tgt = sample_tgt_session();
     tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
     tgt.session_key.value = vec![0x9a; 32];
@@ -1518,9 +1518,9 @@ fn sample_referral_tgt_session(realm: &str) -> rskrb5::client::AsRepSession {
 )]
 #[cfg(feature = "tokio")]
 fn valid_referral_tgt_session(
-    tgt: &rskrb5::client::AsRepSession,
+    tgt: &rskrb5_ng::client::AsRepSession,
     realm: &str,
-) -> rskrb5::client::AsRepSession {
+) -> rskrb5_ng::client::AsRepSession {
     let referral_service = Principal::tgt_service(realm);
     let request = build_tgs_req_with_confounder(
         tgt,
@@ -1619,7 +1619,7 @@ fn valid_referral_tgt_session(
 fn current_tgt_session(
     auth_age_minutes: u64,
     remaining_minutes: u64,
-) -> rskrb5::client::AsRepSession {
+) -> rskrb5_ng::client::AsRepSession {
     let now = SystemTime::now();
     let mut tgt = sample_tgt_session();
     tgt.auth_time = now
@@ -1717,7 +1717,7 @@ fn current_tgt_session(
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-fn sample_tgs_request(tgt: &rskrb5::client::AsRepSession) -> BuiltTgsReq {
+fn sample_tgs_request(tgt: &rskrb5_ng::client::AsRepSession) -> BuiltTgsReq {
     build_tgs_req_with_confounder(
         tgt,
         sample_service_principal(),
@@ -1805,7 +1805,7 @@ fn sample_tgs_request(tgt: &rskrb5::client::AsRepSession) -> BuiltTgsReq {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-fn sample_built_kpasswd_request() -> rskrb5::client::BuiltKpasswdRequest {
+fn sample_built_kpasswd_request() -> rskrb5_ng::client::BuiltKpasswdRequest {
     let tgt = sample_tgt_session();
     let request = sample_tgs_request(&tgt);
     let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
@@ -1911,7 +1911,7 @@ fn sample_built_kpasswd_request() -> rskrb5::client::BuiltKpasswdRequest {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-fn kpasswd_ap_rep(built: &rskrb5::client::BuiltKpasswdRequest, cusec: u32) -> Vec<u8> {
+fn kpasswd_ap_rep(built: &rskrb5_ng::client::BuiltKpasswdRequest, cusec: u32) -> Vec<u8> {
     let enc_part = rasn_kerberos::EncApRepPart {
         ctime: kerberos_time(1_893_553_452),
         cusec: rasn::types::Integer::from(cusec),
@@ -2018,7 +2018,7 @@ fn kpasswd_ap_rep(built: &rskrb5::client::BuiltKpasswdRequest, cusec: u32) -> Ve
     )
 )]
 fn kpasswd_reply_with_ap_rep(
-    built: &rskrb5::client::BuiltKpasswdRequest,
+    built: &rskrb5_ng::client::BuiltKpasswdRequest,
     ap_rep: &[u8],
 ) -> Vec<u8> {
     let mut body = ap_rep.to_vec();
@@ -2120,7 +2120,7 @@ fn kpasswd_success_reply_with_ap_rep_subkey(
         subkey: Some(rasn_encryption_key(response_key)),
         seq_number: authenticator.seq_number,
     };
-    let ap_rep = rskrb5::ap_rep::encode_build_ap_rep_with_confounder(
+    let ap_rep = rskrb5_ng::ap_rep::encode_build_ap_rep_with_confounder(
         &enc_ap_rep_part,
         ap_rep_key,
         None,
@@ -2229,8 +2229,8 @@ fn change_password_principal() -> Principal {
 )]
 #[cfg(feature = "tokio")]
 fn sample_service_ticket_session(
-    tgt: &rskrb5::client::AsRepSession,
-) -> rskrb5::client::TgsRepSession {
+    tgt: &rskrb5_ng::client::AsRepSession,
+) -> rskrb5_ng::client::TgsRepSession {
     let request = sample_tgs_request(tgt);
     let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
     process_tgs_rep(&request, &response, &tgt.session_key).expect("TGS-REP validates")
@@ -4805,7 +4805,7 @@ async fn serve_s4u2self_tcp_request(
     assert_eq!(padata.len(), 2);
     assert_eq!(padata[0].r#type, PA_TGS_REQ);
     assert_eq!(padata[1].r#type, PA_FOR_USER);
-    let pa_for_user = rskrb5::messages::PaForUser::decode_der(padata[1].value.as_ref())
+    let pa_for_user = rskrb5_ng::messages::PaForUser::decode_der(padata[1].value.as_ref())
         .expect("PA-FOR-USER decodes");
     assert_eq!(
         principal_from_parts(&pa_for_user.user_realm, &pa_for_user.user_name),
@@ -5038,7 +5038,7 @@ fn kpasswd_authenticated_success_reply(
     session_key: &EncryptionKey,
     response_key_byte: u8,
 ) -> Vec<u8> {
-    use rskrb5::{ap_req::decrypt_ap_req_authenticator, kadmin::KPASSWD_AUTHERROR};
+    use rskrb5_ng::{ap_req::decrypt_ap_req_authenticator, kadmin::KPASSWD_AUTHERROR};
 
     KpasswdRequest::parse(request)
         .map_err(|error| error.to_string())

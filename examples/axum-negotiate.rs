@@ -16,7 +16,7 @@ use axum::{
     response::Response,
     routing::get,
 };
-use rskrb5::{
+use rskrb5_ng::{
     http as krb_http,
     keytab::Keytab,
     service::{ApRepOptions, ServiceValidator},

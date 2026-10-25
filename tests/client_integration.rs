@@ -103,7 +103,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rskrb5::{
+use rskrb5_ng::{
     ccache::CCache,
     client::{
         AsReqOptions, Error as ClientError, KdcProtocol, PreauthKeyInfo, Principal, TgsReqOptions,
@@ -1753,7 +1753,7 @@ fn docker_mit_kdc_dns_srv_as_login() -> Result<(), Box<dyn Error>> {
             assert!(
                 endpoints
                     .iter()
-                    .all(|endpoint| endpoint.source == rskrb5::client::KdcEndpointSource::DnsSrv)
+                    .all(|endpoint| endpoint.source == rskrb5_ng::client::KdcEndpointSource::DnsSrv)
             );
 
             let session = transport
@@ -3826,21 +3826,21 @@ fn docker_mit_kdc_spnego_header_round_trip_through_service_validator() -> Result
             let service_ticket = transport
                 .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
                 .await?;
-            let context = rskrb5::spnego::init_sec_context(
+            let context = rskrb5_ng::spnego::init_sec_context(
                 &service_ticket,
-                rskrb5::spnego::InitiatorContextOptions::new(),
+                rskrb5_ng::spnego::InitiatorContextOptions::new(),
             )?;
             assert_eq!(context.service, service);
             assert!(context.sequence_number.is_some());
 
             let keytab = http_keytab()?;
             let mut validator =
-                rskrb5::service::ServiceValidator::new(&keytab).with_now(SystemTime::now());
+                rskrb5_ng::service::ServiceValidator::new(&keytab).with_now(SystemTime::now());
             let accepted =
-                rskrb5::spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                rskrb5_ng::spnego::accept_sec_context_header(&mut validator, &context.header)?;
             assert_eq!(
                 accepted.ap_req.client,
-                rskrb5::service::Principal {
+                rskrb5_ng::service::Principal {
                     realm: REALM.to_owned(),
                     name_type: 1,
                     components: vec![USER.to_owned()],
@@ -3851,7 +3851,7 @@ fn docker_mit_kdc_spnego_header_round_trip_through_service_validator() -> Result
             let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
             let response_header = accepted.ap_rep_response_header_with_confounder(
                 &confounder(protocol, elapsed),
-                rskrb5::service::ApRepOptions::default(),
+                rskrb5_ng::service::ApRepOptions::default(),
             )?;
             let verified = context.verify_ap_rep_response_header(&response_header)?;
             assert_eq!(verified.ctime, context.authenticator_ctime);
@@ -3950,39 +3950,40 @@ fn docker_mit_kdc_spnego_service_rejects_replayed_headers() -> Result<(), Box<dy
         .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
         let service_ticket = client.get_service_ticket(service_principal()).await?;
         let now = SystemTime::now();
-        let first = rskrb5::spnego::init_sec_context_with_confounder(
+        let first = rskrb5_ng::spnego::init_sec_context_with_confounder(
             &service_ticket,
-            rskrb5::spnego::InitiatorContextOptions::new().with_sequence_number(Some(1)),
+            rskrb5_ng::spnego::InitiatorContextOptions::new().with_sequence_number(Some(1)),
             now,
             111_111,
             &[0x11; 16],
         )?;
-        let second = rskrb5::spnego::init_sec_context_with_confounder(
+        let second = rskrb5_ng::spnego::init_sec_context_with_confounder(
             &service_ticket,
-            rskrb5::spnego::InitiatorContextOptions::new().with_sequence_number(Some(2)),
+            rskrb5_ng::spnego::InitiatorContextOptions::new().with_sequence_number(Some(2)),
             now,
             222_222,
             &[0x22; 16],
         )?;
 
         let keytab = http_keytab()?;
-        let mut validator = rskrb5::service::ServiceValidator::new(&keytab).with_now(now);
-        rskrb5::spnego::accept_sec_context_header(&mut validator, &first.header)?;
-        rskrb5::spnego::accept_sec_context_header(&mut validator, &second.header)?;
+        let mut validator = rskrb5_ng::service::ServiceValidator::new(&keytab).with_now(now);
+        rskrb5_ng::spnego::accept_sec_context_header(&mut validator, &first.header)?;
+        rskrb5_ng::spnego::accept_sec_context_header(&mut validator, &second.header)?;
 
-        let first_replay = rskrb5::spnego::accept_sec_context_header(&mut validator, &first.header)
-            .expect_err("first header replay is rejected");
+        let first_replay =
+            rskrb5_ng::spnego::accept_sec_context_header(&mut validator, &first.header)
+                .expect_err("first header replay is rejected");
         let second_replay =
-            rskrb5::spnego::accept_sec_context_header(&mut validator, &second.header)
+            rskrb5_ng::spnego::accept_sec_context_header(&mut validator, &second.header)
                 .expect_err("second header replay is rejected");
 
         assert!(matches!(
             first_replay,
-            rskrb5::spnego::Error::Service(rskrb5::service::Error::Replay)
+            rskrb5_ng::spnego::Error::Service(rskrb5_ng::service::Error::Replay)
         ));
         assert!(matches!(
             second_replay,
-            rskrb5::spnego::Error::Service(rskrb5::service::Error::Replay)
+            rskrb5_ng::spnego::Error::Service(rskrb5_ng::service::Error::Replay)
         ));
 
         Ok::<_, Box<dyn Error>>(())
@@ -4173,9 +4174,9 @@ fn docker_mit_kdc_raw_krb5_header_authenticates_to_docker_http() -> Result<(), B
         )
         .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
         let service_ticket = client.get_service_ticket(service_principal()).await?;
-        let context = rskrb5::spnego::init_sec_context(
+        let context = rskrb5_ng::spnego::init_sec_context(
             &service_ticket,
-            rskrb5::spnego::InitiatorContextOptions::new(),
+            rskrb5_ng::spnego::InitiatorContextOptions::new(),
         )?;
         let header = format!("Negotiate {}", base64_encode(&context.krb5_token.encode()?));
         let response = http_get_with_authorization("/modgssapi/index.html", &header)?;
@@ -4300,21 +4301,21 @@ fn docker_mit_kdc_rc4_hmac_spnego_header_round_trip_through_service_validator()
                 .await?;
             assert_eq!(service_ticket.session_key.etype, RC4_HMAC_ETYPE);
 
-            let context = rskrb5::spnego::init_sec_context(
+            let context = rskrb5_ng::spnego::init_sec_context(
                 &service_ticket,
-                rskrb5::spnego::InitiatorContextOptions::new(),
+                rskrb5_ng::spnego::InitiatorContextOptions::new(),
             )?;
             assert_eq!(context.service, service);
             assert!(context.sequence_number.is_some());
 
             let keytab = http_keytab()?;
             let mut validator =
-                rskrb5::service::ServiceValidator::new(&keytab).with_now(SystemTime::now());
+                rskrb5_ng::service::ServiceValidator::new(&keytab).with_now(SystemTime::now());
             let accepted =
-                rskrb5::spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                rskrb5_ng::spnego::accept_sec_context_header(&mut validator, &context.header)?;
             assert_eq!(
                 accepted.ap_req.client,
-                rskrb5::service::Principal {
+                rskrb5_ng::service::Principal {
                     realm: REALM.to_owned(),
                     name_type: 1,
                     components: vec![USER.to_owned()],
@@ -4326,7 +4327,7 @@ fn docker_mit_kdc_rc4_hmac_spnego_header_round_trip_through_service_validator()
             let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
             let response_header = accepted.ap_rep_response_header_with_confounder(
                 &rc4_confounder(protocol, elapsed),
-                rskrb5::service::ApRepOptions::default(),
+                rskrb5_ng::service::ApRepOptions::default(),
             )?;
             let verified = context.verify_ap_rep_response_header(&response_header)?;
             assert_eq!(verified.ctime, context.authenticator_ctime);
@@ -4447,21 +4448,21 @@ fn docker_mit_kdc_des3_spnego_header_round_trip_through_service_validator()
                 .await?;
             assert_eq!(service_ticket.session_key.etype, DES3_ETYPE);
 
-            let context = rskrb5::spnego::init_sec_context(
+            let context = rskrb5_ng::spnego::init_sec_context(
                 &service_ticket,
-                rskrb5::spnego::InitiatorContextOptions::new(),
+                rskrb5_ng::spnego::InitiatorContextOptions::new(),
             )?;
             assert_eq!(context.service, service);
             assert!(context.sequence_number.is_some());
 
             let keytab = http_keytab()?;
             let mut validator =
-                rskrb5::service::ServiceValidator::new(&keytab).with_now(SystemTime::now());
+                rskrb5_ng::service::ServiceValidator::new(&keytab).with_now(SystemTime::now());
             let accepted =
-                rskrb5::spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                rskrb5_ng::spnego::accept_sec_context_header(&mut validator, &context.header)?;
             assert_eq!(
                 accepted.ap_req.client,
-                rskrb5::service::Principal {
+                rskrb5_ng::service::Principal {
                     realm: REALM.to_owned(),
                     name_type: 1,
                     components: vec![USER.to_owned()],
@@ -4473,7 +4474,7 @@ fn docker_mit_kdc_des3_spnego_header_round_trip_through_service_validator()
             let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
             let response_header = accepted.ap_rep_response_header_with_confounder(
                 &des3_confounder(protocol, elapsed),
-                rskrb5::service::ApRepOptions::default(),
+                rskrb5_ng::service::ApRepOptions::default(),
             )?;
             let verified = context.verify_ap_rep_response_header(&response_header)?;
             assert_eq!(verified.ctime, context.authenticator_ctime);
@@ -4568,7 +4569,7 @@ fn docker_mit_kdc_des3_spnego_header_round_trip_through_service_validator()
 fn build_login_request(
     protocol: KdcProtocol,
     key: EncryptionKey,
-) -> Result<rskrb5::client::BuiltAsReq, Box<dyn Error>> {
+) -> Result<rskrb5_ng::client::BuiltAsReq, Box<dyn Error>> {
     let now = SystemTime::now();
     let elapsed = now.duration_since(UNIX_EPOCH)?;
     let timestamp = UNIX_EPOCH + Duration::from_secs(elapsed.as_secs());
@@ -5512,7 +5513,7 @@ async fn change_password_once(
     protocol: KdcProtocol,
     current_password: &[u8],
     new_password: &[u8],
-) -> Result<rskrb5::kadmin::ChangePasswordResult, Box<dyn Error>> {
+) -> Result<rskrb5_ng::kadmin::ChangePasswordResult, Box<dyn Error>> {
     let mut client = TokioClient::with_password(
         config.clone(),
         protocol,
@@ -5605,7 +5606,7 @@ async fn password_login(
     config: &Config,
     protocol: KdcProtocol,
     password: &[u8],
-) -> Result<rskrb5::client::AsRepSession, Box<dyn Error>> {
+) -> Result<rskrb5_ng::client::AsRepSession, Box<dyn Error>> {
     let mut client = TokioClient::with_password(
         config.clone(),
         protocol,
@@ -6206,7 +6207,7 @@ fn testuser_s2kparams(etype: i32) -> Option<Vec<u8>> {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-fn assert_login_session(session: rskrb5::client::AsRepSession) {
+fn assert_login_session(session: rskrb5_ng::client::AsRepSession) {
     assert_eq!(session.client, Principal::user(REALM, USER));
     assert_eq!(session.service, Principal::tgt_service(REALM));
     assert_eq!(session.session_key.etype, AES256_ETYPE);

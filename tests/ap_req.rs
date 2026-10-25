@@ -3,7 +3,7 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::{
+use rskrb5_ng::{
     ap_req::{
         AP_REQ_AUTHENTICATOR_USAGE, Error, KRB_AP_REQ_MSG_TYPE, TGS_REQ_AP_REQ_AUTHENTICATOR_USAGE,
         ap_options_from_bits, ap_options_to_bits, authenticator_usage_for_ticket, build_ap_req,

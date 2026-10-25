@@ -2,7 +2,7 @@
 #![cfg(feature = "spnego")]
 
 use pretty_assertions::assert_eq;
-use rskrb5::{
+use rskrb5_ng::{
     keytab::EncryptionKey,
     spnego::{
         Error, GSS_TOKEN_FLAG_SEALED, GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, GSSAPI_ACCEPTOR_SEAL_USAGE,

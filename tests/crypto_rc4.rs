@@ -1,6 +1,6 @@
 #![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 use pretty_assertions::assert_eq;
-use rskrb5::crypto::{Error, KerberosEtype, Rc4HmacEtype};
+use rskrb5_ng::crypto::{Error, KerberosEtype, Rc4HmacEtype};
 
 #[expect(
     clippy::default_numeric_fallback,
