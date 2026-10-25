@@ -104,6 +104,119 @@ const COMPLEX_KRB5_CONF: &str = r#"
  }
 "#;
 
+/// Property tests for the explicit `permitted_enctypes` serde flag and the
+/// `[domain_realm]` DNS case fold.
+#[cfg(test)]
+mod fork_property_tests {
+    use proptest::{collection, prelude::any, prop_assert_eq, proptest, sample};
+    #[cfg(feature = "serde")]
+    use proptest::{prelude::Strategy, prop_assert};
+    use rskrb5::config::Config;
+    #[cfg(feature = "serde")]
+    use rskrb5::config::LibDefaults;
+
+    /// Every supported enctype name, aliases included, with its enctype ID.
+    #[cfg(feature = "serde")]
+    const SUPPORTED_ENCTYPES: [(&str, i32); 14] = [
+        ("aes128-cts-hmac-sha1-96", 17),
+        ("aes128-cts", 17),
+        ("aes128-sha1", 17),
+        ("aes256-cts-hmac-sha1-96", 18),
+        ("aes256-cts", 18),
+        ("aes256-sha1", 18),
+        ("aes128-cts-hmac-sha256-128", 19),
+        ("aes128-sha2", 19),
+        ("aes256-cts-hmac-sha384-192", 20),
+        ("aes256-sha2", 20),
+        ("des3-cbc-sha1-kd", 16),
+        ("arcfour-hmac", 23),
+        ("rc4-hmac", 23),
+        ("arcfour-hmac-md5", 23),
+    ];
+
+    /// A `[domain_realm]` section with a leading-dot tag and a bare tag.
+    const DOMAIN_REALM_CONF: &str = "[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ .example.com = SUFFIX.REALM
+ example.org = BARE.REALM
+";
+
+    /// The configured suffixes, each with the realm its subdomains resolve to.
+    const CONFIGURED_SUFFIXES: [(&str, &str); 2] = [
+        (".example.com", "SUFFIX.REALM"),
+        (".example.org", "BARE.REALM"),
+    ];
+
+    /// Length of the generated case mask; longer than any generated host.
+    const CASE_MASK_LEN: usize = 64;
+
+    /// A non-empty subset of [`SUPPORTED_ENCTYPES`], in arbitrary order.
+    #[cfg(feature = "serde")]
+    fn enctype_subset() -> impl Strategy<Value = Vec<(&'static str, i32)>> {
+        sample::subsequence(SUPPORTED_ENCTYPES.to_vec(), 1..=SUPPORTED_ENCTYPES.len())
+            .prop_shuffle()
+    }
+
+    proptest! {
+        /// Any non-empty explicit `permitted_enctypes` list keeps
+        /// `permitted_enctypes_explicit == true` and the same derived IDs
+        /// through a serde round trip.
+        #[cfg(feature = "serde")]
+        #[test]
+        fn permitted_enctypes_survive_a_serde_round_trip(enctypes in enctype_subset()) {
+            let names: Vec<&str> = enctypes.iter().map(|entry| entry.0).collect();
+            let expected_ids: Vec<i32> = enctypes.iter().map(|entry| entry.1).collect();
+            let config = Config::parse(&format!(
+                "[libdefaults]\n permitted_enctypes = {}\n",
+                names.join(" ")
+            ))?;
+            prop_assert!(config.libdefaults.permitted_enctypes_explicit, "parsed list is explicit");
+            prop_assert_eq!(&config.libdefaults.permitted_enctype_ids, &expected_ids);
+
+            let json = serde_json::to_string(&config.libdefaults)?;
+            let decoded: LibDefaults = serde_json::from_str(&json)?;
+
+            prop_assert!(decoded.permitted_enctypes_explicit, "explicit flag survives serde");
+            prop_assert_eq!(&decoded.permitted_enctype_ids, &expected_ids);
+            prop_assert_eq!(decoded, config.libdefaults);
+        }
+
+        /// Any ASCII case permutation of a host under a configured
+        /// `[domain_realm]` suffix, with or without a trailing root dot,
+        /// resolves to that suffix's realm.
+        #[test]
+        fn resolve_realm_ignores_host_case(
+            labels in "[a-z0-9]{1,10}(\\.[a-z0-9]{1,10}){0,3}",
+            suffix in sample::select(CONFIGURED_SUFFIXES.to_vec()),
+            case_mask in collection::vec(any::<bool>(), CASE_MASK_LEN),
+            trailing_dot in any::<bool>(),
+        ) {
+            let config = Config::parse(DOMAIN_REALM_CONF)?;
+            let (domain, realm) = suffix;
+            let host = format!("{labels}{domain}");
+            let mut permuted: String = host
+                .chars()
+                .enumerate()
+                .map(|(index, character)| {
+                    if case_mask.get(index) == Some(&true) {
+                        character.to_ascii_uppercase()
+                    } else {
+                        character
+                    }
+                })
+                .collect();
+            if trailing_dot {
+                permuted.push('.');
+            }
+
+            prop_assert_eq!(config.resolve_realm(&host), Some(realm));
+            prop_assert_eq!(config.resolve_realm(&permuted), Some(realm), "{}", permuted);
+        }
+    }
+}
+
 #[expect(
     clippy::missing_panics_doc,
     clippy::tests_outside_test_module,
