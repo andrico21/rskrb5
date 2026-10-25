@@ -1,4 +1,4 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! Checks of the gokrb5 parity manifest in `docs/gokrb5-parity.toml`.
 extern crate alloc;
 
 use alloc::collections::BTreeSet;

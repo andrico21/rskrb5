@@ -1,6 +1,8 @@
 #![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "messages")]
 
+use core::error;
+
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
 use rskrb5::{
@@ -17,6 +19,10 @@ use rskrb5::{
     },
     keytab::EncryptionKey,
 };
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
+
 const CHG_PASSWD_MSG_AP_REQ_CONFOUNDER: &str = "00112233445566778899aabbccddeeff";
 const CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER: &str = "0a0b0c0d0e0f10111213141516171819";
 
@@ -2129,101 +2135,43 @@ fn kpasswd_reply_roundtrips_success_reply() {
     assert_eq!(reply.encode().expect("reply encodes"), bytes);
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// Result of a KRB-ERROR kpasswd reply through `decrypt_result`.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn kpasswd_reply_decrypt_result_returns_parsed_error_result() {
-    let bytes = kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA));
-    let reply = Reply::parse(&bytes).expect("reply parses");
-    let key = EncryptionKey {
-        etype: 18,
-        value: vec![0; 32],
-    };
-    let expected = ChangePasswordResult {
-        code: u16::from_be_bytes(*b"kr"),
-        text: "b5data".to_owned(),
-        text_raw: b"b5data".to_vec(),
-    };
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod parsed_error_result {
+    use pretty_assertions::assert_eq;
 
-    assert!(reply.result.is_some());
-    assert_eq!(
-        reply.decrypt_result(&key).expect("result decrypts"),
-        expected
-    );
+    use super::*;
+
+    /// Pins that `decrypt_result` returns the result parsed from a KRB-ERROR e-data.
+    #[test]
+    fn kpasswd_reply_decrypt_result_returns_parsed_error_result() -> Result<(), TestError> {
+        let bytes = kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA));
+        let reply = Reply::parse(&bytes).map_err(|cause| format!("reply parses: {cause}"))?;
+        let key = EncryptionKey {
+            etype: 18,
+            value: vec![0; 32],
+        };
+        let expected = ChangePasswordResult {
+            code: u16::from_be_bytes(*b"kr"),
+            text: "b5data".to_owned(),
+            text_raw: b"b5data".to_vec(),
+        };
+
+        assert!(reply.result.is_some());
+        assert_eq!(
+            reply
+                .decrypt_result(&key)
+                .map_err(|cause| format!("result decrypts: {cause}"))?,
+            expected
+        );
+        Ok(())
+    }
 }
 
 #[cfg_attr(
@@ -2570,314 +2518,153 @@ fn kpasswd_reply_rejects_success_payloads_without_ap_rep() {
     assert!(matches!(reply.encode(), Err(KadminError::MissingApRep)));
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::as_conversions,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// KRB-ERROR kpasswd reply parsing.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn kpasswd_reply_parses_krb_error_response_data() {
-    let error = decode_hex(KRB_ERROR_WITH_EDATA);
-    let frame = kpasswd_reply_frame(0, &error);
-    let reply = Reply::parse(&frame).expect("KRB-ERROR reply parses");
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod krb_error_response_data {
+    use pretty_assertions::assert_eq;
 
-    assert_eq!(reply.message_length as usize, frame.len());
-    assert_eq!(reply.version, 1);
-    assert_eq!(reply.ap_rep_length, 0);
-    assert!(reply.is_krb_error());
-    assert!(reply.ap_rep.is_none());
-    assert!(reply.krb_priv.is_none());
-    assert!(reply.krb_error.is_some());
-    assert_eq!(
-        reply.result,
-        Some(ChangePasswordResult {
-            code: u16::from_be_bytes(*b"kr"),
-            text: "b5data".to_owned(),
-            text_raw: b"b5data".to_vec(),
-        })
-    );
+    use super::*;
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::as_conversions,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins the frame fields and the result parsed from a KRB-ERROR kpasswd reply.
+    #[test]
+    fn kpasswd_reply_parses_krb_error_response_data() -> Result<(), TestError> {
+        let error = decode_hex(KRB_ERROR_WITH_EDATA);
+        let frame = kpasswd_reply_frame(0, &error);
+        let reply =
+            Reply::parse(&frame).map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
+
+        assert_eq!(reply.message_length as usize, frame.len());
+        assert_eq!(reply.version, 1);
+        assert_eq!(reply.ap_rep_length, 0);
+        assert!(reply.is_krb_error());
+        assert!(reply.ap_rep.is_none());
+        assert!(reply.krb_priv.is_none());
+        assert!(reply.krb_error.is_some());
+        assert_eq!(
+            reply.result,
+            Some(ChangePasswordResult {
+                code: u16::from_be_bytes(*b"kr"),
+                text: "b5data".to_owned(),
+                text_raw: b"b5data".to_vec(),
+            })
+        );
+        Ok(())
+    }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// KRB-ERROR result through `decrypt_result`.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn kpasswd_reply_decrypt_result_returns_krb_error_result() {
-    let reply = Reply::parse(&kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)))
-        .expect("KRB-ERROR reply parses");
-    let key = EncryptionKey {
-        etype: 18,
-        value: vec![0; 32],
-    };
+mod krb_error_result {
+    use pretty_assertions::assert_eq;
 
-    assert_eq!(
-        reply
-            .decrypt_result(&key)
-            .expect("KRB-ERROR result needs no decrypt"),
-        ChangePasswordResult {
-            code: u16::from_be_bytes(*b"kr"),
-            text: "b5data".to_owned(),
-            text_raw: b"b5data".to_vec(),
-        }
-    );
-}
+    use super::*;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_rejects_unsigned_krb_error_success_result() {
-    let mut result = Vec::new();
-    result.extend_from_slice(&KPASSWD_SUCCESS.to_be_bytes());
-    result.extend_from_slice(b"password changed");
-    let error = rasn_kerberos::KrbError {
-        pvno: Integer::from(5),
-        msg_type: Integer::from(30),
-        ctime: None,
-        cusec: None,
-        stime: kerberos_time(1_893_553_440),
-        susec: Integer::from(0),
-        error_code: 52,
-        crealm: Some(kerberos_string("TEST.GOKRB5")),
-        cname: Some(rasn_principal_name(1, ["testuser1"])),
-        realm: kerberos_string("TEST.GOKRB5"),
-        sname: rasn_principal_name(1, ["kadmin", "changepw"]),
-        e_text: None,
-        e_data: Some(result.into()),
-    };
-    let encoded = rasn::der::encode(&error).expect("KRB-ERROR encodes");
-    let reply = Reply::parse(&kpasswd_reply_frame(0, &encoded)).expect("KRB-ERROR reply parses");
-    let key = EncryptionKey {
-        etype: 18,
-        value: vec![0; 32],
-    };
+    /// Pins that a KRB-ERROR result needs no decryption key.
+    #[test]
+    fn kpasswd_reply_decrypt_result_returns_krb_error_result() -> Result<(), TestError> {
+        let reply = Reply::parse(&kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)))
+            .map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
+        let key = EncryptionKey {
+            etype: 18,
+            value: vec![0; 32],
+        };
 
-    assert!(matches!(
-        reply
-            .decrypt_result(&key)
-            .expect_err("unsigned success result rejected"),
-        KadminError::UnauthenticatedSuccess
-    ));
+        assert_eq!(
+            reply
+                .decrypt_result(&key)
+                .map_err(|cause| format!("KRB-ERROR result needs no decrypt: {cause}"))?,
+            ChangePasswordResult {
+                code: u16::from_be_bytes(*b"kr"),
+                text: "b5data".to_owned(),
+                text_raw: b"b5data".to_vec(),
+            }
+        );
+        Ok(())
+    }
 }
 
 #[cfg_attr(
@@ -3040,6 +2827,7 @@ fn kpasswd_result_success_helper_accepts_zero_code() {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
+/// Pins that `ensure_success` reports a failure code with its text.
 #[test]
 fn kpasswd_result_success_helper_reports_failure_code() {
     let result = ChangePasswordResult {
@@ -3786,104 +3574,85 @@ fn rasn_encryption_key(key: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::rest_pattern_accessible_field,
-        clippy::tests_outside_test_module,
-        unused_qualifications,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// Fork-authored kpasswd reply tests: unsigned success results and non-UTF-8 result text.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn non_utf8_result_text_is_kept_verbatim_on_both_reply_paths() {
-    // Result code 4 (soft error) followed by a Latin-1 body, which is not UTF-8.
-    let reply = b"\x00\x04Passwort zu \xe4hnlich";
-    let raw = &reply[2..];
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use pretty_assertions::assert_eq;
+    use rasn::der;
 
-    let result = rskrb5::kadmin::ChangePasswordResult::parse(reply).expect("result parses");
-    assert_eq!(result.text_raw, raw);
-    assert!(
-        result.text.contains('\u{fffd}'),
-        "the display text stays lossy"
-    );
+    use super::*;
 
-    match result.ensure_success() {
-        Err(rskrb5::kadmin::Error::PasswordChangeFailed { code, text_raw, .. }) => {
-            assert_eq!(code, 4);
-            assert_eq!(text_raw, raw);
+    /// Pins that a KRB-ERROR reply carrying a success result code is rejected as unauthenticated.
+    #[test]
+    fn kpasswd_reply_rejects_unsigned_krb_error_success_result() -> Result<(), TestError> {
+        let mut result = Vec::new();
+        result.extend_from_slice(&KPASSWD_SUCCESS.to_be_bytes());
+        result.extend_from_slice(b"password changed");
+        let error = rasn_kerberos::KrbError {
+            pvno: Integer::from(5_i32),
+            msg_type: Integer::from(30_i32),
+            ctime: None,
+            cusec: None,
+            stime: kerberos_time(1_893_553_440),
+            susec: Integer::from(0_i32),
+            error_code: 52,
+            crealm: Some(kerberos_string("TEST.GOKRB5")),
+            cname: Some(rasn_principal_name(1, ["testuser1"])),
+            realm: kerberos_string("TEST.GOKRB5"),
+            sname: rasn_principal_name(1, ["kadmin", "changepw"]),
+            e_text: None,
+            e_data: Some(result.into()),
+        };
+        let encoded = der::encode(&error).map_err(|cause| format!("KRB-ERROR encodes: {cause}"))?;
+        let reply = Reply::parse(&kpasswd_reply_frame(0, &encoded))
+            .map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
+        let key = EncryptionKey {
+            etype: 18,
+            value: vec![0; 32],
+        };
+
+        assert!(matches!(
+            reply
+                .decrypt_result(&key)
+                .err()
+                .ok_or("unsigned success result rejected")?,
+            KadminError::UnauthenticatedSuccess
+        ));
+        Ok(())
+    }
+
+    /// Pins that a non-UTF-8 result text is kept verbatim on the parse and failure paths.
+    #[test]
+    fn non_utf8_result_text_is_kept_verbatim_on_both_reply_paths() -> Result<(), TestError> {
+        // Result code 4 (soft error) followed by a Latin-1 body, which is not UTF-8.
+        let reply = b"\x00\x04Passwort zu \xe4hnlich";
+        let raw = &reply[2..];
+
+        let result = ChangePasswordResult::parse(reply)
+            .map_err(|cause| format!("result parses: {cause}"))?;
+        assert_eq!(result.text_raw, raw);
+        assert!(
+            result.text.contains('\u{fffd}'),
+            "the display text stays lossy"
+        );
+
+        match result.ensure_success() {
+            Err(KadminError::PasswordChangeFailed {
+                code,
+                text: _,
+                text_raw,
+            }) => {
+                assert_eq!(code, 4);
+                assert_eq!(text_raw, raw);
+            }
+            other => return Err(format!("result code 4 is a failure: {other:?}").into()),
         }
-        other => panic!("result code 4 is a failure: {other:?}"),
+        Ok(())
     }
 }

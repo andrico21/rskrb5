@@ -1,4 +1,5 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! Keytab parsing, round-trip and environment tests.
+use core::error;
 use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -8,6 +9,9 @@ use rskrb5::keytab::{EncryptionKey, Entry, Error, Keytab, KeytabName, Principal}
 
 #[path = "support/env.rs"]
 mod env;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
 
 const KEYTAB_TESTUSER1_TEST_GOKRB5: &str = "05020000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80100110010698c4df8e9f60e7eea5a21bf4526ad25000000010000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80100120020bbdc430aab7e2d4622a0b6951481453b0962e9db8e2f168942ad175cda6d9de9000000010000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80200110010698c4df8e9f60e7eea5a21bf4526ad25000000020000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80200120020bbdc430aab7e2d4622a0b6951481453b0962e9db8e2f168942ad175cda6d9de9000000020000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d801001300102eb8501967a7886e1f0c63ac9be8c4a0000000010000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d802001300102eb8501967a7886e1f0c63ac9be8c4a0000000020000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d801001400208ad66f209bb07daa186f8a229830f5ba06a3a2a33638f4ec66e1d29324e417ee000000010000004b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d802001400208ad66f209bb07daa186f8a229830f5ba06a3a2a33638f4ec66e1d29324e417ee00000002000000430001000b544553542e474f4b52423500097465737475736572310000000159beb1d801001000184580fb91760dabe6f808c22c26494f644cb35d61d32c79e300000001000000430001000b544553542e474f4b52423500097465737475736572310000000159beb1d802001000184580fb91760dabe6f808c22c26494f644cb35d61d32c79e3000000020000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80100170010084768c373663b3bef1f6385883cf7ff000000010000003b0001000b544553542e474f4b52423500097465737475736572310000000159beb1d80200170010084768c373663b3bef1f6385883cf7ff00000002";
 const KTUTIL_USER_KEYTAB: &str = "0502000000460001000b4558414d504c452e4f5247000475736572000000015e5e3d001f001200206e88eb2b3931ef17c92e780a4ee421f1411ff5b104e3f75b50dd13f9ed04f9c60000001f000000360001000b4558414d504c452e4f5247000475736572000000015e5e3d001f001100109bb7d5ba0f554412558441a31f2377120000001f000000360001000b4558414d504c452e4f5247000475736572000000015e5e3d001f00170010110d0c51e144d36fb7e4f9e012fbb8880000001f";
@@ -166,64 +170,94 @@ fn saves_and_loads_keytab_file() {
     assert_eq!(loaded, keytab);
 }
 
+/// Child-process test of the `KRB5_KTNAME` keytab round trip.
+#[cfg(test)]
 #[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn saves_and_loads_keytab_from_env() {
-    const TEST_PATH: &str = "saves_and_loads_keytab_from_env";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_file("save-load-env");
-        let name = format!("FILE:{}", path.display());
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
-        return;
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod keytab_env_round_trip {
+    use std::env::var;
+
+    use super::*;
+
+    #[expect(
+        clippy::absolute_paths,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that a keytab saved under the `KRB5_KTNAME` file name loads back unchanged.
+    #[test]
+    fn saves_and_loads_keytab_from_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "keytab_env_round_trip::saves_and_loads_keytab_from_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_file("save-load-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
+        let keytab =
+            Keytab::parse(&bytes).map_err(|cause| format!("keytab fixture parses: {cause}"))?;
+        let name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            name.strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+
+        keytab
+            .save_to_env()
+            .map_err(|cause| format!("keytab saves to env name: {cause}"))?;
+        let loaded = Keytab::load_from_env()
+            .map_err(|cause| format!("keytab loads from env name: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(loaded, keytab);
+        Ok(())
     }
-    let bytes = decode_hex(KEYTAB_TESTUSER1_TEST_GOKRB5);
-    let keytab = Keytab::parse(&bytes).expect("keytab fixture parses");
-    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
-    let path = PathBuf::from(
-        name.strip_prefix("FILE:")
-            .expect("KRB5_KTNAME names a FILE: path"),
-    );
-
-    keytab.save_to_env().expect("keytab saves to env name");
-    let loaded = Keytab::load_from_env().expect("keytab loads from env name");
-    let _ = std::fs::remove_file(&path);
-
-    assert_eq!(loaded, keytab);
 }
 
+/// Child-process test of a missing `KRB5_KTNAME`.
+#[cfg(test)]
 #[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn rejects_missing_keytab_env_name() {
-    const TEST_PATH: &str = "rejects_missing_keytab_env_name";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
-        return;
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod keytab_env_missing {
+    use super::*;
+
+    #[expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that loading or saving without `KRB5_KTNAME` names the missing variable.
+    #[test]
+    fn rejects_missing_keytab_env_name() -> Result<(), TestError> {
+        const TEST_PATH: &str = "keytab_env_missing::rejects_missing_keytab_env_name";
+        if !env::in_child(TEST_PATH) {
+            env::try_run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)])?;
+            return Ok(());
+        }
+        assert!(matches!(
+            Keytab::load_from_env().expect_err("missing KRB5_KTNAME rejected on load"),
+            Error::DefaultKeytabName(std::env::VarError::NotPresent)
+        ));
+        assert!(matches!(
+            Keytab::new()
+                .save_to_env()
+                .expect_err("missing KRB5_KTNAME rejected on save"),
+            Error::DefaultKeytabName(std::env::VarError::NotPresent)
+        ));
+        Ok(())
     }
-    assert!(matches!(
-        Keytab::load_from_env().expect_err("missing KRB5_KTNAME rejected on load"),
-        Error::DefaultKeytabName(std::env::VarError::NotPresent)
-    ));
-    assert!(matches!(
-        Keytab::new()
-            .save_to_env()
-            .expect_err("missing KRB5_KTNAME rejected on save"),
-        Error::DefaultKeytabName(std::env::VarError::NotPresent)
-    ));
 }
 
 #[expect(

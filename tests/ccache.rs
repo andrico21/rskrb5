@@ -1,4 +1,5 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! Credential cache parsing, round-trip and environment tests.
+use core::error;
 use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -9,6 +10,9 @@ use rskrb5::ccache::{CCache, CacheName, Credential, Error, Principal};
 
 #[path = "support/env.rs"]
 mod env;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
 
 const CCACHE_TEST: &str = concat!(
     "0504000c00010008000000060000000000000001000000010000000b544553542e474f4b524235000000097465737475",
@@ -104,68 +108,98 @@ fn saves_and_loads_ccache_file() {
     assert_eq!(loaded, cache);
 }
 
+/// Child-process test of the `KRB5CCNAME` ccache round trip.
+#[cfg(test)]
 #[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn saves_and_loads_ccache_from_env() {
-    const TEST_PATH: &str = "saves_and_loads_ccache_from_env";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_file("save-load-env");
-        let name = format!("FILE:{}", path.display());
-        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(name.as_ref()))]);
-        return;
+mod ccache_env_round_trip {
+    use std::env::var;
+
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[expect(
+        clippy::absolute_paths,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that a ccache saved under the `KRB5CCNAME` file name loads back unchanged.
+    #[test]
+    fn saves_and_loads_ccache_from_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "ccache_env_round_trip::saves_and_loads_ccache_from_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_file("save-load-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let bytes = decode_hex(CCACHE_TEST);
+        let cache =
+            CCache::parse(&bytes).map_err(|cause| format!("ccache fixture parses: {cause}"))?;
+        let name = var("KRB5CCNAME")
+            .map_err(|cause| format!("the parent test sets KRB5CCNAME: {cause}"))?;
+        let path = PathBuf::from(
+            name.strip_prefix("FILE:")
+                .ok_or("KRB5CCNAME names a FILE: path")?,
+        );
+
+        cache
+            .save_to_env()
+            .map_err(|cause| format!("ccache saves to env name: {cause}"))?;
+        let loaded = CCache::load_from_env()
+            .map_err(|cause| format!("ccache loads from env name: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(loaded, cache);
+        Ok(())
     }
-    let bytes = decode_hex(CCACHE_TEST);
-    let cache = CCache::parse(&bytes).expect("ccache fixture parses");
-    let name = std::env::var("KRB5CCNAME").expect("the parent test sets KRB5CCNAME");
-    let path = PathBuf::from(
-        name.strip_prefix("FILE:")
-            .expect("KRB5CCNAME names a FILE: path"),
-    );
-
-    cache.save_to_env().expect("ccache saves to env name");
-    let loaded = CCache::load_from_env().expect("ccache loads from env name");
-    let _ = std::fs::remove_file(&path);
-
-    assert_eq!(loaded, cache);
 }
 
+/// Child-process test of a missing `KRB5CCNAME`.
+#[cfg(test)]
 #[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn rejects_missing_ccache_env_name() {
-    const TEST_PATH: &str = "rejects_missing_ccache_env_name";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
-        return;
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod ccache_env_missing {
+    use super::*;
+
+    #[expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that loading or saving without `KRB5CCNAME` names the missing variable.
+    #[test]
+    fn rejects_missing_ccache_env_name() -> Result<(), TestError> {
+        const TEST_PATH: &str = "ccache_env_missing::rejects_missing_ccache_env_name";
+        if !env::in_child(TEST_PATH) {
+            env::try_run_in_child(TEST_PATH, &[("KRB5CCNAME", None)])?;
+            return Ok(());
+        }
+        assert!(matches!(
+            CCache::load_from_env().expect_err("missing KRB5CCNAME rejected on load"),
+            Error::DefaultCacheName(std::env::VarError::NotPresent)
+        ));
+        assert!(matches!(
+            CCache::new(Principal::new(
+                "TEST.GOKRB5",
+                1,
+                vec!["testuser1".to_owned()],
+            ))
+            .save_to_env()
+            .expect_err("missing KRB5CCNAME rejected on save"),
+            Error::DefaultCacheName(std::env::VarError::NotPresent)
+        ));
+        Ok(())
     }
-    assert!(matches!(
-        CCache::load_from_env().expect_err("missing KRB5CCNAME rejected on load"),
-        Error::DefaultCacheName(std::env::VarError::NotPresent)
-    ));
-    assert!(matches!(
-        CCache::new(Principal::new(
-            "TEST.GOKRB5",
-            1,
-            vec!["testuser1".to_owned()],
-        ))
-        .save_to_env()
-        .expect_err("missing KRB5CCNAME rejected on save"),
-        Error::DefaultCacheName(std::env::VarError::NotPresent)
-    ));
 }
 
 #[expect(
@@ -724,147 +758,160 @@ fn upserts_and_removes_client_entries_without_dropping_config() {
     );
 }
 
+/// Rejection of malformed ccache inputs.
+#[cfg(test)]
 #[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::rest_pattern_accessible_field,
-    clippy::tests_outside_test_module,
-    clippy::unseparated_literal_suffix,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn rejects_invalid_ccache_inputs() {
-    assert!(matches!(
-        CCache::parse(&[]).expect_err("empty ccache rejected"),
-        Error::TooShort { .. }
-    ));
-    assert!(matches!(
-        CCache::parse(&[4, 4]).expect_err("first byte rejected"),
-        Error::InvalidFirstByte(4)
-    ));
-    assert!(matches!(
-        CCache::parse(&[5, 5]).expect_err("version rejected"),
-        Error::InvalidVersion(5)
-    ));
-    assert!(matches!(
-        CCache::parse(&[5, 4, 0, 12]).expect_err("truncated header rejected"),
-        Error::Truncated { .. }
-    ));
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod invalid_inputs {
+    use super::*;
 
-    let mut negative_component_count = vec![0x05, 0x04, 0x00, 0x00];
-    negative_component_count.extend_from_slice(&0i32.to_be_bytes());
-    negative_component_count.extend_from_slice(&(-1i32).to_be_bytes());
-    assert!(matches!(
-        CCache::parse(&negative_component_count).expect_err("negative component count rejected"),
-        Error::NegativeLength(-1)
-    ));
+    #[expect(
+        clippy::expect_used,
+        clippy::rest_pattern_accessible_field,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins the errors for empty, misversioned, truncated and negative-count ccaches.
+    #[test]
+    fn rejects_invalid_ccache_inputs() -> Result<(), TestError> {
+        assert!(matches!(
+            CCache::parse(&[]).expect_err("empty ccache rejected"),
+            Error::TooShort { .. }
+        ));
+        assert!(matches!(
+            CCache::parse(&[4, 4]).expect_err("first byte rejected"),
+            Error::InvalidFirstByte(4)
+        ));
+        assert!(matches!(
+            CCache::parse(&[5, 5]).expect_err("version rejected"),
+            Error::InvalidVersion(5)
+        ));
+        assert!(matches!(
+            CCache::parse(&[5, 4, 0, 12]).expect_err("truncated header rejected"),
+            Error::Truncated { .. }
+        ));
 
-    let mut negative_address_count = ccache_prefix_before_address_count();
-    negative_address_count.extend_from_slice(&(-1i32).to_be_bytes());
-    assert!(matches!(
-        CCache::parse(&negative_address_count).expect_err("negative address count rejected"),
-        Error::NegativeLength(-1)
-    ));
+        let mut negative_component_count = vec![0x05, 0x04, 0x00, 0x00];
+        negative_component_count.extend_from_slice(&0_i32.to_be_bytes());
+        negative_component_count.extend_from_slice(&(-1_i32).to_be_bytes());
+        assert!(matches!(
+            CCache::parse(&negative_component_count)
+                .err()
+                .ok_or("negative component count rejected")?,
+            Error::NegativeLength(-1_i32)
+        ));
+
+        let mut negative_address_count = ccache_prefix_before_address_count();
+        negative_address_count.extend_from_slice(&(-1_i32).to_be_bytes());
+        assert!(matches!(
+            CCache::parse(&negative_address_count)
+                .err()
+                .ok_or("negative address count rejected")?,
+            Error::NegativeLength(-1_i32)
+        ));
+        Ok(())
+    }
 }
 
+/// Fork-authored ccache tests: impossible counts fail before allocating.
+#[cfg(test)]
 #[expect(
-    clippy::decimal_literal_representation,
-    clippy::expect_used,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    clippy::unseparated_literal_suffix,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn rejects_impossible_component_count() {
-    let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
-    bytes.extend_from_slice(&0i32.to_be_bytes()); // name type
-    bytes.extend_from_slice(&i32::MAX.to_be_bytes()); // component count
-    bytes.extend_from_slice(&0i32.to_be_bytes()); // realm length
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use super::*;
 
-    let error = CCache::parse(&bytes).expect_err("impossible component count rejected");
-    #[cfg(target_pointer_width = "64")]
-    assert!(matches!(
-        error,
-        Error::Truncated {
-            offset: 12,
-            needed: 8_589_934_588,
-            remaining: 4,
-        }
-    ));
-    #[cfg(target_pointer_width = "32")]
-    assert!(matches!(error, Error::LengthOverflow));
+    /// Pins that an impossible principal component count fails before any allocation.
+    #[test]
+    fn rejects_impossible_component_count() -> Result<(), TestError> {
+        let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
+        bytes.extend_from_slice(&0_i32.to_be_bytes()); // name type
+        bytes.extend_from_slice(&i32::MAX.to_be_bytes()); // component count
+        bytes.extend_from_slice(&0_i32.to_be_bytes()); // realm length
+
+        let error = CCache::parse(&bytes)
+            .err()
+            .ok_or("impossible component count rejected")?;
+        #[cfg(target_pointer_width = "64")]
+        assert!(matches!(
+            error,
+            Error::Truncated {
+                offset: 12,
+                needed: 0x0001_FFFF_FFFC,
+                remaining: 4,
+            }
+        ));
+        #[cfg(target_pointer_width = "32")]
+        assert!(matches!(error, Error::LengthOverflow));
+        Ok(())
+    }
+
+    /// Pins that an impossible address count fails before any allocation.
+    #[test]
+    fn rejects_impossible_address_count() -> Result<(), TestError> {
+        let mut bytes = ccache_prefix_before_address_count();
+        bytes.extend_from_slice(&i32::MAX.to_be_bytes());
+
+        let error = CCache::parse(&bytes)
+            .err()
+            .ok_or("impossible address count rejected")?;
+        #[cfg(target_pointer_width = "64")]
+        assert!(matches!(
+            error,
+            Error::Truncated {
+                offset: 71,
+                needed: 12_884_901_882,
+                remaining: 0,
+            }
+        ));
+        #[cfg(target_pointer_width = "32")]
+        assert!(matches!(error, Error::LengthOverflow));
+        Ok(())
+    }
+
+    /// Pins that an impossible auth-data count fails before any allocation.
+    #[test]
+    fn rejects_impossible_auth_data_count() -> Result<(), TestError> {
+        let mut bytes = ccache_prefix_before_address_count();
+        bytes.extend_from_slice(&0_i32.to_be_bytes()); // no addresses
+        bytes.extend_from_slice(&i32::MAX.to_be_bytes());
+
+        let error = CCache::parse(&bytes)
+            .err()
+            .ok_or("impossible auth-data count rejected")?;
+        #[cfg(target_pointer_width = "64")]
+        assert!(matches!(
+            error,
+            Error::Truncated {
+                offset: 75,
+                needed: 12_884_901_882,
+                remaining: 0,
+            }
+        ));
+        #[cfg(target_pointer_width = "32")]
+        assert!(matches!(error, Error::LengthOverflow));
+        Ok(())
+    }
 }
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn rejects_impossible_address_count() {
-    let mut bytes = ccache_prefix_before_address_count();
-    bytes.extend_from_slice(&i32::MAX.to_be_bytes());
-
-    let error = CCache::parse(&bytes).expect_err("impossible address count rejected");
-    #[cfg(target_pointer_width = "64")]
-    assert!(matches!(
-        error,
-        Error::Truncated {
-            offset: 71,
-            needed: 12_884_901_882,
-            remaining: 0,
-        }
-    ));
-    #[cfg(target_pointer_width = "32")]
-    assert!(matches!(error, Error::LengthOverflow));
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    clippy::unseparated_literal_suffix,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn rejects_impossible_auth_data_count() {
-    let mut bytes = ccache_prefix_before_address_count();
-    bytes.extend_from_slice(&0i32.to_be_bytes()); // no addresses
-    bytes.extend_from_slice(&i32::MAX.to_be_bytes());
-
-    let error = CCache::parse(&bytes).expect_err("impossible auth-data count rejected");
-    #[cfg(target_pointer_width = "64")]
-    assert!(matches!(
-        error,
-        Error::Truncated {
-            offset: 75,
-            needed: 12_884_901_882,
-            remaining: 0,
-        }
-    ));
-    #[cfg(target_pointer_width = "32")]
-    assert!(matches!(error, Error::LengthOverflow));
-}
-
-#[expect(
-    clippy::unseparated_literal_suffix,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 /// A v4 cache prefix up to a credential's address count: empty header,
 /// empty default/client/server principals, no key, zero times and flags.
 fn ccache_prefix_before_address_count() -> Vec<u8> {
     let mut bytes = vec![0x05, 0x04, 0x00, 0x00];
-    bytes.extend_from_slice(&[0u8; 12]); // default principal
-    bytes.extend_from_slice(&[0u8; 12]); // client principal
-    bytes.extend_from_slice(&[0u8; 12]); // server principal
+    bytes.extend_from_slice(&[0_u8; 12]); // default principal
+    bytes.extend_from_slice(&[0_u8; 12]); // client principal
+    bytes.extend_from_slice(&[0_u8; 12]); // server principal
     bytes.extend_from_slice(&[0, 0]); // key type
-    bytes.extend_from_slice(&[0u8; 4]); // key length
-    bytes.extend_from_slice(&[0u8; 16]); // times
+    bytes.extend_from_slice(&[0_u8; 4]); // key length
+    bytes.extend_from_slice(&[0_u8; 16]); // times
     bytes.push(0); // is_skey
-    bytes.extend_from_slice(&[0u8; 4]); // ticket flags
+    bytes.extend_from_slice(&[0_u8; 4]); // ticket flags
     bytes
 }
 

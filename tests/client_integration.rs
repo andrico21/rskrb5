@@ -96,7 +96,7 @@ use core::{error::Error, net::Ipv4Addr, time::Duration};
 use std::{
     fs,
     io::{Read, Write},
-    net::{TcpStream, ToSocketAddrs},
+    net::{TcpStream, ToSocketAddrs as _},
     path::PathBuf,
     process::{Command, Stdio},
     sync::Mutex,

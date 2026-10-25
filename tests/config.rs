@@ -1,5 +1,5 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
-use core::time::Duration;
+//! Configuration parsing, loading and realm resolution tests.
+use core::{error, time::Duration};
 use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -10,6 +10,9 @@ use rskrb5::config::{Config, Error, parse_duration};
 
 #[path = "support/env.rs"]
 mod env;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
 
 #[expect(
     clippy::needless_raw_strings,
@@ -240,98 +243,110 @@ fn loads_config_path_list_in_order() {
     );
 }
 
+/// Child-process tests of `KRB5_CONFIG` loading.
+#[cfg(test)]
 #[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn loads_config_path_list_from_env() {
-    const TEST_PATH: &str = "loads_config_path_list_from_env";
-    if !env::in_child(TEST_PATH) {
-        let paths =
-            std::env::join_paths([temp_file("load-env-first"), temp_file("load-env-second")])
-                .expect("config paths join");
-        env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(&paths))]);
-        return;
-    }
-    let paths = std::env::var_os("KRB5_CONFIG").expect("the parent test sets KRB5_CONFIG");
-    let [first, second]: [PathBuf; 2] = std::env::split_paths(&paths)
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("KRB5_CONFIG lists two paths");
-    std::fs::write(
-        &first,
-        r#"
+mod config_env {
+    use std::env::{join_paths, split_paths, var_os};
+
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[expect(
+        clippy::absolute_paths,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::needless_raw_strings,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that `KRB5_CONFIG` path lists load with the later file winning.
+    #[test]
+    fn loads_config_path_list_from_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "config_env::loads_config_path_list_from_env";
+        if !env::in_child(TEST_PATH) {
+            let paths = join_paths([temp_file("load-env-first"), temp_file("load-env-second")])
+                .map_err(|cause| format!("config paths join: {cause}"))?;
+            env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(&paths))]);
+            return Ok(());
+        }
+        let paths = var_os("KRB5_CONFIG").ok_or("the parent test sets KRB5_CONFIG")?;
+        let [first, second]: [PathBuf; 2] =
+            split_paths(&paths).collect::<Vec<_>>().try_into().map_err(
+                |listed: Vec<PathBuf>| format!("KRB5_CONFIG lists two paths: {}", listed.len()),
+            )?;
+        std::fs::write(
+            &first,
+            r#"
 [libdefaults]
  default_realm = FIRST.GOKRB5
 "#,
-    )
-    .expect("first config writes");
-    std::fs::write(
-        &second,
-        r#"
+        )
+        .map_err(|cause| format!("first config writes: {cause}"))?;
+        std::fs::write(
+            &second,
+            r#"
 [libdefaults]
  default_realm = SECOND.GOKRB5
 "#,
-    )
-    .expect("second config writes");
+        )
+        .map_err(|cause| format!("second config writes: {cause}"))?;
 
-    let config = Config::load_from_env().expect("config loads from KRB5_CONFIG");
-    let _ = std::fs::remove_file(&first);
-    let _ = std::fs::remove_file(&second);
+        let config = Config::load_from_env()
+            .map_err(|cause| format!("config loads from KRB5_CONFIG: {cause}"))?;
+        let _ = std::fs::remove_file(&first);
+        let _ = std::fs::remove_file(&second);
 
-    assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn load_default_prefers_krb5_config_env() {
-    const TEST_PATH: &str = "load_default_prefers_krb5_config_env";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_file("load-default-env");
-        env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(path.as_os_str()))]);
-        return;
+        assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
+        Ok(())
     }
-    let path =
-        PathBuf::from(std::env::var_os("KRB5_CONFIG").expect("the parent test sets KRB5_CONFIG"));
-    std::fs::write(
-        &path,
-        r#"
+
+    #[expect(
+        clippy::absolute_paths,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::needless_raw_strings,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that `load_default` and `load_default_or_parse` prefer `KRB5_CONFIG`.
+    #[test]
+    fn load_default_prefers_krb5_config_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "config_env::load_default_prefers_krb5_config_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_file("load-default-env");
+            env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(path.as_os_str()))]);
+            return Ok(());
+        }
+        let path = PathBuf::from(var_os("KRB5_CONFIG").ok_or("the parent test sets KRB5_CONFIG")?);
+        std::fs::write(
+            &path,
+            r#"
 [libdefaults]
  default_realm = ENV.GOKRB5
 "#,
-    )
-    .expect("env config writes");
+        )
+        .map_err(|cause| format!("env config writes: {cause}"))?;
 
-    let config = Config::load_default().expect("default config loads from env");
-    let fallback = Config::load_default_or_parse(
-        r#"
+        let config = Config::load_default()
+            .map_err(|cause| format!("default config loads from env: {cause}"))?;
+        let fallback = Config::load_default_or_parse(
+            r#"
 [libdefaults]
  default_realm = EMBEDDED.GOKRB5
 "#,
-    )
-    .expect("default-or-embedded config loads from env");
-    let _ = std::fs::remove_file(&path);
+        )
+        .map_err(|cause| format!("default-or-embedded config loads from env: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
 
-    assert_eq!(config.libdefaults.default_realm, "ENV.GOKRB5");
-    assert_eq!(fallback.libdefaults.default_realm, "ENV.GOKRB5");
+        assert_eq!(config.libdefaults.default_realm, "ENV.GOKRB5");
+        assert_eq!(fallback.libdefaults.default_realm, "ENV.GOKRB5");
+        Ok(())
+    }
 }
 
 #[expect(
@@ -352,23 +367,35 @@ fn rejects_empty_config_path_list() {
     ));
 }
 
+/// Child-process test of a missing `KRB5_CONFIG`.
+#[cfg(test)]
 #[expect(
-    clippy::expect_used,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn rejects_missing_config_env() {
-    const TEST_PATH: &str = "rejects_missing_config_env";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", None)]);
-        return;
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod config_env_missing {
+    use super::*;
+
+    #[expect(
+        clippy::expect_used,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that loading without `KRB5_CONFIG` reports the missing variable.
+    #[test]
+    fn rejects_missing_config_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "config_env_missing::rejects_missing_config_env";
+        if !env::in_child(TEST_PATH) {
+            env::try_run_in_child(TEST_PATH, &[("KRB5_CONFIG", None)])?;
+            return Ok(());
+        }
+        assert!(matches!(
+            Config::load_from_env().expect_err("missing KRB5_CONFIG rejected"),
+            Error::DefaultConfigName
+        ));
+        Ok(())
     }
-    assert!(matches!(
-        Config::load_from_env().expect_err("missing KRB5_CONFIG rejected"),
-        Error::DefaultConfigName
-    ));
 }
 
 #[expect(
@@ -631,148 +658,6 @@ fn resolve_realm_matches_gokrb5_specificity() {
     reason = "lint-migration: upstream baseline at ee9cb04"
 )]
 #[test]
-fn resolve_realm_folds_dns_case() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- default_realm = CLIENT.REALM
-
-[domain_realm]
- foo.example.com = PARTNER.REALM
- .example.com = SUFFIX.REALM
-"#,
-    )
-    .expect("config parses");
-
-    for spelling in [
-        "foo.example.com",
-        "FOO.EXAMPLE.COM",
-        "Foo.Example.com",
-        "FOO.EXAMPLE.COM.",
-    ] {
-        assert_eq!(
-            config.resolve_realm(spelling),
-            Some("PARTNER.REALM"),
-            "{spelling}"
-        );
-    }
-    for spelling in ["bar.example.com", "BAR.EXAMPLE.COM", "Bar.Example.com"] {
-        assert_eq!(
-            config.resolve_realm(spelling),
-            Some("SUFFIX.REALM"),
-            "{spelling}"
-        );
-    }
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn resolve_realm_applies_bare_domain_tags_to_subdomains() {
-    // MIT's own three-tag example; expected values match the MIT 1.22.1
-    // reference (`krb5_get_host_realm`, dns_lookup_realm=false).
-    let config = Config::parse(
-        r#"
-[libdefaults]
- default_realm = CLIENT.REALM
-
-[domain_realm]
- crash.mit.edu = TEST.ATHENA.MIT.EDU
- .dev.mit.edu = TEST.ATHENA.MIT.EDU
- mit.edu = ATHENA.MIT.EDU
-"#,
-    )
-    .expect("config parses");
-
-    assert_eq!(config.resolve_realm("mit.edu"), Some("ATHENA.MIT.EDU"));
-    assert_eq!(
-        config.resolve_realm("crash.mit.edu"),
-        Some("TEST.ATHENA.MIT.EDU")
-    );
-    assert_eq!(
-        config.resolve_realm("sub.crash.mit.edu"),
-        Some("TEST.ATHENA.MIT.EDU")
-    );
-    assert_eq!(config.resolve_realm("dev.mit.edu"), Some("ATHENA.MIT.EDU"));
-    assert_eq!(
-        config.resolve_realm("foo.dev.mit.edu"),
-        Some("TEST.ATHENA.MIT.EDU")
-    );
-    assert_eq!(
-        config.resolve_realm("a.b.dev.mit.edu"),
-        Some("TEST.ATHENA.MIT.EDU")
-    );
-    assert_eq!(config.resolve_realm("notmit.edu"), None);
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn resolve_realm_dot_tag_does_not_match_the_domain_itself() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- default_realm = CLIENT.REALM
-
-[domain_realm]
- .mit.edu = ATHENA.MIT.EDU
-"#,
-    )
-    .expect("config parses");
-
-    assert_eq!(config.resolve_realm("mit.edu"), None);
-    assert_eq!(
-        config.resolve_realm("crash.mit.edu"),
-        Some("ATHENA.MIT.EDU")
-    );
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn resolve_realm_prefers_dot_tag_over_bare_at_the_same_level() {
-    // Reference precedence: MIT resolves dev.mit.edu from the bare tag and
-    // x.dev.mit.edu from the leading-dot tag when both are declared.
-    let config = Config::parse(
-        r#"
-[libdefaults]
- default_realm = CLIENT.REALM
-
-[domain_realm]
- .dev.mit.edu = DOT.REALM
- dev.mit.edu = BARE.REALM
-"#,
-    )
-    .expect("config parses");
-
-    assert_eq!(config.resolve_realm("dev.mit.edu"), Some("BARE.REALM"));
-    assert_eq!(config.resolve_realm("x.dev.mit.edu"), Some("DOT.REALM"));
-    assert_eq!(config.resolve_realm("a.b.dev.mit.edu"), Some("DOT.REALM"));
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
 fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() {
     let config = Config::parse(
         r#"
@@ -961,510 +846,6 @@ fn config_json_matches_gokrb5_shape() {
     );
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::needless_raw_strings,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "serde")]
-#[test]
-fn permitted_enctypes_explicit_survives_a_serde_round_trip() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect("config parses");
-    assert!(config.libdefaults.permitted_enctypes_explicit);
-
-    let json = serde_json::to_string(&config.libdefaults).expect("libdefaults serialize");
-    let decoded: rskrb5::config::LibDefaults =
-        serde_json::from_str(&json).expect("libdefaults deserialize");
-
-    assert!(decoded.permitted_enctypes_explicit);
-    assert_eq!(decoded, config.libdefaults);
-    #[cfg(feature = "messages")]
-    assert_eq!(encoded_as_req_etypes(&decoded), vec![18]);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "serde")]
-#[test]
-fn implicit_permitted_enctypes_round_trip_stays_implicit() {
-    let config = Config::parse(KRB5_CONF).expect("config parses");
-    assert!(!config.libdefaults.permitted_enctypes_explicit);
-
-    let json = serde_json::to_string(&config.libdefaults).expect("libdefaults serialize");
-    let decoded: rskrb5::config::LibDefaults =
-        serde_json::from_str(&json).expect("libdefaults deserialize");
-
-    assert!(!decoded.permitted_enctypes_explicit);
-    assert_eq!(decoded, config.libdefaults);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::needless_raw_strings,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "serde")]
-#[test]
-fn libdefaults_json_without_the_explicit_field_deserializes_as_implicit() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect("config parses");
-    let mut value = serde_json::to_value(&config.libdefaults).expect("libdefaults serialize");
-    let removed = value
-        .as_object_mut()
-        .expect("libdefaults serialize as an object")
-        .remove("permitted_enctypes_explicit");
-    assert_eq!(removed, Some(serde_json::Value::Bool(true)));
-
-    let decoded: rskrb5::config::LibDefaults =
-        serde_json::from_value(value).expect("libdefaults deserialize");
-
-    assert!(!decoded.permitted_enctypes_explicit);
-    assert_eq!(decoded.permitted_enctype_ids, vec![18]);
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn explicit_tkt_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
-    let error = Config::parse(
-        r#"
-[libdefaults]
- default_tkt_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect_err("an explicit request list outside the allowlist is rejected");
-
-    assert!(
-        matches!(
-            &error,
-            Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
-                if enctype == "aes128-cts-hmac-sha1-96"
-        ),
-        "unexpected error: {error:?}"
-    );
-    let message = error.to_string();
-    assert!(message.contains("default_tkt_enctypes"), "{message}");
-    assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn explicit_tgs_enctypes_outside_permitted_fail_parsing_naming_the_enctype() {
-    let error = Config::parse(
-        r#"
-[libdefaults]
- default_tgs_enctypes = aes128-cts-hmac-sha1-96
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect_err("an explicit request list outside the allowlist is rejected");
-
-    assert!(
-        matches!(
-            &error,
-            Error::EnctypeNotPermitted { key: "default_tgs_enctypes", enctype }
-                if enctype == "aes128-cts-hmac-sha1-96"
-        ),
-        "unexpected error: {error:?}"
-    );
-    let message = error.to_string();
-    assert!(message.contains("default_tgs_enctypes"), "{message}");
-    assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn implicit_default_enctypes_are_filtered_to_permitted() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect("an implicit request list is not validated at parse time");
-
-    assert!(config.libdefaults.permitted_enctypes_explicit);
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18, 17, 23]);
-    #[cfg(feature = "messages")]
-    assert_eq!(encoded_as_req_etypes(&config.libdefaults), vec![18]);
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn explicit_tkt_list_in_an_earlier_libdefaults_section_is_still_validated() {
-    let error = Config::parse(
-        r#"
-[libdefaults]
- default_tkt_enctypes = aes128-cts-hmac-sha1-96
-
-[domain_realm]
- .test.gokrb5 = TEST.GOKRB5
-
-[libdefaults]
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect_err("the earlier explicit request list is validated");
-
-    assert!(
-        matches!(
-            &error,
-            Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
-                if enctype == "aes128-cts-hmac-sha1-96"
-        ),
-        "unexpected error: {error:?}"
-    );
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn a_later_section_can_repair_an_earlier_conflict() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- default_tkt_enctypes = aes128-cts-hmac-sha1-96
- permitted_enctypes = aes256-cts-hmac-sha1-96
-
-[libdefaults]
- default_tkt_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect("the final effective request list is permitted");
-
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18]);
-    #[cfg(feature = "messages")]
-    assert_eq!(encoded_as_req_etypes(&config.libdefaults), vec![18]);
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-/// Write `files` (name, body) into a fresh directory and return its path.
-fn include_fixture_dir(name: &str, files: &[(&str, &str)]) -> PathBuf {
-    let dir = temp_file(name);
-    std::fs::create_dir_all(&dir).expect("fixture directory is created");
-    for (file, body) in files {
-        std::fs::write(dir.join(file), body).expect("fixture file is written");
-    }
-    dir
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    clippy::unused_result_ok,
-    unused_results,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn explicit_tkt_list_in_an_included_file_is_validated_against_permitted() {
-    let dir = include_fixture_dir(
-        "include-enctype-reject",
-        &[(
-            "extra.conf",
-            "[libdefaults]\n default_tkt_enctypes = aes128-cts-hmac-sha1-96\n",
-        )],
-    );
-    let extra = dir.join("extra.conf");
-    let main = format!(
-        "[libdefaults]\n permitted_enctypes = aes256-cts-hmac-sha1-96\n\ninclude {}\n",
-        extra.display()
-    );
-    let main_path = dir.join("krb5.conf");
-    std::fs::write(&main_path, main).expect("main config is written");
-
-    let error = Config::load(&main_path)
-        .expect_err("an included explicit request list outside the allowlist is rejected");
-    std::fs::remove_dir_all(&dir).ok();
-
-    assert!(
-        matches!(
-            &error,
-            Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
-                if enctype == "aes128-cts-hmac-sha1-96"
-        ),
-        "unexpected error: {error:?}"
-    );
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    clippy::unused_result_ok,
-    unused_results,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn a_later_included_file_can_repair_an_earlier_conflict() {
-    let dir = include_fixture_dir(
-        "include-enctype-repair",
-        &[
-            (
-                "a.conf",
-                "[libdefaults]\n default_tkt_enctypes = aes128-cts-hmac-sha1-96\n",
-            ),
-            (
-                "b.conf",
-                "[libdefaults]\n default_tkt_enctypes = aes256-cts-hmac-sha1-96\n",
-            ),
-        ],
-    );
-    let main = format!(
-        "[libdefaults]\n permitted_enctypes = aes256-cts-hmac-sha1-96\n\ninclude {}\ninclude {}\n",
-        dir.join("a.conf").display(),
-        dir.join("b.conf").display()
-    );
-    let main_path = dir.join("krb5.conf");
-    std::fs::write(&main_path, main).expect("main config is written");
-
-    let loaded = Config::load(&main_path);
-    std::fs::remove_dir_all(&dir).ok();
-    let config = loaded.expect("the final effective request list is permitted");
-
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18]);
-}
-
 #[expect(
     clippy::expect_used,
     clippy::missing_panics_doc,
@@ -1509,121 +890,449 @@ fn temp_file(name: &str) -> PathBuf {
     ))
 }
 
+/// Fork-authored config tests: `[domain_realm]` precedence and case folding,
+/// the explicit `permitted_enctypes` flag and request-list validation.
+#[cfg(test)]
 #[expect(
-    clippy::expect_used,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn resolve_realm_rejects_bare_prefix_extension() {
-    let config = Config::parse(
-        r#"
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use std::fs;
+
+    use pretty_assertions::assert_eq;
+    #[cfg(feature = "messages")]
+    use rasn::der;
+    #[cfg(any(feature = "serde", feature = "messages"))]
+    use rskrb5::config::LibDefaults;
+    #[cfg(feature = "messages")]
+    use rskrb5::{
+        Principal,
+        client::{AsReqOptions, build_tgt_as_req},
+    };
+
+    use super::*;
+
+    /// Pins that `[domain_realm]` lookups fold the DNS case of the host name.
+    #[test]
+    fn resolve_realm_folds_dns_case() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ foo.example.com = PARTNER.REALM
+ .example.com = SUFFIX.REALM
+",
+        )
+        .map_err(|cause| format!("config parses: {cause}"))?;
+
+        for spelling in [
+            "foo.example.com",
+            "FOO.EXAMPLE.COM",
+            "Foo.Example.com",
+            "FOO.EXAMPLE.COM.",
+        ] {
+            assert_eq!(
+                config.resolve_realm(spelling),
+                Some("PARTNER.REALM"),
+                "{spelling}"
+            );
+        }
+        for spelling in ["bar.example.com", "BAR.EXAMPLE.COM", "Bar.Example.com"] {
+            assert_eq!(
+                config.resolve_realm(spelling),
+                Some("SUFFIX.REALM"),
+                "{spelling}"
+            );
+        }
+        Ok(())
+    }
+    /// Pins MIT's bare-tag precedence: a bare domain tag also covers its subdomains.
+    #[test]
+    fn resolve_realm_applies_bare_domain_tags_to_subdomains() -> Result<(), TestError> {
+        // MIT's own three-tag example; expected values match the MIT 1.22.1
+        // reference (`krb5_get_host_realm`, dns_lookup_realm=false).
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ crash.mit.edu = TEST.ATHENA.MIT.EDU
+ .dev.mit.edu = TEST.ATHENA.MIT.EDU
+ mit.edu = ATHENA.MIT.EDU
+",
+        )
+        .map_err(|cause| format!("config parses: {cause}"))?;
+
+        assert_eq!(config.resolve_realm("mit.edu"), Some("ATHENA.MIT.EDU"));
+        assert_eq!(
+            config.resolve_realm("crash.mit.edu"),
+            Some("TEST.ATHENA.MIT.EDU")
+        );
+        assert_eq!(
+            config.resolve_realm("sub.crash.mit.edu"),
+            Some("TEST.ATHENA.MIT.EDU")
+        );
+        assert_eq!(config.resolve_realm("dev.mit.edu"), Some("ATHENA.MIT.EDU"));
+        assert_eq!(
+            config.resolve_realm("foo.dev.mit.edu"),
+            Some("TEST.ATHENA.MIT.EDU")
+        );
+        assert_eq!(
+            config.resolve_realm("a.b.dev.mit.edu"),
+            Some("TEST.ATHENA.MIT.EDU")
+        );
+        assert_eq!(config.resolve_realm("notmit.edu"), None);
+        Ok(())
+    }
+    /// Pins that a leading-dot tag matches subdomains but not the domain itself.
+    #[test]
+    fn resolve_realm_dot_tag_does_not_match_the_domain_itself() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ .mit.edu = ATHENA.MIT.EDU
+",
+        )
+        .map_err(|cause| format!("config parses: {cause}"))?;
+
+        assert_eq!(config.resolve_realm("mit.edu"), None);
+        assert_eq!(
+            config.resolve_realm("crash.mit.edu"),
+            Some("ATHENA.MIT.EDU")
+        );
+        Ok(())
+    }
+    /// Pins that a leading-dot tag wins over a bare tag for subdomains at the same level.
+    #[test]
+    fn resolve_realm_prefers_dot_tag_over_bare_at_the_same_level() -> Result<(), TestError> {
+        // Reference precedence: MIT resolves dev.mit.edu from the bare tag and
+        // x.dev.mit.edu from the leading-dot tag when both are declared.
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ .dev.mit.edu = DOT.REALM
+ dev.mit.edu = BARE.REALM
+",
+        )
+        .map_err(|cause| format!("config parses: {cause}"))?;
+
+        assert_eq!(config.resolve_realm("dev.mit.edu"), Some("BARE.REALM"));
+        assert_eq!(config.resolve_realm("x.dev.mit.edu"), Some("DOT.REALM"));
+        assert_eq!(config.resolve_realm("a.b.dev.mit.edu"), Some("DOT.REALM"));
+        Ok(())
+    }
+    /// Pins that the explicit `permitted_enctypes` flag survives a serde round trip.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn permitted_enctypes_explicit_survives_a_serde_round_trip() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        )
+        .map_err(|cause| format!("config parses: {cause}"))?;
+        assert!(config.libdefaults.permitted_enctypes_explicit);
+
+        let json = serde_json::to_string(&config.libdefaults)
+            .map_err(|cause| format!("libdefaults serialize: {cause}"))?;
+        let decoded: LibDefaults = serde_json::from_str(&json)
+            .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
+
+        assert!(decoded.permitted_enctypes_explicit);
+        assert_eq!(decoded, config.libdefaults);
+        #[cfg(feature = "messages")]
+        assert_eq!(encoded_as_req_etypes(&decoded)?, vec![18_i32]);
+        Ok(())
+    }
+    /// Pins that an implicit permitted list stays implicit across a serde round trip.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn implicit_permitted_enctypes_round_trip_stays_implicit() -> Result<(), TestError> {
+        let config = Config::parse(KRB5_CONF).map_err(|cause| format!("config parses: {cause}"))?;
+        assert!(!config.libdefaults.permitted_enctypes_explicit);
+
+        let json = serde_json::to_string(&config.libdefaults)
+            .map_err(|cause| format!("libdefaults serialize: {cause}"))?;
+        let decoded: LibDefaults = serde_json::from_str(&json)
+            .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
+
+        assert!(!decoded.permitted_enctypes_explicit);
+        assert_eq!(decoded, config.libdefaults);
+        Ok(())
+    }
+    /// Pins that JSON without the explicit flag deserializes as an implicit permitted list.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn libdefaults_json_without_the_explicit_field_deserializes_as_implicit()
+    -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        )
+        .map_err(|cause| format!("config parses: {cause}"))?;
+        let mut value = serde_json::to_value(&config.libdefaults)
+            .map_err(|cause| format!("libdefaults serialize: {cause}"))?;
+        let removed = value
+            .as_object_mut()
+            .ok_or("libdefaults serialize as an object")?
+            .remove("permitted_enctypes_explicit");
+        assert_eq!(removed, Some(serde_json::Value::Bool(true)));
+
+        let decoded: LibDefaults = serde_json::from_value(value)
+            .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
+
+        assert!(!decoded.permitted_enctypes_explicit);
+        assert_eq!(decoded.permitted_enctype_ids, vec![18_i32]);
+        Ok(())
+    }
+    /// Pins that an explicit `default_tkt_enctypes` entry outside the permitted list fails parsing.
+    #[test]
+    fn explicit_tkt_enctypes_outside_permitted_fail_parsing_naming_the_enctype()
+    -> Result<(), TestError> {
+        let error = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        )
+        .err()
+        .ok_or("an explicit request list outside the allowlist is rejected")?;
+
+        assert!(
+            matches!(
+                &error,
+                Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                    if enctype == "aes128-cts-hmac-sha1-96"
+            ),
+            "unexpected error: {error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains("default_tkt_enctypes"), "{message}");
+        assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
+        Ok(())
+    }
+    /// Pins that an explicit `default_tgs_enctypes` entry outside the permitted list fails parsing.
+    #[test]
+    fn explicit_tgs_enctypes_outside_permitted_fail_parsing_naming_the_enctype()
+    -> Result<(), TestError> {
+        let error = Config::parse(
+            "
+[libdefaults]
+ default_tgs_enctypes = aes128-cts-hmac-sha1-96
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        )
+        .err()
+        .ok_or("an explicit request list outside the allowlist is rejected")?;
+
+        assert!(
+            matches!(
+                &error,
+                Error::EnctypeNotPermitted { key: "default_tgs_enctypes", enctype }
+                    if enctype == "aes128-cts-hmac-sha1-96"
+            ),
+            "unexpected error: {error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains("default_tgs_enctypes"), "{message}");
+        assert!(message.contains("aes128-cts-hmac-sha1-96"), "{message}");
+        Ok(())
+    }
+    /// Pins that the implicit default request list is filtered to the permitted list.
+    #[test]
+    fn implicit_default_enctypes_are_filtered_to_permitted() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        )
+        .map_err(|cause| {
+            format!("an implicit request list is not validated at parse time: {cause}")
+        })?;
+
+        assert!(config.libdefaults.permitted_enctypes_explicit);
+        assert_eq!(
+            config.libdefaults.default_tkt_enctype_ids,
+            vec![18_i32, 17_i32, 23_i32]
+        );
+        #[cfg(feature = "messages")]
+        assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
+        Ok(())
+    }
+    /// Pins that an explicit request list in an earlier `[libdefaults]` section is validated.
+    #[test]
+    fn explicit_tkt_list_in_an_earlier_libdefaults_section_is_still_validated()
+    -> Result<(), TestError> {
+        let error = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha1-96
+
+[domain_realm]
+ .test.gokrb5 = TEST.GOKRB5
+
+[libdefaults]
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        )
+        .err()
+        .ok_or("the earlier explicit request list is validated")?;
+
+        assert!(
+            matches!(
+                &error,
+                Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                    if enctype == "aes128-cts-hmac-sha1-96"
+            ),
+            "unexpected error: {error:?}"
+        );
+        Ok(())
+    }
+    /// Pins that a later `[libdefaults]` section can repair an earlier conflict.
+    #[test]
+    fn a_later_section_can_repair_an_earlier_conflict() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha1-96
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96
+",
+        )
+        .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
+
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18_i32]);
+        #[cfg(feature = "messages")]
+        assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
+        Ok(())
+    }
+    /// Pins that an explicit request list from an included file is validated.
+    #[test]
+    fn explicit_tkt_list_in_an_included_file_is_validated_against_permitted()
+    -> Result<(), TestError> {
+        let dir = include_fixture_dir(
+            "include-enctype-reject",
+            &[(
+                "extra.conf",
+                "[libdefaults]\n default_tkt_enctypes = aes128-cts-hmac-sha1-96\n",
+            )],
+        )?;
+        let extra = dir.join("extra.conf");
+        let main = format!(
+            "[libdefaults]\n permitted_enctypes = aes256-cts-hmac-sha1-96\n\ninclude {}\n",
+            extra.display()
+        );
+        let main_path = dir.join("krb5.conf");
+        fs::write(&main_path, main).map_err(|cause| format!("main config is written: {cause}"))?;
+
+        let error = Config::load(&main_path)
+            .err()
+            .ok_or("an included explicit request list outside the allowlist is rejected")?;
+        fs::remove_dir_all(&dir)?;
+
+        assert!(
+            matches!(
+                &error,
+                Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                    if enctype == "aes128-cts-hmac-sha1-96"
+            ),
+            "unexpected error: {error:?}"
+        );
+        Ok(())
+    }
+    /// Pins that a later included file can repair an earlier conflict.
+    #[test]
+    fn a_later_included_file_can_repair_an_earlier_conflict() -> Result<(), TestError> {
+        let dir = include_fixture_dir(
+            "include-enctype-repair",
+            &[
+                (
+                    "a.conf",
+                    "[libdefaults]\n default_tkt_enctypes = aes128-cts-hmac-sha1-96\n",
+                ),
+                (
+                    "b.conf",
+                    "[libdefaults]\n default_tkt_enctypes = aes256-cts-hmac-sha1-96\n",
+                ),
+            ],
+        )?;
+        let main = format!(
+            "[libdefaults]\n permitted_enctypes = aes256-cts-hmac-sha1-96\n\ninclude {}\ninclude {}\n",
+            dir.join("a.conf").display(),
+            dir.join("b.conf").display()
+        );
+        let main_path = dir.join("krb5.conf");
+        fs::write(&main_path, main).map_err(|cause| format!("main config is written: {cause}"))?;
+
+        let loaded = Config::load(&main_path);
+        fs::remove_dir_all(&dir)?;
+        let config = loaded
+            .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
+
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18_i32]);
+        Ok(())
+    }
+    /// Pins that a bare tag does not match a host that merely ends with its text.
+    #[test]
+    fn resolve_realm_rejects_bare_prefix_extension() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
 [libdefaults]
  default_realm = CLIENT.REALM
 
 [domain_realm]
  mit.edu = ATHENA.MIT.EDU
-"#,
-    )
-    .expect("config parses");
-
-    assert_eq!(config.resolve_realm("notmit.edu"), None);
-    assert_eq!(config.resolve_realm("sub.notmit.edu"), None);
-    assert_eq!(config.resolve_realm("mit.edu"), Some("ATHENA.MIT.EDU"));
-    assert_eq!(config.resolve_realm("sub.mit.edu"), Some("ATHENA.MIT.EDU"));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+",
         )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::arithmetic_side_effects,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "messages")]
-fn encoded_as_req_etypes(defaults: &rskrb5::config::LibDefaults) -> Vec<i32> {
-    let options = rskrb5::client::AsReqOptions::from_libdefaults(
-        UNIX_EPOCH + Duration::from_secs(1_893_553_447),
-        0x1122_3344,
-        defaults,
-    );
-    let request = rskrb5::client::build_tgt_as_req(
-        rskrb5::Principal::user("TEST.GOKRB5", "testuser1"),
-        options,
-    )
-    .expect("AS-REQ builds");
-    let decoded: rasn_kerberos::AsReq = rasn::der::decode(&request.der).expect("AS-REQ decodes");
-    decoded.0.req_body.etype
+        .map_err(|cause| format!("config parses: {cause}"))?;
+
+        assert_eq!(config.resolve_realm("notmit.edu"), None);
+        assert_eq!(config.resolve_realm("sub.notmit.edu"), None);
+        assert_eq!(config.resolve_realm("mit.edu"), Some("ATHENA.MIT.EDU"));
+        assert_eq!(config.resolve_realm("sub.mit.edu"), Some("ATHENA.MIT.EDU"));
+        Ok(())
+    }
+    /// Write `files` (name, body) into a fresh directory and return its path.
+    fn include_fixture_dir(name: &str, files: &[(&str, &str)]) -> Result<PathBuf, TestError> {
+        let dir = temp_file(name);
+        fs::create_dir_all(&dir)
+            .map_err(|cause| format!("fixture directory is created: {cause}"))?;
+        for (file, body) in files {
+            fs::write(dir.join(file), body)
+                .map_err(|cause| format!("fixture file is written: {cause}"))?;
+        }
+        Ok(dir)
+    }
+    /// Encodes an AS-REQ built from `defaults` and returns its decoded etype list.
+    #[cfg(feature = "messages")]
+    fn encoded_as_req_etypes(defaults: &LibDefaults) -> Result<Vec<i32>, TestError> {
+        let now = UNIX_EPOCH
+            .checked_add(Duration::from_secs(1_893_553_447))
+            .ok_or("the fixed request time fits in SystemTime")?;
+        let options = AsReqOptions::from_libdefaults(now, 0x1122_3344, defaults);
+        let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+            .map_err(|cause| format!("AS-REQ builds: {cause}"))?;
+        let decoded: rasn_kerberos::AsReq =
+            der::decode(&request.der).map_err(|cause| format!("AS-REQ decodes: {cause}"))?;
+        Ok(decoded.0.req_body.etype)
+    }
 }
