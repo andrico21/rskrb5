@@ -12,8 +12,10 @@ name: CI
 #
 # Toolchains (core Section 12 Version Policy). Rust jobs run on floating
 # `stable` (never pinned, no `rust-toolchain.toml`). The dated
-# `nightly-2026-10-03` (rmcp-server-kit's pin) is used only for rustfmt and
-# rustdoc, and `1.99.0` only for the MSRV build.
+# `nightly-2026-10-03` (rmcp-server-kit's pin) is used only for rustfmt,
+# rustdoc, clippy on the fuzz crate (`fork-lines`, which also uses its
+# rustfmt for the upstream reference tree) and the advisory `fuzz` job;
+# `1.99.0` only for the MSRV build.
 #
 # Baseline and ratchet. Upstream diagnostics the profile names are baselined
 # only through generated, item-level `lint-migration:` expect attributes,
@@ -28,7 +30,8 @@ name: CI
 # Vendored guidelines. `docs/rust-guidelines/` is checked against its
 # SHA256SUMS in `docs-validate`; update it only by re-vendoring.
 #
-# Blocking: every lint, test, doc, MSRV, consumer, supply-chain and gate job.
+# Blocking: every lint, test, feature-set, README-command, doc, MSRV,
+# consumer, supply-chain and gate job.
 # Advisory (never a merge gate, per core Section 12 "Recommended"): `geiger`,
 # `rustdoc-nightly-canary`, and the scheduled `mutants` and `fuzz` jobs.
 # GitHub runs scheduled workflows from the default branch; dispatch the
@@ -112,6 +115,45 @@ jobs:
       - name: Test (${{ matrix.features }})
         run: cargo test ${{ matrix.features }}
 
+  lib-feature-sets:
+    name: lib-feature-sets
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Feature sets outside K1-K7 that a path-dependency consumer or the
+        # README can select. `cargo check` keeps the committed
+        # `build.warnings = "deny"`, so an import or helper that is only used
+        # under another feature fails here.
+        args:
+          - "--lib --no-default-features --features messages"
+          - "--lib --no-default-features --features spnego"
+          - "--lib --no-default-features --features http"
+          - "--lib --no-default-features --features evaluation"
+          - "--no-default-features --features evaluation --bin rskrb5-compat-report"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Check (${{ matrix.args }})
+        run: cargo check ${{ matrix.args }}
+
+  readme-commands:
+    name: readme-commands
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # README "Examples": the Axum example with only the `http` feature.
+      - name: Build the axum-negotiate example (--no-default-features --features http)
+        run: cargo build --example axum-negotiate --features http --no-default-features
+      # README "Compatibility report", as the prek `compat-report` hook runs it.
+      - name: The compatibility report is current
+        run: |
+          cargo run --quiet --no-default-features --features evaluation --bin rskrb5-compat-report > "$RUNNER_TEMP/compatibility-report.md"
+          diff -u docs/compatibility-report.md "$RUNNER_TEMP/compatibility-report.md"
+
   test:
     name: test
     strategy:
@@ -151,7 +193,16 @@ jobs:
         with:
           targets: i686-unknown-linux-gnu
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo check --all-features --target i686-unknown-linux-gnu
+      # The 32-bit C runtime and libgcc, needed to link and run i686 test
+      # binaries on the x86_64 runner.
+      - name: Install gcc-multilib
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+      - name: Check (--all-features, i686)
+        run: cargo check --all-features --target i686-unknown-linux-gnu
+      # The ccache count bounds have `target_pointer_width = "32"` arms
+      # (`Error::LengthOverflow`) that only run on a 32-bit target.
+      - name: ccache tests (--all-features, i686)
+        run: cargo test --all-features --target i686-unknown-linux-gnu --test ccache
 
   docs:
     name: docs
