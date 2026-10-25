@@ -107,7 +107,7 @@ burn-down in 2. Closed items stay listed
 with the commits that closed them, until the release line is published.
 
 1. **Closed: the profile is adopted on `release/0.3.0`.** `473ca10` added the `[lints]` tables, `.cargo/config.toml` and the baseline; `8eb3977` added `rustfmt.toml`; `62191fe` added `clippy.toml`. `fix/*` branches stay without the profile (rule 6).
-2. **Upstream-origin lint baseline.** `scripts/lint-ratchet/baseline.toml` holds 6,520 `lint-migration:` entries (`baseline_gate.py --report`: `current 6520 / base 7396 entries`), down from 7,396 at adoption. Task: burn the baseline down file by file; it never grows outside a toolchain rebaseline.
+2. **Upstream-origin lint baseline.** `scripts/lint-ratchet/baseline.toml` holds 6,514 `lint-migration:` entries (`baseline_gate.py --report`: `current 6514 / base 7396 entries`), down from 7,396 at adoption. Task: burn the baseline down file by file; it never grows outside a toolchain rebaseline.
 3. **Closed: CI meets rule 9 on `release/0.3.0`** (`7e05965`). The jobs are listed under "The project" above.
 4. **Closed: no `unsafe` in test helpers** (rule 5). `b61c3f2` replaced the environment helpers with a child test process.
 5. **Upstream prose-rule debt.** Upstream async functions (91 at `release/0.2.2`) lack cancel-safety annotations, and upstream tests lack docs and `Result` returns. The prose gate enforces only fork-touched items. Task: burn it down with upstream; issue #8 covers `change_password*`.
