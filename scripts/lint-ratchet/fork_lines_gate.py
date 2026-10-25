@@ -19,6 +19,7 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
+import facade_gate
 import fork_reference
 import provenance
 
@@ -175,6 +176,7 @@ def compare_trees(root: Path, reference: Path, head: Path) -> list[Diagnostic]:
 
 
 def self_test() -> int:
+    facade_gate.self_test()
     fork_reference.self_test()
     with TemporaryDirectory() as directory:
         root = Path(directory)
@@ -237,6 +239,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_test:
         return self_test()
     try:
+        facade_hits = facade_gate.report(args.root, args.paths)
+        selected_rust = any(
+            common.selected(path.relative_to(args.root).as_posix(), args.paths)
+            for path in common.iter_rust_files(args.root)
+        )
+        if facade_hits or not selected_rust:
+            for diagnostic in facade_hits:
+                print(
+                    f"{diagnostic.file}:{diagnostic.line} {diagnostic.lint} [root facade only]"
+                )
+            print(f"fork_lines_gate: {len(facade_hits)} violations (source checks)")
+            return int(args.enforce and bool(facade_hits))
         with TemporaryDirectory(prefix="rskrb5-fork-gate-") as directory:
             ref, head = Path(directory) / "reference", Path(directory) / "head"
             common.git(args.root, "worktree", "add", "--detach", str(ref), "6f4abc9")
