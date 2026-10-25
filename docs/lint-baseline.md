@@ -173,7 +173,14 @@ mirrors the fast ones as pre-push hooks.
    because fork lines changed an upstream item (for example `too_many_lines`).
 6. **Fuzz leg:** the fuzz crate is a separate workspace, so the profile is
    passed as `-D`/`-F`/`-A` flags and every diagnostic in
-   `fuzz/fuzz_targets/` is a fork violation.
+    `fuzz/fuzz_targets/` is a fork violation.
+7. **Root facade only:** before Cargo runs, `facade_gate.py` rejects every
+   fork-origin `pub use` or `pub(...) use` outside `src/lib.rs`'s own root
+   scope, including cfg-disabled code, nested modules in `src/lib.rs`, and
+   fork edits to multiline re-exports. Comments and strings are ignored;
+   inherited imports are mapped against nightly-formatted upstream source.
+   This source check enforces the former O-2 advisory despite Clippy's
+   crate-wide facade expectation.
 
 `--paths` limits the report to some files. `--report` prints and exits 0;
 `--enforce` exits 1 on any violation.
@@ -185,18 +192,27 @@ gate must still treat them as upstream, or every inherited diagnostic on them
 would turn into a fork violation. [`provenance.py`](../scripts/lint-ratchet/provenance.py)
 handles this with a strict rule:
 
-- Only commits in `6f4abc9..HEAD` whose subject starts with `lint: rewrite `
-  carry upstream credit across an edit. Today there are nine: `5712724`,
+- Only the explicitly reviewed full SHAs in `REVIEWED_REWRITES` in
+  `provenance.py`, reachable in `6f4abc9..HEAD`, carry upstream credit across
+  an edit. There are nine: `5712724`,
   `52b8cdc`, `1cf7b68`, `4d3d3a2`, `20f6404`, `2091037`, `0a22457`,
   `7d8926e` and `cd371cc`.
-- Credit passes only through `replace` hunks of those commits, matched token
-  by token (ignoring `std`, `core` and `alloc`). Lines a rewrite commit
-  inserts get no credit.
+- Credit passes only through `replace` hunks of those commits, matched by
+  shared code identifiers at least three characters long, excluding Rust
+  keywords and `std`, `core`, `alloc`. Comments and string literals cannot
+  supply matching tokens. Sharing only `let`, `fn` or a short name gives no
+  credit. Lines a rewrite commit inserts get no credit.
 - `lint: bring fork-authored ...` commits are never treated as rewrites.
 
-So a future authorized rewrite of upstream lines must be its own commit with a
-`lint: rewrite ` subject, and must not carry fork changes. Don't use that
-subject for anything else. Moved helper paths (`common::x` becoming
+The ninth SHA, `cd371cc`, was reviewed as the (f)/(n)/(o) client-test Result
+conversion and shadow rename described below; it is not an implicit extension
+of the original eight import/derived-item rewrites. A future authorized rewrite
+must be isolated from fork changes, reviewed against its parent, and then have
+its full SHA added to `REVIEWED_REWRITES` in an explicit reviewed edit with
+fixtures. A `lint: rewrite ` subject alone grants nothing. Later fork edits
+lose credit, and even a credited line must have the same lint, configuration
+and compiler mode as the reference to suppress a diagnostic.
+Moved helper paths (`common::x` becoming
 `<topic>::x`) are normalized in code only, so string literals stay significant.
 
 ### Prose gate
@@ -212,6 +228,15 @@ fork line under the mapping above. A generated baseline attribute never makes
 an item fork-touched. `test-result` requires a `Result` return only when the
 test body has a propagation site; assertions and known infallible calls don't
 count ([`prose_infallible.py`](../scripts/lint-ratchet/prose_infallible.py)).
+
+This no-propagation/infallible exemption deliberately relaxes the blanket
+`Result`-returning-test requirement at core line 1938 for fork-authored tests
+too, not just fork-touched upstream tests. Adding an unused `Ok(())` wrapper
+where there is nothing to propagate would trigger `clippy::unnecessary_wraps`.
+Assertions (including error assertions) and recognized infallible construction
+or ownership conversions therefore do not require `Result`; unknown calls,
+fallible calls nested inside conversions, `?`, `expect` and `unwrap` outside
+assertions still require it. Test docs and the other prose checks still apply.
 
 ## Authorized upstream-line rewrites and exceptions
 
@@ -252,7 +277,11 @@ needed, and added `extern crate alloc;` to crate roots that need it.
 The same commit added `#![expect(clippy::pub_use, reason = "public facade")]`
 to `src/lib.rs`, the core-sanctioned reason for a genuine facade module (core
 Section 9; rmcp-server-kit uses it in `src/lib.rs` and `src/secret.rs`). See
-the O-2 advisory below for what this masks.
+the enforced root-facade source check above: this expectation covers the whole
+crate, not only root re-exports. Seven upstream non-root sites are covered by
+it instead of item-level baseline entries: `src/client.rs` (three grouped
+sites after rustfmt), `src/spnego.rs`, `src/kadmin.rs`, `src/krb_error.rs`, and
+`src/evaluation/mod.rs` (one each). New fork non-root re-exports are rejected.
 
 ### (i) The single deliberate exception without a PR number
 
@@ -301,11 +330,12 @@ item, never a wider or file-level expectation. Each rewrite is its own
 | `0a22457` | `ProbeOutcome`'s `Display` impl header names `core::fmt::Display`. |
 | `7d8926e` | The HTTP test alias `MutualSendResult` uses `core::result::Result`. |
 
-### Recorded upstream-line edits of the fork-code pass
+### Recorded upstream-line edits of the fork-code pass (p)
 
 Todos 17 and 18 edited a few upstream lines whose diagnostics fire only
-because of release-line changes. The orchestrator accepted them as part of the
-(h), (j) and (k) classes:
+because of release-line changes. Exception **(p)**, user-acknowledged on
+2026-10-25 when authorizing the final review fixes, explicitly records these
+behavior-preserving classes under the same principle as (j)/(k):
 
 - `src/client.rs` (13 lines) and `src/client/kpasswd.rs` (13 lines):
   `crate::spnego::`, `crate::messages::`, `crate::keytab::` and
@@ -316,8 +346,10 @@ because of release-line changes. The orchestrator accepted them as part of the
   `Duration::from_hours(24)`.
 - `src/ccache.rs`: `std::io::ErrorKind` to `io::ErrorKind`.
 - `src/config.rs`: the `resolve_realm` parameter renamed from `domain_name` to
-  `dns_name` (clears a `shadow_*` lint in the fork body; callers are
-  unaffected), and `ticket_lifetime` written as `Duration::from_hours(24)`.
+   `dns_name` (clears a `shadow_*` lint in the fork body; callers are
+   source-compatible), plus `#[inline]` and `#[must_use]` on that public
+   function; ignoring its return value can now warn under strict lints.
+   `ticket_lifetime` is written as `Duration::from_hours(24)`.
 - `src/service.rs`: `DEFAULT_MAX_CLOCK_SKEW` written as
   `Duration::from_mins(5)`.
 
@@ -465,18 +497,14 @@ with `test code is not rendered API documentation`, and
 
 ## Advisories
 
-- **O-2, the crate-root facade masks `pub_use` crate-wide.** The inner
-  `#![expect(clippy::pub_use, reason = "public facade")]` in `src/lib.rs`
-  covers every `pub use` in the crate, not just the root re-exports. A new
-  fork `pub use` anywhere therefore passes Clippy and the fork-lines gate.
-  Review every fork `pub use` addition by hand.
 - **O-7, predicates are exact feature sets.** Baseline predicates name every
   feature as on or off for K1 to K7. A feature combination outside the matrix
   (for example `--no-default-features --features messages`, or
   `--features serde`) can leave expectations unfulfilled or miss some, and
   fail a strict `clippy -D warnings`. Only K1 to K7 are supported under the
-  strict profile. Several `--no-default-features` combinations don't compile
-  their tests at all.
+  strict profile. Path-dependency consumers compile without Cargo's registry
+  lint cap and must use one of K1 to K7, not arbitrary subsets. Several
+  `--no-default-features` combinations don't compile their tests at all.
 - **FULL-TEST counts 32 `test result: ok` lines.** The compatibility report
   binary has no tests and is `test = false` (core "Binaries"), so the threshold
   is 32, not the pre-profile 33. No test was removed. CI's `test` job checks

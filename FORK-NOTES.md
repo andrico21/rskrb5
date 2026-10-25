@@ -102,7 +102,20 @@ on these APIs (project overlay deviation 6):
   is `#[non_exhaustive]`, and the two `build_tgs_req_for_realm_with_*subkey`
   functions take a generic `R: Into<String>` realm instead of
   `impl Into<String>`. Ordinary calls compile unchanged; a turbofish now sees
-  the type parameter.
+   the type parameter.
+- **Authorized upstream-line lint rewrites (exception (p)):**
+  `DEFAULT_TICKET_LIFETIME` (`src/client.rs`) and `ticket_lifetime`
+  (`src/config.rs`) use `Duration::from_hours(24)`;
+  `DEFAULT_MAX_CLOCK_SKEW` (`src/service.rs`) uses `Duration::from_mins(5)`.
+  `keytab::Error::NoMatchingKey` patterns use explicit `field: _` bindings;
+  redundant qualification prefixes are dropped in `src/client.rs` and
+  `src/client/kpasswd.rs` (13 upstream lines each), and `std::io::ErrorKind`
+  becomes `io::ErrorKind` in `src/client.rs` and `src/ccache.rs`.
+  `Config::resolve_realm` gains `#[must_use]` and `#[inline]`, and its
+  parameter is renamed `domain_name` to `dns_name`. The rename is
+  source-compatible for callers; discarding the return value may now warn
+  (or fail with warnings denied). These rewrites preserve runtime behavior;
+  the exact authorization record is in `docs/lint-baseline.md`.
 - **Behaviour changes:**
   - a config whose explicit `default_tkt_enctypes` or `default_tgs_enctypes`
     names an enctype outside an explicit `permitted_enctypes` fails to parse
