@@ -189,6 +189,9 @@ const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &["C:\\ProgramData\\MIT\\Kerberos
 #[cfg(not(any(target_family = "unix", target_family = "windows")))]
 const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &[];
 
+// gokrb5 also lists des3-cbc-sha1 here, as its unimplemented etype 7. MIT
+// spells enctype 16 that way, so keeping the name would add DES3 to every
+// default request list.
 #[cfg_attr(
     any(
         all(
@@ -277,7 +280,6 @@ const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &[];
 const DEFAULT_ENCTYPES: &[&str] = &[
     "aes256-cts-hmac-sha1-96",
     "aes128-cts-hmac-sha1-96",
-    "des3-cbc-sha1",
     "arcfour-hmac-md5",
     "camellia256-cts-cmac",
     "camellia128-cts-cmac",
@@ -2360,6 +2362,10 @@ impl Config {
     /// outside an explicit `permitted_enctypes` allowlist. The check runs once,
     /// on the final values after every `[libdefaults]` section of the expanded
     /// input (included files included) is applied.
+    ///
+    /// Fails with [`Error::NoPermittedEnctypes`] when an explicit
+    /// `permitted_enctypes` names no supported enctype, for example only
+    /// unsupported names or only weak ones without `allow_weak_crypto`.
     pub fn parse(input: &str) -> Result<Self, Error> {
         Self::parse_with(input, Self::new)
     }
@@ -3679,6 +3685,7 @@ pub struct LibDefaults {
     /// Code that builds `LibDefaults` programmatically (a struct literal or
     /// `Default`) and wants the allowlist enforced must set this flag to
     /// `true` together with `permitted_enctypes` / `permitted_enctype_ids`.
+    /// With the flag set, an empty `permitted_enctype_ids` permits no enctype.
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: bool,
     /// Preferred preauthentication type IDs.
@@ -4208,13 +4215,23 @@ impl LibDefaults {
     /// not checked here; `AsReqOptions::from_libdefaults` and
     /// `TgsReqOptions::from_libdefaults` narrow them to the allowlist.
     ///
+    /// An explicit allowlist without any supported enctype is rejected as a
+    /// whole: treating it as "no policy" would permit every enctype.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::EnctypeNotPermitted`] naming the first explicit request
-    /// list and enctype outside the allowlist.
+    /// Returns [`Error::NoPermittedEnctypes`] when the explicit allowlist
+    /// resolves to no supported enctype, and [`Error::EnctypeNotPermitted`]
+    /// naming the first explicit request list and enctype outside the
+    /// allowlist.
     fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
-        if !self.permitted_enctypes_explicit || self.permitted_enctype_ids.is_empty() {
+        if !self.permitted_enctypes_explicit {
             return Ok(());
+        }
+        if self.permitted_enctype_ids.is_empty() {
+            return Err(Error::NoPermittedEnctypes {
+                names: self.permitted_enctypes.clone(),
+            });
         }
         let request_lists = [
             (
@@ -5540,6 +5557,15 @@ pub enum Error {
         key: &'static str,
         /// The configured enctype name.
         enctype: String,
+    },
+    /// An explicit `permitted_enctypes` allowlist names no supported enctype.
+    #[error(
+        "[libdefaults] permitted_enctypes = {} names no supported enctype",
+        names.join(" ")
+    )]
+    NoPermittedEnctypes {
+        /// The configured enctype names.
+        names: Vec<String>,
     },
 }
 
@@ -11893,7 +11919,7 @@ fn supported_enctype_id(value: &str) -> Option<i32> {
         "aes256-cts-hmac-sha1-96" | "aes256-cts" | "aes256-sha1" => 18,
         "aes128-cts-hmac-sha256-128" | "aes128-sha2" => 19,
         "aes256-cts-hmac-sha384-192" | "aes256-sha2" => 20,
-        "des3-cbc-sha1-kd" => 16,
+        "des3-cbc-sha1" | "des3-hmac-sha1" | "des3-cbc-sha1-kd" => 16,
         "arcfour-hmac" | "rc4-hmac" | "arcfour-hmac-md5" => 23,
         _ => return None,
     })

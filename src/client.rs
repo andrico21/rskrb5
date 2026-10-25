@@ -31009,14 +31009,18 @@ fn enforce_requested_enctypes(requested: &[i32], etype: i32) -> Result<(), Error
     }
 }
 
-/// Reject a reply enctype outside a non-empty operator allowlist.
+/// Reject a reply enctype outside an explicit operator allowlist.
+///
+/// Callers consult the allowlist only when `permitted_enctypes` was set
+/// explicitly, so an empty allowlist permits nothing.
 ///
 /// # Errors
 ///
-/// Returns [`Error::EnctypeNotPermitted`] when `permitted` is non-empty and
-/// does not contain `etype`.
+/// Returns [`Error::EnctypeNotPermitted`] when `permitted` does not contain
+/// `etype`.
+#[cfg(feature = "tokio")]
 pub(crate) fn ensure_permitted_enctype(permitted: &[i32], etype: i32) -> Result<(), Error> {
-    if permitted.is_empty() || permitted.contains(&etype) {
+    if permitted.contains(&etype) {
         Ok(())
     } else {
         Err(Error::EnctypeNotPermitted(etype))
