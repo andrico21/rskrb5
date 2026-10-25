@@ -4,7 +4,7 @@
 # dependencies = []
 # ///
 # How to run: python3 scripts/lint-ratchet/prose_gate.py --self-test
-"""Differential prose rules, ported from rmcp-server-kit (MIT/Apache-2.0)."""
+"""Whole-tree prose rules, ported from rmcp-server-kit (MIT/Apache-2.0)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
-import provenance
+import path_scope
 from prose_infallible import infallible_test
 
 CHECKS: Final = (
@@ -30,33 +30,14 @@ CHECKS: Final = (
 )
 
 
-def scan(
-    source: str, mapping: dict[int, int], production: bool
-) -> list[tuple[str, int, str]]:
+def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
     stripped = common.strip_comments_and_strings(source)
     literals = common.strip_comments_and_strings(source, keep_literals=True)
     items = common.scan_items(source)
     test_ranges = common.cfg_test_line_ranges(stripped)
     lines = source.splitlines()
     hits = []
-    generated_lines = {
-        number
-        for a, b in common.migration_ranges(source)
-        for number in range(
-            common.line_of(source, a), common.line_of(source, b - 1) + 1
-        )
-    }
-    touched = {
-        item
-        for item in items
-        if any(
-            number not in mapping and number not in generated_lines
-            for number in range(
-                common.line_of(source, item.start),
-                common.line_of(source, item.end - 1) + 1,
-            )
-        )
-    }
+    touched = set(items)
     proptest_ranges = []
     for match in re.finditer(r"\bproptest!\s*\{", stripped):
         close = common.match_bracket(stripped, match.end() - 1)
@@ -150,29 +131,16 @@ def scan(
     return hits
 
 
-def report(
-    root: Path, reference: Path, paths: list[str] | None
-) -> list[tuple[str, str, int, str]]:
-    moves = common.moved_sources(root)
+def report(root: Path, paths: list[str] | None) -> list[tuple[str, str, int, str]]:
     hits = []
     for path in common.iter_rust_files(root):
         relative = path.relative_to(root).as_posix()
-        if not common.selected(relative, paths):
+        if not path_scope.selected(relative, paths):
             continue
-        origin = moves.get(relative, relative)
-        ref_path = reference / origin
-        upstream = ref_path.read_text() if origin and ref_path.is_file() else ""
         source = path.read_text()
-        mapping = (
-            provenance.mapping(root, relative, (source, upstream))
-            if (root / ".git").exists()
-            else common.line_mapping(
-                provenance.crate_renamed(source), provenance.crate_renamed(upstream)
-            )
-        )
         hits.extend(
             (gate, relative, line, detail)
-            for gate, line, detail in scan(source, mapping, relative.startswith("src/"))
+            for gate, line, detail in scan(source, relative.startswith("src/"))
         )
     return hits
 
@@ -180,12 +148,9 @@ def report(
 def self_test() -> int:
     upstream = "async fn old() {}\n#[test]\nfn old_test() {}\n"
     baseline = '#[expect(dead_code, reason = "lint-migration: baseline")]\n' + upstream
-    assert scan(baseline, common.line_mapping(baseline, upstream), True) == []
+    assert scan(baseline, True)
     edited = baseline.replace("old() {}", "old() { work(); }")
-    assert any(
-        gate == "cancel-safety"
-        for gate, _, _ in scan(edited, common.line_mapping(edited, upstream), True)
-    )
+    assert any(gate == "cancel-safety" for gate, _, _ in scan(edited, True))
     source = (
         "pub(crate) async fn prose_probe() {}\n"
         "/// # Cancel safety\n/// NOT cancel-safe: mutates credentials.\nasync fn change_password_ok() {}\n"
@@ -195,7 +160,7 @@ def self_test() -> int:
         "impl Drop for Guard { fn drop(&mut self) {} }\n"
         'fn empty() { assert!(v.is_empty(),); assert!(v.is_empty(), "empty"); assert!(a.is_empty() && b.is_empty()); }\n'
     )
-    hits = scan(source, {}, True)
+    hits = scan(source, True)
     assert sum(g == "cancel-safety" for g, _, _ in hits) == 2
     assert sum(g == "credential-mutating" for g, _, _ in hits) == 1
     assert sum(g == "test-docs" for g, _, _ in hits) == 1
@@ -206,8 +171,7 @@ def self_test() -> int:
     # when scanned, Result is optional for inherited and fork-authored tests.
     upstream_test = "/// checks status\n#[test]\nfn status() {\n let result = Status { code: 1 };\n assert!(matches!(result.ensure_success(), Err(_)));\n}\n"
     touched_test = upstream_test.replace("code: 1", "code: 1, text_raw: &[]")
-    inherited = common.line_mapping(touched_test, upstream_test)
-    assert not scan(touched_test, inherited, False)
+    assert not scan(touched_test, False)
     # Given literal/field ownership conversions, only nested fallible calls
     # should introduce a propagation site when the inherited test is scanned.
     for conversion in (
@@ -219,51 +183,34 @@ def self_test() -> int:
         'Vec::from(b"failure")',
     ):
         converted = touched_test.replace("text_raw: &[]", "text_raw: " + conversion)
-        assert not scan(converted, common.line_mapping(converted, upstream_test), False)
+        assert not scan(converted, False)
     for call in ("String::from(read_file())", "read_file().to_owned()", "read_file()"):
         converted = touched_test.replace("text_raw: &[]", "text_raw: " + call)
-        assert any(
-            g == "test-result"
-            for g, _, _ in scan(
-                converted, common.line_mapping(converted, upstream_test), False
-            )
-        )
-    assert not scan(touched_test, {}, False)
+        assert any(g == "test-result" for g, _, _ in scan(converted, False))
+    assert not scan(touched_test, False)
     fallible = touched_test.replace(
         " let result", ' read_file().expect("fixture");\n let result'
     )
-    assert any(
-        g == "test-result"
-        for g, _, _ in scan(
-            fallible, common.line_mapping(fallible, upstream_test), False
-        )
-    )
+    assert any(g == "test-result" for g, _, _ in scan(fallible, False))
     with TemporaryDirectory() as directory:
-        root, reference = Path(directory) / "head", Path(directory) / "ref"
+        root = Path(directory)
         (root / "tests/support").mkdir(parents=True)
-        (reference / "tests/common").mkdir(parents=True)
-        (root / "scripts/lint-ratchet").mkdir(parents=True)
-        (root / "scripts/lint-ratchet/moves.toml").write_text(
-            '[[move]]\nnew = "tests/support/topic.rs"\nfrom = "tests/common/mod.rs"\n'
-        )
         moved = "fn helper() { assert!(v.is_empty()); }\n"
-        (reference / "tests/common/mod.rs").write_text(moved)
         (root / "tests/support/topic.rs").write_text(moved)
-        assert report(root, reference, None) == []
+        assert report(root, None)
+        assert report(root, []) == []
         (root / "tests/support/topic.rs").write_text(
             moved.replace("v.is_empty()", "w.is_empty()")
         )
-        assert report(root, reference, None)
-    print(
-        "prose_gate self-test: ok (all six checks, baseline provenance, body edit, moved helpers)"
-    )
+        assert report(root, ["tests/support/*.rs"])
+    print("prose_gate self-test: ok (all six checks, whole-tree and explicit scopes)")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=common.ROOT)
-    parser.add_argument("--reference-root", type=Path)
+    parser.add_argument("--paths-file", type=Path)
     parser.add_argument("--paths", nargs="+")
     parser.add_argument("--only", action="append", choices=CHECKS)
     parser.add_argument("--report", action="store_true")
@@ -273,24 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_test:
         return self_test()
     try:
-        if args.reference_root:
-            hits = report(args.root, args.reference_root, args.paths)
-        else:
-            from fork_lines_gate import NIGHTLY, run_cargo
-
-            with TemporaryDirectory(prefix="rskrb5-prose-") as directory:
-                ref = Path(directory) / "reference"
-                common.git(
-                    args.root, "worktree", "add", "--detach", str(ref), "6f4abc9"
-                )
-                try:
-                    import shutil
-
-                    shutil.copy2(args.root / "rustfmt.toml", ref / "rustfmt.toml")
-                    run_cargo(ref, [NIGHTLY, "fmt", "--all"])
-                    hits = report(args.root, ref, args.paths)
-                finally:
-                    common.git(args.root, "worktree", "remove", "--force", str(ref))
+        hits = report(args.root, path_scope.patterns(args.paths, args.paths_file))
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"prose_gate: {error}", file=sys.stderr)
         return 1

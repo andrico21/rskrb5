@@ -73,7 +73,7 @@ def self_test() -> None:
         "let error = client.save_default_ccache_name().unwrap_err();\nassert!(matches!(error, Error::NoDefaultCCacheName));",
     ):
         source = "/// checks behavior\n#[test]\nfn probe() {\n" + body + "\n}\n"
-        assert not scan(source, {}, False), body
+        assert not scan(source, False), body
         for fallible in (
             'read_file().expect("fixture");',
             "value.unwrap();",
@@ -86,9 +86,7 @@ def self_test() -> None:
             "let error = read_file().unwrap_err(); unrelated();",
         ):
             changed = source.replace("fn probe() {", "fn probe() { " + fallible)
-            assert any(g == "test-result" for g, _, _ in scan(changed, {}, False)), (
-                fallible
-            )
+            assert any(g == "test-result" for g, _, _ in scan(changed, False)), fallible
     print(
         "prose_infallible self-test: ok (fork assertions, constructors, error assertions, fallible controls)"
     )

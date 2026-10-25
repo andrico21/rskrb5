@@ -32,8 +32,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, TypedDict
 
-from baseline_moves import additions
-from baseline_sources import prove, ratchet_base
 from scanner import (
     Item,
     ScanError,
@@ -713,12 +711,7 @@ def refresh(root: Path, rebaseline: bool) -> None:
         }
     )
     now = Counter({(e.file, e.item, e.lint, e.predicate): e.count for e in current})
-    proof = frozenset()
-    if not rebaseline and now - previous and (root / ".git").exists():
-        base = ratchet_base(root)
-        if base is not None:
-            proof = prove(root, (previous, now), (base, None))
-    added = additions(previous, now, proof)
+    added = now - previous
     if added and not rebaseline:
         raise BaselineError(
             f"manifest would add entries; use --rebaseline only for an authorized toolchain migration: {added}"
@@ -1076,12 +1069,16 @@ def self_test() -> None:
             previous = read_manifest(root / MANIFEST)
             wrapped = "#[cfg(test)]\nmod tests {\n" + item + "}\n"
             path.write_text(wrapped)
-            refresh(root, False)
             expected = [
                 Entry(e.file, "mod tests::" + e.item, e.lint, e.predicate, e.count)
                 for e in previous
             ]
-            assert read_manifest(root / MANIFEST) == expected
+            try:
+                refresh(root, False)
+            except BaselineError:
+                assert read_manifest(root / MANIFEST) == previous
+            else:
+                raise AssertionError("module-wrap re-key accepted")
             # Given changed metadata or duplicates, refresh rejects without writing.
             for invalid in (
                 wrapped.replace("dead_code", "unused"),

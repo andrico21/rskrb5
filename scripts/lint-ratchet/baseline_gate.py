@@ -20,8 +20,7 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 import common
-from baseline_moves import Move, additions
-from baseline_sources import prove
+from baseline_sources import additions
 
 MANIFEST: Final = "scripts/lint-ratchet/baseline.toml"
 API_LINTS: Final = frozenset(
@@ -78,6 +77,24 @@ def sanctioned(
             and file == "src/lib.rs"
             and item is None
         )
+    if call.reason == "public API: unused inside the unit-test harness":
+        return (
+            file == "src/lib.rs"
+            and item is None
+            and call.lints == ("dead_code_pub_in_binary",)
+            and canonical(call.predicate) == "test"
+            and source[call.start : call.start + 3] == "#!["
+        )
+    if re.fullmatch(r"deliberate: \w+(?:::\w+)+ - .+", call.reason):
+        if call.lints == ("clippy::missing_const_for_fn",):
+            return item is not None and item.kind == "fn" and call.predicate == "always"
+        if call.lints == ("clippy::unused_async_trait_impl",):
+            return (
+                item is not None
+                and item.kind in ("fn", "impl")
+                and " mandates async" in call.reason
+                and call.predicate == "always"
+            )
     if re.fullmatch(
         r"deliberate: \w+(?:::\w+)+ - mirrors upstream PR #[1-9]\d*", call.reason
     ):
@@ -148,51 +165,88 @@ def transition(
     previous: Counter[Entry],
     current: Counter[Entry],
     label: str,
-    proven: frozenset[Move] = frozenset(),
 ) -> list[str]:
     return [
         f"{label}: baseline addition/restoration {key} (+{count})"
-        for key, count in additions(previous, current, proven).items()
+        for key, count in additions(previous, current).items()
     ]
 
 
 def ratchet(root: Path, current: Counter[Entry]) -> tuple[list[str], int]:
-    history = common.git(root, "log", "--format=%H %s", "--", MANIFEST).splitlines()
-    base = next(
-        (
-            line.split(" ", 1)[0]
-            for line in history
-            if re.match(
-                r"[0-9a-f]+ lint: (?:rebaseline for Rust |adopt the rmcp-server-kit strictest profile)",
-                line,
-            )
-        ),
-        None,
-    )
+    clean = "scripts/lint-ratchet/clean-paths.txt"
+    facade = "scripts/lint-ratchet/facade-exceptions.txt"
+    history = common.git(
+        root, "log", "--first-parent", "--diff-filter=A", "--format=%H", "--", clean
+    ).splitlines()
+    base = history[-1] if history else None
     if base is None:
-        return ["no ratchet base commit found; finish todo 14 first"], 0
+        return [
+            "no first-parent clean-paths introduction found; commit transition files first"
+        ], 0
     previous = manifest(common.git(root, "show", f"{base}:{MANIFEST}"))
+    previous_clean = ratchet_lines(common.git(root, "show", f"{base}:{clean}"))
+    previous_facade = ratchet_lines(common.git(root, "show", f"{base}:{facade}"))
     base_count = previous.total()
     errors = []
     for commit in common.git(
-        root, "log", "--reverse", "--format=%H", f"{base}..HEAD", "--", MANIFEST
+        root,
+        "log",
+        "--first-parent",
+        "--reverse",
+        "--format=%H",
+        f"{base}..HEAD",
+        "--",
+        MANIFEST,
+        clean,
+        facade,
     ).splitlines():
         now = manifest(common.git(root, "show", f"{commit}:{MANIFEST}"))
-        errors.extend(
-            transition(
-                previous, now, commit, prove(root, (previous, now), (base, commit))
-            )
-        )
+        errors.extend(transition(previous, now, commit))
+        now_clean = ratchet_lines(common.git(root, "show", f"{commit}:{clean}"))
+        now_facade = ratchet_lines(common.git(root, "show", f"{commit}:{facade}"))
+        errors.extend(list_transition(previous_clean, now_clean, commit, grow=True))
+        errors.extend(list_transition(previous_facade, now_facade, commit, grow=False))
+        previous_clean, previous_facade = now_clean, now_facade
         previous = now
+    errors.extend(transition(previous, current, "working tree"))
     errors.extend(
-        transition(
-            previous,
-            current,
+        list_transition(
+            previous_clean,
+            ratchet_lines((root / clean).read_text()),
             "working tree",
-            prove(root, (previous, current), (base, None)),
+            grow=True,
+        )
+    )
+    errors.extend(
+        list_transition(
+            previous_facade,
+            ratchet_lines((root / facade).read_text()),
+            "working tree",
+            grow=False,
         )
     )
     return errors, base_count
+
+
+def ratchet_lines(text: str) -> list[str]:
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if lines != sorted(set(lines)):
+        raise RuntimeError("ratchet lists must be sorted and unique")
+    return lines
+
+
+def list_transition(
+    previous: list[str], current: list[str], label: str, *, grow: bool
+) -> list[str]:
+    forbidden = set(previous) - set(current) if grow else set(current) - set(previous)
+    return [
+        f"{label}: {'clean-path removal' if grow else 'facade exception addition'} {line}"
+        for line in sorted(forbidden)
+    ]
 
 
 def check(root: Path) -> list[str]:
@@ -252,6 +306,28 @@ def self_test() -> int:
             '#![expect(clippy::pub_use, reason = "public facade")]\npub use core::fmt;\n'
         )
         assert source_entries(root)[1] == []
+        for valid, invalid in (
+            (
+                '#[expect(clippy::missing_const_for_fn, reason = "deliberate: crate::f - compatibility requires non-const")]\npub fn f() {}\n',
+                '#[expect(clippy::unwrap_used, reason = "deliberate: crate::f - compatibility requires non-const")]\npub fn f() {}\n',
+            ),
+            (
+                '#[expect(clippy::unused_async_trait_impl, reason = "deliberate: crate::f - Foreign mandates async")]\nasync fn f() {}\n',
+                '#[expect(clippy::unused_async_trait_impl, reason = "deliberate: crate::f - convenient async")]\nasync fn f() {}\n',
+            ),
+            (
+                '#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "public API: unused inside the unit-test harness"))]\npub fn f() {}\n',
+                '#![cfg_attr(unix, expect(dead_code_pub_in_binary, reason = "public API: unused inside the unit-test harness"))]\npub fn f() {}\n',
+            ),
+        ):
+            path.write_text(valid)
+            assert source_entries(root)[1] == []
+            path.write_text(invalid)
+            assert source_entries(root)[1]
+        assert not list_transition([], ["src/a.rs"], "grow", grow=True)
+        assert list_transition(["src/a.rs"], [], "shrink", grow=True)
+        assert not list_transition(["exception"], [], "remove exception", grow=False)
+        assert list_transition([], ["exception"], "add exception", grow=False)
         path.write_text(
             '#[expect(dead_code, reason = "lint-migration: fixture")]\nfn f() {}\n'
         )
@@ -265,7 +341,7 @@ def self_test() -> int:
         # Given a baseline item, when only a wrapper prefix is gained, it moves.
         wrapped = Counter({("src/lib.rs", "mod tests::fn f", "dead_code", "always"): 1})
         proof = frozenset({(("src/lib.rs", "fn f"), ("src/lib.rs", "mod tests::fn f"))})
-        assert transition(actual, wrapped, "wrap", proof) == []
+        assert transition(actual, wrapped, "wrap")
         assert transition(wrapped, actual, "unwrap")
         # Changed identities/counts, new entries and duplication remain additions.
         for invalid in (
