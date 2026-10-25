@@ -153,6 +153,10 @@ impl Config {
     /// `default_tkt_enctypes` or `default_tgs_enctypes` list names an enctype
     /// outside an explicit `permitted_enctypes` allowlist. The check runs once,
     /// on the final values after every `[libdefaults]` section is applied.
+    ///
+    /// Fails with [`Error::NoPermittedEnctypes`] when an explicit
+    /// `permitted_enctypes` names no supported enctype, for example only
+    /// unsupported names or only weak ones without `allow_weak_crypto`.
     pub fn parse(input: &str) -> Result<Self, Error> {
         let mut config = Self::new();
         let mut enctypes = EnctypeParseState::default();
@@ -330,6 +334,7 @@ pub struct LibDefaults {
     /// Code that builds `LibDefaults` programmatically (a struct literal or
     /// `Default`) and wants the allowlist enforced must set this flag to
     /// `true` together with `permitted_enctypes` / `permitted_enctype_ids`.
+    /// With the flag set, an empty `permitted_enctype_ids` permits no enctype.
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: bool,
     /// Preferred preauthentication type IDs.
@@ -491,9 +496,17 @@ impl LibDefaults {
     /// list than the operator configured. Seeded (implicit) request lists are
     /// not checked here; `AsReqOptions::from_libdefaults` and
     /// `TgsReqOptions::from_libdefaults` narrow them to the allowlist.
+    ///
+    /// An explicit allowlist without any supported enctype is rejected as a
+    /// whole: treating it as "no policy" would permit every enctype.
     fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
-        if !self.permitted_enctypes_explicit || self.permitted_enctype_ids.is_empty() {
+        if !self.permitted_enctypes_explicit {
             return Ok(());
+        }
+        if self.permitted_enctype_ids.is_empty() {
+            return Err(Error::NoPermittedEnctypes {
+                names: self.permitted_enctypes.clone(),
+            });
         }
         let request_lists = [
             (
@@ -701,6 +714,15 @@ pub enum Error {
         key: &'static str,
         /// The configured enctype name.
         enctype: String,
+    },
+    /// An explicit `permitted_enctypes` allowlist names no supported enctype.
+    #[error(
+        "[libdefaults] permitted_enctypes = {} names no supported enctype",
+        names.join(" ")
+    )]
+    NoPermittedEnctypes {
+        /// The configured enctype names.
+        names: Vec<String>,
     },
 }
 

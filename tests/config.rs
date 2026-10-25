@@ -764,6 +764,36 @@ fn a_later_section_can_repair_an_earlier_conflict() {
 }
 
 #[test]
+fn explicit_permitted_enctypes_with_no_supported_ids_fail_parsing() {
+    for names in [
+        "des-cbc-crc",
+        "camellia256-cts-cmac",
+        "des3-cbc-sha1",
+        "des-cbc-md5 camellia128-cts-cmac",
+    ] {
+        let error = Config::parse(&format!(
+            r#"
+[libdefaults]
+ permitted_enctypes = {names}
+"#
+        ))
+        .expect_err("an allowlist without a supported enctype is rejected");
+
+        assert!(
+            matches!(
+                &error,
+                Error::NoPermittedEnctypes { names: configured }
+                    if configured.join(" ") == names
+            ),
+            "unexpected error for {names}: {error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains("permitted_enctypes"), "{message}");
+        assert!(message.contains(names), "{message}");
+    }
+}
+
+#[test]
 fn rejects_v4_realm_directives() {
     let err = Config::parse(
         r#"

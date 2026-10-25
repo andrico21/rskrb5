@@ -54,7 +54,8 @@ impl AsReqOptions {
     /// `default_tkt_enctypes` naming an enctype outside the allowlist, so for
     /// parsed configs this only narrows the seeded default list that no
     /// operator requested. A programmatically built `LibDefaults` whose lists
-    /// are disjoint yields an empty list, which the request builders reject.
+    /// are disjoint, or whose `permitted_enctype_ids` is empty, yields an
+    /// empty list, which the request builders reject.
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
         options.ticket_lifetime = defaults.ticket_lifetime;
@@ -65,7 +66,7 @@ impl AsReqOptions {
         } else {
             defaults.default_tkt_enctype_ids.clone()
         };
-        if defaults.permitted_enctypes_explicit && !defaults.permitted_enctype_ids.is_empty() {
+        if defaults.permitted_enctypes_explicit {
             options
                 .etypes
                 .retain(|etype| defaults.permitted_enctype_ids.contains(etype));
@@ -163,7 +164,8 @@ impl TgsReqOptions {
     /// `default_tgs_enctypes` naming an enctype outside the allowlist, so for
     /// parsed configs this only narrows the seeded default list that no
     /// operator requested. A programmatically built `LibDefaults` whose lists
-    /// are disjoint yields an empty list, which the request builders reject.
+    /// are disjoint, or whose `permitted_enctype_ids` is empty, yields an
+    /// empty list, which the request builders reject.
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
         options.ticket_lifetime = defaults.ticket_lifetime;
@@ -174,7 +176,7 @@ impl TgsReqOptions {
         } else {
             defaults.default_tgs_enctype_ids.clone()
         };
-        if defaults.permitted_enctypes_explicit && !defaults.permitted_enctype_ids.is_empty() {
+        if defaults.permitted_enctypes_explicit {
             options
                 .etypes
                 .retain(|etype| defaults.permitted_enctype_ids.contains(etype));
