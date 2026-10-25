@@ -74,45 +74,6 @@ fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
     );
 }
 
-#[test]
-fn explicit_mit_des3_request_entry_is_requested() {
-    let config = Config::parse(
-        r#"
-[libdefaults]
- default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
-"#,
-    )
-    .expect("config parses");
-
-    let options =
-        AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &config.libdefaults);
-    let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
-        .expect("AS-REQ builds");
-    let decoded: rasn_kerberos::AsReq = rasn::der::decode(&request.der).expect("AS-REQ decodes");
-    assert_eq!(decoded.0.req_body.etype, vec![18, 16]);
-}
-
-#[test]
-fn explicit_mit_des3_request_entry_outside_permitted_fails_parsing() {
-    let error = Config::parse(
-        r#"
-[libdefaults]
- default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
- permitted_enctypes = aes256-cts-hmac-sha1-96
-"#,
-    )
-    .expect_err("a DES3 request entry outside the allowlist is rejected");
-
-    assert!(
-        matches!(
-            &error,
-            rskrb5::config::Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
-                if enctype == "des3-cbc-sha1"
-        ),
-        "unexpected error: {error:?}"
-    );
-}
-
 #[expect(
     clippy::absolute_paths,
     clippy::expect_used,
@@ -650,6 +611,51 @@ mod fork_tests {
             draws
                 .windows(2)
                 .any(|pair| matches!(pair, [first, second] if first != second))
+        );
+        Ok(())
+    }
+
+    /// Pins that an MIT-spelled `des3-cbc-sha1` request entry is requested as enctype 16.
+    #[test]
+    fn explicit_mit_des3_request_entry_is_requested() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+",
+        )?;
+
+        let options = AsReqOptions::from_libdefaults(
+            timestamp(1_893_553_447),
+            0x1122_3344,
+            &config.libdefaults,
+        );
+        let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
+        let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
+        assert_eq!(decoded.0.req_body.etype, vec![18_i32, 16_i32]);
+        Ok(())
+    }
+
+    /// Pins that an MIT-spelled DES3 request entry outside an explicit allowlist fails parsing.
+    #[test]
+    fn explicit_mit_des3_request_entry_outside_permitted_fails_parsing() -> Result<(), TestError> {
+        let Err(error) = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        ) else {
+            return Err("a DES3 request entry outside the allowlist must be rejected".into());
+        };
+
+        assert!(
+            matches!(
+                &error,
+                ConfigError::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                    if enctype == "des3-cbc-sha1"
+            ),
+            "unexpected error: {error:?}"
         );
         Ok(())
     }

@@ -959,74 +959,6 @@ fn config_json_matches_gokrb5_shape() {
     );
 }
 
-#[test]
-fn explicit_permitted_enctypes_with_no_supported_ids_fail_parsing() {
-    for names in [
-        "des-cbc-crc",
-        "camellia256-cts-cmac",
-        "des3-cbc-raw",
-        "des-cbc-md5 camellia128-cts-cmac",
-    ] {
-        let error = Config::parse(&format!(
-            r#"
-[libdefaults]
- permitted_enctypes = {names}
-"#
-        ))
-        .expect_err("an allowlist without a supported enctype is rejected");
-
-        assert!(
-            matches!(
-                &error,
-                Error::NoPermittedEnctypes { names: configured }
-                    if configured.join(" ") == names
-            ),
-            "unexpected error for {names}: {error:?}"
-        );
-        let message = error.to_string();
-        assert!(message.contains("permitted_enctypes"), "{message}");
-        assert!(message.contains(names), "{message}");
-    }
-}
-
-#[test]
-fn des3_mit_names_resolve_to_enctype_16() {
-    for name in [
-        "des3-cbc-sha1",
-        "des3-hmac-sha1",
-        "des3-cbc-sha1-kd",
-        "DES3-CBC-SHA1",
-    ] {
-        for allow_weak_crypto in [false, true] {
-            let config = Config::parse(&format!(
-                r#"
-[libdefaults]
- allow_weak_crypto = {allow_weak_crypto}
- default_tkt_enctypes = {name}
- permitted_enctypes = {name}
-"#
-            ))
-            .expect("config parses");
-
-            assert_eq!(config.libdefaults.permitted_enctype_ids, vec![16], "{name}");
-            assert_eq!(
-                config.libdefaults.default_tkt_enctype_ids,
-                vec![16],
-                "{name}"
-            );
-        }
-    }
-}
-
-#[test]
-fn seeded_default_enctypes_do_not_request_des3() {
-    let defaults = rskrb5::config::LibDefaults::default();
-
-    assert_eq!(defaults.default_tkt_enctype_ids, vec![18, 17, 23]);
-    assert_eq!(defaults.default_tgs_enctype_ids, vec![18, 17, 23]);
-    assert_eq!(defaults.permitted_enctype_ids, vec![18, 17, 23]);
-}
-
 #[expect(
     clippy::expect_used,
     clippy::missing_panics_doc,
@@ -1086,7 +1018,6 @@ mod fork_tests {
     use pretty_assertions::assert_eq;
     #[cfg(feature = "messages")]
     use rasn::der;
-    #[cfg(any(feature = "serde", feature = "messages"))]
     use rskrb5::config::LibDefaults;
     #[cfg(feature = "messages")]
     use rskrb5::{
@@ -1515,5 +1446,90 @@ mod fork_tests {
         let decoded: rasn_kerberos::AsReq =
             der::decode(&request.der).map_err(|cause| format!("AS-REQ decodes: {cause}"))?;
         Ok(decoded.0.req_body.etype)
+    }
+
+    /// Pins that an explicit `permitted_enctypes` naming no supported enctype fails parsing.
+    #[test]
+    fn explicit_permitted_enctypes_with_no_supported_ids_fail_parsing() -> Result<(), TestError> {
+        for names in [
+            "des-cbc-crc",
+            "camellia256-cts-cmac",
+            "des3-cbc-raw",
+            "des-cbc-md5 camellia128-cts-cmac",
+        ] {
+            let error = Config::parse(&format!(
+                "
+[libdefaults]
+ permitted_enctypes = {names}
+"
+            ))
+            .err()
+            .ok_or("an allowlist without a supported enctype is rejected")?;
+
+            assert!(
+                matches!(
+                    &error,
+                    Error::NoPermittedEnctypes { names: configured }
+                        if configured.join(" ") == names
+                ),
+                "unexpected error for {names}: {error:?}"
+            );
+            let message = error.to_string();
+            assert!(message.contains("permitted_enctypes"), "{message}");
+            assert!(message.contains(names), "{message}");
+        }
+        Ok(())
+    }
+
+    /// Pins that MIT's DES3 enctype names resolve to enctype 16.
+    #[test]
+    fn des3_mit_names_resolve_to_enctype_16() -> Result<(), TestError> {
+        for name in [
+            "des3-cbc-sha1",
+            "des3-hmac-sha1",
+            "des3-cbc-sha1-kd",
+            "DES3-CBC-SHA1",
+        ] {
+            for allow_weak_crypto in [false, true] {
+                let config = Config::parse(&format!(
+                    "
+[libdefaults]
+ allow_weak_crypto = {allow_weak_crypto}
+ default_tkt_enctypes = {name}
+ permitted_enctypes = {name}
+"
+                ))
+                .map_err(|cause| format!("config parses: {cause}"))?;
+
+                assert_eq!(
+                    config.libdefaults.permitted_enctype_ids,
+                    vec![16_i32],
+                    "{name}"
+                );
+                assert_eq!(
+                    config.libdefaults.default_tkt_enctype_ids,
+                    vec![16_i32],
+                    "{name}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Pins that the seeded default request lists do not request DES3.
+    #[test]
+    fn seeded_default_enctypes_do_not_request_des3() -> Result<(), TestError> {
+        let defaults = LibDefaults::default();
+
+        assert_eq!(
+            defaults.default_tkt_enctype_ids,
+            vec![18_i32, 17_i32, 23_i32]
+        );
+        assert_eq!(
+            defaults.default_tgs_enctype_ids,
+            vec![18_i32, 17_i32, 23_i32]
+        );
+        assert_eq!(defaults.permitted_enctype_ids, vec![18_i32, 17_i32, 23_i32]);
+        Ok(())
     }
 }

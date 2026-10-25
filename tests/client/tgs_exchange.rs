@@ -100,133 +100,6 @@ fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
     ));
 }
 
-#[cfg(feature = "tokio")]
-#[test]
-fn exchange_as_req_with_config_rejects_every_session_key_with_an_empty_explicit_allowlist() {
-    runtime().block_on(async {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind kdc listener");
-        let addr = listener.local_addr().expect("kdc address");
-        let mut config = Config::parse(&format!(
-            r#"
-[libdefaults]
- dns_lookup_kdc = false
- permitted_enctypes = aes256-cts-hmac-sha1-96
-
-[realms]
- TEST.GOKRB5 = {{
-  kdc = {addr}
- }}
-"#
-        ))
-        .expect("config parses");
-        config.libdefaults.permitted_enctype_ids.clear();
-        let request = build_tgt_as_req(
-            Principal::user("TEST.GOKRB5", "testuser1"),
-            AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18]),
-        )
-        .expect("AS-REQ builds");
-        let reply_key = reply_key();
-        let response = synthetic_as_rep_with_reply_key(
-            &request,
-            request.nonce,
-            request.service.clone(),
-            &reply_key,
-        );
-        let task = tokio::spawn(async move {
-            let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
-            write_tcp_kdc_response(&mut socket, &response).await;
-        });
-
-        let error = TokioKdcTransport::new()
-            .exchange_as_req_with_config(&config, KdcProtocol::Tcp, &request, &reply_key)
-            .await
-            .expect_err("an empty explicit allowlist permits no session key");
-        task.await.expect("kdc task completes");
-        assert!(matches!(error, Error::EnctypeNotPermitted(18)));
-    });
-}
-
-#[cfg(feature = "tokio")]
-#[test]
-fn exchange_tgs_req_with_config_rejects_every_session_key_with_an_empty_explicit_allowlist() {
-    runtime().block_on(async {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind kdc listener");
-        let addr = listener.local_addr().expect("kdc address");
-        let mut config = Config::parse(&format!(
-            r#"
-[libdefaults]
- dns_lookup_kdc = false
- permitted_enctypes = aes256-cts-hmac-sha1-96
-
-[realms]
- TEST.GOKRB5 = {{
-  kdc = {addr}
- }}
-"#
-        ))
-        .expect("config parses");
-        config.libdefaults.permitted_enctype_ids.clear();
-        let tgt = sample_tgt_session();
-        let request = build_tgs_req_with_confounder(
-            &tgt,
-            sample_service_principal(),
-            TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![18]),
-            timestamp(1_893_553_451),
-            654_321,
-            &decode_hex(TGS_REQ_CONFOUNDER),
-        )
-        .expect("TGS-REQ builds");
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
-        let task = tokio::spawn(async move {
-            let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
-            write_tcp_kdc_response(&mut socket, &response).await;
-        });
-
-        let error = TokioKdcTransport::new()
-            .exchange_tgs_req_with_config(&config, KdcProtocol::Tcp, &request, &tgt.session_key)
-            .await
-            .expect_err("an empty explicit allowlist permits no session key");
-        task.await.expect("kdc task completes");
-        assert!(matches!(error, Error::EnctypeNotPermitted(18)));
-    });
-}
-
-#[test]
-fn programmatic_explicit_empty_permitted_ids_fail_closed() {
-    let defaults = rskrb5::config::LibDefaults {
-        default_tkt_enctype_ids: vec![18, 17],
-        default_tgs_enctype_ids: vec![18, 17],
-        permitted_enctype_ids: Vec::new(),
-        permitted_enctypes_explicit: true,
-        ..Default::default()
-    };
-
-    let as_options =
-        AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
-    assert!(as_options.etypes.is_empty());
-    let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), as_options)
-        .expect_err("an empty explicit allowlist fails the AS-REQ closed");
-    assert!(matches!(error, Error::EmptyEtypes));
-
-    let tgs_options =
-        TgsReqOptions::from_libdefaults(timestamp(1_893_553_450), 0x5566_7788, &defaults);
-    assert!(tgs_options.etypes.is_empty());
-    let error = build_tgs_req_with_confounder(
-        &sample_tgt_session(),
-        sample_service_principal(),
-        tgs_options,
-        timestamp(1_893_553_451),
-        654_321,
-        &decode_hex(TGS_REQ_CONFOUNDER),
-    )
-    .expect_err("an empty explicit allowlist fails the TGS-REQ closed");
-    assert!(matches!(error, Error::EmptyEtypes));
-}
-
 #[expect(
     clippy::absolute_paths,
     clippy::expect_used,
@@ -1402,6 +1275,152 @@ mod fork_tests {
             value: vec![0x42; 16],
         };
         assert!(matches!(build(&short), Err(Error::Crypto(_))));
+        Ok(())
+    }
+
+    /// Pins that the configured AS exchange rejects every session key when an
+    /// explicit allowlist holds no enctype ID.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn exchange_as_req_with_config_rejects_every_session_key_with_an_empty_explicit_allowlist()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let mut config = Config::parse(&format!(
+                "
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"
+            ))?;
+            config.libdefaults.permitted_enctype_ids.clear();
+            let request = build_tgt_as_req(
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18_i32]),
+            )?;
+            let reply_key = reply_key();
+            let response = synthetic_as_rep_with_reply_key(
+                &request,
+                request.nonce,
+                request.service.clone(),
+                &reply_key,
+            );
+            let task = tokio::spawn(async move {
+                let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+                write_tcp_kdc_response(&mut socket, &response).await;
+            });
+
+            let Err(error) = TokioKdcTransport::new()
+                .exchange_as_req_with_config(&config, KdcProtocol::Tcp, &request, &reply_key)
+                .await
+            else {
+                return Err("an empty explicit allowlist must permit no session key".into());
+            };
+            task.await?;
+            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that the configured TGS exchange rejects every session key when an
+    /// explicit allowlist holds no enctype ID.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn exchange_tgs_req_with_config_rejects_every_session_key_with_an_empty_explicit_allowlist()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let mut config = Config::parse(&format!(
+                "
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"
+            ))?;
+            config.libdefaults.permitted_enctype_ids.clear();
+            let tgt = sample_tgt_session();
+            let request = build_tgs_req_with_confounder(
+                &tgt,
+                sample_service_principal(),
+                TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![18_i32]),
+                timestamp(1_893_553_451),
+                654_321,
+                &decode_hex(TGS_REQ_CONFOUNDER),
+            )?;
+            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+            let task = tokio::spawn(async move {
+                let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+                write_tcp_kdc_response(&mut socket, &response).await;
+            });
+
+            let Err(error) = TokioKdcTransport::new()
+                .exchange_tgs_req_with_config(&config, KdcProtocol::Tcp, &request, &tgt.session_key)
+                .await
+            else {
+                return Err("an empty explicit allowlist must permit no session key".into());
+            };
+            task.await?;
+            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that programmatic `LibDefaults` with the explicit flag and no permitted
+    /// enctype ID fail both request builders closed.
+    #[test]
+    fn programmatic_explicit_empty_permitted_ids_fail_closed() -> Result<(), TestError> {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![18_i32, 17_i32],
+            default_tgs_enctype_ids: vec![18_i32, 17_i32],
+            permitted_enctype_ids: Vec::new(),
+            permitted_enctypes_explicit: true,
+            ..Default::default()
+        };
+
+        let as_options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+        assert!(
+            as_options.etypes.is_empty(),
+            "no AS-REQ etype is permitted: {:?}",
+            as_options.etypes
+        );
+        let Err(as_error) =
+            build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), as_options)
+        else {
+            return Err("an empty explicit allowlist must fail the AS-REQ closed".into());
+        };
+        assert!(matches!(as_error, Error::EmptyEtypes));
+
+        let tgs_options =
+            TgsReqOptions::from_libdefaults(timestamp(1_893_553_450), 0x5566_7788, &defaults);
+        assert!(
+            tgs_options.etypes.is_empty(),
+            "no TGS-REQ etype is permitted: {:?}",
+            tgs_options.etypes
+        );
+        let Err(tgs_error) = build_tgs_req_with_confounder(
+            &sample_tgt_session(),
+            sample_service_principal(),
+            tgs_options,
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+        ) else {
+            return Err("an empty explicit allowlist must fail the TGS-REQ closed".into());
+        };
+        assert!(matches!(tgs_error, Error::EmptyEtypes));
         Ok(())
     }
 }
