@@ -77,6 +77,58 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   Requests without a mutual flag behave as before. gokrb5 v8.4.4's
   `spnego.Client.Do` returns the retried response without inspecting a
   response token; this divergence is deliberate hardening.
+- **`[domain_realm]` lookup (MIT `krb5.conf(5)`).** `Config::resolve_realm`
+  folds the queried host name to ASCII lower case after dropping a trailing
+  dot, and at each suffix level, most specific first, consults the leading-dot
+  tag and then the bare tag. A bare tag such as `example.com` therefore covers
+  the domain and its subdomains, a leading-dot tag still does not match the
+  domain itself, and realm values keep their case. gokrb5 v8.4.4 lower-cases
+  the tags when parsing (`config.DomainRealm.parseLines`) but compares the
+  query as given and walks leading-dot tags only (`config.Config.ResolveRealm`),
+  so a mixed-case host misses its mapping and a bare tag matches only that
+  exact host. This follows MIT krb5 and is revisited if upstream changes.
+- **`[libdefaults] clockskew` on the `Config`-driven acceptors.**
+  `ServiceValidator::from_default_keytab_name` and
+  `ServiceValidator::from_default_keytab`, and the `NegotiateLayer` and
+  `NegotiateService` constructors of the same names, apply the parsed
+  `clockskew` to authenticator freshness and to the ticket start and end time
+  checks. The plain constructors (`ServiceValidator::new`, `from_keytab`,
+  `from_keytab_cow`) keep the 300 s default. Earlier `rskrb5` releases ignored
+  a configured `clockskew` in these constructors. gokrb5 v8.4.4 reads
+  `clockskew` on the client side only (`messages.ASRep.Verify`,
+  `messages.TGSRep.Verify`); its acceptor takes no krb5.conf and uses the
+  `service.MaxClockSkew` setting or a 5-minute default
+  (`service.Settings.MaxClockSkew`).
+- **TGT refresh and renewal series.** A TGT is due for refresh in the last
+  sixth of its current ticket life, `end_time - start_time`: a renewal
+  advances `start_time` while `auth_time` stays fixed (RFC 4120), so a
+  just-renewed TGT is not due again at once.
+  `TokioClient::spawn_auto_renewal_with_retry` (and `spawn_auto_renewal`,
+  60 s) sleeps the retry delay after a refresh that fails or leaves the TGT
+  still due, so a cache-only, non-renewable TGT does not spin through the
+  band. With a configured password or keytab, an expired TGT whose
+  `renew_till` is still in the future goes straight to the AS exchange, and a
+  refused renewal falls back to it (`affirm_login`, `refresh_tgt_if_needed`,
+  `get_service_ticket` and auto-renewal); cache-only clients keep the renewal
+  error. gokrb5 v8.4.4 measures the band from `end_time - auth_time`
+  (`client.Client.ensureValidSession`), sleeps five sixths of the remaining
+  validity between automatic attempts
+  (`client.Client.enableAutoSessionRenewal`), and returns the renewal error
+  without an AS fallback while `renew_till` is in the future
+  (`client.Client.refreshSession`). Earlier `rskrb5` releases matched gokrb5
+  on the band and the missing fallback, and re-ran a no-progress auto-renewal
+  without pause; this entry records a behaviour change against them.
+- **Credential-cache record counts (hardening).** `CCache::parse` checks
+  every principal component, address and authorization-data count against the
+  bytes left in the input before reserving memory, and reports an impossible
+  count as `ccache::Error::Truncated` (`ccache::Error::LengthOverflow` when
+  the count's byte size does not fit `usize`, as on 32-bit targets). Earlier
+  `rskrb5` releases reserved capacity straight from these counts, so a short
+  malformed cache could abort the process on a failed allocation; this entry
+  records a behaviour change against them. gokrb5 v8.4.4 also sizes the
+  address and authorization-data slices from the embedded counts (`make` in
+  `credentials.parseCredential`) and slices the input without bounds checks
+  (`credentials.readBytes`), so a malformed cache can panic its parser.
 
 ## Parity Gates
 
