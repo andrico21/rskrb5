@@ -126,8 +126,10 @@ retirement trigger.
 - The fuzz crate depends on the renamed package key, and a `ccache_parse`
   fuzz target joins `kpasswd_reply`; ccache and config property tests run with
   `proptest`. The release workflow publishes with `--locked`.
-- CI jobs added: an OS matrix (Linux, macOS, Windows), i686, MSRV (1.99.0),
-  a K1 to K7 feature matrix, `cargo deny`, `cargo audit`, `cargo vet`,
+- CI jobs added: an OS matrix (Linux, macOS, Windows), i686 (check and the
+  ccache tests), MSRV (1.99.0), a K1 to K7 feature matrix, lib-only checks of
+  the `messages`, `spnego`, `http` and `evaluation` feature sets and the
+  compatibility-report binary, the README commands, `cargo deny`, `cargo audit`, `cargo vet`,
   `cargo machete`, `cargo semver-checks`, `taplo`, publish dry-run, a
   path-dependency consumer build, docs-validate (guideline checksums and an
   offline link check), lint-gates, fork-lines and package. Geiger, a floating

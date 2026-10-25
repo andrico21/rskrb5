@@ -49,12 +49,27 @@ maintainer's step.
 the core Version Policy). `nightly-2026-10-03` is used only for rustfmt, the
 second rustdoc run, the fork-lines gate's formatting and fuzz; `1.99.0` only
 for the MSRV build. Blocking jobs: `fmt`, `clippy`, `features-matrix` (K1 to
-K7), `test` (Linux, macOS, Windows; at least 32 `test result: ok` lines),
-`i686`, `docs`, `msrv`, `semver-checks`, `publish-dryrun`, `consumer`, `deny`,
-`audit`, `vet`, `machete`, `taplo`, `docs-validate`, `lint-gates`,
-`fork-lines` and `package`. Advisory (`continue-on-error`): `geiger`,
-`rustdoc-nightly-canary`, and the scheduled `mutants` and `fuzz`. The prek
-hooks in `prek.toml` mirror the fast gates for pre-push.
+K7), `lib-feature-sets` (`cargo check --lib` without default features for
+`messages`, `spnego`, `http` and `evaluation`, plus the compatibility-report
+binary), `readme-commands` (the README `axum-negotiate` build and the
+compatibility-report diff), `test` (Linux, macOS, Windows; at least 32
+`test result: ok` lines), `i686` (check plus the ccache tests), `docs`,
+`msrv`, `semver-checks`, `publish-dryrun`, `consumer`, `deny`, `audit`, `vet`,
+`machete`, `taplo`, `docs-validate`, `lint-gates`, `fork-lines` and
+`package`. Advisory (`continue-on-error`): `geiger`, `rustdoc-nightly-canary`,
+`mutants` and `fuzz`. The prek hooks in `prek.toml` mirror the fast gates for
+pre-push.
+
+`mutants` and `fuzz` run only on `schedule` and `workflow_dispatch`. GitHub
+fires `schedule` only on the default branch `main`, whose fuzz crate is the
+0.2.0-era package with the `kpasswd_reply` target alone. So the release line's
+fuzzing (`kpasswd_reply` and `ccache_parse`, 300 s each) and mutants run on
+dispatch, once per release candidate before tagging:
+
+```sh
+gh workflow run CI -R andrico21/rskrb5 --ref release/0.3.0
+gh run list -R andrico21/rskrb5 -w CI -b release/0.3.0 -e workflow_dispatch -L 1
+```
 
 ## Lint profile
 
