@@ -108,7 +108,7 @@ retirement trigger.
   `.cargo/config.toml` (`build.warnings = "deny"`) and no `allow` attributes.
   Upstream code keeps its existing violations as generated, item-level
   `lint-migration:` expectations listed in `scripts/lint-ratchet/baseline.toml`
-  (7,396 at adoption, 6,520 now), which can only shrink. Fork code passes the
+  (7,396 at adoption, 6,514 now), which can only shrink. Fork code passes the
   profile outright. Gates: fork-lines (differential diagnostics), prose (the
   core's non-lint rules), baseline ratchet, profile equality, profile
   completeness and allow. See `docs/lint-baseline.md`.

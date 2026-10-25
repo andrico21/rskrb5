@@ -18,6 +18,11 @@ Numbers on this page were measured on the release line at `f18676f`:
 | Core-sanctioned facade expectations | 1 `public facade` (crate root) |
 | `allow` attributes | 0 |
 
+Two later commits shrank the baseline by six more entries: `e09b0c0`
+removed the five on `Config::json` and `4cd7423` one on
+`TokioKdcTransport::send_to_kpasswd_realm_explicit`.
+`baseline_gate.py --report` now prints `current 6514 / base 7396 entries`.
+
 ## Where the profile comes from
 
 The `[lints]` tables in the root [`Cargo.toml`](../Cargo.toml) are the TOML
@@ -332,7 +337,7 @@ item, never a wider or file-level expectation. Each rewrite is its own
 
 ### Recorded upstream-line edits of the fork-code pass (p)
 
-Todos 17 and 18 edited a few upstream lines whose diagnostics fire only
+Todos 17, 18 and 45 edited a few upstream lines whose diagnostics fire only
 because of release-line changes. Exception **(p)**, user-acknowledged on
 2026-10-25 when authorizing the final review fixes, explicitly records these
 behavior-preserving classes under the same principle as (j)/(k):
@@ -350,6 +355,11 @@ behavior-preserving classes under the same principle as (j)/(k):
    source-compatible), plus `#[inline]` and `#[must_use]` on that public
    function; ignoring its return value can now warn under strict lints.
    `ticket_lifetime` is written as `Duration::from_hours(24)`.
+  `Config::json` returns `Result<String, serde_json::Error>` instead of
+  `std::result::Result<String, serde_json::Error>` (`unused_qualifications`
+  outside the K1-K7 predicates, `e09b0c0`), plus `#[inline]` and an
+  `# Errors` section; its 5 `lint-migration:` expectations were removed
+  (shrink only).
 - `src/service.rs`: `DEFAULT_MAX_CLOCK_SKEW` written as
   `Duration::from_mins(5)`.
 

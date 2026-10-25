@@ -136,7 +136,11 @@ on these APIs (project overlay deviation 6):
   `Config::resolve_realm` gains `#[must_use]` and `#[inline]`, and its
   parameter is renamed `domain_name` to `dns_name`. The rename is
   source-compatible for callers; discarding the return value may now warn
-  (or fail with warnings denied). These rewrites preserve runtime behavior;
+  (or fail with warnings denied). `Config::json` returns
+  `Result<String, serde_json::Error>` instead of the fully qualified
+  `std::result::Result<…>` (same type), gains `#[inline]` and an `# Errors`
+  section, and drops its 5 `lint-migration:` expectations (shrink only).
+  These rewrites preserve runtime behavior;
   the exact authorization record is in `docs/lint-baseline.md`.
 - **Behaviour changes:**
   - a config whose explicit `default_tkt_enctypes` or `default_tgs_enctypes`
