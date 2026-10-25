@@ -114,6 +114,26 @@ tokio = { version = "1.47", features = [
 ] }
 toml = "0.9"
 
+[[test]]
+name = "client"
+path = "tests/client.rs"
+required-features = ["messages", "spnego", "tokio"]
+
+[[test]]
+name = "client_integration"
+path = "tests/client_integration.rs"
+required-features = ["spnego", "tokio"]
+
+[[test]]
+name = "client_ad_integration"
+path = "tests/client_ad_integration.rs"
+required-features = ["spnego", "tokio"]
+
+[[test]]
+name = "http"
+path = "tests/http.rs"
+required-features = ["http", "tokio"]
+
 [[example]]
 name = "axum-negotiate"
 path = "examples/axum-negotiate.rs"
