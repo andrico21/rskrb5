@@ -43,7 +43,7 @@ sources disagree the stricter rule wins:
   returning tests, Drop audits, emptiness messages);
 - the [Kerberos overlay](rust-guidelines/overlays/domains/kerberos-credential-protocols.md)
   and the [HTTP services overlay](rust-guidelines/overlays/domains/http-services.md);
-- the [rskrb5 project overlay](rust-guidelines/overlays/projects/rskrb5.md);
+- the [rskrb5-ng project overlay](rust-guidelines/overlays/projects/rskrb5-ng.md);
 - rmcp-server-kit's gates, including its prose gates, ported as
   `prose_gate.py`.
 
@@ -552,7 +552,7 @@ the gates red with new lints. When that happens:
    procedure in [`RUST_GUIDELINES.md`](../RUST_GUIDELINES.md).
 3. Replace the local `[lints]` tables and `clippy.toml` keys with the
    re-vendored core (`profile_eq.py --clippy-toml` must pass). Set the
-   intended new `rust-version` BEFORE generating diagnostics (overlay rule 7).
+   intended new `rust-version` BEFORE generating diagnostics (overlay rule 6).
 4. Run `python3 scripts/lint-ratchet/generate_baseline.py --generate --rebaseline`.
    It adds expectations for new upstream-origin diagnostics and removes the
    ones that became unfulfilled.

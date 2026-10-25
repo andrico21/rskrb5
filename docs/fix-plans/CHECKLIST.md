@@ -52,7 +52,7 @@ compiled and failed at least one test; every baseline run passed.
   - this checklist moved from the main checkout into the release line.
 - [x] Plan worktrees: the seven fix worktrees, the `lint/*` group worktrees and branches (local only, merged into `release/0.3.0`), the `reproof` worktree and the `main-publisher` worktree are removed. Only the main checkout and `release-0.3.0` remain.
 - [ ] Push `release/0.3.0` and watch CI (todo 29). The tag `v0.3.0` and `cargo publish` are the maintainer's step (FORK-NOTES "Releases").
-- [ ] Record the delivered facts in the reference repo's `overlays/projects/rskrb5.md` and re-vendor (todo 26).
+- [ ] Record the delivered facts in the reference repo's `overlays/projects/rskrb5-ng.md` (renamed from `rskrb5.md`) and re-vendor (todo 26).
 - [ ] Fork-branch CI on GitHub stays red on the `fix/*` branches: they sit on upstream `6f4abc9`, and the three `byte_char_slices` diagnostics remain until upstream PR #15 lands. The release line is not affected.
 
 ## 1. HIGH (run-2 confirmed)

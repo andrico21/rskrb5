@@ -92,7 +92,7 @@ It goes away when the TGS subkey PR is filed and the API is settled upstream.
 `rust-version = "1.99"` and the lockfile holds the latest Rust 1.99-compatible
 versions; `cargo update --dry-run 2>&1 | grep -c 'Locking 0 packages'` prints
 1. Major (0.x minor) upgrades stay out of scope, because upstream code depends
-on these APIs (project overlay deviation 6):
+on these APIs (project overlay deviation 3):
 
 | Crate | Locked | Latest | Held by |
 |---|---|---|---|
