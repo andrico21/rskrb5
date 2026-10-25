@@ -92,6 +92,60 @@ pass_filenames = false
 stages = ["pre-push", "manual"]
 
 [[repos.hooks]]
+id = "cargo-check-lib-messages"
+name = "cargo check --lib --no-default-features --features messages"
+language = "system"
+entry = "cargo check --lib --no-default-features --features messages"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-lib-spnego"
+name = "cargo check --lib --no-default-features --features spnego"
+language = "system"
+entry = "cargo check --lib --no-default-features --features spnego"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-lib-http"
+name = "cargo check --lib --no-default-features --features http"
+language = "system"
+entry = "cargo check --lib --no-default-features --features http"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-lib-evaluation"
+name = "cargo check --lib --no-default-features --features evaluation"
+language = "system"
+entry = "cargo check --lib --no-default-features --features evaluation"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-compat-report-bin"
+name = "cargo check --no-default-features --features evaluation --bin rskrb5-compat-report"
+language = "system"
+entry = "cargo check --no-default-features --features evaluation --bin rskrb5-compat-report"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "axum-negotiate-example"
+name = "README axum-negotiate example (--no-default-features --features http)"
+language = "system"
+entry = "cargo build --example axum-negotiate --features http --no-default-features"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
 id = "cargo-check"
 name = "cargo check"
 language = "system"
