@@ -165,7 +165,7 @@ version = "0.8.23"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
-version = "0.7.6"
+version = "0.7.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]

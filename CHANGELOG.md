@@ -73,7 +73,8 @@ retirement trigger.
   ticket `sname` (for example a keytab alias sharing the service key) is
   rejected (clelange/rskrb5 PR #20, updated).
 - Lockfile refreshed to the latest Rust 1.99-compatible dependency versions
-  (`crossbeam-epoch` 0.9.18 to 0.9.21 among them).
+  (`crossbeam-epoch` 0.9.18 to 0.9.21 and `crypto-bigint` 0.7.6 to 0.7.8
+  among them).
 
 ### Breaking
 

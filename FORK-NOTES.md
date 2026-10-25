@@ -28,6 +28,11 @@ breaking release (new error variants, a second type parameter on
 `NegotiateHttpError`, new public struct fields; see `CHANGELOG.md`).
 `docs/fix-plans/` holds the detailed plans for the audit findings it closes.
 
+Before tagging, confirm the lockfile is current: `cargo update --dry-run` on
+the tag commit must print `Locking 0 packages`. If it locks anything, refresh
+the lockfile (`cargo update`, bumping the matching `supply-chain/config.toml`
+exemption so `cargo vet --locked` passes), commit, and wait for CI again.
+
 To publish, tag the CI-green tip of `release/0.3.0`:
 
 ```sh
