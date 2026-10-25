@@ -1,7 +1,7 @@
 #![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "evaluation")]
 
-use core::time::Duration;
+use core::{error, time::Duration};
 use std::time::UNIX_EPOCH;
 
 use pretty_assertions::assert_eq;
@@ -26,6 +26,9 @@ use rskrb5::{
 mod pac_ad_win2k;
 #[path = "support/pac_trust.rs"]
 mod pac_trust;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
 
 const CLIENT_CLAIMS_INFO_STR: &str = "01100800cccccccc000100000000000000000200d80000000400020000000000d8000000000000000000000000000000d800000001100800ccccccccc80000000000000000000200010000000400020000000000000000000000000001000000010000000100000008000200010000000c000200030003000100000010000200290000000000000029000000610064003a002f002f006500780074002f00730041004d004100630063006f0075006e0074004e0061006d0065003a0038003800640035006400390030003800350065006100350063003000630030000000000001000000140002000a000000000000000a00000074006500730074007500730065007200310000000000000000000000";
 const CLIENT_CLAIMS_INFO_INT: &str = "01100800cccccccce00000000000000000000200b80000000400020000000000b8000000000000000000000000000000b800000001100800cccccccca80000000000000000000200010000000400020000000000000000000000000001000000010000000100000008000200010000000c0002000100010001000000100002002a000000000000002a000000610064003a002f002f006500780074002f006d007300440053002d0053007500700070006f00720074006500640045003a0038003800640035006400650061003800660031006100660035006600310039000000010000001c0000000000000000000000";
@@ -1094,60 +1097,73 @@ fn verifies_pac_server_checksum_with_service_key() {
     pac.verify(key).expect("PAC verifies");
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// PAC server checksum verification with the service key.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn rejects_tampered_pac_server_checksum() {
-    let mut pac =
-        Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC parses");
-    let keytab = Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB)).expect("keytab parses");
-    let (key, _) = keytab
-        .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
-        .expect("service key exists");
-    pac.server_checksum
-        .as_mut()
-        .expect("server checksum parsed")
-        .signature[0] ^= 0x01;
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod server_checksum {
+    use super::*;
 
-    assert!(
-        !pac.verify_server_checksum(key)
-            .expect("checksum verification runs")
-    );
-    assert!(matches!(
-        pac.verify(key),
-        Err(pac::Error::ServerChecksumVerificationFailed)
-    ));
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            clippy::indexing_slicing,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that a flipped server signature bit fails verification.
+    #[test]
+    fn rejects_tampered_pac_server_checksum() -> Result<(), TestError> {
+        let mut pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K))
+            .map_err(|cause| format!("PAC parses: {cause}"))?;
+        let keytab = Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB))
+            .map_err(|cause| format!("keytab parses: {cause}"))?;
+        let (key, _) = keytab
+            .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
+            .map_err(|cause| format!("service key exists: {cause}"))?;
+        pac.server_checksum
+            .as_mut()
+            .expect("server checksum parsed")
+            .signature[0] ^= 0x01;
+
+        assert!(
+            !pac.verify_server_checksum(key)
+                .map_err(|cause| format!("checksum verification runs: {cause}"))?
+        );
+        assert!(matches!(
+            pac.verify(key),
+            Err(pac::Error::ServerChecksumVerificationFailed)
+        ));
+        Ok(())
+    }
 }
 
 #[cfg_attr(

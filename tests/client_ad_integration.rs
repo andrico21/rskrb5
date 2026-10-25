@@ -97,9 +97,6 @@ use rskrb5::{
     service::ServiceValidator,
 };
 
-#[path = "support/env.rs"]
-mod child_env;
-
 const USER_REALM: &str = "USER.GOKRB5";
 const RESOURCE_REALM: &str = "RES.GOKRB5";
 const TESTUSER1: &str = "testuser1";
@@ -2551,919 +2548,936 @@ fn runtime() -> tokio::runtime::Runtime {
         .expect("tokio runtime builds")
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// Child-process tests of the AD environment gate, endpoint and keytab overrides.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn strict_ad_gate_rejects_missing_testad() {
-    const TEST_PATH: &str = "strict_ad_gate_rejects_missing_testad";
-    if !child_env::in_child(TEST_PATH) {
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                ("TESTAD", None),
-                ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
-                ("TEST_AD_USER_KDC_ADDR", None),
-                ("TEST_AD_RESOURCE_KDC_ADDR", None),
-                ("TEST_AD_USER_ADMIN_ADDR", None),
-                ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
-                ("TEST_AD_KDC_ADDR", None),
-                ("TEST_AD_RES_KDC_ADDR", None),
-                ("TEST_AD_ADMIN_ADDR", None),
-                ("TEST_AD_RES_ADMIN_ADDR", None),
-            ],
-        );
-        return;
-    }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod ad_env_overrides {
+    use super::*;
 
-    let error = ad_enabled().expect_err("strict AD gate rejects a TESTAD soft skip");
-    assert!(
-        error
-            .to_string()
-            .contains("TESTAD_REQUIRED=1 forbids soft skips"),
-        "{error}"
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::expect_used,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn strict_ad_gate_rejects_malformed_user_kdc_endpoint() {
-    const TEST_PATH: &str = "strict_ad_gate_rejects_malformed_user_kdc_endpoint";
-    if !child_env::in_child(TEST_PATH) {
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                ("TESTAD", Some(OsStr::new("1"))),
-                ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
-                (
-                    "TEST_AD_USER_KDC_ADDR",
-                    Some(OsStr::new("127.0.0.1:not-a-port")),
-                ),
-                ("TEST_AD_RESOURCE_KDC_ADDR", None),
-                ("TEST_AD_USER_ADMIN_ADDR", None),
-                ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
-                ("TEST_AD_KDC_ADDR", None),
-                ("TEST_AD_RES_KDC_ADDR", None),
-                ("TEST_AD_ADMIN_ADDR", None),
-                ("TEST_AD_RES_ADMIN_ADDR", None),
-            ],
+    )]
+    /// Pins that `TESTAD_REQUIRED=1` turns a missing `TESTAD` into an error.
+    #[test]
+    fn strict_ad_gate_rejects_missing_testad() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str = "ad_env_overrides::strict_ad_gate_rejects_missing_testad";
+        if !child_env::in_child(TEST_PATH) {
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", None),
+                    ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                    ("TEST_AD_USER_KDC_ADDR", None),
+                    ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                    ("TEST_AD_USER_ADMIN_ADDR", None),
+                    ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        let error = ad_enabled().expect_err("strict AD gate rejects a TESTAD soft skip");
+        assert!(
+            error
+                .to_string()
+                .contains("TESTAD_REQUIRED=1 forbids soft skips"),
+            "{error}"
         );
-        return;
+        Ok(())
     }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
 
-    let error = ad_enabled().expect_err("strict AD gate rejects malformed endpoints");
-    assert!(
-        error.to_string().contains("cannot reach user KDC"),
-        "{error}"
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::expect_used,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_errors_doc,
-        clippy::missing_panics_doc,
-        clippy::panic_in_result_fn,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_in_result,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
-    const TEST_PATH: &str = "strict_ad_gate_rejects_unreachable_user_kdc_endpoint";
-    if !child_env::in_child(TEST_PATH) {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        let endpoint = listener.local_addr()?.to_string();
-        drop(listener);
+    )]
+    /// Pins that the strict AD gate rejects a malformed user KDC endpoint.
+    #[test]
+    fn strict_ad_gate_rejects_malformed_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str =
+            "ad_env_overrides::strict_ad_gate_rejects_malformed_user_kdc_endpoint";
+        if !child_env::in_child(TEST_PATH) {
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", Some(OsStr::new("1"))),
+                    ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                    (
+                        "TEST_AD_USER_KDC_ADDR",
+                        Some(OsStr::new("127.0.0.1:not-a-port")),
+                    ),
+                    ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                    ("TEST_AD_USER_ADMIN_ADDR", None),
+                    ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
 
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                ("TESTAD", Some(OsStr::new("1"))),
-                ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
-                ("TEST_AD_USER_KDC_ADDR", Some(OsStr::new(&endpoint))),
-                ("TEST_AD_RESOURCE_KDC_ADDR", None),
-                ("TEST_AD_USER_ADMIN_ADDR", None),
-                ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
-                ("TEST_AD_KDC_ADDR", None),
-                ("TEST_AD_RES_KDC_ADDR", None),
-                ("TEST_AD_ADMIN_ADDR", None),
-                ("TEST_AD_RES_ADMIN_ADDR", None),
-            ],
+        let error = ad_enabled().expect_err("strict AD gate rejects malformed endpoints");
+        assert!(
+            error.to_string().contains("cannot reach user KDC"),
+            "{error}"
         );
-        return Ok(());
+        Ok(())
     }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
 
-    let error = ad_enabled().expect_err("strict AD gate rejects unreachable endpoints");
-    assert!(
-        error.to_string().contains("cannot reach user KDC at"),
-        "{error}"
-    );
-
-    Ok(())
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::expect_used,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_errors_doc,
-        clippy::missing_panics_doc,
-        clippy::panic_in_result_fn,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_in_result,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn ad_config_uses_endpoint_overrides_and_rc4_trust_options() -> Result<(), Box<dyn Error>> {
-    const TEST_PATH: &str = "ad_config_uses_endpoint_overrides_and_rc4_trust_options";
-    if !child_env::in_child(TEST_PATH) {
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                ("TESTAD", None),
-                ("TESTAD_REQUIRED", None),
-                (
-                    "TEST_AD_USER_KDC_ADDR",
-                    Some(OsStr::new("192.0.2.10:10088")),
-                ),
-                (
-                    "TEST_AD_RESOURCE_KDC_ADDR",
-                    Some(OsStr::new("192.0.2.11:10088")),
-                ),
-                (
-                    "TEST_AD_USER_ADMIN_ADDR",
-                    Some(OsStr::new("192.0.2.10:10464")),
-                ),
-                (
-                    "TEST_AD_RESOURCE_ADMIN_ADDR",
-                    Some(OsStr::new("192.0.2.11:10464")),
-                ),
-                ("TEST_AD_KDC_ADDR", None),
-                ("TEST_AD_RES_KDC_ADDR", None),
-                ("TEST_AD_ADMIN_ADDR", None),
-                ("TEST_AD_RES_ADMIN_ADDR", None),
-            ],
+    )]
+    /// Pins that the strict AD gate rejects an unreachable user KDC endpoint.
+    #[test]
+    fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str =
+            "ad_env_overrides::strict_ad_gate_rejects_unreachable_user_kdc_endpoint";
+        if !child_env::in_child(TEST_PATH) {
+            let listener = TcpListener::bind(("127.0.0.1", 0))?;
+            let endpoint = listener.local_addr()?.to_string();
+            drop(listener);
+
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", Some(OsStr::new("1"))),
+                    ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                    ("TEST_AD_USER_KDC_ADDR", Some(OsStr::new(&endpoint))),
+                    ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                    ("TEST_AD_USER_ADMIN_ADDR", None),
+                    ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        let error = ad_enabled().expect_err("strict AD gate rejects unreachable endpoints");
+        assert!(
+            error.to_string().contains("cannot reach user KDC at"),
+            "{error}"
         );
-        return Ok(());
+
+        Ok(())
     }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
 
-    let config = ad_config(false)?;
-    assert_eq!(
-        config.configured_kdcs(USER_REALM)?,
-        &["192.0.2.10:10088".to_owned()]
-    );
-    assert_eq!(
-        config.configured_kdcs(RESOURCE_REALM)?,
-        &["192.0.2.11:10088".to_owned()]
-    );
-    assert_eq!(
-        config
-            .realm(USER_REALM)
-            .expect("USER realm exists")
-            .admin_server,
-        ["192.0.2.10:10464".to_owned()]
-    );
-    assert_eq!(
-        config
-            .realm(RESOURCE_REALM)
-            .expect("RESOURCE realm exists")
-            .admin_server,
-        ["192.0.2.11:10464".to_owned()]
-    );
-    assert!(!config.libdefaults.allow_weak_crypto);
-    assert!(!config.libdefaults.canonicalize);
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, [AES256_ETYPE]);
-    assert_eq!(config.libdefaults.default_tgs_enctype_ids, [AES256_ETYPE]);
-
-    let rc4_config = ad_config(true)?;
-    assert!(rc4_config.libdefaults.allow_weak_crypto);
-    assert!(rc4_config.libdefaults.canonicalize);
-    assert_eq!(
-        rc4_config.libdefaults.default_tkt_enctype_ids,
-        [RC4_HMAC_ETYPE]
-    );
-    assert_eq!(
-        rc4_config.libdefaults.default_tgs_enctype_ids,
-        [RC4_HMAC_ETYPE]
-    );
-    assert_eq!(
-        rc4_config.libdefaults.permitted_enctype_ids,
-        [RC4_HMAC_ETYPE]
-    );
-
-    Ok(())
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::expect_used,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::unwrap_in_result,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_errors_doc,
-        clippy::missing_panics_doc,
-        clippy::panic_in_result_fn,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_in_result,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn ad_keytab_uses_path_override() -> Result<(), Box<dyn Error>> {
-    const TEST_PATH: &str = "ad_keytab_uses_path_override";
-    if !child_env::in_child(TEST_PATH) {
-        let path = temp_keytab_path("testuser1");
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                (TESTUSER1_KEYTAB.path_env, Some(path.as_os_str())),
-                (TESTUSER1_KEYTAB.hex_env, None),
-                (TESTUSER1_KEYTAB.base64_env, None),
-            ],
+    )]
+    /// Pins that the AD config uses the endpoint overrides and the RC4 trust options.
+    #[test]
+    fn ad_config_uses_endpoint_overrides_and_rc4_trust_options() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str =
+            "ad_env_overrides::ad_config_uses_endpoint_overrides_and_rc4_trust_options";
+        if !child_env::in_child(TEST_PATH) {
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", None),
+                    ("TESTAD_REQUIRED", None),
+                    (
+                        "TEST_AD_USER_KDC_ADDR",
+                        Some(OsStr::new("192.0.2.10:10088")),
+                    ),
+                    (
+                        "TEST_AD_RESOURCE_KDC_ADDR",
+                        Some(OsStr::new("192.0.2.11:10088")),
+                    ),
+                    (
+                        "TEST_AD_USER_ADMIN_ADDR",
+                        Some(OsStr::new("192.0.2.10:10464")),
+                    ),
+                    (
+                        "TEST_AD_RESOURCE_ADMIN_ADDR",
+                        Some(OsStr::new("192.0.2.11:10464")),
+                    ),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK.lock().expect("AD integration test lock");
+
+        let config = ad_config(false)?;
+        assert_eq!(
+            config.configured_kdcs(USER_REALM)?,
+            &["192.0.2.10:10088".to_owned()]
         );
-        return Ok(());
+        assert_eq!(
+            config.configured_kdcs(RESOURCE_REALM)?,
+            &["192.0.2.11:10088".to_owned()]
+        );
+        assert_eq!(
+            config
+                .realm(USER_REALM)
+                .expect("USER realm exists")
+                .admin_server,
+            ["192.0.2.10:10464".to_owned()]
+        );
+        assert_eq!(
+            config
+                .realm(RESOURCE_REALM)
+                .expect("RESOURCE realm exists")
+                .admin_server,
+            ["192.0.2.11:10464".to_owned()]
+        );
+        assert!(!config.libdefaults.allow_weak_crypto);
+        assert!(!config.libdefaults.canonicalize);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [AES256_ETYPE]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [AES256_ETYPE]);
+
+        let rc4_config = ad_config(true)?;
+        assert!(rc4_config.libdefaults.allow_weak_crypto);
+        assert!(rc4_config.libdefaults.canonicalize);
+        assert_eq!(
+            rc4_config.libdefaults.default_tkt_enctype_ids,
+            [RC4_HMAC_ETYPE]
+        );
+        assert_eq!(
+            rc4_config.libdefaults.default_tgs_enctype_ids,
+            [RC4_HMAC_ETYPE]
+        );
+        assert_eq!(
+            rc4_config.libdefaults.permitted_enctype_ids,
+            [RC4_HMAC_ETYPE]
+        );
+
+        Ok(())
     }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let bytes = decode_hex_value(KEYTAB_TESTUSER1_USER_GOKRB5)?;
-    let path = PathBuf::from(
-        env::var_os(TESTUSER1_KEYTAB.path_env).expect("the parent test sets the keytab path"),
-    );
-    fs::write(&path, &bytes)?;
 
-    assert_eq!(testuser1_keytab()?, keytab(KEYTAB_TESTUSER1_USER_GOKRB5)?);
-
-    let _ = fs::remove_file(path);
-    Ok(())
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::expect_used,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::unwrap_in_result,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_errors_doc,
-        clippy::missing_panics_doc,
-        clippy::panic_in_result_fn,
-        clippy::std_instead_of_core,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_in_result,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn ad_keytab_uses_hex_override() -> Result<(), Box<dyn Error>> {
-    const TEST_PATH: &str = "ad_keytab_uses_hex_override";
-    if !child_env::in_child(TEST_PATH) {
-        let spaced_hex = KEYTAB_TESTUSER2_USER_GOKRB5
-            .as_bytes()
-            .chunks(64)
-            .map(|chunk| std::str::from_utf8(chunk).expect("fixture hex is utf8"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                (TESTUSER2_KEYTAB.path_env, None),
-                (TESTUSER2_KEYTAB.hex_env, Some(OsStr::new(&spaced_hex))),
-                (TESTUSER2_KEYTAB.base64_env, None),
-            ],
+    )]
+    /// Pins that the AD keytab loader reads the path override.
+    #[test]
+    fn ad_keytab_uses_path_override() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str = "ad_env_overrides::ad_keytab_uses_path_override";
+        if !child_env::in_child(TEST_PATH) {
+            let path = temp_keytab_path("testuser1");
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (TESTUSER1_KEYTAB.path_env, Some(path.as_os_str())),
+                    (TESTUSER1_KEYTAB.hex_env, None),
+                    (TESTUSER1_KEYTAB.base64_env, None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK.lock().expect("AD integration test lock");
+        let bytes = decode_hex_value(KEYTAB_TESTUSER1_USER_GOKRB5)?;
+        let path = PathBuf::from(
+            env::var_os(TESTUSER1_KEYTAB.path_env).ok_or("the parent test sets the keytab path")?,
         );
-        return Ok(());
+        fs::write(&path, &bytes)?;
+
+        assert_eq!(testuser1_keytab()?, keytab(KEYTAB_TESTUSER1_USER_GOKRB5)?);
+
+        let _ = fs::remove_file(path);
+        Ok(())
     }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
 
-    assert_eq!(testuser2_keytab()?, keytab(KEYTAB_TESTUSER2_USER_GOKRB5)?);
-
-    Ok(())
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::absolute_paths,
+            clippy::expect_used,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::std_instead_of_core,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_errors_doc,
-        clippy::missing_panics_doc,
-        clippy::panic_in_result_fn,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_in_result,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "spnego")]
-#[test]
-fn ad_keytab_uses_base64_override() -> Result<(), Box<dyn Error>> {
-    use base64::Engine as _;
+    )]
+    /// Pins that the AD keytab loader decodes the whitespace-split hex override.
+    #[test]
+    fn ad_keytab_uses_hex_override() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str = "ad_env_overrides::ad_keytab_uses_hex_override";
+        if !child_env::in_child(TEST_PATH) {
+            let spaced_hex = KEYTAB_TESTUSER2_USER_GOKRB5
+                .as_bytes()
+                .chunks(64)
+                .map(|chunk| std::str::from_utf8(chunk).expect("fixture hex is utf8"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (TESTUSER2_KEYTAB.path_env, None),
+                    (TESTUSER2_KEYTAB.hex_env, Some(OsStr::new(&spaced_hex))),
+                    (TESTUSER2_KEYTAB.base64_env, None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
 
-    const TEST_PATH: &str = "ad_keytab_uses_base64_override";
-    if !child_env::in_child(TEST_PATH) {
-        let bytes = decode_hex_value(KEYTAB_SYSHTTP_RES_GOKRB5)?;
-        let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                (SYSHTTP_KEYTAB.path_env, None),
-                (SYSHTTP_KEYTAB.hex_env, None),
-                (SYSHTTP_KEYTAB.base64_env, Some(OsStr::new(&base64))),
-            ],
-        );
-        return Ok(());
+        assert_eq!(testuser2_keytab()?, keytab(KEYTAB_TESTUSER2_USER_GOKRB5)?);
+
+        Ok(())
     }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
 
-    assert_eq!(syshttp_keytab()?, keytab(KEYTAB_SYSHTTP_RES_GOKRB5)?);
-
-    Ok(())
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::absolute_paths,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_errors_doc,
-        clippy::missing_panics_doc,
-        clippy::panic_in_result_fn,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_in_result,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn ad_keytab_path_override_takes_precedence_over_encoded_values() -> Result<(), Box<dyn Error>> {
-    const TEST_PATH: &str = "ad_keytab_path_override_takes_precedence_over_encoded_values";
-    if !child_env::in_child(TEST_PATH) {
-        let path = temp_keytab_path("testuser3");
-        child_env::run_in_child(
-            TEST_PATH,
-            &[
-                (TESTUSER3_KEYTAB.path_env, Some(path.as_os_str())),
-                (TESTUSER3_KEYTAB.hex_env, Some(OsStr::new("00"))),
-                (TESTUSER3_KEYTAB.base64_env, None),
-            ],
-        );
-        return Ok(());
+    )]
+    #[cfg(feature = "spnego")]
+    /// Pins that the AD keytab loader decodes the base64 override.
+    #[test]
+    fn ad_keytab_uses_base64_override() -> Result<(), Box<dyn Error>> {
+        use base64::Engine as _;
+
+        const TEST_PATH: &str = "ad_env_overrides::ad_keytab_uses_base64_override";
+        if !child_env::in_child(TEST_PATH) {
+            let bytes = decode_hex_value(KEYTAB_SYSHTTP_RES_GOKRB5)?;
+            let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (SYSHTTP_KEYTAB.path_env, None),
+                    (SYSHTTP_KEYTAB.hex_env, None),
+                    (SYSHTTP_KEYTAB.base64_env, Some(OsStr::new(&base64))),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        assert_eq!(syshttp_keytab()?, keytab(KEYTAB_SYSHTTP_RES_GOKRB5)?);
+
+        Ok(())
     }
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let path = PathBuf::from(
-        env::var_os(TESTUSER3_KEYTAB.path_env).expect("the parent test sets the keytab path"),
-    );
-    fs::write(&path, decode_hex_value(KEYTAB_TESTUSER3_USER_GOKRB5)?)?;
 
-    assert_eq!(testuser3_keytab()?, keytab(KEYTAB_TESTUSER3_USER_GOKRB5)?);
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::unwrap_in_result,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the keytab path override wins over the encoded overrides.
+    #[test]
+    fn ad_keytab_path_override_takes_precedence_over_encoded_values() -> Result<(), Box<dyn Error>>
+    {
+        const TEST_PATH: &str =
+            "ad_env_overrides::ad_keytab_path_override_takes_precedence_over_encoded_values";
+        if !child_env::in_child(TEST_PATH) {
+            let path = temp_keytab_path("testuser3");
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (TESTUSER3_KEYTAB.path_env, Some(path.as_os_str())),
+                    (TESTUSER3_KEYTAB.hex_env, Some(OsStr::new("00"))),
+                    (TESTUSER3_KEYTAB.base64_env, None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK.lock().expect("AD integration test lock");
+        let path = PathBuf::from(
+            env::var_os(TESTUSER3_KEYTAB.path_env).ok_or("the parent test sets the keytab path")?,
+        );
+        fs::write(&path, decode_hex_value(KEYTAB_TESTUSER3_USER_GOKRB5)?)?;
 
-    let _ = fs::remove_file(path);
-    Ok(())
+        assert_eq!(testuser3_keytab()?, keytab(KEYTAB_TESTUSER3_USER_GOKRB5)?);
+
+        let _ = fs::remove_file(path);
+        Ok(())
+    }
 }
 
 #[cfg_attr(
@@ -3552,3 +3566,6 @@ fn temp_keytab_path(label: &str) -> PathBuf {
         std::process::id()
     ))
 }
+
+#[path = "support/env.rs"]
+mod child_env;

@@ -1,7 +1,7 @@
 #![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "messages")]
 
-use core::time::Duration;
+use core::{error, time::Duration};
 use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -22,6 +22,9 @@ use rskrb5::{
 mod env;
 #[path = "support/pac_ad_win2k.rs"]
 mod pac_ad_win2k;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
 
 const HTTP_KEYTAB: &str = concat!(
     "0502000000440002000b544553542e474f4b5242350004485454500010686f73742e746573742e676f6b",
@@ -321,115 +324,131 @@ fn validates_ap_req_from_keytab_name() {
     assert_eq!(validated.session_key.etype, 18);
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// Child-process test of the `KRB5_KTNAME` service keytab loader.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn validates_ap_req_from_keytab_env() {
-    const TEST_PATH: &str = "validates_ap_req_from_keytab_env";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_service_keytab_file("validate-env");
-        let name = format!("FILE:{}", path.display());
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
-        return;
+mod keytab_env {
+    use std::env::var;
+
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that `ServiceValidator::from_keytab_env` validates with the `KRB5_KTNAME` keytab.
+    #[test]
+    fn validates_ap_req_from_keytab_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "keytab_env::validates_ap_req_from_keytab_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_service_keytab_file("validate-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            name.strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let mut validator = ServiceValidator::from_keytab_env()
+            .map_err(|cause| format!("validator loads keytab from env: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        let _ = std::fs::remove_file(&path);
+
+        let validated = validator
+            .validate_ap_req(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
+
+        assert_eq!(validated.client.name(), "testuser1");
+        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key.etype, 18);
+        Ok(())
     }
-    let keytab = http_keytab();
-    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
-    let path = PathBuf::from(
-        name.strip_prefix("FILE:")
-            .expect("KRB5_KTNAME names a FILE: path"),
-    );
-    keytab.save_name(&name).expect("keytab saves by name");
-    let mut validator = ServiceValidator::from_keytab_env()
-        .expect("validator loads keytab from env")
-        .with_now(timestamp(1_893_553_447));
-    let _ = std::fs::remove_file(&path);
-
-    let validated = validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("AP-REQ validates");
-
-    assert_eq!(validated.client.name(), "testuser1");
-    assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-    assert_eq!(validated.session_key.etype, 18);
 }
 
 #[cfg_attr(
@@ -534,228 +553,247 @@ fn validates_ap_req_from_default_keytab_name() {
     assert_eq!(validated.session_key.etype, 18);
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// Child-process tests of the service default-keytab precedence.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn validates_ap_req_from_default_keytab_when_env_is_absent() {
-    const TEST_PATH: &str = "validates_ap_req_from_default_keytab_when_env_is_absent";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
-        return;
-    }
-    let keytab = http_keytab();
-    let path = temp_service_keytab_file("validate-default-env-fallback");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
-    let config = config_with_default_keytab_name(&name);
-    let mut validator = ServiceValidator::from_default_keytab(&config)
-        .expect("validator loads default keytab")
-        .with_now(timestamp(1_893_553_447));
-    let _ = std::fs::remove_file(&path);
+mod default_keytab_env {
+    use std::env::var;
 
-    let validated = validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("AP-REQ validates");
+    use pretty_assertions::assert_eq;
 
-    assert_eq!(validated.client.name(), "testuser1");
-    assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-    assert_eq!(validated.session_key.etype, 18);
-}
+    use super::*;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
         ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn validates_ap_req_prefers_env_keytab_over_config_default() {
-    const TEST_PATH: &str = "validates_ap_req_prefers_env_keytab_over_config_default";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_service_keytab_file("validate-env-precedence");
-        let env_name = format!("FILE:{}", path.display());
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(env_name.as_ref()))]);
-        return;
+    )]
+    /// Pins that the validator falls back to the config default keytab without `KRB5_KTNAME`.
+    #[test]
+    fn validates_ap_req_from_default_keytab_when_env_is_absent() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "default_keytab_env::validates_ap_req_from_default_keytab_when_env_is_absent";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let path = temp_service_keytab_file("validate-default-env-fallback");
+        let name = format!("FILE:{}", path.display());
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let config = config_with_default_keytab_name(&name);
+        let mut validator = ServiceValidator::from_default_keytab(&config)
+            .map_err(|cause| format!("validator loads default keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        let _ = std::fs::remove_file(&path);
+
+        let validated = validator
+            .validate_ap_req(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
+
+        assert_eq!(validated.client.name(), "testuser1");
+        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key.etype, 18);
+        Ok(())
     }
-    let keytab = http_keytab();
-    let env_name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
-    let path = PathBuf::from(
-        env_name
-            .strip_prefix("FILE:")
-            .expect("KRB5_KTNAME names a FILE: path"),
-    );
-    keytab.save_name(&env_name).expect("keytab saves by name");
-    let missing_config_name = format!(
-        "FILE:{}",
-        temp_service_keytab_file("missing-config-default").display()
-    );
-    let config = config_with_default_keytab_name(&missing_config_name);
-    let mut validator = ServiceValidator::from_default_keytab(&config)
-        .expect("validator loads env keytab before config default")
-        .with_now(timestamp(1_893_553_447));
-    let _ = std::fs::remove_file(&path);
 
-    let validated = validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("AP-REQ validates");
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the validator prefers `KRB5_KTNAME` over the config default keytab.
+    #[test]
+    fn validates_ap_req_prefers_env_keytab_over_config_default() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "default_keytab_env::validates_ap_req_prefers_env_keytab_over_config_default";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_service_keytab_file("validate-env-precedence");
+            let env_name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(env_name.as_ref()))]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let env_name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            env_name
+                .strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+        keytab
+            .save_name(&env_name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let missing_config_name = format!(
+            "FILE:{}",
+            temp_service_keytab_file("missing-config-default").display()
+        );
+        let config = config_with_default_keytab_name(&missing_config_name);
+        let mut validator = ServiceValidator::from_default_keytab(&config)
+            .map_err(|cause| format!("validator loads env keytab before config default: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        let _ = std::fs::remove_file(&path);
 
-    assert_eq!(validated.client.name(), "testuser1");
-    assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-    assert_eq!(validated.session_key.etype, 18);
+        let validated = validator
+            .validate_ap_req(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
+
+        assert_eq!(validated.client.name(), "testuser1");
+        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key.etype, 18);
+        Ok(())
+    }
 }
 
 #[cfg_attr(
@@ -1413,509 +1451,6 @@ fn detects_ap_req_replay() {
         )
     ),
     expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::shadow_reuse,
-        clippy::tests_outside_test_module,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn replay_identity_ignores_the_ticket_name_type() {
-    let keytab = http_keytab();
-    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-    validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("first AP-REQ validates");
-    assert_eq!(validator.replay_cache_mut().len(), 1);
-
-    // RFC 4120 section 6.2: the name-type is advisory and "not significant
-    // when checking for equivalence". The ticket's outer sname is cleartext,
-    // so a peer can flip its name-type without touching any ciphertext; the
-    // mutated request is the same presentation and must be rejected.
-    let mut mutated = valid_ap_req_struct();
-    mutated.ticket.sname.r#type = 0;
-    let mutated = rasn::der::encode(&mutated).expect("mutated AP-REQ encodes");
-
-    assert!(matches!(
-        validator
-            .validate_ap_req(&mutated)
-            .expect_err("name-type-only mutation is a replay"),
-        Error::Replay
-    ));
-    assert_eq!(validator.replay_cache_mut().len(), 1);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::shadow_reuse,
-        clippy::tests_outside_test_module,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn replay_identity_follows_the_accepted_key_identity() {
-    let keytab = http_keytab();
-    let mut validator = ServiceValidator::new(&keytab)
-        .with_now(timestamp(1_893_553_447))
-        .with_keytab_principal(["HTTP", "host.test.gokrb5"]);
-
-    // The override selects the key; the ticket's own sname is then advisory
-    // for replay purposes, so an alias for the same service key is the same
-    // server principal.
-    let mut alias = valid_ap_req_struct();
-    alias.ticket.sname.string = vec![
-        kerberos_string("HTTP"),
-        kerberos_string("alias.test.gokrb5"),
-    ];
-    let alias = rasn::der::encode(&alias).expect("alias AP-REQ encodes");
-
-    validator
-        .validate_ap_req(&alias)
-        .expect("alias sname validates under the override");
-    assert!(matches!(
-        validator
-            .validate_ap_req(&decode_hex(VALID_AP_REQ))
-            .expect_err("same accepted key is the same server principal"),
-        Error::Replay
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn replay_identity_survives_a_shared_key_sname_alias() {
-    let keytab = http_keytab_with_alias();
-    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-    validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("first AP-REQ validates");
-
-    assert!(matches!(
-        validator
-            .validate_ap_req(&alias_ap_req())
-            .expect_err("same authenticator under a shared-key alias is a replay"),
-        Error::Replay
-    ));
-    assert_eq!(validator.replay_cache_mut().len(), 1);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn shared_replay_cache_rejects_a_shared_key_sname_alias() {
-    let keytab = http_keytab_with_alias();
-    let replay_cache = SharedReplayCache::new();
-    let mut first = ServiceValidator::new(&keytab)
-        .with_now(timestamp(1_893_553_447))
-        .with_shared_replay_cache(replay_cache.clone());
-    let mut second = ServiceValidator::new(&keytab)
-        .with_now(timestamp(1_893_553_447))
-        .with_shared_replay_cache(replay_cache.clone());
-    first
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("first AP-REQ validates");
-
-    assert!(matches!(
-        second
-            .validate_ap_req(&alias_ap_req())
-            .expect_err("shared cache rejects the same authenticator under an alias"),
-        Error::Replay
-    ));
-    assert_eq!(replay_cache.len().expect("shared cache counts"), 1);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn clearing_old_entries_also_forgets_authenticator_digests() {
-    let keytab = http_keytab_with_alias();
-    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-    validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("first AP-REQ validates");
-
-    assert_eq!(
-        validator
-            .replay_cache_mut()
-            .clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)),
-        1
-    );
-    validator
-        .validate_ap_req(&alias_ap_req())
-        .expect("expired digest permits the alias presentation");
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
         clippy::duration_suboptimal_units,
         clippy::expect_used,
         clippy::missing_panics_doc,
@@ -2324,225 +1859,6 @@ fn rejects_client_principal_mismatch() {
         )
     ),
     expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::shadow_reuse,
-        clippy::tests_outside_test_module,
-        clippy::wildcard_enum_match_arm,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn rejects_authenticator_client_realm_mismatch() {
-    let keytab = http_keytab();
-    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-
-    // RFC 4120 section 3.2.3: the ticket's client realm must match the
-    // authenticator's. The components match here; only the realm differs.
-    let mut ap_req = valid_ap_req_struct();
-    reencrypt_authenticator(&mut ap_req, "EVIL.VERIFIER.REALM", 1);
-    let ap_req = rasn::der::encode(&ap_req).expect("mutated AP-REQ encodes");
-
-    match validator
-        .validate_ap_req(&ap_req)
-        .expect_err("realm mismatch rejected")
-    {
-        Error::ClientPrincipalMismatch {
-            ticket,
-            authenticator,
-        } => {
-            assert_eq!(ticket, "testuser1@TEST.GOKRB5");
-            assert_eq!(authenticator, "testuser1@EVIL.VERIFIER.REALM");
-        }
-        error => panic!("expected ClientPrincipalMismatch, got {error:?}"),
-    }
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::shadow_reuse,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn returns_the_ticket_client_identity() {
-    let keytab = http_keytab();
-    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-
-    // RFC 4120 section 6.2: the name-type is advisory, so a differing
-    // authenticator name-type is not a mismatch - but the accepted identity
-    // must be the KDC-encrypted ticket's, not the authenticator's.
-    let mut ap_req = valid_ap_req_struct();
-    reencrypt_authenticator(&mut ap_req, "TEST.GOKRB5", 5);
-    let ap_req = rasn::der::encode(&ap_req).expect("variant AP-REQ encodes");
-
-    let validated = validator
-        .validate_ap_req(&ap_req)
-        .expect("name-type difference is not a mismatch");
-
-    let (service_key, _) = keytab
-        .find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)
-        .expect("HTTP service key exists");
-    let ticket =
-        rskrb5::ticket::decrypt_ticket_enc_part(&valid_ap_req_struct().ticket, service_key)
-            .expect("ticket decrypts");
-
-    assert_ne!(validated.client.name_type, 5);
-    assert_eq!(
-        validated.client,
-        Principal {
-            realm: "TEST.GOKRB5".to_owned(),
-            name_type: ticket.cname.r#type,
-            components: vec!["testuser1".to_owned()],
-        }
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
         clippy::expect_used,
         clippy::missing_panics_doc,
         clippy::rest_pattern_accessible_field,
@@ -2666,226 +1982,6 @@ fn rejects_large_authenticator_clock_skew() {
         validator
             .validate_ap_req(&decode_hex(VALID_AP_REQ))
             .expect_err("authenticator skew rejected"),
-        Error::ClockSkew { .. }
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::rest_pattern_accessible_field,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn config_clockskew_bounds_authenticator_freshness() {
-    const TEST_PATH: &str = "config_clockskew_bounds_authenticator_freshness";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
-        return;
-    }
-    let keytab = http_keytab();
-    let path = temp_service_keytab_file("config-clockskew");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
-    let config = config_with_default_keytab_name_and_clockskew(&name, "1s");
-
-    let mut named = ServiceValidator::from_default_keytab_name(&config)
-        .expect("validator loads the configured keytab")
-        .with_now(timestamp(1_893_553_447 + 2));
-    assert!(matches!(
-        named
-            .validate_ap_req(&decode_hex(VALID_AP_REQ))
-            .expect_err("declared 1 s window rejects a 2 s stale authenticator"),
-        Error::ClockSkew { .. }
-    ));
-
-    let mut fresh = ServiceValidator::from_default_keytab_name(&config)
-        .expect("validator loads the configured keytab")
-        .with_now(timestamp(1_893_553_447));
-    fresh
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("fresh authenticator stays accepted");
-
-    let mut default = ServiceValidator::from_default_keytab(&config)
-        .expect("validator loads the default keytab")
-        .with_now(timestamp(1_893_553_447 + 2));
-    assert!(matches!(
-        default
-            .validate_ap_req(&decode_hex(VALID_AP_REQ))
-            .expect_err("default-keytab constructor uses the declared window"),
-        Error::ClockSkew { .. }
-    ));
-
-    let _ = std::fs::remove_file(&path);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::rest_pattern_accessible_field,
-        clippy::tests_outside_test_module,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn service_validator_new_keeps_default_skew() {
-    let keytab = http_keytab();
-    let mut tolerant = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 2));
-    tolerant
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("the gokrb5-compatible default accepts a 2 s skew");
-
-    let mut strict = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 301));
-    assert!(matches!(
-        strict
-            .validate_ap_req(&decode_hex(VALID_AP_REQ))
-            .expect_err("the default window rejects more than 300 s"),
         Error::ClockSkew { .. }
     ));
 }
@@ -3131,180 +2227,6 @@ fn http_keytab() -> Keytab {
         )
     ),
     expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn http_keytab_with_alias() -> Keytab {
-    let mut keytab = http_keytab();
-    let mut alias = keytab
-        .entries()
-        .iter()
-        .find(|entry| entry.key.etype == 18 && entry.kvno == 1)
-        .expect("fixture service key exists")
-        .clone();
-    alias.principal.components = vec!["HTTP".to_owned(), "alias.test.gokrb5".to_owned()];
-    keytab.entries_mut().push(alias);
-    keytab
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn alias_ap_req() -> Vec<u8> {
-    let mut alias = valid_ap_req_struct();
-    alias.ticket.sname.string = vec![
-        kerberos_string("HTTP"),
-        kerberos_string("alias.test.gokrb5"),
-    ];
-    rasn::der::encode(&alias).expect("alias AP-REQ encodes")
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
         clippy::expect_used,
         clippy::missing_panics_doc,
         reason = "lint-migration: upstream baseline at ee9cb04"
@@ -3395,93 +2317,6 @@ fn config_with_default_keytab_name(keytab_name: &str) -> Config {
         r#"
 [libdefaults]
  default_keytab_name = {keytab_name}
-"#,
-    );
-    Config::parse(&input).expect("config parses")
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::needless_raw_strings,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn config_with_default_keytab_name_and_clockskew(keytab_name: &str, clockskew: &str) -> Config {
-    let input = format!(
-        r#"
-[libdefaults]
- default_keytab_name = {keytab_name}
- clockskew = {clockskew}
 "#,
     );
     Config::parse(&input).expect("config parses")
@@ -4080,198 +2915,6 @@ fn zero_kerberos_flags() -> rasn_kerberos::KerberosFlags {
         )
     ),
     expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Decode the fixture AP-REQ so a test can vary one cleartext field.
-fn valid_ap_req_struct() -> rasn_kerberos::ApReq {
-    rasn::der::decode(&decode_hex(VALID_AP_REQ)).expect("fixture AP-REQ decodes")
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Re-encrypt the fixture authenticator under the ticket session key with a
-/// different client realm and name-type.
-fn reencrypt_authenticator(ap_req: &mut rasn_kerberos::ApReq, crealm: &str, name_type: i32) {
-    let session_key = EncryptionKey {
-        etype: 18,
-        value: decode_hex(VALID_SESSION_KEY),
-    };
-    let authenticator = rasn_kerberos::Authenticator {
-        authenticator_vno: 5.into(),
-        crealm: realm(crealm),
-        cname: rasn_kerberos::PrincipalName {
-            r#type: name_type,
-            string: vec![kerberos_string("testuser1")],
-        },
-        cksum: None,
-        cusec: 123_456.into(),
-        ctime: kerberos_time(1_893_553_447),
-        subkey: None,
-        seq_number: Some(42),
-        authorization_data: None,
-    };
-    ap_req.authenticator = rasn_kerberos::EncryptedData {
-        etype: session_key.etype,
-        kvno: None,
-        cipher: encrypt_message(
-            &session_key,
-            &rasn::der::encode(&authenticator).expect("Authenticator encodes"),
-            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
-            PAC_AUTHENTICATOR_CONFOUNDER,
-        )
-        .into(),
-    };
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
         clippy::expect_used,
         clippy::missing_panics_doc,
         reason = "lint-migration: upstream baseline at ee9cb04"
@@ -4716,5 +3359,398 @@ fn hex_value(byte: u8) -> u8 {
         b'a'..=b'f' => byte - b'a' + 10,
         b'A'..=b'F' => byte - b'A' + 10,
         _ => panic!("invalid hex byte: {byte}"),
+    }
+}
+
+/// Fork-authored service tests: replay identity, authenticator realm and
+/// identity checks, and the config `clockskew` window.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use std::fs;
+
+    use pretty_assertions::assert_eq;
+    use rasn::der;
+    use rskrb5::ticket::decrypt_ticket_enc_part;
+
+    use super::*;
+
+    /// Pins that flipping only the ticket sname name-type is still a replay.
+    #[test]
+    fn replay_identity_ignores_the_ticket_name_type() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+        drop(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+
+        // RFC 4120 section 6.2: the name-type is advisory and "not significant
+        // when checking for equivalence". The ticket's outer sname is cleartext,
+        // so a peer can flip its name-type without touching any ciphertext; the
+        // mutated request is the same presentation and must be rejected.
+        let mut mutated = valid_ap_req_struct()?;
+        mutated.ticket.sname.r#type = 0_i32;
+        let mutated_der =
+            der::encode(&mutated).map_err(|cause| format!("mutated AP-REQ encodes: {cause}"))?;
+
+        assert!(matches!(
+            validator
+                .validate_ap_req(&mutated_der)
+                .err()
+                .ok_or("name-type-only mutation is a replay")?,
+            Error::Replay
+        ));
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+        Ok(())
+    }
+
+    /// Pins that with a keytab principal override the accepted key, not the sname, is the replay identity.
+    #[test]
+    fn replay_identity_follows_the_accepted_key_identity() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab)
+            .with_now(timestamp(1_893_553_447))
+            .with_keytab_principal(["HTTP", "host.test.gokrb5"]);
+
+        // The override selects the key; the ticket's own sname is then advisory
+        // for replay purposes, so an alias for the same service key is the same
+        // server principal.
+        let mut alias = valid_ap_req_struct()?;
+        alias.ticket.sname.string = vec![
+            kerberos_string("HTTP"),
+            kerberos_string("alias.test.gokrb5"),
+        ];
+        let alias_der =
+            der::encode(&alias).map_err(|cause| format!("alias AP-REQ encodes: {cause}"))?;
+
+        drop(
+            validator
+                .validate_ap_req(&alias_der)
+                .map_err(|cause| format!("alias sname validates under the override: {cause}"))?,
+        );
+        assert!(matches!(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("same accepted key is the same server principal")?,
+            Error::Replay
+        ));
+        Ok(())
+    }
+
+    /// Pins that the same authenticator under a shared-key sname alias is a replay.
+    #[test]
+    fn replay_identity_survives_a_shared_key_sname_alias() -> Result<(), TestError> {
+        let keytab = http_keytab_with_alias()?;
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+        drop(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+
+        assert!(matches!(
+            validator
+                .validate_ap_req(&alias_ap_req()?)
+                .err()
+                .ok_or("same authenticator under a shared-key alias is a replay")?,
+            Error::Replay
+        ));
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+        Ok(())
+    }
+
+    /// Pins that a shared replay cache rejects the same authenticator under a shared-key alias.
+    #[test]
+    fn shared_replay_cache_rejects_a_shared_key_sname_alias() -> Result<(), TestError> {
+        let keytab = http_keytab_with_alias()?;
+        let replay_cache = SharedReplayCache::new();
+        let mut first = ServiceValidator::new(&keytab)
+            .with_now(timestamp(1_893_553_447))
+            .with_shared_replay_cache(replay_cache.clone());
+        let mut second = ServiceValidator::new(&keytab)
+            .with_now(timestamp(1_893_553_447))
+            .with_shared_replay_cache(replay_cache.clone());
+        drop(
+            first
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+
+        assert!(matches!(
+            second
+                .validate_ap_req(&alias_ap_req()?)
+                .err()
+                .ok_or("shared cache rejects the same authenticator under an alias")?,
+            Error::Replay
+        ));
+        assert_eq!(
+            replay_cache
+                .len()
+                .map_err(|cause| format!("shared cache counts: {cause}"))?,
+            1
+        );
+        Ok(())
+    }
+
+    /// Pins that clearing old replay entries also forgets their authenticator digests.
+    #[test]
+    fn clearing_old_entries_also_forgets_authenticator_digests() -> Result<(), TestError> {
+        let keytab = http_keytab_with_alias()?;
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+        drop(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+
+        assert_eq!(
+            validator
+                .replay_cache_mut()
+                .clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)),
+            1
+        );
+        drop(
+            validator
+                .validate_ap_req(&alias_ap_req()?)
+                .map_err(|cause| {
+                    format!("expired digest permits the alias presentation: {cause}")
+                })?,
+        );
+        Ok(())
+    }
+
+    /// Pins that an authenticator client realm differing from the ticket's is rejected.
+    #[test]
+    fn rejects_authenticator_client_realm_mismatch() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+
+        // RFC 4120 section 3.2.3: the ticket's client realm must match the
+        // authenticator's. The components match here; only the realm differs.
+        let mut ap_req = valid_ap_req_struct()?;
+        reencrypt_authenticator(&mut ap_req, "EVIL.VERIFIER.REALM", 1)?;
+        let ap_req_der =
+            der::encode(&ap_req).map_err(|cause| format!("mutated AP-REQ encodes: {cause}"))?;
+
+        let error = validator
+            .validate_ap_req(&ap_req_der)
+            .err()
+            .ok_or("realm mismatch rejected")?;
+        let Error::ClientPrincipalMismatch {
+            ticket,
+            authenticator,
+        } = error
+        else {
+            return Err(format!("expected ClientPrincipalMismatch, got {error:?}").into());
+        };
+        assert_eq!(ticket, "testuser1@TEST.GOKRB5");
+        assert_eq!(authenticator, "testuser1@EVIL.VERIFIER.REALM");
+        Ok(())
+    }
+
+    /// Pins that the accepted identity is the ticket's client, not the authenticator's.
+    #[test]
+    fn returns_the_ticket_client_identity() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+
+        // RFC 4120 section 6.2: the name-type is advisory, so a differing
+        // authenticator name-type is not a mismatch - but the accepted identity
+        // must be the KDC-encrypted ticket's, not the authenticator's.
+        let mut ap_req = valid_ap_req_struct()?;
+        reencrypt_authenticator(&mut ap_req, "TEST.GOKRB5", 5)?;
+        let ap_req_der =
+            der::encode(&ap_req).map_err(|cause| format!("variant AP-REQ encodes: {cause}"))?;
+
+        let validated = validator
+            .validate_ap_req(&ap_req_der)
+            .map_err(|cause| format!("name-type difference is not a mismatch: {cause}"))?;
+
+        let (service_key, _) = keytab
+            .find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)
+            .map_err(|cause| format!("HTTP service key exists: {cause}"))?;
+        let ticket = decrypt_ticket_enc_part(&valid_ap_req_struct()?.ticket, service_key)
+            .map_err(|cause| format!("ticket decrypts: {cause}"))?;
+
+        assert_ne!(validated.client.name_type, 5_i32);
+        assert_eq!(
+            validated.client,
+            Principal {
+                realm: "TEST.GOKRB5".to_owned(),
+                name_type: ticket.cname.r#type,
+                components: vec!["testuser1".to_owned()],
+            }
+        );
+        Ok(())
+    }
+
+    /// Pins that the config `clockskew` bounds authenticator freshness for both default-keytab constructors.
+    #[test]
+    fn config_clockskew_bounds_authenticator_freshness() -> Result<(), TestError> {
+        const TEST_PATH: &str = "fork_tests::config_clockskew_bounds_authenticator_freshness";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let path = temp_service_keytab_file("config-clockskew");
+        let name = format!("FILE:{}", path.display());
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let config = config_with_default_keytab_name_and_clockskew(&name, "1s")?;
+
+        let mut named = ServiceValidator::from_default_keytab_name(&config)
+            .map_err(|cause| format!("validator loads the configured keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447 + 2));
+        assert!(matches!(
+            named
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("declared 1 s window rejects a 2 s stale authenticator")?,
+            Error::ClockSkew { max_clock_skew: _ }
+        ));
+
+        let mut fresh = ServiceValidator::from_default_keytab_name(&config)
+            .map_err(|cause| format!("validator loads the configured keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        drop(
+            fresh
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("fresh authenticator stays accepted: {cause}"))?,
+        );
+
+        let mut default = ServiceValidator::from_default_keytab(&config)
+            .map_err(|cause| format!("validator loads the default keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447 + 2));
+        assert!(matches!(
+            default
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("default-keytab constructor uses the declared window")?,
+            Error::ClockSkew { max_clock_skew: _ }
+        ));
+
+        fs::remove_file(&path).map_err(|cause| format!("keytab file is removed: {cause}"))?;
+        Ok(())
+    }
+
+    /// Pins that `ServiceValidator::new` keeps the gokrb5-compatible 300 s default skew.
+    #[test]
+    fn service_validator_new_keeps_default_skew() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut tolerant = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 2));
+        drop(
+            tolerant
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| {
+                    format!("the gokrb5-compatible default accepts a 2 s skew: {cause}")
+                })?,
+        );
+
+        let mut strict = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 301));
+        assert!(matches!(
+            strict
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("the default window rejects more than 300 s")?,
+            Error::ClockSkew { max_clock_skew: _ }
+        ));
+        Ok(())
+    }
+
+    /// The fixture HTTP keytab plus a copy of its AES-256 key under a second service name.
+    fn http_keytab_with_alias() -> Result<Keytab, TestError> {
+        let mut keytab = http_keytab();
+        let mut alias = keytab
+            .entries()
+            .iter()
+            .find(|entry| entry.key.etype == 18_i32 && entry.kvno == 1)
+            .ok_or("fixture service key exists")?
+            .clone();
+        alias.principal.components = vec!["HTTP".to_owned(), "alias.test.gokrb5".to_owned()];
+        keytab.entries_mut().push(alias);
+        Ok(keytab)
+    }
+
+    /// The fixture AP-REQ with its ticket sname replaced by the shared-key alias.
+    fn alias_ap_req() -> Result<Vec<u8>, TestError> {
+        let mut alias = valid_ap_req_struct()?;
+        alias.ticket.sname.string = vec![
+            kerberos_string("HTTP"),
+            kerberos_string("alias.test.gokrb5"),
+        ];
+        Ok(der::encode(&alias).map_err(|cause| format!("alias AP-REQ encodes: {cause}"))?)
+    }
+
+    /// A config naming `keytab_name` as the default keytab, with `clockskew`.
+    fn config_with_default_keytab_name_and_clockskew(
+        keytab_name: &str,
+        clockskew: &str,
+    ) -> Result<Config, TestError> {
+        let input = format!(
+            "
+[libdefaults]
+ default_keytab_name = {keytab_name}
+ clockskew = {clockskew}
+",
+        );
+        Ok(Config::parse(&input).map_err(|cause| format!("config parses: {cause}"))?)
+    }
+
+    /// Decode the fixture AP-REQ so a test can vary one cleartext field.
+    fn valid_ap_req_struct() -> Result<rasn_kerberos::ApReq, TestError> {
+        Ok(der::decode(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("fixture AP-REQ decodes: {cause}"))?)
+    }
+
+    /// Re-encrypt the fixture authenticator under the ticket session key with a
+    /// different client realm and name-type.
+    fn reencrypt_authenticator(
+        ap_req: &mut rasn_kerberos::ApReq,
+        crealm: &str,
+        name_type: i32,
+    ) -> Result<(), TestError> {
+        let session_key = EncryptionKey {
+            etype: 18,
+            value: decode_hex(VALID_SESSION_KEY),
+        };
+        let authenticator = rasn_kerberos::Authenticator {
+            authenticator_vno: 5_i32.into(),
+            crealm: realm(crealm),
+            cname: rasn_kerberos::PrincipalName {
+                r#type: name_type,
+                string: vec![kerberos_string("testuser1")],
+            },
+            cksum: None,
+            cusec: 123_456_i32.into(),
+            ctime: kerberos_time(1_893_553_447),
+            subkey: None,
+            seq_number: Some(42),
+            authorization_data: None,
+        };
+        let encoded = der::encode(&authenticator)
+            .map_err(|cause| format!("Authenticator encodes: {cause}"))?;
+        ap_req.authenticator = rasn_kerberos::EncryptedData {
+            etype: session_key.etype,
+            kvno: None,
+            cipher: encrypt_message(
+                &session_key,
+                &encoded,
+                AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+                PAC_AUTHENTICATOR_CONFOUNDER,
+            )
+            .into(),
+        };
+        Ok(())
     }
 }

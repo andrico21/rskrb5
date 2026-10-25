@@ -9,21 +9,11 @@ use std::{env, ffi::OsStr, process::Command};
 /// Marks the child process and names the one test it runs.
 const CHILD_TEST_ENV: &str = "RSKRB5_TEST_CHILD";
 
-#[expect(
-    unreachable_pub,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 /// Returns whether this process is the child run of `test_path`.
-pub fn in_child(test_path: &str) -> bool {
+pub(crate) fn in_child(test_path: &str) -> bool {
     env::var_os(CHILD_TEST_ENV) == Some(test_path.into())
 }
 
-#[expect(
-    clippy::expect_used,
-    unreachable_pub,
-    unused_results,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 /// Runs the test `test_path` alone in a child process of this test binary.
 ///
 /// Each `(key, Some(value))` sets `key` and each `(key, None)` removes `key`
@@ -34,25 +24,53 @@ pub fn in_child(test_path: &str) -> bool {
 ///
 /// Panics if the child cannot be started, if it fails, or if it does not
 /// run and pass exactly one test, so a misspelled `test_path` fails.
-pub fn run_in_child(test_path: &str, env: &[(&str, Option<&OsStr>)]) {
-    let executable = env::current_exe().expect("the test binary path is known");
-    let mut command = Command::new(executable);
-    command.args([test_path, "--exact", "--nocapture", "--test-threads=1"]);
-    for &(key, value) in env {
-        match value {
-            Some(set) => command.env(key, set),
-            None => command.env_remove(key),
-        };
-    }
-    command.env(CHILD_TEST_ENV, test_path);
+pub(crate) fn run_in_child(test_path: &str, env: &[(&str, Option<&OsStr>)]) {
+    let failure = try_run_in_child(test_path, env).err();
+    assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+}
 
-    let output = command.output().expect("the child test process starts");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success() && stdout.contains("test result: ok. 1 passed;"),
-        "child run of {test_path} did not pass exactly one test ({}):\n\
-         --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
-        output.status,
-    );
+/// Runs the test `test_path` alone in a child process of this test binary.
+///
+/// The environment is changed as in [`run_in_child`].
+///
+/// # Errors
+///
+/// Returns the report of the child run if the child cannot be started, if it
+/// fails, or if it does not run and pass exactly one test, so a misspelled
+/// `test_path` fails.
+pub(crate) fn try_run_in_child(
+    test_path: &str,
+    env: &[(&str, Option<&OsStr>)],
+) -> Result<(), String> {
+    let run = env::current_exe().and_then(|executable| {
+        let mut command = Command::new(executable);
+        let _: &mut Command =
+            command.args([test_path, "--exact", "--nocapture", "--test-threads=1"]);
+        for &(key, value) in env {
+            let _: &mut Command = match value {
+                Some(set) => command.env(key, set),
+                None => command.env_remove(key),
+            };
+        }
+        let _: &mut Command = command.env(CHILD_TEST_ENV, test_path);
+        command.output()
+    });
+
+    match run {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if output.status.success() && stdout.contains("test result: ok. 1 passed;") {
+                return Ok(());
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!(
+                "child run of {test_path} did not pass exactly one test ({}):\n\
+                 --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
+                output.status
+            ))
+        }
+        Err(error) => Err(format!(
+            "child run of {test_path} did not pass exactly one test (the child test process did not start: {error})"
+        )),
+    }
 }

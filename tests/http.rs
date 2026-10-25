@@ -44,7 +44,7 @@ use core::convert::Infallible;
 use core::future::Future;
 #[cfg(feature = "tower")]
 use core::task::{Context, Poll, Waker};
-use core::time::Duration;
+use core::{error, time::Duration};
 use std::time::UNIX_EPOCH;
 
 use http_types::{
@@ -103,6 +103,9 @@ use tower_service::Service;
 #[cfg(feature = "tower")]
 #[path = "support/env.rs"]
 mod env;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
 
 const HTTP_KEYTAB: &str = concat!(
     "0502000000440002000b544553542e474f4b5242350004485454500010686f73742e746573742e676f6b",
@@ -597,558 +600,6 @@ fn authorize_request_context_supports_negotiate_client_wrapper() {
         )
     ),
     expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::rest_pattern_accessible_field,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn negotiate_http_client_classifies_missing_ap_rep_as_failure_when_mutual_requested() {
-    let (result, calls) = send_mutual_negotiate(
-        InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
-        |_retry| {
-            response_with_www_authenticate_body(
-                &spnego::accept_completed_header().expect("accept-completed header"),
-                b"ok".to_vec(),
-            )
-        },
-    );
-
-    let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
-        negotiation,
-        response,
-    }) = result
-    else {
-        panic!("expected MutualAuthenticationNotProven, got {result:?}");
-    };
-    assert!(matches!(
-        negotiation,
-        Some(krb_http::ClientNegotiateResponse::InvalidToken { .. })
-    ));
-    assert_eq!(response.body().as_slice(), b"ok");
-    assert_eq!(calls, 2);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn mutual_wrapper_rejects_final_response_without_www_authenticate() {
-    let (result, calls) = send_mutual_negotiate(mutual_context_flag_options(), |_retry| {
-        Response::new(b"ok".to_vec())
-    });
-
-    let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
-        negotiation,
-        response,
-    }) = result
-    else {
-        panic!("expected MutualAuthenticationNotProven, got {result:?}");
-    };
-    assert_eq!(
-        negotiation,
-        Some(krb_http::ClientNegotiateResponse::NoAuthenticateHeader)
-    );
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.body().as_slice(), b"ok");
-    assert_eq!(calls, 2);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn mutual_wrapper_rejects_a_non_negotiate_challenge() {
-    let (result, calls) = send_mutual_negotiate(
-        InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
-        |_retry| response_with_www_authenticate_body("Basic realm=\"test\"", b"ok".to_vec()),
-    );
-
-    let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
-        negotiation,
-        response,
-    }) = result
-    else {
-        panic!("expected MutualAuthenticationNotProven, got {result:?}");
-    };
-    assert_eq!(
-        negotiation,
-        Some(krb_http::ClientNegotiateResponse::NoNegotiateChallenge)
-    );
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(calls, 2);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::std_instead_of_core,
-        clippy::tests_outside_test_module,
-        clippy::unseparated_literal_suffix,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn mutual_wrapper_rejects_unchallenged_first_response() {
-    runtime().block_on(async {
-        let mut client = negotiate_client_with_cached_service_ticket();
-        let send_calls = Cell::new(0usize);
-
-        let result = krb_http::send_with_negotiate_options(
-            &mut client,
-            Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
-            mutual_context_flag_options(),
-            || Request::new(()),
-            |_request| {
-                send_calls.set(send_calls.get() + 1);
-                std::future::ready(Ok::<_, Infallible>(Response::new("public")))
-            },
-        )
-        .await;
-
-        let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
-            negotiation,
-            response,
-        }) = result
-        else {
-            panic!("expected MutualAuthenticationNotProven, got {result:?}");
-        };
-        assert_eq!(negotiation, None);
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(*response.body(), "public");
-        assert_eq!(send_calls.get(), 1);
-    });
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::shadow_reuse,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn mutual_wrapper_accepts_a_verified_ap_rep() {
-    let (result, calls) = send_mutual_negotiate(
-        InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
-        |retry| {
-            let authorization =
-                krb_http::authorization_header(retry).expect("retry carries Authorization");
-            response_with_www_authenticate_body(
-                &ap_rep_response_header_for_live_authorization(authorization),
-                b"ok".to_vec(),
-            )
-        },
-    );
-
-    let result = result.expect("verified AP-REP proves mutual authentication");
-    let context = result.context.as_ref().expect("context is retained");
-    let Some(krb_http::ClientNegotiateResponse::Accepted {
-        ap_rep: Some(verified),
-    }) = &result.negotiation
-    else {
-        panic!("expected verified AP-REP, got {:?}", result.negotiation);
-    };
-    assert_eq!(verified.ctime, context.authenticator_ctime);
-    assert_eq!(verified.cusec, context.authenticator_cusec);
-    assert_eq!(result.response.body().as_slice(), b"ok");
-    assert_eq!(calls, 2);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::std_instead_of_core,
-        clippy::tests_outside_test_module,
-        clippy::unseparated_literal_suffix,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn default_wrapper_still_accepts_a_missing_ap_rep() {
-    let accept_completed = || {
-        response_with_www_authenticate_body(
-            &spnego::accept_completed_header().expect("accept-completed header"),
-            b"ok".to_vec(),
-        )
-    };
-    let challenge_then_accept = |call: usize| {
-        if call == 1 {
-            krb_http::challenge_response::<Vec<u8>>()
-        } else {
-            accept_completed()
-        }
-    };
-
-    let async_calls = Cell::new(0usize);
-    let async_result = runtime().block_on(async {
-        let mut client = negotiate_client_with_cached_service_ticket();
-        krb_http::send_with_negotiate(
-            &mut client,
-            Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
-            || Request::new(Vec::<u8>::new()),
-            |_request| {
-                async_calls.set(async_calls.get() + 1);
-                std::future::ready(Ok::<_, Infallible>(challenge_then_accept(
-                    async_calls.get(),
-                )))
-            },
-        )
-        .await
-        .expect("default async wrapper accepts a completion without an AP-REP")
-    });
-    assert_eq!(
-        async_result.negotiation,
-        Some(krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
-    );
-    assert_eq!(async_calls.get(), 2);
-
-    let mut blocking_client =
-        BlockingNegotiateClient::new(negotiate_client_with_cached_service_ticket())
-            .expect("blocking client builds");
-    let blocking_calls = Cell::new(0usize);
-    let blocking_result = krb_http::send_with_blocking_negotiate(
-        &mut blocking_client,
-        Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
-        || Request::new(Vec::<u8>::new()),
-        |_request| {
-            blocking_calls.set(blocking_calls.get() + 1);
-            Ok::<_, Infallible>(challenge_then_accept(blocking_calls.get()))
-        },
-    )
-    .expect("default blocking wrapper accepts a completion without an AP-REP");
-    assert_eq!(
-        blocking_result.negotiation,
-        Some(krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
-    );
-    assert_eq!(blocking_calls.get(), 2);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        clippy::rest_pattern_accessible_field,
-        clippy::tests_outside_test_module,
-        clippy::unseparated_literal_suffix,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn blocking_mutual_wrapper_rejects_a_missing_ap_rep() {
-    let mut client = BlockingNegotiateClient::new(negotiate_client_with_cached_service_ticket())
-        .expect("blocking client builds");
-    let calls = Cell::new(0usize);
-
-    let result = krb_http::send_with_blocking_negotiate_options(
-        &mut client,
-        Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
-        mutual_context_flag_options(),
-        || Request::new(Vec::<u8>::new()),
-        |_request| {
-            calls.set(calls.get() + 1);
-            let response = if calls.get() == 1 {
-                krb_http::challenge_response::<Vec<u8>>()
-            } else {
-                response_with_www_authenticate_body(
-                    &spnego::accept_completed_header().expect("accept-completed header"),
-                    b"ok".to_vec(),
-                )
-            };
-            Ok::<_, Infallible>(response)
-        },
-    );
-
-    let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
-        negotiation,
-        response,
-    }) = result
-    else {
-        panic!("expected MutualAuthenticationNotProven, got {result:?}");
-    };
-    assert!(matches!(
-        negotiation,
-        Some(krb_http::ClientNegotiateResponse::InvalidToken { .. })
-    ));
-    assert_eq!(response.body().as_slice(), b"ok");
-    assert_eq!(calls.get(), 2);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
         clippy::absolute_paths,
         clippy::expect_used,
         clippy::indexing_slicing,
@@ -1420,74 +871,6 @@ fn blocking_negotiate_http_client_returns_first_response_without_challenge() {
     assert_eq!(*result.response.body(), "public");
     assert_eq!(make_calls.get(), 1);
     assert_eq!(send_calls.get(), 1);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::rest_pattern_accessible_field,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn classify_rejects_missing_ap_rep_when_mutual_requested() {
-    let variants = [
-        InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
-        InitiatorContextOptions::new().with_context_flags(vec![
-            spnego::CONTEXT_FLAG_INTEG,
-            spnego::CONTEXT_FLAG_MUTUAL,
-        ]),
-    ];
-    for options in variants {
-        let context = initiator_context_with_options(options);
-        let response = response_with_www_authenticate(
-            &spnego::accept_completed_header().expect("accept-completed header"),
-        );
-        assert!(
-            matches!(
-                krb_http::classify_negotiate_response(&context, &response),
-                krb_http::ClientNegotiateResponse::InvalidToken { .. }
-            ),
-            "requested mutual authentication must not accept a completion without an AP-REP"
-        );
-    }
 }
 
 #[cfg_attr(
@@ -1967,147 +1350,170 @@ fn tower_layer_loads_owned_keytab_name() {
     );
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Child-process tests of the tower service and layer `KRB5_KTNAME` loaders.
+#[cfg(test)]
 #[cfg(feature = "tower")]
-#[test]
-fn tower_service_loads_keytab_env() {
-    const TEST_PATH: &str = "tower_service_loads_keytab_env";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_file("http-keytab-env");
-        let name = format!("FILE:{}", path.display());
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
-        return;
-    }
-    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
-    let path = std::path::PathBuf::from(
-        name.strip_prefix("FILE:")
-            .expect("KRB5_KTNAME names a FILE: path"),
-    );
-    keytab().save(&path).expect("keytab saves");
-
-    let mut service = krb_http::NegotiateService::from_keytab_env(AssertAcceptedService)
-        .expect("service loads keytab env")
-        .with_now(timestamp(1_893_553_447))
-        .with_ap_rep(false);
-    let _ = std::fs::remove_file(&path);
-    let mut request = Request::new(());
-    krb_http::set_authorization_header(&mut request, &valid_authorization_header())
-        .expect("authorization header sets");
-
-    let response = run_ready(service.call(request)).expect("inner response succeeds");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        response.headers().get(WWW_AUTHENTICATE).is_none(),
-        "AP-REP header is disabled"
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[cfg(feature = "tower")]
-#[test]
-fn tower_layer_loads_keytab_env() {
-    const TEST_PATH: &str = "tower_layer_loads_keytab_env";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_file("http-layer-keytab-env");
-        let name = format!("FILE:{}", path.display());
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
-        return;
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tower_keytab_env {
+    use std::{env::var, path::PathBuf};
+
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(feature = "tower")]
+    /// Pins that `NegotiateService::from_keytab_env` loads the `KRB5_KTNAME` keytab.
+    #[test]
+    fn tower_service_loads_keytab_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "tower_keytab_env::tower_service_loads_keytab_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_file("http-keytab-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            name.strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+        keytab()
+            .save(&path)
+            .map_err(|cause| format!("keytab saves: {cause}"))?;
+
+        let mut service = krb_http::NegotiateService::from_keytab_env(AssertAcceptedService)
+            .map_err(|cause| format!("service loads keytab env: {cause}"))?
+            .with_now(timestamp(1_893_553_447))
+            .with_ap_rep(false);
+        let _ = std::fs::remove_file(&path);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header())
+            .map_err(|cause| format!("authorization header sets: {cause}"))?;
+
+        let response = run_ready(service.call(request))
+            .map_err(|cause| format!("inner response succeeds: {cause}"))?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers().get(WWW_AUTHENTICATE).is_none(),
+            "AP-REP header is disabled"
+        );
+        Ok(())
     }
-    let name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
-    let path = std::path::PathBuf::from(
-        name.strip_prefix("FILE:")
-            .expect("KRB5_KTNAME names a FILE: path"),
-    );
-    keytab().save(&path).expect("keytab saves");
 
-    let layer = krb_http::NegotiateLayer::from_keytab_env()
-        .expect("layer loads keytab env")
-        .with_now(timestamp(1_893_553_447))
-        .with_ap_rep(false);
-    let _ = std::fs::remove_file(&path);
-    let mut service = layer.layer(AssertAcceptedService);
-    let mut request = Request::new(());
-    krb_http::set_authorization_header(&mut request, &valid_authorization_header())
-        .expect("authorization header sets");
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(feature = "tower")]
+    /// Pins that `NegotiateLayer::from_keytab_env` loads the `KRB5_KTNAME` keytab.
+    #[test]
+    fn tower_layer_loads_keytab_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "tower_keytab_env::tower_layer_loads_keytab_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_file("http-layer-keytab-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            name.strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+        keytab()
+            .save(&path)
+            .map_err(|cause| format!("keytab saves: {cause}"))?;
 
-    let response = run_ready(service.call(request)).expect("inner response succeeds");
+        let layer = krb_http::NegotiateLayer::from_keytab_env()
+            .map_err(|cause| format!("layer loads keytab env: {cause}"))?
+            .with_now(timestamp(1_893_553_447))
+            .with_ap_rep(false);
+        let _ = std::fs::remove_file(&path);
+        let mut service = layer.layer(AssertAcceptedService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header())
+            .map_err(|cause| format!("authorization header sets: {cause}"))?;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        response.headers().get(WWW_AUTHENTICATE).is_none(),
-        "AP-REP header is disabled"
-    );
+        let response = run_ready(service.call(request))
+            .map_err(|cause| format!("inner response succeeds: {cause}"))?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers().get(WWW_AUTHENTICATE).is_none(),
+            "AP-REP header is disabled"
+        );
+        Ok(())
+    }
 }
 
 #[cfg_attr(
@@ -2174,209 +1580,176 @@ fn tower_layer_loads_config_default_keytab_name() {
     );
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Child-process tests of the tower default-keytab precedence.
+#[cfg(test)]
 #[cfg(feature = "tower")]
-#[test]
-fn tower_layer_config_clockskew_rejects_stale_authenticator() {
-    let path = temp_file("http-config-clockskew");
-    let name = format!("FILE:{}", path.display());
-    keytab().save(&path).expect("keytab saves");
-    let config = config_with_default_keytab_name_and_clockskew(&name, "1s");
-
-    let layer = krb_http::NegotiateLayer::from_default_keytab_name(&config)
-        .expect("layer loads default keytab name")
-        .with_now(timestamp(1_893_553_447 + 2))
-        .with_ap_rep(false);
-    let _ = std::fs::remove_file(&path);
-
-    let mut service = layer.layer(AssertAcceptedService);
-    let mut request = Request::new(());
-    krb_http::set_authorization_header(&mut request, &valid_authorization_header())
-        .expect("authorization header sets");
-
-    let response = run_ready(service.call(request)).expect("reject response returned");
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[cfg(feature = "tower")]
-#[test]
-fn tower_layer_loads_default_keytab_when_env_is_absent() {
-    const TEST_PATH: &str = "tower_layer_loads_default_keytab_when_env_is_absent";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
-        return;
-    }
-    let path = temp_file("http-default-keytab-env-fallback");
-    let name = format!("FILE:{}", path.display());
-    keytab().save(&path).expect("keytab saves");
-    let config = config_with_default_keytab_name(&name);
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tower_default_keytab_env {
+    use std::{env::var, path::PathBuf};
 
-    let layer = krb_http::NegotiateLayer::from_default_keytab(&config)
-        .expect("layer loads default keytab")
-        .with_now(timestamp(1_893_553_447))
-        .with_ap_rep(false);
-    let _ = std::fs::remove_file(&path);
+    use pretty_assertions::assert_eq;
 
-    let mut service = layer.layer(AssertAcceptedService);
-    let mut request = Request::new(());
-    krb_http::set_authorization_header(&mut request, &valid_authorization_header())
-        .expect("authorization header sets");
+    use super::*;
 
-    let response = run_ready(service.call(request)).expect("inner response succeeds");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        response.headers().get(WWW_AUTHENTICATE).is_none(),
-        "AP-REP header is disabled"
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            )
         ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
+        expect(
+            clippy::absolute_paths,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
         )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tower")]
-#[test]
-fn tower_service_prefers_env_keytab_over_config_default() {
-    const TEST_PATH: &str = "tower_service_prefers_env_keytab_over_config_default";
-    if !env::in_child(TEST_PATH) {
-        let path = temp_file("http-env-keytab-precedence");
-        let env_name = format!("FILE:{}", path.display());
-        env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(env_name.as_ref()))]);
-        return;
-    }
-    let env_name = std::env::var("KRB5_KTNAME").expect("the parent test sets KRB5_KTNAME");
-    let path = std::path::PathBuf::from(
-        env_name
-            .strip_prefix("FILE:")
-            .expect("KRB5_KTNAME names a FILE: path"),
-    );
-    keytab().save(&path).expect("keytab saves");
-    let missing_config_name = format!(
-        "FILE:{}",
-        temp_file("missing-http-config-default").display()
-    );
-    let config = config_with_default_keytab_name(&missing_config_name);
-    let mut service =
-        krb_http::NegotiateService::from_default_keytab(AssertAcceptedService, &config)
-            .expect("service loads env keytab before config default")
+    )]
+    #[cfg(feature = "tower")]
+    /// Pins that the layer falls back to the config default keytab without `KRB5_KTNAME`.
+    #[test]
+    fn tower_layer_loads_default_keytab_when_env_is_absent() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "tower_default_keytab_env::tower_layer_loads_default_keytab_when_env_is_absent";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+            return Ok(());
+        }
+        let path = temp_file("http-default-keytab-env-fallback");
+        let name = format!("FILE:{}", path.display());
+        keytab()
+            .save(&path)
+            .map_err(|cause| format!("keytab saves: {cause}"))?;
+        let config = config_with_default_keytab_name(&name);
+
+        let layer = krb_http::NegotiateLayer::from_default_keytab(&config)
+            .map_err(|cause| format!("layer loads default keytab: {cause}"))?
             .with_now(timestamp(1_893_553_447))
             .with_ap_rep(false);
-    let _ = std::fs::remove_file(&path);
-    let mut request = Request::new(());
-    krb_http::set_authorization_header(&mut request, &valid_authorization_header())
-        .expect("authorization header sets");
+        let _ = std::fs::remove_file(&path);
 
-    let response = run_ready(service.call(request)).expect("inner response succeeds");
+        let mut service = layer.layer(AssertAcceptedService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header())
+            .map_err(|cause| format!("authorization header sets: {cause}"))?;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        response.headers().get(WWW_AUTHENTICATE).is_none(),
-        "AP-REP header is disabled"
-    );
+        let response = run_ready(service.call(request))
+            .map_err(|cause| format!("inner response succeeds: {cause}"))?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers().get(WWW_AUTHENTICATE).is_none(),
+            "AP-REP header is disabled"
+        );
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(feature = "tower")]
+    /// Pins that the service prefers `KRB5_KTNAME` over the config default keytab.
+    #[test]
+    fn tower_service_prefers_env_keytab_over_config_default() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "tower_default_keytab_env::tower_service_prefers_env_keytab_over_config_default";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_file("http-env-keytab-precedence");
+            let env_name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(env_name.as_ref()))]);
+            return Ok(());
+        }
+        let env_name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            env_name
+                .strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+        keytab()
+            .save(&path)
+            .map_err(|cause| format!("keytab saves: {cause}"))?;
+        let missing_config_name = format!(
+            "FILE:{}",
+            temp_file("missing-http-config-default").display()
+        );
+        let config = config_with_default_keytab_name(&missing_config_name);
+        let mut service =
+            krb_http::NegotiateService::from_default_keytab(AssertAcceptedService, &config)
+                .map_err(|cause| {
+                    format!("service loads env keytab before config default: {cause}")
+                })?
+                .with_now(timestamp(1_893_553_447))
+                .with_ap_rep(false);
+        let _ = std::fs::remove_file(&path);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header())
+            .map_err(|cause| format!("authorization header sets: {cause}"))?;
+
+        let response = run_ready(service.call(request))
+            .map_err(|cause| format!("inner response succeeds: {cause}"))?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers().get(WWW_AUTHENTICATE).is_none(),
+            "AP-REP header is disabled"
+        );
+        Ok(())
+    }
 }
 
 #[cfg_attr(
@@ -2645,10 +2018,14 @@ fn initiator_context() -> spnego::InitiatorContext {
     ),
     expect(
         clippy::expect_used,
-        clippy::missing_panics_doc,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
+/// Builds the fixture initiator context with `options`.
+///
+/// # Panics
+///
+/// Panics if the fixture context cannot be built.
 fn initiator_context_with_options(options: InitiatorContextOptions) -> spnego::InitiatorContext {
     spnego::init_sec_context_with_confounder(
         &service_ticket_session_from_valid_ap_req(),
@@ -2922,217 +2299,6 @@ fn current_service_ticket_session() -> AsRepSession {
         )
     ),
     expect(
-        clippy::absolute_paths,
-        unused_qualifications,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tokio")]
-type MutualSendResult = core::result::Result<
-    krb_http::NegotiateHttpResponse<Vec<u8>>,
-    krb_http::NegotiateHttpError<Infallible, Vec<u8>>,
->;
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::arithmetic_side_effects,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::std_instead_of_core,
-        clippy::unseparated_literal_suffix,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Run the async options wrapper against a sender that challenges first and
-/// answers the authenticated retry with `final_response`.
-#[cfg(feature = "tokio")]
-fn send_mutual_negotiate(
-    options: InitiatorContextOptions,
-    mut final_response: impl FnMut(&Request<Vec<u8>>) -> Response<Vec<u8>>,
-) -> (MutualSendResult, usize) {
-    runtime().block_on(async {
-        let mut client = negotiate_client_with_cached_service_ticket();
-        let calls = Cell::new(0usize);
-        let result = krb_http::send_with_negotiate_options(
-            &mut client,
-            Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
-            options,
-            || {
-                Request::builder()
-                    .method("GET")
-                    .uri("/protected")
-                    .body(Vec::new())
-                    .expect("request builds")
-            },
-            |request: Request<Vec<u8>>| {
-                calls.set(calls.get() + 1);
-                let response = if calls.get() == 1 {
-                    krb_http::challenge_response::<Vec<u8>>()
-                } else {
-                    final_response(&request)
-                };
-                std::future::ready(Ok::<_, Infallible>(response))
-            },
-        )
-        .await;
-        (result, calls.get())
-    })
-}
-
-#[cfg(feature = "tokio")]
-fn mutual_context_flag_options() -> InitiatorContextOptions {
-    InitiatorContextOptions::new().with_context_flags(vec![
-        spnego::CONTEXT_FLAG_INTEG,
-        spnego::CONTEXT_FLAG_MUTUAL,
-    ])
-}
-
-#[cfg(feature = "tokio")]
-fn negotiate_client_with_cached_service_ticket() -> NegotiateClient {
-    let mut tokio_client = TokioClient::with_password(
-        Config::new(),
-        KdcProtocol::Auto,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        b"unused".to_vec(),
-    );
-    tokio_client.cache_service_ticket(current_service_ticket_session());
-    NegotiateClient::from_tokio_client(tokio_client)
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_trait_access,
-        clippy::duration_suboptimal_units,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Accept a wrapper-built Authorization header and answer with a genuine AP-REP.
-///
-/// The fixture ticket is valid at `1_893_553_447` while the wrapper stamps the
-/// authenticator with the wall clock, so the validator allows a wide skew.
-#[cfg(feature = "tokio")]
-fn ap_rep_response_header_for_live_authorization(authorization: &str) -> String {
-    let keytab = keytab();
-    let mut validator = ServiceValidator::new(&keytab)
-        .with_now(timestamp(1_893_553_447))
-        .with_max_clock_skew(Duration::from_secs(100 * 365 * 24 * 60 * 60));
-    let accepted = spnego::accept_sec_context_header(&mut validator, authorization)
-        .expect("wrapper Authorization header validates");
-    accepted
-        .ap_rep_response_header_with_confounder(&decode_hex(AP_REP_CONFOUNDER), Default::default())
-        .expect("AP-REP response header builds")
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
         clippy::expect_used,
         clippy::missing_panics_doc,
         reason = "lint-migration: upstream baseline at ee9cb04"
@@ -3180,50 +2346,6 @@ fn config_with_default_keytab_name(keytab_name: &str) -> Config {
         r#"
 [libdefaults]
  default_keytab_name = {keytab_name}
-"#,
-    );
-    Config::parse(&input).expect("config parses")
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::needless_raw_strings,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "tower")]
-fn config_with_default_keytab_name_and_clockskew(keytab_name: &str, clockskew: &str) -> Config {
-    let input = format!(
-        r#"
-[libdefaults]
- default_keytab_name = {keytab_name}
- clockskew = {clockskew}
 "#,
     );
     Config::parse(&input).expect("config parses")
@@ -3921,5 +3043,444 @@ fn hex_value(byte: u8) -> u8 {
         b'a'..=b'f' => byte - b'a' + 10,
         b'A'..=b'F' => byte - b'A' + 10,
         _ => panic!("invalid hex byte: {byte}"),
+    }
+}
+
+/// Fork-authored HTTP Negotiate tests: requested mutual authentication fails
+/// closed without a verified AP-REP, and `clockskew` reaches the tower layer.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    #[cfg(feature = "tokio")]
+    use core::future::ready;
+    #[cfg(feature = "tower")]
+    use std::fs;
+
+    #[cfg(feature = "tokio")]
+    use http_types::Uri;
+    #[cfg(any(feature = "tokio", feature = "tower"))]
+    use pretty_assertions::assert_eq;
+    #[cfg(feature = "tokio")]
+    use rskrb5::service::ApRepOptions;
+
+    use super::*;
+
+    /// Result of [`send_mutual_negotiate`].
+    #[cfg(feature = "tokio")]
+    type MutualSendResult = Result<
+        krb_http::NegotiateHttpResponse<Vec<u8>>,
+        krb_http::NegotiateHttpError<Infallible, Vec<u8>>,
+    >;
+
+    /// Pins that an AP-option mutual request classifies a completion without an AP-REP as a failure.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn negotiate_http_client_classifies_missing_ap_rep_as_failure_when_mutual_requested()
+    -> Result<(), TestError> {
+        let accept_completed = spnego::accept_completed_header()
+            .map_err(|cause| format!("accept-completed header: {cause}"))?;
+        let (result, calls) = send_mutual_negotiate(
+            InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
+            |_retry| response_with_www_authenticate_body(&accept_completed, b"ok".to_vec()),
+        );
+
+        let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
+            negotiation,
+            response,
+        }) = result
+        else {
+            return Err(format!("expected MutualAuthenticationNotProven, got {result:?}").into());
+        };
+        assert!(matches!(
+            negotiation,
+            Some(krb_http::ClientNegotiateResponse::InvalidToken { message: _ })
+        ));
+        assert_eq!(response.body().as_slice(), b"ok");
+        assert_eq!(calls, 2);
+        Ok(())
+    }
+
+    /// Pins that a mutual request fails closed on a final response without `WWW-Authenticate`.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn mutual_wrapper_rejects_final_response_without_www_authenticate() -> Result<(), TestError> {
+        let (result, calls) = send_mutual_negotiate(mutual_context_flag_options(), |_retry| {
+            Response::new(b"ok".to_vec())
+        });
+
+        let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
+            negotiation,
+            response,
+        }) = result
+        else {
+            return Err(format!("expected MutualAuthenticationNotProven, got {result:?}").into());
+        };
+        assert_eq!(
+            negotiation,
+            Some(krb_http::ClientNegotiateResponse::NoAuthenticateHeader)
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body().as_slice(), b"ok");
+        assert_eq!(calls, 2);
+        Ok(())
+    }
+
+    /// Pins that a mutual request fails closed on a final non-Negotiate challenge.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn mutual_wrapper_rejects_a_non_negotiate_challenge() -> Result<(), TestError> {
+        let (result, calls) = send_mutual_negotiate(
+            InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
+            |_retry| response_with_www_authenticate_body("Basic realm=\"test\"", b"ok".to_vec()),
+        );
+
+        let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
+            negotiation,
+            response,
+        }) = result
+        else {
+            return Err(format!("expected MutualAuthenticationNotProven, got {result:?}").into());
+        };
+        assert_eq!(
+            negotiation,
+            Some(krb_http::ClientNegotiateResponse::NoNegotiateChallenge)
+        );
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(calls, 2);
+        Ok(())
+    }
+
+    /// Pins that a mutual request fails closed when the first response is never challenged.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn mutual_wrapper_rejects_unchallenged_first_response() -> Result<(), TestError> {
+        runtime().block_on(async {
+            let mut client = negotiate_client_with_cached_service_ticket();
+            let send_calls = Cell::new(0_usize);
+
+            let result = krb_http::send_with_negotiate_options(
+                &mut client,
+                Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
+                mutual_context_flag_options(),
+                || Request::new(()),
+                |_request| {
+                    send_calls.set(send_calls.get().saturating_add(1));
+                    ready(Ok::<_, Infallible>(Response::new("public")))
+                },
+            )
+            .await;
+
+            let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
+                negotiation,
+                response,
+            }) = result
+            else {
+                return Err(
+                    format!("expected MutualAuthenticationNotProven, got {result:?}").into(),
+                );
+            };
+            assert_eq!(negotiation, None);
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(*response.body(), "public");
+            assert_eq!(send_calls.get(), 1);
+            Ok(())
+        })
+    }
+
+    /// Pins that a mutual request accepts a verified AP-REP that matches the authenticator.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn mutual_wrapper_accepts_a_verified_ap_rep() -> Result<(), TestError> {
+        let (result, calls) = send_mutual_negotiate(
+            InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
+            |retry| {
+                let built = krb_http::authorization_header(retry)
+                    .map_err(|cause| {
+                        TestError::from(format!("retry carries Authorization: {cause}"))
+                    })
+                    .and_then(ap_rep_response_header_for_live_authorization);
+                match built {
+                    Ok(header) => response_with_www_authenticate_body(&header, b"ok".to_vec()),
+                    Err(cause) => Response::new(format!("no AP-REP header: {cause}").into_bytes()),
+                }
+            },
+        );
+
+        let negotiated = result
+            .map_err(|cause| format!("verified AP-REP proves mutual authentication: {cause}"))?;
+        let context = negotiated.context.as_ref().ok_or("context is retained")?;
+        let Some(krb_http::ClientNegotiateResponse::Accepted {
+            ap_rep: Some(verified),
+        }) = &negotiated.negotiation
+        else {
+            return Err(
+                format!("expected verified AP-REP, got {:?}", negotiated.negotiation).into(),
+            );
+        };
+        assert_eq!(verified.ctime, context.authenticator_ctime);
+        assert_eq!(verified.cusec, context.authenticator_cusec);
+        assert_eq!(negotiated.response.body().as_slice(), b"ok");
+        assert_eq!(calls, 2);
+        Ok(())
+    }
+
+    /// Pins that the default async and blocking wrappers still accept a completion without an AP-REP.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn default_wrapper_still_accepts_a_missing_ap_rep() -> Result<(), TestError> {
+        let accept_header = spnego::accept_completed_header()
+            .map_err(|cause| format!("accept-completed header: {cause}"))?;
+        let challenge_then_accept = |call: usize| {
+            if call == 1 {
+                krb_http::challenge_response::<Vec<u8>>()
+            } else {
+                response_with_www_authenticate_body(&accept_header, b"ok".to_vec())
+            }
+        };
+
+        let async_calls = Cell::new(0_usize);
+        let async_result = runtime()
+            .block_on(async {
+                let mut client = negotiate_client_with_cached_service_ticket();
+                krb_http::send_with_negotiate(
+                    &mut client,
+                    Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
+                    || Request::new(Vec::<u8>::new()),
+                    |_request| {
+                        async_calls.set(async_calls.get().saturating_add(1));
+                        ready(Ok::<_, Infallible>(challenge_then_accept(
+                            async_calls.get(),
+                        )))
+                    },
+                )
+                .await
+            })
+            .map_err(|cause| {
+                format!("default async wrapper accepts a completion without an AP-REP: {cause}")
+            })?;
+        assert_eq!(
+            async_result.negotiation,
+            Some(krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
+        );
+        assert_eq!(async_calls.get(), 2);
+
+        let mut blocking_client =
+            BlockingNegotiateClient::new(negotiate_client_with_cached_service_ticket())
+                .map_err(|cause| format!("blocking client builds: {cause}"))?;
+        let blocking_calls = Cell::new(0_usize);
+        let blocking_result = krb_http::send_with_blocking_negotiate(
+            &mut blocking_client,
+            Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
+            || Request::new(Vec::<u8>::new()),
+            |_request| {
+                blocking_calls.set(blocking_calls.get().saturating_add(1));
+                Ok::<_, Infallible>(challenge_then_accept(blocking_calls.get()))
+            },
+        )
+        .map_err(|cause| {
+            format!("default blocking wrapper accepts a completion without an AP-REP: {cause}")
+        })?;
+        assert_eq!(
+            blocking_result.negotiation,
+            Some(krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
+        );
+        assert_eq!(blocking_calls.get(), 2);
+        Ok(())
+    }
+
+    /// Pins that the blocking mutual wrapper fails closed on a completion without an AP-REP.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn blocking_mutual_wrapper_rejects_a_missing_ap_rep() -> Result<(), TestError> {
+        let accept_header = spnego::accept_completed_header()
+            .map_err(|cause| format!("accept-completed header: {cause}"))?;
+        let mut client =
+            BlockingNegotiateClient::new(negotiate_client_with_cached_service_ticket())
+                .map_err(|cause| format!("blocking client builds: {cause}"))?;
+        let calls = Cell::new(0_usize);
+
+        let result = krb_http::send_with_blocking_negotiate_options(
+            &mut client,
+            Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
+            mutual_context_flag_options(),
+            || Request::new(Vec::<u8>::new()),
+            |_request| {
+                calls.set(calls.get().saturating_add(1));
+                let response = if calls.get() == 1 {
+                    krb_http::challenge_response::<Vec<u8>>()
+                } else {
+                    response_with_www_authenticate_body(&accept_header, b"ok".to_vec())
+                };
+                Ok::<_, Infallible>(response)
+            },
+        );
+
+        let Err(krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
+            negotiation,
+            response,
+        }) = result
+        else {
+            return Err(format!("expected MutualAuthenticationNotProven, got {result:?}").into());
+        };
+        assert!(matches!(
+            negotiation,
+            Some(krb_http::ClientNegotiateResponse::InvalidToken { message: _ })
+        ));
+        assert_eq!(response.body().as_slice(), b"ok");
+        assert_eq!(calls.get(), 2);
+        Ok(())
+    }
+
+    /// Pins that classification rejects a completion without an AP-REP for both mutual request forms.
+    #[test]
+    fn classify_rejects_missing_ap_rep_when_mutual_requested() -> Result<(), TestError> {
+        let variants = [
+            InitiatorContextOptions::new().with_ap_option_bits(0x2000_0000),
+            InitiatorContextOptions::new().with_context_flags(vec![
+                spnego::CONTEXT_FLAG_INTEG,
+                spnego::CONTEXT_FLAG_MUTUAL,
+            ]),
+        ];
+        let accept_header = spnego::accept_completed_header()
+            .map_err(|cause| format!("accept-completed header: {cause}"))?;
+        for options in variants {
+            let context = initiator_context_with_options(options);
+            let response = response_with_www_authenticate(&accept_header);
+            assert!(
+                matches!(
+                    krb_http::classify_negotiate_response(&context, &response),
+                    krb_http::ClientNegotiateResponse::InvalidToken { message: _ }
+                ),
+                "requested mutual authentication must not accept a completion without an AP-REP"
+            );
+        }
+        Ok(())
+    }
+
+    /// Pins that the tower layer honours the config `clockskew` and rejects a stale authenticator.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn tower_layer_config_clockskew_rejects_stale_authenticator() -> Result<(), TestError> {
+        let path = temp_file("http-config-clockskew");
+        let name = format!("FILE:{}", path.display());
+        keytab()
+            .save(&path)
+            .map_err(|cause| format!("keytab saves: {cause}"))?;
+        let config = config_with_default_keytab_name_and_clockskew(&name, "1s")?;
+
+        let layer = krb_http::NegotiateLayer::from_default_keytab_name(&config)
+            .map_err(|cause| format!("layer loads default keytab name: {cause}"))?
+            .with_now(timestamp(1_893_553_447 + 2))
+            .with_ap_rep(false);
+        fs::remove_file(&path).map_err(|cause| format!("keytab file is removed: {cause}"))?;
+
+        let mut service = layer.layer(AssertAcceptedService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header())
+            .map_err(|cause| format!("authorization header sets: {cause}"))?;
+
+        let response = run_ready(service.call(request))
+            .map_err(|cause| format!("reject response returned: {cause}"))?;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        Ok(())
+    }
+
+    /// Run the async options wrapper against a sender that challenges first and
+    /// answers the authenticated retry with `final_response`.
+    #[cfg(feature = "tokio")]
+    fn send_mutual_negotiate(
+        options: InitiatorContextOptions,
+        mut final_response: impl FnMut(&Request<Vec<u8>>) -> Response<Vec<u8>>,
+    ) -> (MutualSendResult, usize) {
+        runtime().block_on(async {
+            let mut client = negotiate_client_with_cached_service_ticket();
+            let calls = Cell::new(0_usize);
+            let result = krb_http::send_with_negotiate_options(
+                &mut client,
+                Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
+                options,
+                || {
+                    let mut request = Request::new(Vec::new());
+                    *request.uri_mut() = Uri::from_static("/protected");
+                    request
+                },
+                |request: Request<Vec<u8>>| {
+                    calls.set(calls.get().saturating_add(1));
+                    let response = if calls.get() == 1 {
+                        krb_http::challenge_response::<Vec<u8>>()
+                    } else {
+                        final_response(&request)
+                    };
+                    ready(Ok::<_, Infallible>(response))
+                },
+            )
+            .await;
+            (result, calls.get())
+        })
+    }
+
+    /// Initiator options that request mutual authentication through the context flags.
+    #[cfg(feature = "tokio")]
+    fn mutual_context_flag_options() -> InitiatorContextOptions {
+        InitiatorContextOptions::new().with_context_flags(vec![
+            spnego::CONTEXT_FLAG_INTEG,
+            spnego::CONTEXT_FLAG_MUTUAL,
+        ])
+    }
+
+    /// A Negotiate client whose cache already holds the fixture service ticket.
+    #[cfg(feature = "tokio")]
+    fn negotiate_client_with_cached_service_ticket() -> NegotiateClient {
+        let mut tokio_client = TokioClient::with_password(
+            Config::new(),
+            KdcProtocol::Auto,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            b"unused".to_vec(),
+        );
+        tokio_client.cache_service_ticket(current_service_ticket_session());
+        NegotiateClient::from_tokio_client(tokio_client)
+    }
+
+    /// Accept a wrapper-built Authorization header and answer with a genuine AP-REP.
+    ///
+    /// The fixture ticket is valid at `1_893_553_447` while the wrapper stamps the
+    /// authenticator with the wall clock, so the validator allows a wide skew.
+    #[cfg(feature = "tokio")]
+    fn ap_rep_response_header_for_live_authorization(
+        authorization: &str,
+    ) -> Result<String, TestError> {
+        let keytab = keytab();
+        let mut validator = ServiceValidator::new(&keytab)
+            .with_now(timestamp(1_893_553_447))
+            .with_max_clock_skew(Duration::from_hours(100 * 365 * 24));
+        let accepted = spnego::accept_sec_context_header(&mut validator, authorization)
+            .map_err(|cause| format!("wrapper Authorization header validates: {cause}"))?;
+        Ok(accepted
+            .ap_rep_response_header_with_confounder(
+                &decode_hex(AP_REP_CONFOUNDER),
+                ApRepOptions::default(),
+            )
+            .map_err(|cause| format!("AP-REP response header builds: {cause}"))?)
+    }
+
+    /// A config naming `keytab_name` as the default keytab, with `clockskew`.
+    #[cfg(feature = "tower")]
+    fn config_with_default_keytab_name_and_clockskew(
+        keytab_name: &str,
+        clockskew: &str,
+    ) -> Result<Config, TestError> {
+        let input = format!(
+            "
+[libdefaults]
+ default_keytab_name = {keytab_name}
+ clockskew = {clockskew}
+",
+        );
+        Ok(Config::parse(&input).map_err(|cause| format!("config parses: {cause}"))?)
     }
 }
