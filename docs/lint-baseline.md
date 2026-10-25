@@ -633,3 +633,42 @@ Commit legend:
 - At adoption (`473ca10`) the fork-lines report could not finish, because the
   reference tree lacked `hex`. The compensation above (`dc86a2e`) fixed that,
   and the gate reported zero violations on the converged tree (`f18676f`).
+# Transition (2026-10-25)
+
+The differential upstream gates are retired. `feature_closures.py` computes
+distinct feature closures from the manifest, including `default` as a real
+feature, and supplies canonical Cargo arguments to both strict runs and
+`closure_report.py`. The report blanks migration expectations in a disposable
+tree, preserving source line numbers, and reports real diagnostics across every
+closure. Hard compilation errors always count, independently of path or lint
+filters. A report is informational; `--enforce` fails on scoped lints or any hard
+error. `--lints-only` never suppresses hard errors.
+
+`clean-paths.txt` starts empty. Compliance work adds sorted, unique path globs;
+they may only grow. An omitted path filter means the whole tree; an empty paths
+file means no lint/prose scope, not the whole tree. Both CI gate jobs still
+check hard compilation errors in every closure. API-shaping lints remain
+temporarily excluded by the plan's API-SET, not by new source expectations.
+
+`prose_gate.py` checks every item in selected files, regardless of its origin.
+Its six checks remain cancel safety, test docs, fallible-test results, Drop
+audits, emptiness assertion messages, and credential-mutating future warnings.
+`fuzz_lint.py` separately applies the root lint profile to the nightly fuzz crate.
+
+`facade_gate.py` is a standalone source check. Seven existing re-export
+statements in five modules are listed in `facade-exceptions.txt`, keyed by module
+path and statement names rather than filenames. Exceptions may only disappear.
+All other public re-exports outside the crate-root facade fail, including
+cfg-disabled statements.
+
+The ratchet starts at the first-parent commit introducing `clean-paths.txt`.
+Earlier migrations are grandfathered. Every subsequent first-parent snapshot
+and the working tree must remove only baseline entries, grow only clean paths,
+and remove only facade exceptions. Changed or moved baseline identities count
+as additions: remove their expectations before moving code. First-parent walks
+judge parallel branch merges against their integration parent rather than
+mistaking independent removals for restorations.
+
+The old fork-lines gate, provenance modules, reference compensation, move ledger,
+and baseline move credits are deleted. The historical sections below describe
+the former migration machinery, not the current enforcement policy.
