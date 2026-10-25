@@ -13,33 +13,45 @@ sibling project's stricter practice that this file adopts pull apart, the strict
 applies. Nothing below weakens the core or a domain overlay (README, "The overlay
 contract").
 
-## The project (verified 2026-10-23)
+## The project (verified 2026-10-25)
+
+Facts about the 0.3.0 line were measured on the local branch `release/0.3.0` at `d63aeb9`.
+That branch was not yet on `andrico21/rskrb5` when this was written (the remote had
+`release/0.2.1` and `release/0.2.2` only).
 
 - **What:** `andrico21/rskrb5`, a temporary fork of `clelange/rskrb5`.
   - It is published to crates.io as **`rskrb5-patched`**: 0.2.1 (2026-10-06), and 0.2.2 (2026-10-23, tag `v0.2.2` at `58b27bb`).
+  - `release/0.3.0` carries version **0.3.0**, unpublished and untagged (`CHANGELOG.md` `[0.3.0] - 2026-10-24`). It is a breaking release; `FORK-NOTES.md` "Upgrading from 0.2" lists the changes.
   - The lib target stays `rskrb5`.
   - Its consumer is `kpasswd-rs`. It vendors 0.2.1 by sha256 as a **path dependency**, with `default-features = false, features = ["tokio"]`, and denies warnings. So this crate's `[lints]` table runs inside the consumer's build.
 - **Base:** upstream `main` at `6f4abc9` plus:
   - the 0.2.1 series: Rust 1.98 clippy drift, `hex` dev-dependency, padata exports, verbatim kpasswd result bytes, environment-free `Config`/`LibDefaults`, `include`/`includedir`, the TGS authenticator subkey;
-  - the 0.2.2 additions: AP-REQ replay identity (PR #20), authenticator realm binding (PR #21), the TCP framing/preauth stream (upstream PR #19 plus Gittingc0dez/rskrb5#1).
+  - the 0.2.2 additions: AP-REQ replay identity (PR #20), authenticator realm binding (PR #21), the TCP framing/preauth stream (upstream PR #19 plus Gittingc0dez/rskrb5#1);
+  - the 0.3.0 additions: the eight run-2 fix branches, proposed upstream as PRs #22 to #29 (ccache count bounds, authenticated kpasswd success, clockskew handoff, host-case SPN, domain-realm normalization, enctype policy, client renewal series, mutual-auth classification).
 
   `FORK-NOTES.md` carries the table.
 - **Branches:**
-  - `main` = upstream history plus the two workflow files. `release.yml` runs from here, because it triggers on `workflow_run`.
+  - `main` = upstream history plus the two workflow files and the fuzz crate. `release.yml` runs from here, because it triggers on `workflow_run`; it publishes `--locked` (`79a28d3`).
   - `release/*` carries the series.
-  - `fix/*` carries one upstream PR each, based on `6f4abc9`, upstream-shaped.
-  - Eight medium/low fix branches (run-2 audit) are implemented and pushed, but not yet released or proposed upstream.
-- **Toolchain (today):**
-  - edition 2024, `rust-version = "1.88"`;
-  - no `[lints]` table, `clippy.toml`, `rustfmt.toml`, `.cargo/config.toml`, `deny.toml` or `supply-chain/`;
-  - `src/lib.rs:38` has `#![forbid(unsafe_code)]`, but the test helpers in `tests/common/mod.rs` and `tests/client_ad_integration.rs` mutate the environment in `unsafe` blocks.
-  - Four upstream `allow` attributes exist (`src/client.rs` ×2, `src/kadmin.rs`, `tests/common/mod.rs`).
-- **CI:**
-  - `ci.yml` runs on Ubuntu stable only: fmt, a no-default-features check, advisory clippy, tests, docs, package; plus scheduled advisory `mutants` and `fuzz`. The fork dropped upstream's macOS/Windows/1.88 test legs and its i686 check.
-  - `release.yml` publishes on a `vN.N.N` tag, gated on CI, without `--locked`.
-  - `fuzz/Cargo.toml` names the dependency `rskrb5`, so it no longer resolves after the package rename.
-- **Profile gap (measured 2026-10-23):** the core Section 9 profile at warn on `release/0.2.2` reports 7,906 distinct diagnostics. They cover 104 lints in 54 files; 285 are on fork-authored lines.
-- **Vendored rules:** none committed yet. A cached copy of the core, the two domain overlays, this file and the README is staged at `docs/rust-guidelines/` with `SHA256SUMS`, plus a root `RUST_GUIDELINES.md` index naming the pin. It lands on `release/0.3.0` with the alignment plan.
+  - `fix/*` carries one upstream PR each, based on `6f4abc9`, upstream-shaped (no profile, stable rustfmt, `rust-version = "1.88"`).
+- **Toolchain (`release/0.3.0`):**
+  - edition 2024, `rust-version = "1.99"` (`7c95579`);
+  - the core Section 9 profile in the root `Cargo.toml` `[lints]` tables and `.cargo/config.toml` `build.warnings = "deny"` (`473ca10`), `rustfmt.toml` run with `nightly-2026-10-03` (`8eb3977`), `clippy.toml`, `deny.toml` and `supply-chain/` (`62191fe`);
+  - `src/lib.rs` has `#![forbid(unsafe_code)]`, and no `unsafe` remains in `tests/`: environment-dependent tests set variables in a child test process (`b61c3f2`);
+  - no `allow` attribute anywhere (`allow_gate.py --enforce`);
+  - one dev-dependency added, `proptest`, for the ccache, serde-flag and realm case-fold property tests.
+- **CI (`release/0.3.0`, `7e05965`):** `ci.yml` runs on floating `stable`, with `nightly-2026-10-03` for rustfmt, the second rustdoc run, the fork-lines gate and fuzz, and `1.99.0` for the MSRV build.
+  - Blocking: `fmt`, `clippy`, `features-matrix` (K1 to K7, including the consumer's `--no-default-features --features tokio`), `test` (Linux, macOS, Windows), `i686`, `docs`, `msrv`, `semver-checks`, `publish-dryrun`, `consumer`, `deny`, `audit`, `vet`, `machete`, `taplo`, `docs-validate`, `lint-gates`, `fork-lines`, `package`.
+  - Advisory (`continue-on-error`): `geiger`, `rustdoc-nightly-canary`, and the scheduled `mutants` and `fuzz`.
+  - `fuzz/Cargo.toml` depends on the renamed package (`dd5e57d`); the fuzz targets are `kpasswd_reply` and `ccache_parse`.
+- **Lint baseline (measured 2026-10-25 at `d63aeb9`):**
+  - `python3 scripts/lint-ratchet/baseline_gate.py --report` prints `current 6520 / base 7396 entries` (7,396 at adoption in `473ca10`);
+  - 2,730 source lines carry a `lint-migration:` reason;
+  - 2 `deliberate:` expectations, 84 core-sanctioned test-module expectations (45 `test code is not rendered API documentation`, 39 `a test fails by panicking`) and one crate-root `public facade` expectation.
+
+  `docs/lint-baseline.md` records the measures, the gates and the authorized exceptions. Its section "Authorized upstream-line rewrites and exceptions" lists (a) to (o), including the one `deliberate:` expectation without an upstream PR number (exception (i), `client::build_tgs_req_for_realm_with_confounder_and_subkey`). Read them there; this file does not repeat them.
+- **Profile gap before adoption (measured 2026-10-23):** the core Section 9 profile at warn on `release/0.2.2` reported 7,906 distinct diagnostics, covering 104 lints in 54 files; 285 were on fork-authored lines.
+- **Vendored rules:** committed on `release/0.3.0` at `docs/rust-guidelines/` (`7e21b25`): the core, the two domain overlays and this file, with `SHA256SUMS`. The root `RUST_GUIDELINES.md` index names the pin and the re-vendor procedure. CI checks the checksums, and `profile_eq.py --clippy-toml` checks `Cargo.toml` and `clippy.toml` against the vendored core.
 
 ## Project rules
 
@@ -87,17 +99,18 @@ contract").
     - Credential-mutating async functions the fork touches carry a `# Cancel safety` section saying **NOT cancel-safe**.
 12. **The guideline files are excluded from the published crate.** So are the lint-ratchet scripts and `.cargo/config.toml`.
 
-## Deviations to resolve (status 2026-10-23)
+## Deviations to resolve (status 2026-10-25)
 
-Each is a task. The approved alignment plan (`release/0.3.0`, plan
-`rskrb5-review-fixes-lint-alignment`) closes 1, 3, 4 and 9 and opens the burn-down in 2.
+Each open item is a task. The alignment plan (`rskrb5-review-fixes-lint-alignment`) closed
+1, 3, 4 and 9 on `release/0.3.0` and started the burn-down in 2. Closed items stay listed
+with the commits that closed them, until the release line is published.
 
-1. **The profile is not adopted on any branch** (no lint tables, `clippy.toml`, `rustfmt.toml` or `.cargo/config.toml`). Task: the alignment plan.
-2. **Upstream-origin lint baseline.** About 7,600 diagnostics on upstream-origin lines will be carried as `lint-migration:` expectations. Task: burn the baseline down file by file; it never grows outside a toolchain rebaseline.
-3. **CI is below rule 9.** Fork CI lacks the clippy gate, the feature matrix, the OS matrix, i686, MSRV, audit, deny, vet, machete, semver-checks, taplo, the publish dry-run and the gates. Task: the alignment plan.
-4. **`unsafe` in test helpers** (rule 5). Task: the alignment plan.
+1. **Closed: the profile is adopted on `release/0.3.0`.** `473ca10` added the `[lints]` tables, `.cargo/config.toml` and the baseline; `8eb3977` added `rustfmt.toml`; `62191fe` added `clippy.toml`. `fix/*` branches stay without the profile (rule 6).
+2. **Upstream-origin lint baseline.** `scripts/lint-ratchet/baseline.toml` holds 6,520 `lint-migration:` entries (`baseline_gate.py --report`: `current 6520 / base 7396 entries`), down from 7,396 at adoption. Task: burn the baseline down file by file; it never grows outside a toolchain rebaseline.
+3. **Closed: CI meets rule 9 on `release/0.3.0`** (`7e05965`). The jobs are listed under "The project" above.
+4. **Closed: no `unsafe` in test helpers** (rule 5). `b61c3f2` replaced the environment helpers with a child test process.
 5. **Upstream prose-rule debt.** Upstream async functions (91 at `release/0.2.2`) lack cancel-safety annotations, and upstream tests lack docs and `Result` returns. The prose gate enforces only fork-touched items. Task: burn it down with upstream; issue #8 covers `change_password*`.
-6. **Dependency majors held back by upstream code:** `base64` 0.23, `getrandom` 0.4, `picky-krb` 0.13, `rasn`/`rasn-kerberos` 0.29, `compcol` 0.7, dev `toml` 1.1, plus the `pbkdf2 = "=0.13.0-rc.10"` pre-release pin. Task: upgrade with upstream, or in a dedicated plan with consumer-impact notes.
+6. **Dependency majors held back by upstream code:** `base64` 0.23, `getrandom` 0.4, `picky-krb` 0.13, `rasn`/`rasn-kerberos` 0.29, `compcol` 0.7, dev `toml` 1.1, plus the `pbkdf2 = "=0.13.0-rc.10"` pre-release pin. `FORK-NOTES.md` "Dependencies held back" lists the locked and latest versions on `release/0.3.0`. Task: upgrade with upstream, or in a dedicated plan with consumer-impact notes.
 7. **Kerberos-overlay gaps in upstream behaviour:**
    - the weak-enctype predicate misses `rc4-hmac`/DES3 (upstream #3);
    - RC4 is in the default enctypes (run-2 lead);
@@ -108,7 +121,7 @@ Each is a task. The approved alignment plan (`release/0.3.0`, plan
 
    Task: track the upstream issues and the 18 run-2 needs-validation leads.
 8. **`http-services.md` on the Negotiate layer and the Axum example.** Their responses must not leak internals. The example should demonstrate the OWASP header and fingerprint-stripping layers that a composing application owns. Task: verify the layer's `401`/reject bodies, and harden the example.
-9. **Mutants scope** (`src/kadmin.rs`, `src/client/transport.rs`) and the single fuzz target are narrow. Task: add the ccache parser target (rule 11), and widen mutants when a green run shows headroom.
+9. **Closed: the ccache parser has a fuzz target and property tests** (rule 11). `86e380f` added `fuzz/fuzz_targets/ccache_parse.rs` and the `proptest` tests in `tests/ccache.rs`. The scheduled `mutants` job still covers only `src/kadmin.rs` and `src/client/transport.rs`; widen it when a green run shows headroom.
 10. **Retirement.** When an upstream release carries the series:
     - yank every published `rskrb5-patched` version (0.2.1, 0.2.2, and 0.3.0 once published);
     - move `kpasswd-rs` back to `rskrb5`;
