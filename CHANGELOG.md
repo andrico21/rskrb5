@@ -60,7 +60,7 @@ retirement trigger.
   ciphertext, so an authenticator re-presented under a rewritten cleartext
   ticket `sname` (for example a keytab alias sharing the service key) is
   rejected (clelange/rskrb5 PR #20, updated).
-- Lockfile refreshed to the latest Rust 1.88-compatible dependency versions
+- Lockfile refreshed to the latest Rust 1.99-compatible dependency versions
   (`crossbeam-epoch` 0.9.18 to 0.9.21 among them).
 
 ### Breaking
@@ -74,11 +74,52 @@ retirement trigger.
 - New public fields on constructible structs:
   `LibDefaults.permitted_enctypes_explicit` and
   `InitiatorContext.context_flags`.
+- Lint pass on fork-only API: `client::TgsFastRequestParts` is
+  `#[non_exhaustive]`, and `build_tgs_req_for_realm_with_subkey` and
+  `build_tgs_req_for_realm_with_confounder_and_subkey` take a generic
+  `R: Into<String>` realm instead of `impl Into<String>` (ordinary calls
+  compile unchanged).
 - Behaviour: an unsigned kpasswd success is rejected; a KDC reply or session
   key outside the requested (or explicitly permitted) enctypes is rejected,
   and so is a config whose explicit request list falls outside an explicit
   `permitted_enctypes`; host-based SPNs carry a lower-cased host; and the send
   wrappers return an error when requested mutual authentication isn't proven.
+
+### Lint profile, rules and tooling
+
+- The crate adopts the core Section 9 lint profile of the vendored Rust
+  guidelines (equal to rmcp-server-kit `b7f6b66`), with `clippy.toml`,
+  `.cargo/config.toml` (`build.warnings = "deny"`) and no `allow` attributes.
+  Upstream code keeps its existing violations as generated, item-level
+  `lint-migration:` expectations listed in `scripts/lint-ratchet/baseline.toml`
+  (7,396 at adoption, 6,520 now), which can only shrink. Fork code passes the
+  profile outright. Gates: fork-lines (differential diagnostics), prose (the
+  core's non-lint rules), baseline ratchet, profile equality, profile
+  completeness and allow. See `docs/lint-baseline.md`.
+- CI floats on `stable`; rustfmt and the second rustdoc run use
+  `nightly-2026-10-03` with rmcp-server-kit's `rustfmt.toml`.
+- **Breaking:** `rust-version` is raised from 1.88 to 1.99. The lockfile holds
+  the latest Rust 1.99-compatible versions, and `proptest` is a new
+  dev-dependency.
+- The universal Rust guidelines are vendored at `docs/rust-guidelines/` (pin
+  `8b52023`, checksummed) with the `RUST_GUIDELINES.md` index.
+- **Breaking** for configs that relied on silent narrowing: an explicit
+  `default_tkt_enctypes` or `default_tgs_enctypes` naming an enctype outside an
+  explicit `permitted_enctypes` is a parse error
+  (`config::Error::EnctypeNotPermitted`).
+- The fuzz crate depends on the renamed package key, and a `ccache_parse`
+  fuzz target joins `kpasswd_reply`; ccache and config property tests run with
+  `proptest`. The release workflow publishes with `--locked`.
+- CI jobs added: an OS matrix (Linux, macOS, Windows), i686, MSRV (1.99.0),
+  a K1 to K7 feature matrix, `cargo deny`, `cargo audit`, `cargo vet`,
+  `cargo machete`, `cargo semver-checks`, `taplo`, publish dry-run, a
+  path-dependency consumer build, docs-validate (guideline checksums and an
+  offline link check), lint-gates, fork-lines and package. Geiger, a floating
+  nightly rustdoc canary, mutants and fuzz stay advisory. The prek hooks mirror
+  the fast gates.
+- The tests set environment variables in a child test process instead of
+  through `unsafe` `set_var`, and the shared test helpers are split by use
+  under `tests/support/`.
 
 ## [0.2.2] - 2026-10-07
 
