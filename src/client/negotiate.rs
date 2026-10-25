@@ -2127,6 +2127,13 @@ impl NegotiateClient {
         )
     )]
     /// Change this client's password using generated timestamp and sequence metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password(
         &mut self,
         new_password: impl AsRef<[u8]>,
@@ -2260,6 +2267,13 @@ impl NegotiateClient {
     )]
     /// Change the given target principal's password using generated timestamp and
     /// sequence metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password_for(
         &mut self,
         target: Principal,
@@ -2393,6 +2407,13 @@ impl NegotiateClient {
         )
     )]
     /// Change this client's password using explicit kpasswd request metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password_with_options(
         &mut self,
         new_password: impl AsRef<[u8]>,
@@ -2526,6 +2547,13 @@ impl NegotiateClient {
     )]
     /// Change the given target principal's password using explicit kpasswd
     /// request metadata.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,

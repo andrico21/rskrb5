@@ -4049,6 +4049,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Send an encoded kpasswd request to the first reachable configured server.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn send_to_kpasswd_realm(
         &self,
         config: &Config,
@@ -4205,80 +4212,15 @@ impl TokioKdcTransport {
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Send an encoded kpasswd request over one explicit protocol to the first
+    /// reachable configured server.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     async fn send_to_kpasswd_realm_explicit(
         &self,
         config: &Config,
@@ -4436,6 +4378,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Send a framed kpasswd request through Tokio transport and parse the reply.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn exchange_kpasswd_request<A>(
         &self,
         protocol: KdcProtocol,
@@ -4593,6 +4542,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Send a framed kpasswd request to a configured kpasswd server and parse the reply.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn exchange_kpasswd_request_with_config(
         &self,
         config: &Config,
@@ -4750,6 +4706,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Send a framed kpasswd request and return a checked password-change result.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn exchange_kpasswd_result<A>(
         &self,
         protocol: KdcProtocol,
@@ -4911,6 +4874,13 @@ impl TokioKdcTransport {
         )
     )]
     /// Send a framed kpasswd request to a configured server and return a checked result.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
     pub async fn exchange_kpasswd_result_with_config(
         &self,
         config: &Config,
