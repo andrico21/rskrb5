@@ -9,10 +9,13 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import common
 
@@ -82,7 +85,16 @@ def main() -> int:
         *flags,
     ]
     print("$ " + " ".join(command), flush=True)
-    return subprocess.run(command, cwd=args.root).returncode
+    with TemporaryDirectory(prefix="rskrb5-fuzz-lint-") as directory:
+        scratch = Path(directory) / "source"
+        shutil.copytree(
+            args.root,
+            scratch,
+            ignore=shutil.ignore_patterns(".git", "target", ".omo", "__pycache__"),
+        )
+        env = dict(os.environ)
+        env.setdefault("CARGO_TARGET_DIR", str(Path(directory) / "target"))
+        return subprocess.run(command, cwd=scratch, env=env).returncode
 
 
 if __name__ == "__main__":

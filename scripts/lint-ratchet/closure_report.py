@@ -230,7 +230,7 @@ def main() -> int:
     parser.add_argument(
         "--lints-only",
         action="store_true",
-        help="scope lint diagnostics only; hard errors always count",
+        help="compatibility flag (no effect): filters scope only lints; hard errors always count",
     )
     parser.add_argument("--enforce", action="store_true")
     parser.add_argument("--report", action="store_true")
