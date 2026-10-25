@@ -35,30 +35,29 @@ wildcards = "deny"           # No * version specs
 allow-wildcard-paths = false
 highlight = "all"
 
-# Every entry below is a duplicate this release cannot remove without a
-# dependency major-version upgrade (excluded for the 0.3 line) or an upstream
-# release. Reasons are the reverse dependency chains reported by
+# Every entry below is a duplicate this release cannot remove without an
+# upstream release. Reasons are the reverse dependency chains reported by
 # `cargo tree -i <crate>@<version> -e normal --all-features` (plus
-# `--target all` for the UEFI-only edge).
-[[bans.skip]]
-name = "base64"
-version = "=0.22.1"
-reason = "rskrb5-ng direct dependency (spnego feature); base64 0.23.1 arrives via picky-krb 0.12.3 -> picky-asn1-x509 0.15.5 (evaluation feature)"
-
-[[bans.skip]]
-name = "getrandom"
-version = "=0.3.4"
-reason = "rskrb5-ng direct dependency; getrandom 0.4.3 arrives via rand 0.10.3 (hickory-net/hickory-proto/hickory-resolver 0.26.3, picky-krb 0.12.3) and uuid 1.29.0 (moka 0.12.16, picky-krb 0.12.3, rasn-derive-impl 0.28.15)"
-
-[[bans.skip]]
-name = "r-efi"
-version = "=5.3.0"
-reason = "getrandom 0.3.4 -> rskrb5-ng (UEFI target only); r-efi 6.0.0 arrives via getrandom 0.4.3"
-
+# `--target all` for target-specific edges).
 [[bans.skip]]
 name = "syn"
 version = "=2.0.119"
-reason = "rasn-derive 0.28.15 / rasn-derive-impl 0.28.15 / snafu-derive 0.8.9 via rasn 0.28.15, and zeroize_derive 1.5.0 via zeroize 1.9.1; syn 3.0.9 is used by every other proc-macro"
+reason = "rasn-derive 0.29.0 / rasn-derive-impl 0.29.0 / snafu-derive 0.8.9 via rasn 0.29.0, and zeroize_derive 1.5.0 via zeroize 1.9.1; syn 3.0.9 is used by every other proc-macro"
+
+# The two entries below are for Clippy's `multiple_crate_versions`, which
+# reads the feature-agnostic `cargo metadata` resolve: there the optional
+# hickory-proto 0.26.3 -> ring 0.17.14 edge is present, so `cargo tree -i`
+# on this feature-aware graph never reaches them. They keep this list equal to
+# `allowed-duplicate-crates` in clippy.toml.
+[[bans.skip]]
+name = "getrandom"
+version = "=0.2.17"
+reason = "ring 0.17.14 -> hickory-proto 0.26.3 (optional edge, cargo metadata resolve only); getrandom 0.4.3 is the rskrb5-ng direct dependency and arrives via rand 0.10.3 (hickory-net/hickory-proto/hickory-resolver 0.26.3, picky-krb 0.13.0) and uuid 1.29.0 (moka 0.12.16, picky-krb 0.13.0, rasn-derive-impl 0.29.0)"
+
+[[bans.skip]]
+name = "windows-sys"
+version = "=0.52.0"
+reason = "ring 0.17.14 -> hickory-proto 0.26.3 (optional edge, cargo metadata resolve only; aarch64 Windows only); windows-sys 0.61.2 arrives via tokio 1.54.1, mio 1.2.4, socket2 0.6.5 and ipconfig 0.3.4"
 
 [sources]
 unknown-registry = "deny"

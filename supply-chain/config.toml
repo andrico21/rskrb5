@@ -33,10 +33,6 @@ version = "1.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.base64]]
-version = "0.22.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.base64]]
 version = "0.23.1"
 criteria = "safe-to-deploy"
 
@@ -121,7 +117,7 @@ version = "4.6.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.compcol]]
-version = "0.6.11"
+version = "0.7.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.const-oid]]
@@ -165,7 +161,7 @@ version = "0.8.23"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
-version = "0.7.8"
+version = "0.7.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]
@@ -254,10 +250,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.getrandom]]
 version = "0.2.17"
-criteria = "safe-to-deploy"
-
-[[exemptions.getrandom]]
-version = "0.3.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.getrandom]]
@@ -493,7 +485,7 @@ version = "0.9.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.pbkdf2]]
-version = "0.13.0-rc.10"
+version = "0.13.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.percent-encoding]]
@@ -513,7 +505,7 @@ version = "0.15.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.picky-krb]]
-version = "0.12.3"
+version = "0.13.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project-lite]]
@@ -557,10 +549,6 @@ version = "1.0.47"
 criteria = "safe-to-deploy"
 
 [[exemptions.r-efi]]
-version = "5.3.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.r-efi]]
 version = "6.0.0"
 criteria = "safe-to-deploy"
 
@@ -581,23 +569,23 @@ version = "0.5.0"
 criteria = "safe-to-run"
 
 [[exemptions.rasn]]
-version = "0.28.15"
+version = "0.29.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rasn-derive]]
-version = "0.28.15"
+version = "0.29.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rasn-derive-impl]]
-version = "0.28.15"
+version = "0.29.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rasn-kerberos]]
-version = "0.28.15"
+version = "0.29.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rasn-pkix]]
-version = "0.28.15"
+version = "0.29.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rc4]]
@@ -781,11 +769,7 @@ version = "2.7.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml]]
-version = "0.9.12+spec-1.1.0"
-criteria = "safe-to-run"
-
-[[exemptions.toml_datetime]]
-version = "0.7.5+spec-1.1.0"
+version = "1.1.8+spec-1.1.0"
 criteria = "safe-to-run"
 
 [[exemptions.toml_datetime]]
@@ -862,10 +846,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasi]]
 version = "0.11.1+wasi-snapshot-preview1"
-criteria = "safe-to-deploy"
-
-[[exemptions.wasip2]]
-version = "1.0.4+wasi-0.2.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
@@ -953,16 +933,8 @@ version = "0.52.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.winnow]]
-version = "0.7.15"
-criteria = "safe-to-run"
-
-[[exemptions.winnow]]
 version = "1.0.4"
 criteria = "safe-to-run"
-
-[[exemptions.wit-bindgen]]
-version = "0.57.1"
-criteria = "safe-to-deploy"
 
 [[exemptions.writeable]]
 version = "0.6.4"

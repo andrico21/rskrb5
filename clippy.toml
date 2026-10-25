@@ -16,15 +16,17 @@ enum-variant-size-threshold = 200         # drives `large_enum_variant`
 doc-valid-idents = [".."]                 # ".." keeps Clippy's defaults; append proper nouns
 
 # Every unavoidable duplicate, mirrored in deny.toml `[bans] skip`; each
-# chain was reported by `cargo tree -i <crate>@<version> -e normal --all-features`.
+# chain was reported by `cargo tree -i <crate>@<version> -e normal --all-features`
+# (the ring edges by the `cargo metadata` resolve, see below).
 allowed-duplicate-crates = [
-  "base64",    # =0.22.1: rskrb5-ng direct dependency (spnego feature); 0.23.1 via picky-krb 0.12.3 -> picky-asn1-x509 0.15.5 (evaluation feature)
-  "getrandom", # =0.3.4: rskrb5-ng direct dependency; 0.4.3 via rand 0.10.3 (hickory 0.26.3, picky-krb 0.12.3) and uuid 1.29.0
-  "r-efi",     # =5.3.0: getrandom 0.3.4 -> rskrb5-ng (UEFI target only); 6.0.0 via getrandom 0.4.3
-  "syn",       # =2.0.119: rasn-derive / rasn-derive-impl 0.28.15, snafu-derive 0.8.9 (rasn 0.28.15) and zeroize_derive 1.5.0; 3.0.9 elsewhere
-  # Clippy only (cargo-deny's feature-aware graph never reaches ring): Clippy
+  "syn", # =2.0.119: rasn-derive / rasn-derive-impl 0.29.0, snafu-derive 0.8.9 (rasn 0.29.0) and zeroize_derive 1.5.0; 3.0.9 elsewhere
+  # Needed by Clippy only (cargo-deny's feature-aware graph never reaches ring,
+  # so `cargo deny check` reports these two skips as unmatched): Clippy
   # reads the feature-agnostic `cargo metadata` resolve, where the optional
-  # hickory-proto 0.26.3 -> ring 0.17.14 edge pulls windows-sys 0.52.0 (aarch64
-  # Windows only); 0.61.2 via tokio 1.54.1, mio, socket2 and ipconfig.
+  # hickory-proto 0.26.3 -> ring 0.17.14 edge pulls getrandom 0.2.17 and
+  # windows-sys 0.52.0 (aarch64 Windows only). getrandom 0.4.3 is the direct
+  # dependency (also via rand 0.10.3 and uuid 1.29.0); windows-sys 0.61.2
+  # arrives via tokio 1.54.1, mio, socket2 and ipconfig.
+  "getrandom",
   "windows-sys",
 ]
