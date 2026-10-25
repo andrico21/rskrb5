@@ -505,6 +505,16 @@ with `test code is not rendered API documentation`, and
   strict profile. Path-dependency consumers compile without Cargo's registry
   lint cap and must use one of K1 to K7, not arbitrary subsets. Several
   `--no-default-features` combinations don't compile their tests at all.
+  The library build alone (`cargo check --lib`, rustc lints, warnings denied)
+  is wider: CI's `lib-feature-sets` job checks `messages`, `spnego`, `http`
+  and `evaluation` without default features, plus the compatibility-report
+  binary and the README `axum-negotiate` example. A sweep of all 255
+  non-empty subsets of the 8 features (29 distinct feature closures) passes
+  except the 64 subsets that enable `tower` without `default`: the upstream
+  tower `Service` impl in `src/http.rs` (`single_use_lifetimes`,
+  `unused_results`) is baselined only under the K1 and K5 predicates, and
+  eliding its lifetime re-keys 6 baseline sites, a manifest addition the
+  ratchet refuses.
 - **FULL-TEST counts 32 `test result: ok` lines.** The compatibility report
   binary has no tests and is `test = false` (core "Binaries"), so the threshold
   is 32, not the pre-profile 33. No test was removed. CI's `test` job checks

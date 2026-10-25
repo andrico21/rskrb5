@@ -89,7 +89,7 @@ on these APIs (project overlay deviation 6):
 - **Toolchain:** `rust-version = "1.99"` (was 1.88).
 - **New enum variants** on exhaustive enums, so exhaustive `match`es need new
   arms: `client::Error::{EnctypeNotRequested, EnctypeNotPermitted}`,
-  `config::Error::EnctypeNotPermitted`,
+  `config::Error::{EnctypeNotPermitted, NoPermittedEnctypes}`,
   `kadmin::Error::UnauthenticatedSuccess` and
   `http::NegotiateHttpError::MutualAuthenticationNotProven`.
   `NegotiateHttpError<E>` becomes `NegotiateHttpError<E, B>`, where `B` is the
@@ -97,7 +97,9 @@ on these APIs (project overlay deviation 6):
 - **New public fields:** `LibDefaults.permitted_enctypes_explicit` and
   `InitiatorContext.context_flags`. Struct literals must name them
   (`LibDefaults` also accepts `..Default::default()`). Programmatic configs
-  that want the allowlist enforced set `permitted_enctypes_explicit`.
+  that want the allowlist enforced set `permitted_enctypes_explicit`; with the
+  flag set, an empty `permitted_enctype_ids` permits no enctype (requests
+  fail with `EmptyEtypes`, session keys with `EnctypeNotPermitted`).
 - **Fork-only API tightened by the lint pass:** `client::TgsFastRequestParts`
   is `#[non_exhaustive]`, and the two `build_tgs_req_for_realm_with_*subkey`
   functions take a generic `R: Into<String>` realm instead of
@@ -120,6 +122,12 @@ on these APIs (project overlay deviation 6):
   - a config whose explicit `default_tkt_enctypes` or `default_tgs_enctypes`
     names an enctype outside an explicit `permitted_enctypes` fails to parse
     with `config::Error::EnctypeNotPermitted`, instead of being narrowed;
+  - an explicit `permitted_enctypes` that resolves to no supported enctype
+    fails to parse with `config::Error::NoPermittedEnctypes`, instead of
+    meaning "no policy";
+  - `des3-cbc-sha1` and `des3-hmac-sha1` mean enctype 16 (MIT), so an
+    explicit list naming them now requests DES3 (subject to
+    `allow_weak_crypto` and `permitted_enctypes`) instead of dropping it;
   - a KDC reply or session key outside the requested (or explicitly
     permitted) enctypes is rejected;
   - an unsigned kpasswd success is rejected and the stored password kept;
@@ -156,7 +164,7 @@ on these APIs (project overlay deviation 6):
 | `[libdefaults] clockskew` applied on the `Config`-driven acceptors (`ServiceValidator`, `NegotiateLayer`); plain constructors keep 300 s | **PR [#24](https://github.com/clelange/rskrb5/pull/24)** open |
 | Host-based service principals fold the DNS host component to lower case (RFC 4120 section 6.2.1), so host-case variants share one SPN and one cached ticket | **PR [#25](https://github.com/clelange/rskrb5/pull/25)** open |
 | `[domain_realm]` lookups fold DNS case, and a bare tag covers its subdomains (MIT krb5.conf(5)) | **PR [#26](https://github.com/clelange/rskrb5/pull/26)** open |
-| AS/TGS reply and session-key enctypes bound to the requested list (`EnctypeNotRequested`); an explicit `permitted_enctypes` narrows requests and rejects out-of-list session keys (`EnctypeNotPermitted`), and an explicit request list outside it is a parse error; the explicit flag survives serde and include expansion | **PR [#27](https://github.com/clelange/rskrb5/pull/27)** open |
+| AS/TGS reply and session-key enctypes bound to the requested list (`EnctypeNotRequested`); an explicit `permitted_enctypes` narrows requests and rejects out-of-list session keys (`EnctypeNotPermitted`), an explicit request list outside it is a parse error, and an explicit allowlist with no supported enctype fails closed (`NoPermittedEnctypes`); MIT's `des3-cbc-sha1`/`des3-hmac-sha1` names mean enctype 16; the explicit flag survives serde and include expansion | **PR [#27](https://github.com/clelange/rskrb5/pull/27)** open |
 | Renewal series: refresh band from the current ticket life, auto-renewal paced when a refresh makes no progress, and AS recovery when a cached TGT is expired or its renewal is refused | **PR [#28](https://github.com/clelange/rskrb5/pull/28)** open |
 | Requested mutual authentication fails closed in the response classifier and in the send wrappers (`NegotiateHttpError::MutualAuthenticationNotProven`) | **PR [#29](https://github.com/clelange/rskrb5/pull/29)** open |
 | Lockfile refreshed to the latest Rust 1.99-compatible versions | fork only (lockfile) |

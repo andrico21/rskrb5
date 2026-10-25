@@ -26,6 +26,18 @@ retirement trigger.
   narrowing, checked once on the final values across included files. The
   seeded default list changes nothing, and the explicit flag
   (`LibDefaults.permitted_enctypes_explicit`) survives a serde round-trip.
+- An explicit allowlist fails closed when it resolves to no supported enctype:
+  a parsed `permitted_enctypes` naming only unsupported names (or only weak
+  ones without `allow_weak_crypto`) is a parse error
+  (`config::Error::NoPermittedEnctypes`) instead of meaning "no policy", and a
+  hand-built `LibDefaults` with the explicit flag and an empty
+  `permitted_enctype_ids` requests no enctype (`client::Error::EmptyEtypes`)
+  and rejects every session key (`client::Error::EnctypeNotPermitted`).
+- MIT's DES3 names `des3-cbc-sha1` and `des3-hmac-sha1` resolve to enctype 16
+  like `des3-cbc-sha1-kd`, so an explicit list using them is honoured (or
+  rejected against an explicit allowlist) instead of silently dropping DES3.
+  The seeded default list no longer names `des3-cbc-sha1` (gokrb5's
+  unimplemented etype 7), so the defaults still request 18, 17 and 23 only.
 - AS and TGS replies are bound to the requested enctype list: the AS-REP reply
   key enctype and the AS/TGS session-key enctype must appear in the request's
   `etype` list, otherwise `client::Error::EnctypeNotRequested`.
@@ -67,6 +79,7 @@ retirement trigger.
 
 - New enum variants on exhaustive enums: `client::Error::EnctypeNotRequested`,
   `client::Error::EnctypeNotPermitted`, `config::Error::EnctypeNotPermitted`,
+  `config::Error::NoPermittedEnctypes`,
   `kadmin::Error::UnauthenticatedSuccess` and
   `http::NegotiateHttpError::MutualAuthenticationNotProven`.
 - `http::NegotiateHttpError<E>` becomes `NegotiateHttpError<E, B>`, where `B`
@@ -82,7 +95,9 @@ retirement trigger.
 - Behaviour: an unsigned kpasswd success is rejected; a KDC reply or session
   key outside the requested (or explicitly permitted) enctypes is rejected,
   and so is a config whose explicit request list falls outside an explicit
-  `permitted_enctypes`; host-based SPNs carry a lower-cased host; and the send
+  `permitted_enctypes`, or whose explicit `permitted_enctypes` names no
+  supported enctype; `des3-cbc-sha1` and `des3-hmac-sha1` now mean enctype
+  16; host-based SPNs carry a lower-cased host; and the send
   wrappers return an error when requested mutual authentication isn't proven.
 
 ### Lint profile, rules and tooling

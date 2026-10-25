@@ -157,8 +157,13 @@ cargo test --all-features --test client_transport
   so it cannot be downgraded through it; the session key is the only enctype
   the client uses, and it is already bound to the request list
   (`EnctypeNotRequested`) and to an explicit allowlist (`EnctypeNotPermitted`).
-- Open, outside this plan: when an explicit `permitted_enctypes` names only
-  enctypes the crate does not implement, `permitted_enctype_ids` resolves to
-  zero ids and the empty-set exemption above applies, so the allowlist fails
-  open (pre-existing in `79a15db`). The MIT name `des3-cbc-sha1` is also not
-  recognized by the name parser. Both are tracked in `CHECKLIST.md`.
+- Closed (`cc8060c`): an explicit `permitted_enctypes` that resolves to zero
+  supported ids no longer fails open. Parsing fails with
+  `config::Error::NoPermittedEnctypes` naming the configured entries, and a
+  hand-built `LibDefaults` with the explicit flag and an empty
+  `permitted_enctype_ids` requests no enctype (`EmptyEtypes`) and rejects
+  every session key (`EnctypeNotPermitted`); the empty-set exemption above now
+  applies only to the implicit (seeded) allowlist.
+- Closed (`752832b`): MIT's `des3-cbc-sha1` and `des3-hmac-sha1` resolve to
+  enctype 16, so an explicit DES3 entry is honoured or rejected, never
+  silently dropped.

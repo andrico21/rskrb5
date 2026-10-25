@@ -48,11 +48,21 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   (`client::Error::EnctypeNotPermitted`), and makes an explicit
   `default_tkt_enctypes`/`default_tgs_enctypes` entry outside it a parse error
   (`config::Error::EnctypeNotPermitted`); the seeded default list changes
-  nothing. gokrb5 v8.4.4 derives the reply key from the reply's own
+  nothing. An explicit `permitted_enctypes` that resolves to no supported
+  enctype is a parse error (`config::Error::NoPermittedEnctypes`) rather than
+  "no policy". gokrb5 v8.4.4 derives the reply key from the reply's own
   `EncPart.EType` without consulting the request list
   (`messages.ASRep.DecryptEncPart`) and parses `PermittedEnctypeIDs` without
   consuming it. MIT krb5 enforces `permitted_enctypes`; this follows MIT and is
   revisited if upstream changes.
+- **DES3 enctype names (MIT spelling).** `des3-cbc-sha1`, `des3-hmac-sha1`
+  and `des3-cbc-sha1-kd` all resolve to enctype 16, as in MIT krb5's enctype
+  table, and the seeded default list no longer names `des3-cbc-sha1`. gokrb5
+  v8.4.4 (`iana/etypeID`) maps `des3-cbc-sha1` to its unimplemented etype 7
+  and `des3-hmac-sha1` to 8, and lists `des3-cbc-sha1` in its default
+  enctypes, where it is ignored; only `des3-cbc-sha1-kd` means 16 there. This follows MIT, whose
+  `krb5.conf` files use the shorter names, and is revisited if upstream
+  changes.
 - **kpasswd success provenance (hardening).** A kpasswd reply reports success
   only through a verified AP-REP and KRB-PRIV; a bare KRB-ERROR carrying result
   code 0 fails with `kadmin::Error::UnauthenticatedSuccess`, and the
