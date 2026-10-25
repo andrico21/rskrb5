@@ -89,20 +89,13 @@ It goes away when the TGS subkey PR is filed and the API is settled upstream.
 
 ## Dependencies held back
 
-`rust-version = "1.99"` and the lockfile holds the latest Rust 1.99-compatible
-versions; `cargo update --dry-run 2>&1 | grep -c 'Locking 0 packages'` prints
-1. Major (0.x minor) upgrades stay out of scope, because upstream code depends
-on these APIs (project overlay deviation 3):
-
-| Crate | Locked | Latest | Held by |
-|---|---|---|---|
-| `base64` | 0.22.1 | 0.23.1 | major |
-| `getrandom` | 0.3.4 (plus 0.2 and 0.4 transitively) | 0.4.3 | major |
-| `picky-krb` (optional, `evaluation`) | 0.12.3 | 0.13.0 | major, and the exact `pbkdf2` pin below |
-| `rasn`, `rasn-kerberos` | 0.28.15 | 0.29.0 | major |
-| `compcol` | 0.6.11 | 0.7.6 | major |
-| `toml` (dev) | 0.9.12 | 1.1.8 | major |
-| `pbkdf2` | `=0.13.0-rc.10` | 0.13.0 | exact pin, unchanged |
+None. `rust-version = "1.99"` and the lockfile holds the latest Rust
+1.99-compatible versions, and every direct dependency is on its latest major
+version (`cargo outdated --root-deps-only --exit-code 1` exits 0). The 0.3
+line moved `base64` to 0.23, `getrandom` to 0.4, `picky-krb` (optional,
+`evaluation`) to 0.13, `rasn`/`rasn-kerberos` to 0.29, `compcol` to 0.7, dev
+`toml` to 1.1, and `pbkdf2` from the `=0.13.0-rc.10` pre-release pin to the
+stable 0.13.0.
 
 ## Upgrading from 0.2
 

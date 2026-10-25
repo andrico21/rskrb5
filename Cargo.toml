@@ -44,18 +44,18 @@ serde = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 aes = "0.9.1"
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.23", optional = true }
 chrono = { version = "0.4", default-features = false, features = [
   "std",
 ], optional = true }
-compcol = { version = "0.6.0", default-features = false, features = [
+compcol = { version = "0.7", default-features = false, features = [
   "lznt1",
   "xpress",
   "xpress_huffman",
 ] }
 des = "0.9.0"
 hex = { version = "0.4", optional = true }
-getrandom = { version = "0.3", features = ["std"] }
+getrandom = { version = "0.4", features = ["std"] }
 hickory-resolver = { version = "0.26.1", default-features = false, features = [
   "system-config",
   "tokio",
@@ -64,12 +64,12 @@ http_types = { package = "http", version = "1", optional = true }
 hmac = "0.13.0"
 md-5 = "0.11.0"
 md4 = "0.11.0"
-pbkdf2 = "=0.13.0-rc.10"
+pbkdf2 = "0.13"
 picky-asn1 = { version = "0.10.1", optional = true }
 picky-asn1-der = { version = "0.5", optional = true }
-picky-krb = { version = "0.12.3", optional = true }
-rasn = { version = "0.28.13", optional = true }
-rasn-kerberos = { version = "0.28.13", features = ["otp"], optional = true }
+picky-krb = { version = "0.13", optional = true }
+rasn = { version = "0.29", optional = true }
+rasn-kerberos = { version = "0.29", features = ["otp"], optional = true }
 rc4 = "0.2.0"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
@@ -112,7 +112,7 @@ tokio = { version = "1.47", features = [
   "rt-multi-thread",
   "test-util",
 ] }
-toml = "0.9"
+toml = "1.1"
 
 [[test]]
 name = "client"
