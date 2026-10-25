@@ -13,8 +13,7 @@ name: CI
 # Toolchains (core Section 12 Version Policy). Rust jobs run on floating
 # `stable` (never pinned, no `rust-toolchain.toml`). The dated
 # `nightly-2026-10-03` (rmcp-server-kit's pin) is used only for rustfmt,
-# rustdoc, clippy on the fuzz crate (`fork-lines`, which also uses its
-# rustfmt for the upstream reference tree) and the advisory `fuzz` job;
+# rustdoc, clippy on the fuzz crate and the advisory `fuzz` job;
 # `1.99.0` only for the MSRV build.
 #
 # Baseline and ratchet. Upstream diagnostics the profile names are baselined
@@ -23,9 +22,7 @@ name: CI
 # that the manifest matches the source and only ever shrinks; `allow_gate.py`
 # rejects any `allow`; `profile_eq.py` and `completeness_check.py` hold the
 # profile equal to the vendored core and complete against current stable.
-# `fork_lines_gate.py` and `prose_gate.py` are differential: fork-authored
-# lines must add no lint diagnostic (K1-K7 and rustdoc) and no core prose-rule
-# violation.
+# Closure reports and whole-tree prose checks enforce the growing clean-paths list.
 #
 # Vendored guidelines. `docs/rust-guidelines/` is checked against its
 # SHA256SUMS in `docs-validate`; update it only by re-vendoring.
@@ -386,13 +383,17 @@ jobs:
   lint-gates:
     name: lint-gates
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # baseline_gate.py walks the manifest history back to its ratchet base.
           fetch-depth: 0
-      # stdlib-only Python (>= 3.11, tomllib). Stable clippy is needed only by
-      # completeness_check.py (`clippy-driver -W help`); nothing is compiled.
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: nightly-2026-10-03
+          components: clippy
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: clippy
@@ -406,30 +407,36 @@ jobs:
         run: python3 scripts/lint-ratchet/completeness_check.py
       - name: Baseline manifest and ratchet
         run: python3 scripts/lint-ratchet/baseline_gate.py --enforce
+      - name: Root facade only
+        run: python3 scripts/lint-ratchet/facade_gate.py --enforce
+      - name: Clean-path prose rules
+        run: python3 scripts/lint-ratchet/prose_gate.py --enforce --paths-file scripts/lint-ratchet/clean-paths.txt
+      - name: Clean-path closure lint report
+        run: >-
+          python3 scripts/lint-ratchet/closure_report.py --enforce
+          --paths-file scripts/lint-ratchet/clean-paths.txt
+          --ignore-lints clippy::exhaustive_structs,clippy::exhaustive_enums,clippy::module_name_repetitions,clippy::error_impl_error,clippy::impl_trait_in_params,clippy::needless_pass_by_value,clippy::unnecessary_wraps,clippy::too_many_arguments,clippy::struct_excessive_bools,clippy::struct_field_names,clippy::partial_pub_fields,clippy::same_name_method,clippy::pub_use,clippy::unused_self,clippy::enum_variant_names,clippy::must_use_candidate,clippy::return_self_not_must_use,clippy::missing_const_for_fn
+      - name: Fuzz lint profile
+        run: python3 scripts/lint-ratchet/fuzz_lint.py --enforce
 
-  fork-lines:
-    name: fork-lines
+  clean-paths:
+    name: clean-paths
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The gates rebuild the upstream reference tree from git history.
-          fetch-depth: 0
-      # Dated nightly first (rustfmt of the reference tree, clippy for the fuzz
-      # crate pass), stable last so it stays the default for the K1-K7 clippy
-      # and rustdoc runs.
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
-        with:
-          toolchain: nightly-2026-10-03
-          components: rustfmt, clippy
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Fork lines add no lint diagnostic (K1-K7, rustdoc, fuzz)
-        run: python3 scripts/lint-ratchet/fork_lines_gate.py --enforce
-      - name: Fork-touched items follow the core prose rules
-        run: python3 scripts/lint-ratchet/prose_gate.py --enforce
+      - name: Clean paths have no non-API lint diagnostics in any closure
+        run: >-
+          python3 scripts/lint-ratchet/closure_report.py --enforce --lints-only
+          --paths-file scripts/lint-ratchet/clean-paths.txt
+          --ignore-lints clippy::exhaustive_structs,clippy::exhaustive_enums,clippy::module_name_repetitions,clippy::error_impl_error,clippy::impl_trait_in_params,clippy::needless_pass_by_value,clippy::unnecessary_wraps,clippy::too_many_arguments,clippy::struct_excessive_bools,clippy::struct_field_names,clippy::partial_pub_fields,clippy::same_name_method,clippy::pub_use,clippy::unused_self,clippy::enum_variant_names,clippy::must_use_candidate,clippy::return_self_not_must_use,clippy::missing_const_for_fn
+      - name: Clean paths follow the whole-tree prose rules
+        run: python3 scripts/lint-ratchet/prose_gate.py --enforce --paths-file scripts/lint-ratchet/clean-paths.txt
 
   package:
     name: package
