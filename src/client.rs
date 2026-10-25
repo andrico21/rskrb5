@@ -14,11 +14,10 @@ use alloc::fmt;
 use core::fmt;
 use core::{str::Utf8Error, time::Duration};
 #[cfg(feature = "tokio")]
+use std::io;
+#[cfg(feature = "tokio")]
 use std::path::Path;
-use std::{
-    io,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "tokio")]
 use zeroize::Zeroizing;
