@@ -156,7 +156,7 @@ mirrors the fast ones as pre-push hooks.
 1. **Reference:** a detached worktree at `6f4abc9` with HEAD's `rustfmt.toml`,
    `clippy.toml` and `[lints]` copied in, formatted with nightly rustfmt, and
    every inherited `allow` attribute blanked. Two compile compensations apply
-   to the reference only ([`fork_reference.py`](../scripts/lint-ratchet/fork_reference.py)):
+to the reference only (the retired `fork_reference.py`):
    its `rust-version` is set to HEAD's `1.99`, so MSRV-gated lints such as
    `clippy::duration_suboptimal_units` fire the same way in both trees; and
    the `hex` dev-dependency that upstream's `tests/krb_priv.rs` needs is added,
@@ -168,7 +168,7 @@ mirrors the fast ones as pre-push hooks.
 4. **Line mapping:** each HEAD file is compared with its reference file on
    whitespace-stripped lines, ignoring generated baseline lines. Unchanged
    lines map to the reference; inserted or replaced lines are fork lines.
-   Files listed in [`moves.toml`](../scripts/lint-ratchet/moves.toml) are
+Files listed in the retired `moves.toml` were
    compared with the file their content came from (`tests/support/*.rs` from
    `tests/common/mod.rs`; `tests/support/env.rs` has no source and is all fork
    code).
@@ -194,7 +194,7 @@ mirrors the fast ones as pre-push hooks.
 
 Some upstream lines were edited under the authorized exceptions below. The
 gate must still treat them as upstream, or every inherited diagnostic on them
-would turn into a fork violation. [`provenance.py`](../scripts/lint-ratchet/provenance.py)
+would turn into a fork violation. The retired `provenance.py`
 handles this with a strict rule:
 
 - Only the explicitly reviewed full SHAs in `REVIEWED_REWRITES` in
@@ -633,7 +633,8 @@ Commit legend:
 - At adoption (`473ca10`) the fork-lines report could not finish, because the
   reference tree lacked `hex`. The compensation above (`dc86a2e`) fixed that,
   and the gate reported zero violations on the converged tree (`f18676f`).
-# Transition (2026-10-25)
+
+## Transition (2026-10-25)
 
 The differential upstream gates are retired. `feature_closures.py` computes
 distinct feature closures from the manifest, including `default` as a real
@@ -670,5 +671,5 @@ judge parallel branch merges against their integration parent rather than
 mistaking independent removals for restorations.
 
 The old fork-lines gate, provenance modules, reference compensation, move ledger,
-and baseline move credits are deleted. The historical sections below describe
+and baseline move credits are deleted. The historical sections above describe
 the former migration machinery, not the current enforcement policy.
