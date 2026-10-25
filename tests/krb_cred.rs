@@ -1,17 +1,20 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "messages")]
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::ccache;
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::keytab::EncryptionKey;
-use rskrb5::krb_cred::{
-    Error, KRB_CRED_ENCPART_USAGE, KRB_CRED_MSG_TYPE, ccache_credentials_to_krb_cred_parts,
-    decode_decrypt_krb_cred_to_ccache_credentials, decode_enc_krb_cred_part, decode_krb_cred,
-    decrypt_krb_cred_enc_part, decrypt_krb_cred_to_ccache_credentials,
-    decrypted_krb_cred_to_ccache_credentials, encode_encrypt_ccache_credentials_to_krb_cred,
-    encode_encrypt_ccache_credentials_to_krb_cred_with_confounder,
-    encrypt_ccache_credentials_to_krb_cred_with_confounder,
+use rskrb5::{
+    ccache,
+    crypto::KerberosEtype,
+    keytab::EncryptionKey,
+    krb_cred::{
+        Error, KRB_CRED_ENCPART_USAGE, KRB_CRED_MSG_TYPE, ccache_credentials_to_krb_cred_parts,
+        decode_decrypt_krb_cred_to_ccache_credentials, decode_enc_krb_cred_part, decode_krb_cred,
+        decrypt_krb_cred_enc_part, decrypt_krb_cred_to_ccache_credentials,
+        decrypted_krb_cred_to_ccache_credentials, encode_encrypt_ccache_credentials_to_krb_cred,
+        encode_encrypt_ccache_credentials_to_krb_cred_with_confounder,
+        encrypt_ccache_credentials_to_krb_cred_with_confounder,
+    },
 };
 
 const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
@@ -47,6 +50,84 @@ const ENC_KRB_CRED_PART: &str = concat!(
     "040412D00023A50F300DA003020102A106040412D00023",
 );
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_gokrb5_krb_cred_fixture() {
     let krb_cred = decode_krb_cred(&decode_hex(KRB_CRED)).expect("KRB-CRED decodes");
@@ -62,6 +143,84 @@ fn decodes_gokrb5_krb_cred_fixture() {
     assert_eq!(krb_cred.enc_part.cipher.as_ref(), b"krbASN.1 test message");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_gokrb5_enc_krb_cred_part_fixture() {
     let enc_part =
@@ -86,6 +245,82 @@ fn decodes_gokrb5_enc_krb_cred_part_fixture() {
     );
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decrypts_krb_cred_encrypted_part() {
     let enc_part =
@@ -99,6 +334,86 @@ fn decrypts_krb_cred_encrypted_part() {
     assert_eq!(decrypted, enc_part);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::assert_is_empty,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn converts_decrypted_krb_cred_to_ccache_credentials() {
     let krb_cred = decode_krb_cred(&decode_hex(KRB_CRED)).expect("KRB-CRED decodes");
@@ -132,6 +447,84 @@ fn converts_decrypted_krb_cred_to_ccache_credentials() {
     assert!(credential.second_ticket.is_empty());
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decrypts_krb_cred_to_ccache_credentials() {
     let enc_part =
@@ -154,6 +547,84 @@ fn decrypts_krb_cred_to_ccache_credentials() {
     );
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_decrypts_krb_cred_to_ccache_credentials() {
     let enc_part =
@@ -170,6 +641,84 @@ fn decodes_decrypts_krb_cred_to_ccache_credentials() {
     assert_eq!(credentials[1].times.end_time, TEST_TIME_SECONDS);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn builds_krb_cred_parts_from_ccache_credentials() {
     let credentials = fixture_ccache_credentials();
@@ -197,6 +746,82 @@ fn builds_krb_cred_parts_from_ccache_credentials() {
     );
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn encrypts_ccache_credentials_to_krb_cred_roundtrip() {
     let credentials = fixture_ccache_credentials();
@@ -214,6 +839,83 @@ fn encrypts_ccache_credentials_to_krb_cred_roundtrip() {
     assert_eq!(round_tripped, credentials);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn exports_zero_ccache_times_without_start_time_fallback() {
     let mut credentials = fixture_ccache_credentials();
@@ -233,6 +935,82 @@ fn exports_zero_ccache_times_without_start_time_fallback() {
     assert_eq!(round_tripped[0].times, credentials[0].times);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn encodes_ccache_credentials_to_krb_cred_bytes() {
     let credentials = fixture_ccache_credentials();
@@ -250,6 +1028,82 @@ fn encodes_ccache_credentials_to_krb_cred_bytes() {
     assert_eq!(round_tripped, credentials);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn encodes_ccache_credentials_to_krb_cred_with_random_confounder() {
     let credentials = fixture_ccache_credentials();
@@ -263,6 +1117,84 @@ fn encodes_ccache_credentials_to_krb_cred_with_random_confounder() {
     assert_eq!(round_tripped, credentials);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::shadow_unrelated,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_ccache_credentials_with_unrepresentable_fields() {
     let mut credentials = fixture_ccache_credentials();
@@ -285,6 +1217,83 @@ fn rejects_ccache_credentials_with_unrepresentable_fields() {
     assert!(matches!(error, Error::UnsupportedSecondTicket));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_krb_cred_ticket_info_count_mismatch() {
     let krb_cred = decode_krb_cred(&decode_hex(KRB_CRED)).expect("KRB-CRED decodes");
@@ -304,6 +1313,81 @@ fn rejects_krb_cred_ticket_info_count_mismatch() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn fixture_ccache_credentials() -> Vec<ccache::Credential> {
     let krb_cred = decode_krb_cred(&decode_hex(KRB_CRED)).expect("KRB-CRED decodes");
     let enc_part =
@@ -312,6 +1396,83 @@ fn fixture_ccache_credentials() -> Vec<ccache::Credential> {
         .expect("KRB-CRED converts to ccache credentials")
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_krb_cred_key_etype_mismatch() {
     let enc_part =
@@ -334,6 +1495,82 @@ fn rejects_krb_cred_key_etype_mismatch() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn encrypted_krb_cred(enc_part: &rasn_kerberos::EncKrbCredPart) -> rasn_kerberos::KrbCred {
     let key = reply_key();
     let etype = KerberosEtype::from_etype_id(key.etype).expect("supported etype");
@@ -366,11 +1603,88 @@ fn reply_key() -> EncryptionKey {
     }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::integer_division_remainder_used,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| {
             let high = decode_hex_digit(chunk[0]);
             let low = decode_hex_digit(chunk[1]);
@@ -379,6 +1693,82 @@ fn decode_hex(input: &str) -> Vec<u8> {
         .collect()
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::arithmetic_side_effects,
+        clippy::missing_panics_doc,
+        clippy::panic,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex_digit(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',

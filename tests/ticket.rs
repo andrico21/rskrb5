@@ -1,13 +1,16 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "messages")]
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::keytab::EncryptionKey;
-use rskrb5::ticket::{
-    Error, KDC_REP_TICKET_USAGE, KRB5_TKT_VNO, build_ticket, build_ticket_with_confounder,
-    decode_enc_ticket_part, decode_ticket, decrypt_ticket_enc_part,
-    encode_build_ticket_with_confounder, encode_ticket,
+use rskrb5::{
+    crypto::KerberosEtype,
+    keytab::EncryptionKey,
+    ticket::{
+        Error, KDC_REP_TICKET_USAGE, KRB5_TKT_VNO, build_ticket, build_ticket_with_confounder,
+        decode_enc_ticket_part, decode_ticket, decrypt_ticket_enc_part,
+        encode_build_ticket_with_confounder, encode_ticket,
+    },
 };
 
 const MARSHALLED_TICKET: &str = concat!(
@@ -39,6 +42,83 @@ const MARSHALLED_ENC_TICKET_PART_OPTIONALS_NULL: &str = concat!(
 const TEST_TIME_SECONDS: i64 = 771_228_197;
 const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_gokrb5_ticket_fixture() {
     let bytes = decode_hex(MARSHALLED_TICKET);
@@ -58,6 +138,83 @@ fn decodes_gokrb5_ticket_fixture() {
     assert_eq!(encode_ticket(&ticket).expect("Ticket encodes"), bytes);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_gokrb5_enc_ticket_part_fixture() {
     let enc_ticket = decode_enc_ticket_part(&decode_hex(MARSHALLED_ENC_TICKET_PART))
@@ -114,6 +271,83 @@ fn decodes_gokrb5_enc_ticket_part_fixture() {
     }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_gokrb5_enc_ticket_part_optionals_null_fixture() {
     let enc_ticket = decode_enc_ticket_part(&decode_hex(MARSHALLED_ENC_TICKET_PART_OPTIONALS_NULL))
@@ -132,6 +366,83 @@ fn decodes_gokrb5_enc_ticket_part_optionals_null_fixture() {
     assert!(enc_ticket.authorization_data.is_none());
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::redundant_clone,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn builds_and_decrypts_ticket_with_explicit_confounder() {
     let fixture = decode_ticket(&decode_hex(MARSHALLED_TICKET)).expect("Ticket decodes");
@@ -158,6 +469,82 @@ fn builds_and_decrypts_ticket_with_explicit_confounder() {
     assert_eq!(decrypted, enc_ticket);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn encodes_built_ticket_with_explicit_confounder() {
     let fixture = decode_ticket(&decode_hex(MARSHALLED_TICKET)).expect("Ticket decodes");
@@ -184,6 +571,82 @@ fn encodes_built_ticket_with_explicit_confounder() {
     assert_eq!(decrypted, enc_ticket);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn builds_and_decrypts_ticket_with_random_confounder() {
     let fixture = decode_ticket(&decode_hex(MARSHALLED_TICKET)).expect("Ticket decodes");
@@ -198,6 +661,83 @@ fn builds_and_decrypts_ticket_with_random_confounder() {
     assert_eq!(decrypted, enc_ticket);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_ticket_key_etype_mismatch() {
     let fixture = decode_ticket(&decode_hex(MARSHALLED_TICKET)).expect("Ticket decodes");
@@ -232,6 +772,80 @@ fn rejects_ticket_key_etype_mismatch() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn exposes_ticket_key_usage_constant() {
     assert_eq!(KDC_REP_TICKET_USAGE, 2);
@@ -244,6 +858,80 @@ fn reply_key() -> EncryptionKey {
     }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn principal_components(name: &rasn_kerberos::PrincipalName) -> Vec<&[u8]> {
     name.string
         .iter()
@@ -261,11 +949,88 @@ fn ticket_flags_to_bits(flags: &rasn_kerberos::TicketFlags) -> u32 {
     ])
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::integer_division_remainder_used,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| {
             let high = decode_hex_digit(chunk[0]);
             let low = decode_hex_digit(chunk[1]);
@@ -274,6 +1039,82 @@ fn decode_hex(input: &str) -> Vec<u8> {
         .collect()
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::arithmetic_side_effects,
+        clippy::missing_panics_doc,
+        clippy::panic,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex_digit(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',

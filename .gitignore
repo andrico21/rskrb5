@@ -1,1 +1,5 @@
 /target/
+CODE_REVIEW*.md
+/report.json
+/.omo/
+__pycache__/

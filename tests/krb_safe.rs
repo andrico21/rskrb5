@@ -1,11 +1,14 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "messages")]
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::keytab::EncryptionKey;
-use rskrb5::krb_safe::{
-    Error, KRB_SAFE_CHECKSUM_USAGE, KRB_SAFE_MSG_TYPE, build_krb_safe, decode_krb_safe,
-    encode_krb_safe, krb_safe_checksum, verify_krb_safe_checksum,
+use rskrb5::{
+    keytab::EncryptionKey,
+    krb_safe::{
+        Error, KRB_SAFE_CHECKSUM_USAGE, KRB_SAFE_MSG_TYPE, build_krb_safe, decode_krb_safe,
+        encode_krb_safe, krb_safe_checksum, verify_krb_safe_checksum,
+    },
 };
 
 const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
@@ -22,6 +25,83 @@ const KRB_SAFE_OPTIONALS_NULL: &str = concat!(
     "040431323334",
 );
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_gokrb5_krb_safe_fixture() {
     let krb_safe = decode_krb_safe(&decode_hex(KRB_SAFE)).expect("KRB-SAFE decodes");
@@ -60,6 +140,83 @@ fn decodes_gokrb5_krb_safe_fixture() {
     assert_eq!(krb_safe.cksum.checksum.as_ref(), b"1234");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn decodes_gokrb5_krb_safe_optionals_null_fixture() {
     let krb_safe = decode_krb_safe(&decode_hex(KRB_SAFE_OPTIONALS_NULL)).expect("KRB-SAFE decodes");
@@ -80,6 +237,83 @@ fn decodes_gokrb5_krb_safe_optionals_null_fixture() {
     assert_eq!(krb_safe.cksum.checksum.as_ref(), b"1234");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn builds_and_verifies_krb_safe_checksum() {
     let fixture = decode_krb_safe(&decode_hex(KRB_SAFE)).expect("KRB-SAFE decodes");
@@ -93,6 +327,82 @@ fn builds_and_verifies_krb_safe_checksum() {
     verify_krb_safe_checksum(&krb_safe, &key).expect("checksum verifies");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn encodes_krb_safe_roundtrip() {
     let fixture = decode_krb_safe(&decode_hex(KRB_SAFE)).expect("KRB-SAFE decodes");
@@ -106,6 +416,83 @@ fn encodes_krb_safe_roundtrip() {
     verify_krb_safe_checksum(&decoded, &key).expect("checksum verifies");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_unsupported_krb_safe_checksum_type() {
     let krb_safe = decode_krb_safe(&decode_hex(KRB_SAFE)).expect("KRB-SAFE decodes");
@@ -117,6 +504,82 @@ fn rejects_unsupported_krb_safe_checksum_type() {
     assert!(matches!(error, Error::UnsupportedChecksumType(1)));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_krb_safe_checksum_mismatch() {
     let fixture = decode_krb_safe(&decode_hex(KRB_SAFE)).expect("KRB-SAFE decodes");
@@ -130,6 +593,83 @@ fn rejects_krb_safe_checksum_mismatch() {
     assert!(matches!(error, Error::ChecksumMismatch));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_krb_safe_key_checksum_type_mismatch() {
     let fixture = decode_krb_safe(&decode_hex(KRB_SAFE)).expect("KRB-SAFE decodes");
@@ -152,6 +692,80 @@ fn rejects_krb_safe_key_checksum_type_mismatch() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn exposes_krb_safe_checksum_usage_constant() {
     assert_eq!(KRB_SAFE_CHECKSUM_USAGE, 15);
@@ -164,11 +778,88 @@ fn reply_key() -> EncryptionKey {
     }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::integer_division_remainder_used,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| {
             let high = decode_hex_digit(chunk[0]);
             let low = decode_hex_digit(chunk[1]);
@@ -177,6 +868,82 @@ fn decode_hex(input: &str) -> Vec<u8> {
         .collect()
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::arithmetic_side_effects,
+        clippy::missing_panics_doc,
+        clippy::panic,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex_digit(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',

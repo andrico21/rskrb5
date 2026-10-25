@@ -1,18 +1,30 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "messages")]
 
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use pretty_assertions::assert_eq;
-use rskrb5::config::Config;
-use rskrb5::crypto::AesSha1Etype;
-use rskrb5::keytab::{EncryptionKey, Keytab};
-use rskrb5::pac;
-use rskrb5::service::{
-    ApRepOptions, Error, Principal, ServiceValidator, SharedReplayCache, ValidatedApReq,
+use core::{error, time::Duration};
+use std::{
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-mod common;
+use pretty_assertions::assert_eq;
+use rskrb5::{
+    config::Config,
+    crypto::AesSha1Etype,
+    keytab::{EncryptionKey, Keytab},
+    pac,
+    service::{
+        ApRepOptions, Error, Principal, ServiceValidator, SharedReplayCache, ValidatedApReq,
+    },
+};
+
+#[path = "support/env.rs"]
+mod env;
+#[path = "support/pac_ad_win2k.rs"]
+mod pac_ad_win2k;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn error::Error>;
 
 const HTTP_KEYTAB: &str = concat!(
     "0502000000440002000b544553542e474f4b5242350004485454500010686f73742e746573742e676f6b",
@@ -93,6 +105,83 @@ const BADMATCH_AP_REQ: &str = concat!(
     "0c6183e5483650d1e9",
 );
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn validates_gokrb5_ap_req_fixture() {
     let keytab = http_keytab();
@@ -134,6 +223,87 @@ fn validates_gokrb5_ap_req_fixture() {
     assert!(validated.pac.is_none());
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn validates_ap_req_from_keytab_name() {
     let keytab = http_keytab();
@@ -154,27 +324,214 @@ fn validates_ap_req_from_keytab_name() {
     assert_eq!(validated.session_key.etype, 18);
 }
 
-#[test]
-fn validates_ap_req_from_keytab_env() {
-    let keytab = http_keytab();
-    let path = temp_service_keytab_file("validate-env");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&name);
-    let mut validator = ServiceValidator::from_keytab_env()
-        .expect("validator loads keytab from env")
-        .with_now(timestamp(1_893_553_447));
-    let _ = std::fs::remove_file(&path);
+/// Child-process test of the `KRB5_KTNAME` service keytab loader.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod keytab_env {
+    use std::env::var;
 
-    let validated = validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("AP-REQ validates");
+    use pretty_assertions::assert_eq;
 
-    assert_eq!(validated.client.name(), "testuser1");
-    assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-    assert_eq!(validated.session_key.etype, 18);
+    use super::*;
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that `ServiceValidator::from_keytab_env` validates with the `KRB5_KTNAME` keytab.
+    #[test]
+    fn validates_ap_req_from_keytab_env() -> Result<(), TestError> {
+        const TEST_PATH: &str = "keytab_env::validates_ap_req_from_keytab_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_service_keytab_file("validate-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            name.strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let mut validator = ServiceValidator::from_keytab_env()
+            .map_err(|cause| format!("validator loads keytab from env: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        let _ = std::fs::remove_file(&path);
+
+        let validated = validator
+            .validate_ap_req(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
+
+        assert_eq!(validated.client.name(), "testuser1");
+        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key.etype, 18);
+        Ok(())
+    }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn validates_ap_req_from_default_keytab_name() {
     let keytab = http_keytab();
@@ -196,55 +553,326 @@ fn validates_ap_req_from_default_keytab_name() {
     assert_eq!(validated.session_key.etype, 18);
 }
 
-#[test]
-fn validates_ap_req_from_default_keytab_when_env_is_absent() {
-    let _env = common::EnvVarGuard::remove_krb5_ktname();
+/// Child-process tests of the service default-keytab precedence.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod default_keytab_env {
+    use std::env::var;
 
-    let keytab = http_keytab();
-    let path = temp_service_keytab_file("validate-default-env-fallback");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
-    let config = config_with_default_keytab_name(&name);
-    let mut validator = ServiceValidator::from_default_keytab(&config)
-        .expect("validator loads default keytab")
-        .with_now(timestamp(1_893_553_447));
-    let _ = std::fs::remove_file(&path);
+    use pretty_assertions::assert_eq;
 
-    let validated = validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("AP-REQ validates");
+    use super::*;
 
-    assert_eq!(validated.client.name(), "testuser1");
-    assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-    assert_eq!(validated.session_key.etype, 18);
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the validator falls back to the config default keytab without `KRB5_KTNAME`.
+    #[test]
+    fn validates_ap_req_from_default_keytab_when_env_is_absent() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "default_keytab_env::validates_ap_req_from_default_keytab_when_env_is_absent";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let path = temp_service_keytab_file("validate-default-env-fallback");
+        let name = format!("FILE:{}", path.display());
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let config = config_with_default_keytab_name(&name);
+        let mut validator = ServiceValidator::from_default_keytab(&config)
+            .map_err(|cause| format!("validator loads default keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        let _ = std::fs::remove_file(&path);
+
+        let validated = validator
+            .validate_ap_req(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
+
+        assert_eq!(validated.client.name(), "testuser1");
+        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key.etype, 18);
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the validator prefers `KRB5_KTNAME` over the config default keytab.
+    #[test]
+    fn validates_ap_req_prefers_env_keytab_over_config_default() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "default_keytab_env::validates_ap_req_prefers_env_keytab_over_config_default";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_service_keytab_file("validate-env-precedence");
+            let env_name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(env_name.as_ref()))]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let env_name = var("KRB5_KTNAME")
+            .map_err(|cause| format!("the parent test sets KRB5_KTNAME: {cause}"))?;
+        let path = PathBuf::from(
+            env_name
+                .strip_prefix("FILE:")
+                .ok_or("KRB5_KTNAME names a FILE: path")?,
+        );
+        keytab
+            .save_name(&env_name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let missing_config_name = format!(
+            "FILE:{}",
+            temp_service_keytab_file("missing-config-default").display()
+        );
+        let config = config_with_default_keytab_name(&missing_config_name);
+        let mut validator = ServiceValidator::from_default_keytab(&config)
+            .map_err(|cause| format!("validator loads env keytab before config default: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        let _ = std::fs::remove_file(&path);
+
+        let validated = validator
+            .validate_ap_req(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
+
+        assert_eq!(validated.client.name(), "testuser1");
+        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key.etype, 18);
+        Ok(())
+    }
 }
 
-#[test]
-fn validates_ap_req_prefers_env_keytab_over_config_default() {
-    let keytab = http_keytab();
-    let path = temp_service_keytab_file("validate-env-precedence");
-    let env_name = format!("FILE:{}", path.display());
-    keytab.save_name(&env_name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&env_name);
-    let missing_config_name = format!(
-        "FILE:{}",
-        temp_service_keytab_file("missing-config-default").display()
-    );
-    let config = config_with_default_keytab_name(&missing_config_name);
-    let mut validator = ServiceValidator::from_default_keytab(&config)
-        .expect("validator loads env keytab before config default")
-        .with_now(timestamp(1_893_553_447));
-    let _ = std::fs::remove_file(&path);
-
-    let validated = validator
-        .validate_ap_req(&decode_hex(VALID_AP_REQ))
-        .expect("AP-REQ validates");
-
-    assert_eq!(validated.client.name(), "testuser1");
-    assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-    assert_eq!(validated.session_key.etype, 18);
-}
-
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn validates_ap_req_with_verified_ticket_pac() {
     let keytab = syshttp_keytab();
@@ -274,11 +902,88 @@ fn validates_ap_req_with_verified_ticket_pac() {
     );
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_ap_req_with_invalid_ticket_pac_checksum() {
     let keytab = syshttp_keytab();
     let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-    let mut pac_bytes = decode_hex(common::PAC_AD_WIN2K);
+    let mut pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
     let pac_header = pac::Pac::parse(&pac_bytes).expect("PAC header parses");
     let server_signature = pac_header
         .buffer(pac::INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
@@ -294,6 +999,82 @@ fn rejects_ap_req_with_invalid_ticket_pac_checksum() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn builds_and_verifies_ap_rep_mutual_auth_reply() {
     let validated = valid_ap_req();
@@ -312,6 +1093,84 @@ fn builds_and_verifies_ap_rep_mutual_auth_reply() {
     assert_eq!(verified.sequence_number, options.sequence_number);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::redundant_clone,
+        clippy::rest_pattern_accessible_field,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_ap_rep_timestamp_mismatch() {
     let validated = valid_ap_req();
@@ -330,6 +1189,83 @@ fn rejects_ap_rep_timestamp_mismatch() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_tampered_ap_rep() {
     let validated = valid_ap_req();
@@ -347,6 +1283,83 @@ fn rejects_tampered_ap_rep() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn detects_ap_req_replay() {
     let keytab = http_keytab();
@@ -368,6 +1381,84 @@ fn detects_ap_req_replay() {
         .expect("cleared replay cache permits request");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::duration_suboptimal_units,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn clears_old_replay_cache_entries() {
     let keytab = http_keytab();
@@ -391,6 +1482,83 @@ fn clears_old_replay_cache_entries() {
         .expect("expired replay entry no longer rejects request");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn shared_replay_cache_rejects_replay_across_validators() {
     let keytab = http_keytab();
@@ -440,6 +1608,82 @@ fn shared_replay_cache_rejects_replay_across_validators() {
         .expect("opted-out validator uses local replay cache");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn validates_keytab_principal_override_failure() {
     let keytab = http_keytab();
@@ -455,6 +1699,83 @@ fn validates_keytab_principal_override_failure() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::rest_pattern_accessible_field,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_client_principal_mismatch() {
     let keytab = http_keytab();
@@ -468,6 +1789,83 @@ fn rejects_client_principal_mismatch() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::rest_pattern_accessible_field,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_invalid_future_and_expired_tickets() {
     let keytab = http_keytab();
@@ -498,6 +1896,83 @@ fn rejects_invalid_future_and_expired_tickets() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::rest_pattern_accessible_field,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_large_authenticator_clock_skew() {
     let keytab = http_keytab();
@@ -511,6 +1986,83 @@ fn rejects_large_authenticator_clock_skew() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::rest_pattern_accessible_field,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn rejects_addressless_ticket_when_client_address_is_required() {
     let keytab = http_keytab();
@@ -526,14 +2078,240 @@ fn rejects_addressless_ticket_when_client_address_is_required() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn http_keytab() -> Keytab {
     Keytab::parse(&decode_hex(HTTP_KEYTAB)).expect("HTTP keytab parses")
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn syshttp_keytab() -> Keytab {
-    Keytab::parse(&decode_hex(common::SYSHTTP_KEYTAB)).expect("sysHTTP keytab parses")
+    Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB)).expect("sysHTTP keytab parses")
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::needless_raw_strings,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn config_with_default_keytab_name(keytab_name: &str) -> Config {
     let input = format!(
         r#"
@@ -545,9 +2323,86 @@ fn config_with_default_keytab_name(keytab_name: &str) -> Config {
 }
 
 fn ap_req_with_pac() -> Vec<u8> {
-    ap_req_with_pac_bytes(decode_hex(common::PAC_AD_WIN2K))
+    ap_req_with_pac_bytes(decode_hex(pac_ad_win2k::PAC_AD_WIN2K))
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn ap_req_with_pac_bytes(pac_bytes: Vec<u8>) -> Vec<u8> {
     let keytab = syshttp_keytab();
     let (service_key, _) = keytab
@@ -628,6 +2483,82 @@ fn ap_req_with_pac_bytes(pac_bytes: Vec<u8>) -> Vec<u8> {
     rasn::der::encode(&ap_req).expect("AP-REQ encodes")
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn pac_authorization_data(pac_bytes: Vec<u8>) -> rasn_kerberos::AuthorizationData {
     let nested =
         rasn_kerberos::AuthorizationData::from(vec![rasn_kerberos::AuthorizationDataValue {
@@ -641,6 +2572,81 @@ fn pac_authorization_data(pac_bytes: Vec<u8>) -> rasn_kerberos::AuthorizationDat
     }])
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn encrypt_message(
     key: &EncryptionKey,
     plaintext: &[u8],
@@ -671,11 +2677,163 @@ fn realm(value: &str) -> rasn_kerberos::Realm {
     kerberos_string(value)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn kerberos_string(value: &str) -> rasn_kerberos::KerberosString {
     rasn_kerberos::KerberosString::from_bytes(value.as_bytes())
         .expect("Kerberos string uses permitted characters")
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::as_conversions,
+        clippy::cast_possible_wrap,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn kerberos_time(seconds: u64) -> rasn_kerberos::KerberosTime {
     let utc = chrono::DateTime::<chrono::Utc>::from_timestamp(seconds as i64, 0)
         .expect("fixture timestamp is representable");
@@ -687,6 +2845,81 @@ fn zero_kerberos_flags() -> rasn_kerberos::KerberosFlags {
     rasn_kerberos::KerberosFlags::repeat(false, 32)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn valid_ap_req() -> ValidatedApReq {
     let keytab = http_keytab();
     ServiceValidator::new(&keytab)
@@ -706,10 +2939,160 @@ fn ap_rep_options() -> ApRepOptions {
     }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::arithmetic_side_effects,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn timestamp(seconds: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(seconds)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn temp_service_keytab_file(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -721,15 +3104,169 @@ fn temp_service_keytab_file(name: &str) -> PathBuf {
     ))
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::integer_division_remainder_used,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| (hex_value(pair[0]) << 4) | hex_value(pair[1]))
         .collect()
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::arithmetic_side_effects,
+        clippy::as_conversions,
+        clippy::default_numeric_fallback,
+        clippy::indexing_slicing,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -740,11 +3277,480 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::arithmetic_side_effects,
+        clippy::missing_panics_doc,
+        clippy::panic,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn hex_value(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',
         b'a'..=b'f' => byte - b'a' + 10,
         b'A'..=b'F' => byte - b'A' + 10,
         _ => panic!("invalid hex byte: {byte}"),
+    }
+}
+
+/// Fork-authored service tests: replay identity, authenticator realm and
+/// identity checks, and the config `clockskew` window.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use std::fs;
+
+    use pretty_assertions::assert_eq;
+    use rasn::der;
+    use rskrb5::ticket::decrypt_ticket_enc_part;
+
+    use super::*;
+
+    /// Pins that flipping only the ticket sname name-type is still a replay.
+    #[test]
+    fn replay_identity_ignores_the_ticket_name_type() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+        drop(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+
+        // RFC 4120 section 6.2: the name-type is advisory and "not significant
+        // when checking for equivalence". The ticket's outer sname is cleartext,
+        // so a peer can flip its name-type without touching any ciphertext; the
+        // mutated request is the same presentation and must be rejected.
+        let mut mutated = valid_ap_req_struct()?;
+        mutated.ticket.sname.r#type = 0_i32;
+        let mutated_der =
+            der::encode(&mutated).map_err(|cause| format!("mutated AP-REQ encodes: {cause}"))?;
+
+        assert!(matches!(
+            validator
+                .validate_ap_req(&mutated_der)
+                .err()
+                .ok_or("name-type-only mutation is a replay")?,
+            Error::Replay
+        ));
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+        Ok(())
+    }
+
+    /// Pins that with a keytab principal override the accepted key, not the sname, is the replay identity.
+    #[test]
+    fn replay_identity_follows_the_accepted_key_identity() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab)
+            .with_now(timestamp(1_893_553_447))
+            .with_keytab_principal(["HTTP", "host.test.gokrb5"]);
+
+        // The override selects the key; the ticket's own sname is then advisory
+        // for replay purposes, so an alias for the same service key is the same
+        // server principal.
+        let mut alias = valid_ap_req_struct()?;
+        alias.ticket.sname.string = vec![
+            kerberos_string("HTTP"),
+            kerberos_string("alias.test.gokrb5"),
+        ];
+        let alias_der =
+            der::encode(&alias).map_err(|cause| format!("alias AP-REQ encodes: {cause}"))?;
+
+        drop(
+            validator
+                .validate_ap_req(&alias_der)
+                .map_err(|cause| format!("alias sname validates under the override: {cause}"))?,
+        );
+        assert!(matches!(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("same accepted key is the same server principal")?,
+            Error::Replay
+        ));
+        Ok(())
+    }
+
+    /// Pins that the same authenticator under a shared-key sname alias is a replay.
+    #[test]
+    fn replay_identity_survives_a_shared_key_sname_alias() -> Result<(), TestError> {
+        let keytab = http_keytab_with_alias()?;
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+        drop(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+
+        assert!(matches!(
+            validator
+                .validate_ap_req(&alias_ap_req()?)
+                .err()
+                .ok_or("same authenticator under a shared-key alias is a replay")?,
+            Error::Replay
+        ));
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+        Ok(())
+    }
+
+    /// Pins that a shared replay cache rejects the same authenticator under a shared-key alias.
+    #[test]
+    fn shared_replay_cache_rejects_a_shared_key_sname_alias() -> Result<(), TestError> {
+        let keytab = http_keytab_with_alias()?;
+        let replay_cache = SharedReplayCache::new();
+        let mut first = ServiceValidator::new(&keytab)
+            .with_now(timestamp(1_893_553_447))
+            .with_shared_replay_cache(replay_cache.clone());
+        let mut second = ServiceValidator::new(&keytab)
+            .with_now(timestamp(1_893_553_447))
+            .with_shared_replay_cache(replay_cache.clone());
+        drop(
+            first
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+
+        assert!(matches!(
+            second
+                .validate_ap_req(&alias_ap_req()?)
+                .err()
+                .ok_or("shared cache rejects the same authenticator under an alias")?,
+            Error::Replay
+        ));
+        assert_eq!(
+            replay_cache
+                .len()
+                .map_err(|cause| format!("shared cache counts: {cause}"))?,
+            1
+        );
+        Ok(())
+    }
+
+    /// Pins that clearing old replay entries also forgets their authenticator digests.
+    #[test]
+    fn clearing_old_entries_also_forgets_authenticator_digests() -> Result<(), TestError> {
+        let keytab = http_keytab_with_alias()?;
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+        drop(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+
+        assert_eq!(
+            validator
+                .replay_cache_mut()
+                .clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)),
+            1
+        );
+        drop(
+            validator
+                .validate_ap_req(&alias_ap_req()?)
+                .map_err(|cause| {
+                    format!("expired digest permits the alias presentation: {cause}")
+                })?,
+        );
+        Ok(())
+    }
+
+    /// Pins that an authenticator client realm differing from the ticket's is rejected.
+    #[test]
+    fn rejects_authenticator_client_realm_mismatch() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+
+        // RFC 4120 section 3.2.3: the ticket's client realm must match the
+        // authenticator's. The components match here; only the realm differs.
+        let mut ap_req = valid_ap_req_struct()?;
+        reencrypt_authenticator(&mut ap_req, "EVIL.VERIFIER.REALM", 1)?;
+        let ap_req_der =
+            der::encode(&ap_req).map_err(|cause| format!("mutated AP-REQ encodes: {cause}"))?;
+
+        let error = validator
+            .validate_ap_req(&ap_req_der)
+            .err()
+            .ok_or("realm mismatch rejected")?;
+        let Error::ClientPrincipalMismatch {
+            ticket,
+            authenticator,
+        } = error
+        else {
+            return Err(format!("expected ClientPrincipalMismatch, got {error:?}").into());
+        };
+        assert_eq!(ticket, "testuser1@TEST.GOKRB5");
+        assert_eq!(authenticator, "testuser1@EVIL.VERIFIER.REALM");
+        Ok(())
+    }
+
+    /// Pins that the accepted identity is the ticket's client, not the authenticator's.
+    #[test]
+    fn returns_the_ticket_client_identity() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+
+        // RFC 4120 section 6.2: the name-type is advisory, so a differing
+        // authenticator name-type is not a mismatch - but the accepted identity
+        // must be the KDC-encrypted ticket's, not the authenticator's.
+        let mut ap_req = valid_ap_req_struct()?;
+        reencrypt_authenticator(&mut ap_req, "TEST.GOKRB5", 5)?;
+        let ap_req_der =
+            der::encode(&ap_req).map_err(|cause| format!("variant AP-REQ encodes: {cause}"))?;
+
+        let validated = validator
+            .validate_ap_req(&ap_req_der)
+            .map_err(|cause| format!("name-type difference is not a mismatch: {cause}"))?;
+
+        let (service_key, _) = keytab
+            .find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)
+            .map_err(|cause| format!("HTTP service key exists: {cause}"))?;
+        let ticket = decrypt_ticket_enc_part(&valid_ap_req_struct()?.ticket, service_key)
+            .map_err(|cause| format!("ticket decrypts: {cause}"))?;
+
+        assert_ne!(validated.client.name_type, 5_i32);
+        assert_eq!(
+            validated.client,
+            Principal {
+                realm: "TEST.GOKRB5".to_owned(),
+                name_type: ticket.cname.r#type,
+                components: vec!["testuser1".to_owned()],
+            }
+        );
+        Ok(())
+    }
+
+    /// Pins that the config `clockskew` bounds authenticator freshness for both default-keytab constructors.
+    #[test]
+    fn config_clockskew_bounds_authenticator_freshness() -> Result<(), TestError> {
+        const TEST_PATH: &str = "fork_tests::config_clockskew_bounds_authenticator_freshness";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
+            return Ok(());
+        }
+        let keytab = http_keytab();
+        let path = temp_service_keytab_file("config-clockskew");
+        let name = format!("FILE:{}", path.display());
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let config = config_with_default_keytab_name_and_clockskew(&name, "1s")?;
+
+        let mut named = ServiceValidator::from_default_keytab_name(&config)
+            .map_err(|cause| format!("validator loads the configured keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447 + 2));
+        assert!(matches!(
+            named
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("declared 1 s window rejects a 2 s stale authenticator")?,
+            Error::ClockSkew { max_clock_skew: _ }
+        ));
+
+        let mut fresh = ServiceValidator::from_default_keytab_name(&config)
+            .map_err(|cause| format!("validator loads the configured keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447));
+        drop(
+            fresh
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| format!("fresh authenticator stays accepted: {cause}"))?,
+        );
+
+        let mut default = ServiceValidator::from_default_keytab(&config)
+            .map_err(|cause| format!("validator loads the default keytab: {cause}"))?
+            .with_now(timestamp(1_893_553_447 + 2));
+        assert!(matches!(
+            default
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("default-keytab constructor uses the declared window")?,
+            Error::ClockSkew { max_clock_skew: _ }
+        ));
+
+        fs::remove_file(&path).map_err(|cause| format!("keytab file is removed: {cause}"))?;
+        Ok(())
+    }
+
+    /// Pins that `ServiceValidator::new` keeps the gokrb5-compatible 300 s default skew.
+    #[test]
+    fn service_validator_new_keeps_default_skew() -> Result<(), TestError> {
+        let keytab = http_keytab();
+        let mut tolerant = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 2));
+        drop(
+            tolerant
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .map_err(|cause| {
+                    format!("the gokrb5-compatible default accepts a 2 s skew: {cause}")
+                })?,
+        );
+
+        let mut strict = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 301));
+        assert!(matches!(
+            strict
+                .validate_ap_req(&decode_hex(VALID_AP_REQ))
+                .err()
+                .ok_or("the default window rejects more than 300 s")?,
+            Error::ClockSkew { max_clock_skew: _ }
+        ));
+        Ok(())
+    }
+
+    /// The fixture HTTP keytab plus a copy of its AES-256 key under a second service name.
+    fn http_keytab_with_alias() -> Result<Keytab, TestError> {
+        let mut keytab = http_keytab();
+        let mut alias = keytab
+            .entries()
+            .iter()
+            .find(|entry| entry.key.etype == 18_i32 && entry.kvno == 1)
+            .ok_or("fixture service key exists")?
+            .clone();
+        alias.principal.components = vec!["HTTP".to_owned(), "alias.test.gokrb5".to_owned()];
+        keytab.entries_mut().push(alias);
+        Ok(keytab)
+    }
+
+    /// The fixture AP-REQ with its ticket sname replaced by the shared-key alias.
+    fn alias_ap_req() -> Result<Vec<u8>, TestError> {
+        let mut alias = valid_ap_req_struct()?;
+        alias.ticket.sname.string = vec![
+            kerberos_string("HTTP"),
+            kerberos_string("alias.test.gokrb5"),
+        ];
+        Ok(der::encode(&alias).map_err(|cause| format!("alias AP-REQ encodes: {cause}"))?)
+    }
+
+    /// A config naming `keytab_name` as the default keytab, with `clockskew`.
+    fn config_with_default_keytab_name_and_clockskew(
+        keytab_name: &str,
+        clockskew: &str,
+    ) -> Result<Config, TestError> {
+        let input = format!(
+            "
+[libdefaults]
+ default_keytab_name = {keytab_name}
+ clockskew = {clockskew}
+",
+        );
+        Ok(Config::parse(&input).map_err(|cause| format!("config parses: {cause}"))?)
+    }
+
+    /// Decode the fixture AP-REQ so a test can vary one cleartext field.
+    fn valid_ap_req_struct() -> Result<rasn_kerberos::ApReq, TestError> {
+        Ok(der::decode(&decode_hex(VALID_AP_REQ))
+            .map_err(|cause| format!("fixture AP-REQ decodes: {cause}"))?)
+    }
+
+    /// Re-encrypt the fixture authenticator under the ticket session key with a
+    /// different client realm and name-type.
+    fn reencrypt_authenticator(
+        ap_req: &mut rasn_kerberos::ApReq,
+        crealm: &str,
+        name_type: i32,
+    ) -> Result<(), TestError> {
+        let session_key = EncryptionKey {
+            etype: 18,
+            value: decode_hex(VALID_SESSION_KEY),
+        };
+        let authenticator = rasn_kerberos::Authenticator {
+            authenticator_vno: 5_i32.into(),
+            crealm: realm(crealm),
+            cname: rasn_kerberos::PrincipalName {
+                r#type: name_type,
+                string: vec![kerberos_string("testuser1")],
+            },
+            cksum: None,
+            cusec: 123_456_i32.into(),
+            ctime: kerberos_time(1_893_553_447),
+            subkey: None,
+            seq_number: Some(42),
+            authorization_data: None,
+        };
+        let encoded = der::encode(&authenticator)
+            .map_err(|cause| format!("Authenticator encodes: {cause}"))?;
+        ap_req.authenticator = rasn_kerberos::EncryptedData {
+            etype: session_key.etype,
+            kvno: None,
+            cipher: encrypt_message(
+                &session_key,
+                &encoded,
+                AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+                PAC_AUTHENTICATOR_CONFOUNDER,
+            )
+            .into(),
+        };
+        Ok(())
     }
 }

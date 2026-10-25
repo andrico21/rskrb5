@@ -1,9 +1,15 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 use pretty_assertions::assert_eq;
 use rskrb5::crypto::{
     AesSha1Etype, AesSha2Etype, Error, KerberosEtype, Rc4HmacEtype, iterations_to_s2kparams, nfold,
     s2kparams_to_iterations,
 };
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn reports_aes_sha1_metadata() {
     assert_eq!(AesSha1Etype::from_etype_id(17), Some(AesSha1Etype::Aes128));
@@ -23,6 +29,11 @@ fn reports_aes_sha1_metadata() {
     assert_eq!(AesSha1Etype::Aes256.default_s2kparams(), "00001000");
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn reports_aes_sha2_metadata_and_dispatch() {
     assert_eq!(AesSha2Etype::from_etype_id(19), Some(AesSha2Etype::Aes128));
@@ -65,6 +76,11 @@ fn reports_aes_sha2_metadata_and_dispatch() {
     assert_eq!(dispatcher.etype_id(), 18);
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn converts_s2kparams_iteration_counts() {
     assert_eq!(iterations_to_s2kparams(1), "00000001");
@@ -85,6 +101,12 @@ fn converts_s2kparams_iteration_counts() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn nfold_matches_gokrb5_vectors() {
     let tests = [
@@ -125,6 +147,10 @@ fn nfold_matches_gokrb5_vectors() {
     }
 }
 
+#[expect(
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn aes128_string_to_key_matches_gokrb5_vectors() {
     let binary_salt = decode_hex("1234567878563412");
@@ -184,6 +210,10 @@ fn aes128_string_to_key_matches_gokrb5_vectors() {
     assert_string_to_key_vectors(AesSha1Etype::Aes128, &tests);
 }
 
+#[expect(
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn aes256_string_to_key_matches_gokrb5_vectors() {
     let binary_salt = decode_hex("1234567878563412");
@@ -243,6 +273,13 @@ fn aes256_string_to_key_matches_gokrb5_vectors() {
     assert_string_to_key_vectors(AesSha1Etype::Aes256, &tests);
 }
 
+#[expect(
+    clippy::decimal_literal_representation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn aes_sha2_string_to_key_matches_gokrb5_vectors() {
     let random = decode_hex("10df9dd783e5bc8acea1730e74355f61");
@@ -282,6 +319,10 @@ fn aes_sha2_string_to_key_matches_gokrb5_vectors() {
     }
 }
 
+#[expect(
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn aes128_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors() {
     assert_sha2_derive_vectors(
@@ -333,6 +374,10 @@ fn aes128_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors() {
     );
 }
 
+#[expect(
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn aes256_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors() {
     assert_sha2_derive_vectors(
@@ -384,6 +429,12 @@ fn aes256_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn aes_cts_encrypts_and_decrypts_rfc3962_vectors() {
     let key = decode_hex("636869636b656e207465726979616b69");
@@ -435,6 +486,10 @@ fn aes_cts_encrypts_and_decrypts_rfc3962_vectors() {
     }
 }
 
+#[expect(
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn checksums_and_messages_match_gokrb5_aes128() {
     assert_checksum_and_message_vector(
@@ -445,6 +500,10 @@ fn checksums_and_messages_match_gokrb5_aes128() {
     );
 }
 
+#[expect(
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn checksums_and_messages_match_gokrb5_aes256() {
     assert_checksum_and_message_vector(
@@ -455,6 +514,11 @@ fn checksums_and_messages_match_gokrb5_aes256() {
     );
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_invalid_crypto_inputs() {
     assert!(matches!(
@@ -484,6 +548,10 @@ fn rejects_invalid_crypto_inputs() {
     ));
 }
 
+#[expect(
+    clippy::single_char_lifetime_names,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 struct StringToKeyVector<'a> {
     iterations: u32,
     phrase: &'a [u8],
@@ -492,6 +560,10 @@ struct StringToKeyVector<'a> {
     key: &'a str,
 }
 
+#[expect(
+    clippy::single_char_lifetime_names,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 struct Sha2StringToKeyVector<'a> {
     etype: AesSha2Etype,
     iterations: u32,
@@ -501,6 +573,11 @@ struct Sha2StringToKeyVector<'a> {
     key: &'a str,
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn assert_string_to_key_vectors(etype: AesSha1Etype, tests: &[StringToKeyVector<'_>]) {
     for test in tests {
         let pbkdf2 = etype.string_to_pbkdf2(test.phrase, test.salt, test.iterations);
@@ -514,6 +591,10 @@ fn assert_string_to_key_vectors(etype: AesSha1Etype, tests: &[StringToKeyVector<
     }
 }
 
+#[expect(
+    clippy::single_char_lifetime_names,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 struct Sha2CryptoVector<'a> {
     plain: &'a str,
     confounder: &'a str,
@@ -522,6 +603,12 @@ struct Sha2CryptoVector<'a> {
     cipher: &'a str,
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::similar_names,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn assert_sha2_derive_vectors(
     etype: AesSha2Etype,
     key_hex: &str,
@@ -556,6 +643,12 @@ fn assert_sha2_derive_vectors(
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_assert_message,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn assert_sha2_checksum_vector(
     etype: AesSha2Etype,
     key_hex: &str,
@@ -572,6 +665,14 @@ fn assert_sha2_checksum_vector(
     assert!(!etype.verify_checksum(&key, b"tampered", &checksum, 2));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_assert_message,
+    clippy::missing_panics_doc,
+    clippy::similar_names,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn assert_sha2_crypto_vectors(etype: AesSha2Etype, key_hex: &str, tests: &[Sha2CryptoVector<'_>]) {
     let key = decode_hex(key_hex);
 
@@ -613,17 +714,33 @@ fn assert_sha2_crypto_vectors(etype: AesSha2Etype, key_hex: &str, tests: &[Sha2C
     }
 }
 
+#[expect(
+    clippy::single_char_lifetime_names,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 struct AesCtsVector<'a> {
     plain: &'a str,
     cipher: &'a str,
     next_iv: &'a str,
 }
 
+#[expect(
+    clippy::missing_const_for_fn,
+    clippy::shadow_reuse,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn usage_constant(usage: u32, suffix: u8) -> [u8; 5] {
     let usage = usage.to_be_bytes();
     [usage[0], usage[1], usage[2], usage[3], suffix]
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_assert_message,
+    clippy::missing_panics_doc,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn assert_checksum_and_message_vector(
     etype: AesSha1Etype,
     key_hex: &str,
@@ -661,15 +778,29 @@ fn assert_checksum_and_message_vector(
     ));
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::integer_division_remainder_used,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn decode_hex(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0, "hex input has even length");
     input
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| (hex_value(pair[0]) << 4) | hex_value(pair[1]))
         .collect()
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::default_numeric_fallback,
+    clippy::indexing_slicing,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -680,6 +811,12 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn hex_value(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',

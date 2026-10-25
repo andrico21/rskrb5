@@ -1,0 +1,5 @@
+[advisories]
+# Mirrors deny.toml `[advisories] ignore`; the two ignore sets must stay equal.
+# Every future entry must name the advisory, state why it does not apply to
+# this crate, and note whether an upstream fix exists.
+ignore = []

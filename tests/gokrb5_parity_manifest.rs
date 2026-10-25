@@ -1,5 +1,20 @@
-use std::collections::BTreeSet;
+//! Checks of the gokrb5 parity manifest in `docs/gokrb5-parity.toml`.
+extern crate alloc;
 
+use alloc::collections::BTreeSet;
+
+#[expect(
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    clippy::shadow_reuse,
+    clippy::similar_names,
+    clippy::tests_outside_test_module,
+    clippy::too_many_lines,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn gokrb5_parity_manifest_has_expected_target_and_areas() {
     let manifest: toml::Table = include_str!("../docs/gokrb5-parity.toml")

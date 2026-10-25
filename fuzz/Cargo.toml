@@ -11,11 +11,18 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-rskrb5 = { path = ".." }
+rskrb5 = { version = "0.3.0", path = "..", package = "rskrb5-patched" }
 
 [[bin]]
 name = "kpasswd_reply"
 path = "fuzz_targets/kpasswd_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ccache_parse"
+path = "fuzz_targets/ccache_parse.rs"
 test = false
 doc = false
 bench = false

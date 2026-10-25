@@ -1,0 +1,16 @@
+# Files created by moving existing code, mapped to the file the code came from.
+# The fork-lines and prose gates compare a moved file against its source file,
+# so unchanged moved lines keep their upstream origin. `from = ""` marks a
+# wholly new file: every line in it is fork code.
+
+[[move]]
+new = "tests/support/env.rs"
+from = ""
+
+[[move]]
+new = "tests/support/pac_ad_win2k.rs"
+from = "tests/common/mod.rs"
+
+[[move]]
+new = "tests/support/pac_trust.rs"
+from = "tests/common/mod.rs"

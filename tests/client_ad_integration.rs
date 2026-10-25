@@ -1,21 +1,101 @@
+#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
 #![cfg(feature = "tokio")]
 
-use std::env;
-use std::error::Error;
-use std::ffi::{OsStr, OsString};
-use std::fs;
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::path::PathBuf;
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use rskrb5::client::{
-    ApReqOptions, KdcProtocol, Principal, TgsRepSession, TokioClient, build_ap_req_with_confounder,
+use core::{error::Error, time::Duration};
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::unused_trait_names,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+use std::{
+    env,
+    ffi::OsStr,
+    fs,
+    net::{TcpListener, TcpStream, ToSocketAddrs},
+    path::PathBuf,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
 };
-use rskrb5::config::Config;
-use rskrb5::crypto::KerberosEtype;
-use rskrb5::keytab::Keytab;
-use rskrb5::service::ServiceValidator;
+
+use rskrb5::{
+    client::{
+        ApReqOptions, KdcProtocol, Principal, TgsRepSession, TokioClient,
+        build_ap_req_with_confounder,
+    },
+    config::Config,
+    crypto::KerberosEtype,
+    keytab::Keytab,
+    service::ServiceValidator,
+};
 
 const USER_REALM: &str = "USER.GOKRB5";
 const RESOURCE_REALM: &str = "RES.GOKRB5";
@@ -78,6 +158,85 @@ const SYSHTTP_KEYTAB: AdKeytabFixture = AdKeytabFixture {
     base64_env: "TEST_AD_SYSHTTP_KEYTAB_BASE64",
 };
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        clippy::panic_in_result_fn,
+        clippy::tests_outside_test_module,
+        clippy::unwrap_in_result,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn active_directory_keytab_login() -> Result<(), Box<dyn Error>> {
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
@@ -97,6 +256,85 @@ fn active_directory_keytab_login() -> Result<(), Box<dyn Error>> {
     })
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        clippy::panic_in_result_fn,
+        clippy::tests_outside_test_module,
+        clippy::unwrap_in_result,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn active_directory_keytab_login_without_preauth() -> Result<(), Box<dyn Error>> {
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
@@ -116,6 +354,86 @@ fn active_directory_keytab_login_without_preauth() -> Result<(), Box<dyn Error>>
     })
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        clippy::panic_in_result_fn,
+        clippy::tests_outside_test_module,
+        clippy::unwrap_in_result,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn active_directory_service_ticket_validates_user_domain_pac() -> Result<(), Box<dyn Error>> {
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
@@ -143,6 +461,86 @@ fn active_directory_service_ticket_validates_user_domain_pac() -> Result<(), Box
     })
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        clippy::panic_in_result_fn,
+        clippy::tests_outside_test_module,
+        clippy::unwrap_in_result,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn active_directory_trust_resource_domain_service_ticket_validates_pac()
 -> Result<(), Box<dyn Error>> {
@@ -174,6 +572,86 @@ fn active_directory_trust_resource_domain_service_ticket_validates_pac()
     })
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        clippy::panic_in_result_fn,
+        clippy::tests_outside_test_module,
+        clippy::unwrap_in_result,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn active_directory_trust_user_domain_service_ticket_validates_pac() -> Result<(), Box<dyn Error>> {
     let _guard = AD_LOCK.lock().expect("AD integration test lock");
@@ -200,6 +678,81 @@ fn active_directory_trust_user_domain_service_ticket_validates_pac() -> Result<(
     })
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[test]
 fn embedded_ad_keytabs_cover_required_principals_and_enctypes() -> Result<(), Box<dyn Error>> {
     assert_ad_keytab_fixture(TESTUSER1_KEYTAB, USER_REALM, TESTUSER1)?;
@@ -209,6 +762,82 @@ fn embedded_ad_keytabs_cover_required_principals_and_enctypes() -> Result<(), Bo
     Ok(())
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        clippy::panic_in_result_fn,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn assert_ad_keytab_fixture(
     fixture: AdKeytabFixture,
     realm: &str,
@@ -242,6 +871,80 @@ fn assert_ad_keytab_fixture(
     Ok(())
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::unreachable,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn expected_key_len(etype: i32) -> usize {
     match etype {
         AES128_ETYPE | RC4_HMAC_ETYPE => 16,
@@ -250,6 +953,81 @@ fn expected_key_len(etype: i32) -> usize {
     }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        clippy::print_stderr,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn ad_enabled() -> Result<bool, Box<dyn Error>> {
     let required = ad_required();
     if !ad_prefetch_gate() {
@@ -300,6 +1078,80 @@ fn ad_required() -> bool {
     env::var("TESTAD_REQUIRED").as_deref() == Ok("1")
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn ad_gate_error(message: String) -> Box<dyn Error> {
     std::io::Error::other(message).into()
 }
@@ -332,6 +1184,80 @@ fn ad_resource_admin_addr() -> String {
     )
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::print_stderr,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn tcp_reachable(endpoint: &str, label: &str) -> bool {
     let mut addrs = match endpoint.to_socket_addrs() {
         Ok(addrs) => addrs,
@@ -345,6 +1271,80 @@ fn tcp_reachable(endpoint: &str, label: &str) -> bool {
     addrs.any(|addr| TcpStream::connect_timeout(&addr, timeout).is_ok())
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn ad_client(user: &str, keytab: Keytab, rc4: bool) -> Result<TokioClient, Box<dyn Error>> {
     Ok(TokioClient::with_keytab(
         ad_config(rc4)?,
@@ -354,6 +1354,81 @@ fn ad_client(user: &str, keytab: Keytab, rc4: bool) -> Result<TokioClient, Box<d
     ))
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        clippy::needless_raw_strings,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn ad_config(rc4: bool) -> Result<Config, Box<dyn Error>> {
     let user_kdc = ad_user_kdc_addr();
     let user_admin = ad_user_admin_addr();
@@ -415,6 +1490,83 @@ fn http_service(realm: &str, host: &str) -> Principal {
     Principal::new(realm, 2, ["HTTP", host])
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn validate_service_ticket<const N: usize>(
     ticket: &TgsRepSession,
     keytab: &Keytab,
@@ -432,22 +1584,392 @@ fn validate_service_ticket<const N: usize>(
     Ok(validator.validate_ap_req(&ap_req.der)?)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn testuser1_keytab() -> Result<Keytab, Box<dyn Error>> {
     ad_keytab(TESTUSER1_KEYTAB)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn testuser2_keytab() -> Result<Keytab, Box<dyn Error>> {
     ad_keytab(TESTUSER2_KEYTAB)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn testuser3_keytab() -> Result<Keytab, Box<dyn Error>> {
     ad_keytab(TESTUSER3_KEYTAB)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn syshttp_keytab() -> Result<Keytab, Box<dyn Error>> {
     ad_keytab(SYSHTTP_KEYTAB)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn ad_keytab(fixture: AdKeytabFixture) -> Result<Keytab, Box<dyn Error>> {
     if let Some(path) = env_path_optional(fixture.path_env) {
         let bytes = fs::read(&path).map_err(|error| {
@@ -488,11 +2010,160 @@ fn ad_keytab(fixture: AdKeytabFixture) -> Result<Keytab, Box<dyn Error>> {
     keytab(fixture.default_hex)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn keytab(hex: &str) -> Result<Keytab, Box<dyn Error>> {
     let bytes = decode_hex_value(hex)?;
     Ok(Keytab::parse(&bytes)?)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::missing_errors_doc,
+        clippy::needless_pass_by_value,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn parse_keytab_bytes(label: &str, source: String, bytes: &[u8]) -> Result<Keytab, Box<dyn Error>> {
     Keytab::parse(bytes).map_err(|error| {
         ad_gate_error(format!(
@@ -511,6 +2182,83 @@ fn env_string_optional(name: &str) -> Option<String> {
     env::var(name).ok().filter(|value| !value.is_empty())
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::integer_division,
+        clippy::integer_division_remainder_used,
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn decode_hex_value(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let compact: Vec<u8> = input
         .bytes()
@@ -524,7 +2272,7 @@ fn decode_hex_value(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     }
 
     let mut out = Vec::with_capacity(compact.len() / 2);
-    for chunk in compact.chunks_exact(2) {
+    for chunk in compact.as_chunks::<2>().0 {
         let hi = hex_nibble(chunk[0])?;
         let lo = hex_nibble(chunk[1])?;
         out.push((hi << 4) | lo);
@@ -532,6 +2280,81 @@ fn decode_hex_value(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(out)
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::arithmetic_side_effects,
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn hex_nibble(byte: u8) -> Result<u8, Box<dyn Error>> {
     match byte {
         b'0'..=b'9' => Ok(byte - b'0'),
@@ -543,6 +2366,70 @@ fn hex_nibble(byte: u8) -> Result<u8, Box<dyn Error>> {
     }
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(feature = "spnego")]
 fn decode_base64_value(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use base64::Engine as _;
@@ -553,6 +2440,23 @@ fn decode_base64_value(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         .map_err(|error| ad_gate_error(format!("base64 decode error: {error}")))
 }
 
+#[cfg_attr(
+    any(all(
+        not(feature = "default"),
+        not(feature = "evaluation"),
+        not(feature = "http"),
+        feature = "messages",
+        not(feature = "serde"),
+        not(feature = "spnego"),
+        feature = "tokio",
+        not(feature = "tower"),
+        test
+    )),
+    expect(
+        clippy::missing_errors_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(not(feature = "spnego"))]
 fn decode_base64_value(_input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     Err(ad_gate_error(
@@ -560,6 +2464,82 @@ fn decode_base64_value(_input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     ))
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_io()
@@ -568,202 +2548,1014 @@ fn runtime() -> tokio::runtime::Runtime {
         .expect("tokio runtime builds")
 }
 
-#[test]
-fn strict_ad_gate_rejects_missing_testad() {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
+/// Child-process tests of the AD environment gate, endpoint and keytab overrides.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod ad_env_overrides {
+    use super::*;
 
-    let error = ad_enabled().expect_err("strict AD gate rejects a TESTAD soft skip");
-    assert!(
-        error
-            .to_string()
-            .contains("TESTAD_REQUIRED=1 forbids soft skips"),
-        "{error}"
-    );
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that `TESTAD_REQUIRED=1` turns a missing `TESTAD` into an error.
+    #[test]
+    fn strict_ad_gate_rejects_missing_testad() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str = "ad_env_overrides::strict_ad_gate_rejects_missing_testad";
+        if !child_env::in_child(TEST_PATH) {
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", None),
+                    ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                    ("TEST_AD_USER_KDC_ADDR", None),
+                    ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                    ("TEST_AD_USER_ADMIN_ADDR", None),
+                    ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        let error = ad_enabled().expect_err("strict AD gate rejects a TESTAD soft skip");
+        assert!(
+            error
+                .to_string()
+                .contains("TESTAD_REQUIRED=1 forbids soft skips"),
+            "{error}"
+        );
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the strict AD gate rejects a malformed user KDC endpoint.
+    #[test]
+    fn strict_ad_gate_rejects_malformed_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str =
+            "ad_env_overrides::strict_ad_gate_rejects_malformed_user_kdc_endpoint";
+        if !child_env::in_child(TEST_PATH) {
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", Some(OsStr::new("1"))),
+                    ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                    (
+                        "TEST_AD_USER_KDC_ADDR",
+                        Some(OsStr::new("127.0.0.1:not-a-port")),
+                    ),
+                    ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                    ("TEST_AD_USER_ADMIN_ADDR", None),
+                    ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        let error = ad_enabled().expect_err("strict AD gate rejects malformed endpoints");
+        assert!(
+            error.to_string().contains("cannot reach user KDC"),
+            "{error}"
+        );
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the strict AD gate rejects an unreachable user KDC endpoint.
+    #[test]
+    fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str =
+            "ad_env_overrides::strict_ad_gate_rejects_unreachable_user_kdc_endpoint";
+        if !child_env::in_child(TEST_PATH) {
+            let listener = TcpListener::bind(("127.0.0.1", 0))?;
+            let endpoint = listener.local_addr()?.to_string();
+            drop(listener);
+
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", Some(OsStr::new("1"))),
+                    ("TESTAD_REQUIRED", Some(OsStr::new("1"))),
+                    ("TEST_AD_USER_KDC_ADDR", Some(OsStr::new(&endpoint))),
+                    ("TEST_AD_RESOURCE_KDC_ADDR", None),
+                    ("TEST_AD_USER_ADMIN_ADDR", None),
+                    ("TEST_AD_RESOURCE_ADMIN_ADDR", None),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        let error = ad_enabled().expect_err("strict AD gate rejects unreachable endpoints");
+        assert!(
+            error.to_string().contains("cannot reach user KDC at"),
+            "{error}"
+        );
+
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::unwrap_in_result,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the AD config uses the endpoint overrides and the RC4 trust options.
+    #[test]
+    fn ad_config_uses_endpoint_overrides_and_rc4_trust_options() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str =
+            "ad_env_overrides::ad_config_uses_endpoint_overrides_and_rc4_trust_options";
+        if !child_env::in_child(TEST_PATH) {
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    ("TESTAD", None),
+                    ("TESTAD_REQUIRED", None),
+                    (
+                        "TEST_AD_USER_KDC_ADDR",
+                        Some(OsStr::new("192.0.2.10:10088")),
+                    ),
+                    (
+                        "TEST_AD_RESOURCE_KDC_ADDR",
+                        Some(OsStr::new("192.0.2.11:10088")),
+                    ),
+                    (
+                        "TEST_AD_USER_ADMIN_ADDR",
+                        Some(OsStr::new("192.0.2.10:10464")),
+                    ),
+                    (
+                        "TEST_AD_RESOURCE_ADMIN_ADDR",
+                        Some(OsStr::new("192.0.2.11:10464")),
+                    ),
+                    ("TEST_AD_KDC_ADDR", None),
+                    ("TEST_AD_RES_KDC_ADDR", None),
+                    ("TEST_AD_ADMIN_ADDR", None),
+                    ("TEST_AD_RES_ADMIN_ADDR", None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK.lock().expect("AD integration test lock");
+
+        let config = ad_config(false)?;
+        assert_eq!(
+            config.configured_kdcs(USER_REALM)?,
+            &["192.0.2.10:10088".to_owned()]
+        );
+        assert_eq!(
+            config.configured_kdcs(RESOURCE_REALM)?,
+            &["192.0.2.11:10088".to_owned()]
+        );
+        assert_eq!(
+            config
+                .realm(USER_REALM)
+                .expect("USER realm exists")
+                .admin_server,
+            ["192.0.2.10:10464".to_owned()]
+        );
+        assert_eq!(
+            config
+                .realm(RESOURCE_REALM)
+                .expect("RESOURCE realm exists")
+                .admin_server,
+            ["192.0.2.11:10464".to_owned()]
+        );
+        assert!(!config.libdefaults.allow_weak_crypto);
+        assert!(!config.libdefaults.canonicalize);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [AES256_ETYPE]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [AES256_ETYPE]);
+
+        let rc4_config = ad_config(true)?;
+        assert!(rc4_config.libdefaults.allow_weak_crypto);
+        assert!(rc4_config.libdefaults.canonicalize);
+        assert_eq!(
+            rc4_config.libdefaults.default_tkt_enctype_ids,
+            [RC4_HMAC_ETYPE]
+        );
+        assert_eq!(
+            rc4_config.libdefaults.default_tgs_enctype_ids,
+            [RC4_HMAC_ETYPE]
+        );
+        assert_eq!(
+            rc4_config.libdefaults.permitted_enctype_ids,
+            [RC4_HMAC_ETYPE]
+        );
+
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::unwrap_in_result,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the AD keytab loader reads the path override.
+    #[test]
+    fn ad_keytab_uses_path_override() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str = "ad_env_overrides::ad_keytab_uses_path_override";
+        if !child_env::in_child(TEST_PATH) {
+            let path = temp_keytab_path("testuser1");
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (TESTUSER1_KEYTAB.path_env, Some(path.as_os_str())),
+                    (TESTUSER1_KEYTAB.hex_env, None),
+                    (TESTUSER1_KEYTAB.base64_env, None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK.lock().expect("AD integration test lock");
+        let bytes = decode_hex_value(KEYTAB_TESTUSER1_USER_GOKRB5)?;
+        let path = PathBuf::from(
+            env::var_os(TESTUSER1_KEYTAB.path_env).ok_or("the parent test sets the keytab path")?,
+        );
+        fs::write(&path, &bytes)?;
+
+        assert_eq!(testuser1_keytab()?, keytab(KEYTAB_TESTUSER1_USER_GOKRB5)?);
+
+        let _ = fs::remove_file(path);
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::expect_used,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::std_instead_of_core,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the AD keytab loader decodes the whitespace-split hex override.
+    #[test]
+    fn ad_keytab_uses_hex_override() -> Result<(), Box<dyn Error>> {
+        const TEST_PATH: &str = "ad_env_overrides::ad_keytab_uses_hex_override";
+        if !child_env::in_child(TEST_PATH) {
+            let spaced_hex = KEYTAB_TESTUSER2_USER_GOKRB5
+                .as_bytes()
+                .chunks(64)
+                .map(|chunk| std::str::from_utf8(chunk).expect("fixture hex is utf8"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (TESTUSER2_KEYTAB.path_env, None),
+                    (TESTUSER2_KEYTAB.hex_env, Some(OsStr::new(&spaced_hex))),
+                    (TESTUSER2_KEYTAB.base64_env, None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        assert_eq!(testuser2_keytab()?, keytab(KEYTAB_TESTUSER2_USER_GOKRB5)?);
+
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(feature = "spnego")]
+    /// Pins that the AD keytab loader decodes the base64 override.
+    #[test]
+    fn ad_keytab_uses_base64_override() -> Result<(), Box<dyn Error>> {
+        use base64::Engine as _;
+
+        const TEST_PATH: &str = "ad_env_overrides::ad_keytab_uses_base64_override";
+        if !child_env::in_child(TEST_PATH) {
+            let bytes = decode_hex_value(KEYTAB_SYSHTTP_RES_GOKRB5)?;
+            let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (SYSHTTP_KEYTAB.path_env, None),
+                    (SYSHTTP_KEYTAB.hex_env, None),
+                    (SYSHTTP_KEYTAB.base64_env, Some(OsStr::new(&base64))),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK
+            .lock()
+            .map_err(|cause| format!("AD integration test lock: {cause}"))?;
+
+        assert_eq!(syshttp_keytab()?, keytab(KEYTAB_SYSHTTP_RES_GOKRB5)?);
+
+        Ok(())
+    }
+
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                not(feature = "default"),
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                not(feature = "serde"),
+                not(feature = "spnego"),
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::expect_used,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_errors_doc,
+            clippy::panic_in_result_fn,
+            clippy::unwrap_in_result,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    /// Pins that the keytab path override wins over the encoded overrides.
+    #[test]
+    fn ad_keytab_path_override_takes_precedence_over_encoded_values() -> Result<(), Box<dyn Error>>
+    {
+        const TEST_PATH: &str =
+            "ad_env_overrides::ad_keytab_path_override_takes_precedence_over_encoded_values";
+        if !child_env::in_child(TEST_PATH) {
+            let path = temp_keytab_path("testuser3");
+            child_env::run_in_child(
+                TEST_PATH,
+                &[
+                    (TESTUSER3_KEYTAB.path_env, Some(path.as_os_str())),
+                    (TESTUSER3_KEYTAB.hex_env, Some(OsStr::new("00"))),
+                    (TESTUSER3_KEYTAB.base64_env, None),
+                ],
+            );
+            return Ok(());
+        }
+        let _guard = AD_LOCK.lock().expect("AD integration test lock");
+        let path = PathBuf::from(
+            env::var_os(TESTUSER3_KEYTAB.path_env).ok_or("the parent test sets the keytab path")?,
+        );
+        fs::write(&path, decode_hex_value(KEYTAB_TESTUSER3_USER_GOKRB5)?)?;
+
+        assert_eq!(testuser3_keytab()?, keytab(KEYTAB_TESTUSER3_USER_GOKRB5)?);
+
+        let _ = fs::remove_file(path);
+        Ok(())
+    }
 }
 
-#[test]
-fn strict_ad_gate_rejects_malformed_user_kdc_endpoint() {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let _testad = EnvOverride::set("TESTAD", "1");
-    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
-    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", "127.0.0.1:not-a-port");
-
-    let error = ad_enabled().expect_err("strict AD gate rejects malformed endpoints");
-    assert!(
-        error.to_string().contains("cannot reach user KDC"),
-        "{error}"
-    );
-}
-
-#[test]
-fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let listener = TcpListener::bind(("127.0.0.1", 0))?;
-    let endpoint = listener.local_addr()?.to_string();
-    drop(listener);
-
-    let _testad = EnvOverride::set("TESTAD", "1");
-    let _required = EnvOverride::set("TESTAD_REQUIRED", "1");
-    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", endpoint.as_str());
-
-    let error = ad_enabled().expect_err("strict AD gate rejects unreachable endpoints");
-    assert!(
-        error.to_string().contains("cannot reach user KDC at"),
-        "{error}"
-    );
-
-    Ok(())
-}
-
-#[test]
-fn ad_config_uses_endpoint_overrides_and_rc4_trust_options() -> Result<(), Box<dyn Error>> {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_ad_env();
-    let _user_kdc = EnvOverride::set("TEST_AD_USER_KDC_ADDR", "192.0.2.10:10088");
-    let _resource_kdc = EnvOverride::set("TEST_AD_RESOURCE_KDC_ADDR", "192.0.2.11:10088");
-    let _user_admin = EnvOverride::set("TEST_AD_USER_ADMIN_ADDR", "192.0.2.10:10464");
-    let _resource_admin = EnvOverride::set("TEST_AD_RESOURCE_ADMIN_ADDR", "192.0.2.11:10464");
-
-    let config = ad_config(false)?;
-    assert_eq!(
-        config.configured_kdcs(USER_REALM)?,
-        &["192.0.2.10:10088".to_owned()]
-    );
-    assert_eq!(
-        config.configured_kdcs(RESOURCE_REALM)?,
-        &["192.0.2.11:10088".to_owned()]
-    );
-    assert_eq!(
-        config
-            .realm(USER_REALM)
-            .expect("USER realm exists")
-            .admin_server,
-        ["192.0.2.10:10464".to_owned()]
-    );
-    assert_eq!(
-        config
-            .realm(RESOURCE_REALM)
-            .expect("RESOURCE realm exists")
-            .admin_server,
-        ["192.0.2.11:10464".to_owned()]
-    );
-    assert!(!config.libdefaults.allow_weak_crypto);
-    assert!(!config.libdefaults.canonicalize);
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, [AES256_ETYPE]);
-    assert_eq!(config.libdefaults.default_tgs_enctype_ids, [AES256_ETYPE]);
-
-    let rc4_config = ad_config(true)?;
-    assert!(rc4_config.libdefaults.allow_weak_crypto);
-    assert!(rc4_config.libdefaults.canonicalize);
-    assert_eq!(
-        rc4_config.libdefaults.default_tkt_enctype_ids,
-        [RC4_HMAC_ETYPE]
-    );
-    assert_eq!(
-        rc4_config.libdefaults.default_tgs_enctype_ids,
-        [RC4_HMAC_ETYPE]
-    );
-    assert_eq!(
-        rc4_config.libdefaults.permitted_enctype_ids,
-        [RC4_HMAC_ETYPE]
-    );
-
-    Ok(())
-}
-
-#[test]
-fn ad_keytab_uses_path_override() -> Result<(), Box<dyn Error>> {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(TESTUSER1_KEYTAB);
-    let bytes = decode_hex_value(KEYTAB_TESTUSER1_USER_GOKRB5)?;
-    let path = temp_keytab_path("testuser1");
-    fs::write(&path, &bytes)?;
-    let _path_env = EnvOverride::set(TESTUSER1_KEYTAB.path_env, path.as_os_str());
-
-    assert_eq!(testuser1_keytab()?, keytab(KEYTAB_TESTUSER1_USER_GOKRB5)?);
-
-    let _ = fs::remove_file(path);
-    Ok(())
-}
-
-#[test]
-fn ad_keytab_uses_hex_override() -> Result<(), Box<dyn Error>> {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(TESTUSER2_KEYTAB);
-    let spaced_hex = KEYTAB_TESTUSER2_USER_GOKRB5
-        .as_bytes()
-        .chunks(64)
-        .map(|chunk| std::str::from_utf8(chunk).expect("fixture hex is utf8"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let _hex_env = EnvOverride::set(TESTUSER2_KEYTAB.hex_env, spaced_hex.as_str());
-
-    assert_eq!(testuser2_keytab()?, keytab(KEYTAB_TESTUSER2_USER_GOKRB5)?);
-
-    Ok(())
-}
-
-#[cfg(feature = "spnego")]
-#[test]
-fn ad_keytab_uses_base64_override() -> Result<(), Box<dyn Error>> {
-    use base64::Engine as _;
-
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(SYSHTTP_KEYTAB);
-    let bytes = decode_hex_value(KEYTAB_SYSHTTP_RES_GOKRB5)?;
-    let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-    let _base64_env = EnvOverride::set(SYSHTTP_KEYTAB.base64_env, base64.as_str());
-
-    assert_eq!(syshttp_keytab()?, keytab(KEYTAB_SYSHTTP_RES_GOKRB5)?);
-
-    Ok(())
-}
-
-#[test]
-fn ad_keytab_path_override_takes_precedence_over_encoded_values() -> Result<(), Box<dyn Error>> {
-    let _guard = AD_LOCK.lock().expect("AD integration test lock");
-    let _env = clear_keytab_env(TESTUSER3_KEYTAB);
-    let path = temp_keytab_path("testuser3");
-    fs::write(&path, decode_hex_value(KEYTAB_TESTUSER3_USER_GOKRB5)?)?;
-    let _path_env = EnvOverride::set(TESTUSER3_KEYTAB.path_env, path.as_os_str());
-    let _hex_env = EnvOverride::set(TESTUSER3_KEYTAB.hex_env, "00");
-
-    assert_eq!(testuser3_keytab()?, keytab(KEYTAB_TESTUSER3_USER_GOKRB5)?);
-
-    let _ = fs::remove_file(path);
-    Ok(())
-}
-
-fn clear_keytab_env(fixture: AdKeytabFixture) -> Vec<EnvOverride> {
-    vec![
-        EnvOverride::remove(fixture.path_env),
-        EnvOverride::remove(fixture.hex_env),
-        EnvOverride::remove(fixture.base64_env),
-    ]
-}
-
-fn clear_ad_env() -> Vec<EnvOverride> {
-    [
-        "TESTAD",
-        "TESTAD_REQUIRED",
-        "TEST_AD_USER_KDC_ADDR",
-        "TEST_AD_RESOURCE_KDC_ADDR",
-        "TEST_AD_USER_ADMIN_ADDR",
-        "TEST_AD_RESOURCE_ADMIN_ADDR",
-        "TEST_AD_KDC_ADDR",
-        "TEST_AD_RES_KDC_ADDR",
-        "TEST_AD_ADMIN_ADDR",
-        "TEST_AD_RES_ADMIN_ADDR",
-    ]
-    .into_iter()
-    .map(EnvOverride::remove)
-    .collect()
-}
-
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 fn temp_keytab_path(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -775,39 +3567,5 @@ fn temp_keytab_path(label: &str) -> PathBuf {
     ))
 }
 
-struct EnvOverride {
-    key: &'static str,
-    previous: Option<OsString>,
-}
-
-impl EnvOverride {
-    fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
-        let previous = env::var_os(key);
-        // SAFETY: callers hold AD_LOCK while mutating and restoring AD test env vars.
-        unsafe {
-            env::set_var(key, value);
-        }
-        Self { key, previous }
-    }
-
-    fn remove(key: &'static str) -> Self {
-        let previous = env::var_os(key);
-        // SAFETY: callers hold AD_LOCK while mutating and restoring AD test env vars.
-        unsafe {
-            env::remove_var(key);
-        }
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvOverride {
-    fn drop(&mut self) {
-        // SAFETY: callers hold AD_LOCK while dropping guards created in these tests.
-        unsafe {
-            match &self.previous {
-                Some(value) => env::set_var(self.key, value),
-                None => env::remove_var(self.key),
-            }
-        }
-    }
-}
+#[path = "support/env.rs"]
+mod child_env;

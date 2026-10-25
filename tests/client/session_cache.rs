@@ -1,5 +1,14 @@
 use super::*;
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_returns_cached_service_ticket_from_ccache() {
@@ -41,6 +50,13 @@ fn tokio_client_returns_cached_service_ticket_from_ccache() {
     assert_eq!(returned.ticket, service_ticket.ticket);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exposes_and_removes_cached_service_ticket() {
@@ -79,6 +95,13 @@ fn tokio_client_exposes_and_removes_cached_service_ticket() {
     );
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prefers_freshest_cached_service_ticket() {
@@ -125,6 +148,12 @@ fn tokio_client_prefers_freshest_cached_service_ticket() {
     assert_eq!(client.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_clears_service_ticket_cache_without_dropping_tgt() {
@@ -140,6 +169,14 @@ fn tokio_client_clears_service_ticket_cache_without_dropping_tgt() {
     assert_eq!(client.tgt_session().expect("TGT remains cached"), &tgt);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_cached_service_ticket_resolves_empty_realm_and_ignores_expired_entries() {
@@ -177,6 +214,13 @@ fn tokio_client_cached_service_ticket_resolves_empty_realm_and_ignores_expired_e
     assert_eq!(client.cached_service_ticket_count(), 0);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() {
@@ -245,6 +289,11 @@ fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() {
     );
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prunes_expired_nonrenewable_primary_tgt() {
@@ -268,6 +317,12 @@ fn tokio_client_prunes_expired_nonrenewable_primary_tgt() {
     assert!(PrunedSessions::default().is_empty());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_destroy_clears_credentials_sessions_and_cache() {
@@ -293,6 +348,14 @@ fn tokio_client_destroy_clears_credentials_sessions_and_cache() {
     assert!(matches!(error, Error::NoClientCredentials));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_ignores_other_client_credentials() {
@@ -355,6 +418,14 @@ fn tokio_client_from_ccache_ignores_other_client_credentials() {
     assert_eq!(returned.session_key, service_ticket.session_key);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_keeps_freshest_duplicate_service_ticket() {
@@ -402,6 +473,14 @@ fn tokio_client_from_ccache_keeps_freshest_duplicate_service_ticket() {
     assert_eq!(returned.ticket, fresh_service_ticket.ticket);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_prefers_current_tgt_over_future_duplicate() {
@@ -441,6 +520,14 @@ fn tokio_client_from_ccache_prefers_current_tgt_over_future_duplicate() {
     assert_eq!(loaded_tgt.session_key, current_tgt.session_key);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_login_returns_current_cache_only_tgt() {
@@ -469,6 +556,14 @@ fn tokio_client_login_returns_current_cache_only_tgt() {
     assert_eq!(session.session_key, tgt.session_key);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_affirm_login_returns_current_cache_only_tgt() {
@@ -497,6 +592,13 @@ fn tokio_client_affirm_login_returns_current_cache_only_tgt() {
     assert_eq!(session.session_key, tgt.session_key);
 }
 
+#[expect(
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_affirm_login_reuses_valid_tgt_with_attached_credentials() {
@@ -526,6 +628,11 @@ fn tokio_client_affirm_login_reuses_valid_tgt_with_attached_credentials() {
     assert_eq!(session.session_key.value, decode_hex(SESSION_KEY));
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exposes_assume_preauthentication_setting() {
@@ -540,6 +647,11 @@ fn tokio_client_exposes_assume_preauthentication_setting() {
     assert!(client.assume_preauthentication());
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exposes_fast_negotiation_setting() {
@@ -554,6 +666,11 @@ fn tokio_client_exposes_fast_negotiation_setting() {
     assert!(!client.fast_negotiation());
 }
 
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_reports_tgt_refresh_due_window() {
@@ -578,6 +695,12 @@ fn tokio_client_reports_tgt_refresh_due_window() {
     assert!(expired.tgt_refresh_due());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_refresh_tgt_if_needed_reuses_fresh_cache_only_tgt() {
@@ -592,6 +715,13 @@ fn tokio_client_refresh_tgt_if_needed_reuses_fresh_cache_only_tgt() {
     assert_eq!(refreshed.ticket, tgt.ticket);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::missing_panics_doc,
+    clippy::std_instead_of_alloc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_auto_renewal_handle_aborts() {
@@ -609,6 +739,12 @@ fn tokio_client_auto_renewal_handle_aborts() {
     });
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_validates_configuration() {
@@ -671,6 +807,72 @@ fn tokio_client_validates_configuration() {
     ));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_diagnostics_reports_keytab_and_kdc_state() {
@@ -712,6 +914,14 @@ fn tokio_client_diagnostics_reports_keytab_and_kdc_state() {
     assert!(json.contains(r#""TCPKDCs": ["#));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_login_rejects_expired_cache_only_tgt() {
@@ -738,6 +948,14 @@ fn tokio_client_login_rejects_expired_cache_only_tgt() {
     assert!(matches!(error, Error::NoClientCredentials));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_prefers_current_service_ticket_over_future_duplicate() {
@@ -787,6 +1005,14 @@ fn tokio_client_from_ccache_prefers_current_service_ticket_over_future_duplicate
     assert_eq!(returned.ticket, current_service_ticket.ticket);
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_rejects_expired_tgt_without_live_credentials() {
@@ -813,6 +1039,14 @@ fn tokio_client_from_ccache_rejects_expired_tgt_without_live_credentials() {
     assert!(matches!(error, Error::NoClientCredentials));
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_from_ccache_rejects_expired_service_ticket() {
@@ -851,6 +1085,14 @@ fn tokio_client_from_ccache_rejects_expired_service_ticket() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_expired_renewable_cached_service_ticket() {
@@ -921,6 +1163,15 @@ fn tokio_client_renews_expired_renewable_cached_service_ticket() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_ccache_loaded_renewable_service_ticket() {
@@ -999,6 +1250,14 @@ fn tokio_client_renews_ccache_loaded_renewable_service_ticket() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_cached_referral_tgt_before_reusing_it() {
@@ -1103,6 +1362,13 @@ fn tokio_client_renews_cached_referral_tgt_before_reusing_it() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_renews_tgt_session_for_realm() {
@@ -1174,6 +1440,17 @@ fn tokio_client_renews_tgt_session_for_realm() {
     });
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::redundant_clone,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_exports_and_saves_ccache() {
@@ -1209,6 +1486,16 @@ fn tokio_client_exports_and_saves_ccache() {
     assert_eq!(loaded_by_name, cache);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_loads_from_ccache_name() {
@@ -1229,6 +1516,76 @@ fn tokio_client_loads_from_ccache_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
@@ -1246,6 +1603,76 @@ fn negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
     rskrb5::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        unused_results,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn blocking_negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
@@ -1262,6 +1689,71 @@ fn blocking_negotiate_client_builds_authorization_header_for_host_from_ccache_na
     rskrb5::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "spnego"))]
 #[test]
 fn negotiate_client_preserves_unsupported_cache_type_error() {
@@ -1275,27 +1767,72 @@ fn negotiate_client_preserves_unsupported_cache_type_error() {
     ));
 }
 
+/// Child-process test of loading a client ccache from `KRB5CCNAME`.
+#[cfg(test)]
 #[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_loads_from_ccache_env() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-    client.cache_service_ticket(service_ticket);
-    let cache = client.to_ccache().expect("client exports ccache");
-    let path = temp_client_ccache_file("load-env");
-    let name = format!("FILE:{}", path.display());
-    let _env = common::EnvVarGuard::set_krb5ccname(&name);
-    cache.save_name(&name).expect("ccache saves by name");
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod ccache_env_load {
+    use super::*;
 
-    let loaded = TokioClient::from_ccache_env(Config::new(), KdcProtocol::Tcp)
-        .expect("client loads ccache from env");
-    let _ = std::fs::remove_file(&path);
+    #[expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that the client loads its ccache from `KRB5CCNAME`.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_loads_from_ccache_env() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::ccache_env_load::tokio_client_loads_from_ccache_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_client_ccache_file("load-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let tgt = sample_tgt_session();
+        let service_ticket = sample_service_ticket_session(&tgt);
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        client.cache_service_ticket(service_ticket);
+        let cache = client
+            .to_ccache()
+            .map_err(|cause| format!("client exports ccache: {cause}"))?;
+        let (name, path) = file_name_from_parent("KRB5CCNAME");
+        cache
+            .save_name(&name)
+            .map_err(|cause| format!("ccache saves by name: {cause}"))?;
 
-    assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
-    assert_eq!(loaded.cached_service_ticket_count(), 1);
+        let loaded = TokioClient::from_ccache_env(Config::new(), KdcProtocol::Tcp)
+            .map_err(|cause| format!("client loads ccache from env: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
+        assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
+    }
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_saves_and_loads_dir_collection_ccache_name() {
@@ -1321,6 +1858,17 @@ fn tokio_client_saves_and_loads_dir_collection_ccache_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::create_dir,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_loads_from_config_default_ccache_name() {
@@ -1353,77 +1901,149 @@ fn tokio_client_loads_from_config_default_ccache_name() {
     assert_eq!(loaded.cached_service_ticket_count(), 1);
 }
 
+/// Child-process test of the configured default ccache without `KRB5CCNAME`.
+#[cfg(test)]
 #[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_uses_config_default_ccache_when_env_is_absent() {
-    let _env = common::EnvVarGuard::remove_krb5ccname();
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod config_default_ccache_fallback {
+    use super::*;
 
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let directory = temp_client_ccache_dir("default-ccache-env-fallback");
-    std::fs::create_dir(&directory).expect("temp DIR collection is created");
-    let name = format!("DIR:{}", directory.display());
-    let mut client = TokioClient::from_tgt_session(
-        config_with_default_ccache_name(name.clone()),
-        KdcProtocol::Tcp,
-        tgt.clone(),
-    );
-    client.cache_service_ticket(service_ticket);
-    client
-        .save_default_ccache()
-        .expect("client saves default ccache");
+    #[expect(
+        clippy::absolute_paths,
+        clippy::create_dir,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins the configured default ccache when `KRB5CCNAME` is unset.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_uses_config_default_ccache_when_env_is_absent() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::config_default_ccache_fallback::tokio_client_uses_config_default_ccache_when_env_is_absent";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
+            return Ok(());
+        }
+        let tgt = sample_tgt_session();
+        let service_ticket = sample_service_ticket_session(&tgt);
+        let directory = temp_client_ccache_dir("default-ccache-env-fallback");
+        std::fs::create_dir(&directory)
+            .map_err(|cause| format!("temp DIR collection is created: {cause}"))?;
+        let name = format!("DIR:{}", directory.display());
+        let mut client = TokioClient::from_tgt_session(
+            config_with_default_ccache_name(name.clone()),
+            KdcProtocol::Tcp,
+            tgt.clone(),
+        );
+        client.cache_service_ticket(service_ticket);
+        client
+            .save_default_ccache()
+            .map_err(|cause| format!("client saves default ccache: {cause}"))?;
 
-    let loaded =
-        TokioClient::from_default_ccache(config_with_default_ccache_name(name), KdcProtocol::Tcp)
-            .expect("client loads default ccache");
-    loaded
-        .update_default_ccache()
-        .expect("client updates default ccache");
+        let loaded = TokioClient::from_default_ccache(
+            config_with_default_ccache_name(name),
+            KdcProtocol::Tcp,
+        )
+        .map_err(|cause| format!("client loads default ccache: {cause}"))?;
+        loaded
+            .update_default_ccache()
+            .map_err(|cause| format!("client updates default ccache: {cause}"))?;
 
-    let _ = std::fs::remove_file(directory.join("tkt"));
-    let _ = std::fs::remove_file(directory.join("primary"));
-    let _ = std::fs::remove_dir(&directory);
+        let _ = std::fs::remove_file(directory.join("tkt"));
+        let _ = std::fs::remove_file(directory.join("primary"));
+        let _ = std::fs::remove_dir(&directory);
 
-    assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
-    assert_eq!(loaded.cached_service_ticket_count(), 1);
+        assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
+        assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
+    }
 }
 
+/// Child-process test of `KRB5CCNAME` precedence over the configured ccache name.
+#[cfg(test)]
 #[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_prefers_env_default_ccache_over_config_name() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let path = temp_client_ccache_file("default-ccache-env-precedence");
-    let env_name = format!("FILE:{}", path.display());
-    let _env = common::EnvVarGuard::set_krb5ccname(&env_name);
-    let config_default = "MEMORY:config-default".to_owned();
-    let mut client = TokioClient::from_tgt_session(
-        config_with_default_ccache_name(config_default.clone()),
-        KdcProtocol::Tcp,
-        tgt.clone(),
-    );
-    client.cache_service_ticket(service_ticket);
-    client
-        .save_default_ccache()
-        .expect("client saves default ccache from env");
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod env_default_ccache_precedence {
+    use super::*;
 
-    let loaded = TokioClient::from_default_ccache(
-        config_with_default_ccache_name(config_default),
-        KdcProtocol::Tcp,
-    )
-    .expect("client loads default ccache from env");
-    loaded
-        .update_default_ccache()
-        .expect("client updates default ccache from env");
-    let _ = std::fs::remove_file(&path);
+    #[expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )]
+    /// Pins that `KRB5CCNAME` overrides the configured default ccache name.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_prefers_env_default_ccache_over_config_name() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::env_default_ccache_precedence::tokio_client_prefers_env_default_ccache_over_config_name";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_client_ccache_file("default-ccache-env-precedence");
+            let env_name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(env_name.as_ref()))]);
+            return Ok(());
+        }
+        let tgt = sample_tgt_session();
+        let service_ticket = sample_service_ticket_session(&tgt);
+        let (_, path) = file_name_from_parent("KRB5CCNAME");
+        let config_default = "MEMORY:config-default".to_owned();
+        let mut client = TokioClient::from_tgt_session(
+            config_with_default_ccache_name(config_default.clone()),
+            KdcProtocol::Tcp,
+            tgt.clone(),
+        );
+        client.cache_service_ticket(service_ticket);
+        client
+            .save_default_ccache()
+            .map_err(|cause| format!("client saves default ccache from env: {cause}"))?;
 
-    assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
-    assert_eq!(loaded.cached_service_ticket_count(), 1);
+        let loaded = TokioClient::from_default_ccache(
+            config_with_default_ccache_name(config_default),
+            KdcProtocol::Tcp,
+        )
+        .map_err(|cause| format!("client loads default ccache from env: {cause}"))?;
+        loaded
+            .update_default_ccache()
+            .map_err(|cause| format!("client updates default ccache from env: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
+        assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
+    }
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
+/// Pins `NoDefaultCCacheName` when neither `KRB5CCNAME` nor the config names a ccache.
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_rejects_missing_config_default_ccache_name() {
+    const TEST_PATH: &str =
+        "session_cache::tokio_client_rejects_missing_config_default_ccache_name";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
+        return;
+    }
     let error = TokioClient::from_default_ccache_name(Config::new(), KdcProtocol::Tcp)
         .expect_err("missing default ccache name is rejected");
 
@@ -1441,8 +2061,6 @@ fn tokio_client_rejects_missing_config_default_ccache_name() {
         .expect_err("missing default ccache name is rejected");
     assert!(matches!(error, Error::NoDefaultCCacheName));
 
-    let _env = common::EnvVarGuard::remove_krb5ccname();
-
     let error = TokioClient::from_default_ccache(Config::new(), KdcProtocol::Tcp)
         .expect_err("missing default ccache name is rejected");
     assert!(matches!(error, Error::NoDefaultCCacheName));
@@ -1458,6 +2076,76 @@ fn tokio_client_rejects_missing_config_default_ccache_name() {
     assert!(matches!(error, Error::NoDefaultCCacheName));
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::expect_used,
+        clippy::let_underscore_must_use,
+        clippy::let_underscore_untyped,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        let_underscore_drop,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_loads_client_keytab_from_config_name() {
@@ -1479,104 +2167,475 @@ fn tokio_client_loads_client_keytab_from_config_name() {
     assert_eq!(diagnostics.keytab_enctypes, [18]);
 }
 
+/// Child-process test of loading a keytab from `KRB5_KTNAME`.
+#[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
-#[test]
-fn tokio_client_loads_keytab_from_env() {
-    let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-keytab-env");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_ktname(&name);
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod keytab_env_load {
+    use super::*;
 
-    let client = TokioClient::with_keytab_from_env(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-    )
-    .expect("client loads keytab from env");
-    let _ = std::fs::remove_file(&path);
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_panics_doc,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(all(feature = "tokio", feature = "serde"))]
+    /// Pins that the client loads its keytab from `KRB5_KTNAME`.
+    #[test]
+    fn tokio_client_loads_keytab_from_env() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::keytab_env_load::tokio_client_loads_keytab_from_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_client_keytab_file("load-keytab-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let keytab = keytab_with_reply_key(1);
+        let (name, path) = file_name_from_parent("KRB5_KTNAME");
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
-    let diagnostics = runtime().block_on(client.diagnostics());
-    assert_eq!(diagnostics.credential_source, "keytab");
-    assert_eq!(diagnostics.keytab_enctypes, [18]);
+        let client = TokioClient::with_keytab_from_env(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+        )
+        .map_err(|cause| format!("client loads keytab from env: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
+
+        let diagnostics = runtime().block_on(client.diagnostics());
+        assert_eq!(diagnostics.credential_source, "keytab");
+        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
+    }
 }
 
+/// Child-process test of loading a client keytab from `KRB5_CLIENT_KTNAME`.
+#[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
-#[test]
-fn tokio_client_loads_client_keytab_from_env() {
-    let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-client-keytab-env");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_client_ktname(&name);
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod client_keytab_env_load {
+    use super::*;
 
-    let client = TokioClient::with_client_keytab_from_env(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-    )
-    .expect("client loads client keytab from env");
-    let _ = std::fs::remove_file(&path);
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_panics_doc,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(all(feature = "tokio", feature = "serde"))]
+    /// Pins that the client loads its client keytab from `KRB5_CLIENT_KTNAME`.
+    #[test]
+    fn tokio_client_loads_client_keytab_from_env() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::client_keytab_env_load::tokio_client_loads_client_keytab_from_env";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_client_keytab_file("load-client-keytab-env");
+            let name = format!("FILE:{}", path.display());
+            env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", Some(name.as_ref()))]);
+            return Ok(());
+        }
+        let keytab = keytab_with_reply_key(1);
+        let (name, path) = file_name_from_parent("KRB5_CLIENT_KTNAME");
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
-    let diagnostics = runtime().block_on(client.diagnostics());
-    assert_eq!(diagnostics.credential_source, "keytab");
-    assert_eq!(diagnostics.keytab_enctypes, [18]);
+        let client = TokioClient::with_client_keytab_from_env(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+        )
+        .map_err(|cause| format!("client loads client keytab from env: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
+
+        let diagnostics = runtime().block_on(client.diagnostics());
+        assert_eq!(diagnostics.credential_source, "keytab");
+        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
+    }
 }
 
+/// Child-process test of the configured client keytab without `KRB5_CLIENT_KTNAME`.
+#[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
-#[test]
-fn tokio_client_loads_default_client_keytab_when_env_is_absent() {
-    let _env = common::EnvVarGuard::remove_krb5_client_ktname();
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod default_client_keytab_fallback {
+    use super::*;
 
-    let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-default-client-keytab");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_panics_doc,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(all(feature = "tokio", feature = "serde"))]
+    /// Pins the configured default client keytab when `KRB5_CLIENT_KTNAME` is unset.
+    #[test]
+    fn tokio_client_loads_default_client_keytab_when_env_is_absent() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::default_client_keytab_fallback::tokio_client_loads_default_client_keytab_when_env_is_absent";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
+            return Ok(());
+        }
+        let keytab = keytab_with_reply_key(1);
+        let path = temp_client_keytab_file("load-default-client-keytab");
+        let name = format!("FILE:{}", path.display());
+        keytab
+            .save_name(&name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
-    let client = TokioClient::with_client_keytab_from_default(
-        config_with_client_keytab_name(name),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-    )
-    .expect("client loads default client keytab");
-    let _ = std::fs::remove_file(&path);
+        let client = TokioClient::with_client_keytab_from_default(
+            config_with_client_keytab_name(name),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+        )
+        .map_err(|cause| format!("client loads default client keytab: {cause}"))?;
+        let _ = std::fs::remove_file(&path);
 
-    let diagnostics = runtime().block_on(client.diagnostics());
-    assert_eq!(diagnostics.credential_source, "keytab");
-    assert_eq!(diagnostics.keytab_enctypes, [18]);
+        let diagnostics = runtime().block_on(client.diagnostics());
+        assert_eq!(diagnostics.credential_source, "keytab");
+        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
+    }
 }
 
+/// Child-process test of `KRB5_CLIENT_KTNAME` precedence over the configured name.
+#[cfg(test)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
-#[test]
-fn tokio_client_prefers_env_client_keytab_over_config_name() {
-    let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-env-client-keytab");
-    let env_name = format!("FILE:{}", path.display());
-    keytab.save_name(&env_name).expect("keytab saves by name");
-    let _env = common::EnvVarGuard::set_krb5_client_ktname(&env_name);
-    let missing_config_name = format!(
-        "FILE:{}",
-        temp_client_keytab_file("missing-config-client-keytab").display()
-    );
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod env_client_keytab_precedence {
+    use super::*;
 
-    let client = TokioClient::with_client_keytab_from_default(
-        config_with_client_keytab_name(missing_config_name),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-    )
-    .expect("client loads env client keytab before config default");
-    let _ = std::fs::remove_file(&path);
+    #[cfg_attr(
+        any(
+            all(
+                feature = "default",
+                feature = "evaluation",
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                feature = "evaluation",
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                feature = "tower",
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                feature = "http",
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            ),
+            all(
+                feature = "default",
+                not(feature = "evaluation"),
+                not(feature = "http"),
+                feature = "messages",
+                feature = "serde",
+                feature = "spnego",
+                feature = "tokio",
+                not(feature = "tower"),
+                test
+            )
+        ),
+        expect(
+            clippy::absolute_paths,
+            clippy::default_numeric_fallback,
+            clippy::let_underscore_must_use,
+            clippy::let_underscore_untyped,
+            clippy::missing_panics_doc,
+            let_underscore_drop,
+            reason = "lint-migration: upstream baseline at ee9cb04"
+        )
+    )]
+    #[cfg(all(feature = "tokio", feature = "serde"))]
+    /// Pins that `KRB5_CLIENT_KTNAME` overrides the configured client keytab name.
+    #[test]
+    fn tokio_client_prefers_env_client_keytab_over_config_name() -> Result<(), TestError> {
+        const TEST_PATH: &str = "session_cache::env_client_keytab_precedence::tokio_client_prefers_env_client_keytab_over_config_name";
+        if !env::in_child(TEST_PATH) {
+            let path = temp_client_keytab_file("load-env-client-keytab");
+            let env_name = format!("FILE:{}", path.display());
+            env::run_in_child(
+                TEST_PATH,
+                &[("KRB5_CLIENT_KTNAME", Some(env_name.as_ref()))],
+            );
+            return Ok(());
+        }
+        let keytab = keytab_with_reply_key(1);
+        let (env_name, path) = file_name_from_parent("KRB5_CLIENT_KTNAME");
+        keytab
+            .save_name(&env_name)
+            .map_err(|cause| format!("keytab saves by name: {cause}"))?;
+        let missing_config_name = format!(
+            "FILE:{}",
+            temp_client_keytab_file("missing-config-client-keytab").display()
+        );
 
-    let diagnostics = runtime().block_on(client.diagnostics());
-    assert_eq!(diagnostics.credential_source, "keytab");
-    assert_eq!(diagnostics.keytab_enctypes, [18]);
+        let client = TokioClient::with_client_keytab_from_default(
+            config_with_client_keytab_name(missing_config_name),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+        )
+        .map_err(|cause| {
+            format!("client loads env client keytab before config default: {cause}")
+        })?;
+        let _ = std::fs::remove_file(&path);
+
+        let diagnostics = runtime().block_on(client.diagnostics());
+        assert_eq!(diagnostics.credential_source, "keytab");
+        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        Ok(())
+    }
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
+/// Pins the error for a client keytab named by neither the environment nor the config.
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_reports_missing_client_keytab_env() {
-    let _env = common::EnvVarGuard::remove_krb5_client_ktname();
-
+    const TEST_PATH: &str = "session_cache::tokio_client_reports_missing_client_keytab_env";
+    if !env::in_child(TEST_PATH) {
+        env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
+        return;
+    }
     let error = TokioClient::with_client_keytab_from_env(
         Config::new(),
         KdcProtocol::Tcp,
@@ -1587,6 +2646,12 @@ fn tokio_client_reports_missing_client_keytab_env() {
     assert!(matches!(error, Error::DefaultClientKeytabName(_)));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_tracks_multiple_tgt_sessions() {
@@ -1648,6 +2713,12 @@ fn tokio_client_tracks_multiple_tgt_sessions() {
     );
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_rejects_non_tgt_session_cache_insert() {
@@ -1665,6 +2736,13 @@ fn tokio_client_rejects_non_tgt_session_cache_insert() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::redundant_clone,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_prefers_freshest_cached_tgt_session() {
@@ -1748,6 +2826,72 @@ fn tokio_client_prefers_freshest_cached_tgt_session() {
     );
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::redundant_clone,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[test]
 fn tokio_client_json_snapshots_match_gokrb5_shapes() {
@@ -1787,6 +2931,17 @@ fn tokio_client_json_snapshots_match_gokrb5_shapes() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    let_underscore_drop,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_updates_ccache_file_without_duplicate_tickets() {
@@ -1878,4 +3033,660 @@ fn tokio_client_updates_ccache_file_without_duplicate_tickets() {
             .value,
         service_ticket.session_key.value
     );
+}
+
+/// Fork-authored session-cache tests: renewal pacing, expired-TGT fallback and realm case folding.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use alloc::sync::Arc;
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    use std::{sync::mpsc, thread};
+
+    use rasn::{der, types::Integer};
+    use rskrb5::client::AsRepSession;
+    use tokio::{
+        runtime::Builder as RuntimeBuilder,
+        sync::Mutex,
+        task::{JoinHandle, yield_now},
+        time::sleep,
+    };
+
+    use super::*;
+
+    /// A counting KDC: its serving task, then the AS-REQ and TGS-REQ counts.
+    type CountingKdc = (
+        JoinHandle<Result<(), TestError>>,
+        Arc<AtomicUsize>,
+        Arc<AtomicUsize>,
+    );
+
+    /// Pins that cached service tickets are found and replaced regardless of host case.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn cached_service_ticket_identity_is_case_folded() -> Result<(), TestError> {
+        let tgt = sample_tgt_session();
+        let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
+        let session_for = |host: &str| -> Result<_, TestError> {
+            let mut ticket = sample_service_ticket_session(&tgt);
+            ticket.service = Principal::host_based_service_in_realm("HTTP", host, "CERN.CH")?;
+            ticket.start_time = now
+                .checked_sub(Duration::from_mins(1))
+                .ok_or("start time")?;
+            ticket.end_time = now.checked_add(Duration::from_hours(1)).ok_or("end time")?;
+            Ok(ticket)
+        };
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        client.cache_service_ticket(session_for("auth.cern.ch")?);
+
+        assert!(
+            client
+                .cached_service_ticket(Principal::host_based_service_in_realm(
+                    "HTTP",
+                    "AUTH.CERN.CH",
+                    "CERN.CH"
+                )?)
+                .is_some()
+        );
+        client.cache_service_ticket(session_for("Auth.Cern.CH")?);
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        Ok(())
+    }
+
+    /// Pins that auto-renewal paces a due, non-renewable TGT on a cache-only client.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_auto_renewal_paces_cache_only_nonrenewable_tgt() -> Result<(), TestError> {
+        let (done, finished) = mpsc::channel();
+        drop(thread::spawn(move || -> Result<(), TestError> {
+            let runtime = RuntimeBuilder::new_current_thread()
+                .enable_all()
+                .start_paused(true)
+                .build()?;
+            runtime.block_on(async move {
+                // Due (55 min old, 5 min left) but not renewable, and cache-only:
+                // the refresh is a successful no-op that must be paced.
+                let mut tgt = current_tgt_session(55, 5);
+                tgt.renew_till = None;
+                let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
+                    Config::new(),
+                    KdcProtocol::Tcp,
+                    tgt,
+                )));
+                let renewal =
+                    TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(50));
+
+                // With auto-advanced paused time, a paced loop lets this sleep
+                // complete; a spinning loop keeps the runtime busy instead.
+                sleep(Duration::from_mins(10)).await;
+                renewal.abort();
+                done.send(())
+            })?;
+            Ok(())
+        }));
+
+        finished
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|error| format!("the auto-renewal loop paces instead of spinning: {error}"))?;
+        Ok(())
+    }
+
+    /// Pins that the refresh band follows the current ticket life, not `auth_time`.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_refresh_due_uses_current_ticket_life() -> Result<(), TestError> {
+        let now = SystemTime::now();
+        let mut renewed = current_tgt_session(60 * 60, 10 * 60);
+        renewed.start_time = now
+            .checked_sub(Duration::from_mins(1))
+            .ok_or("recent start time")?;
+
+        let renewed_client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, renewed.clone());
+        assert!(
+            !renewed_client.tgt_refresh_due(),
+            "a ticket renewed 60 s ago with 10 h left is not due from a 60 h old auth_time"
+        );
+
+        let mut near_end = renewed;
+        near_end.end_time = now
+            .checked_add(Duration::from_secs(10))
+            .ok_or("near end time")?;
+        near_end.key_expiration = Some(near_end.end_time);
+        let near_end_client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, near_end);
+        assert!(
+            near_end_client.tgt_refresh_due(),
+            "the current life, not auth_time, drives the refresh band"
+        );
+        Ok(())
+    }
+
+    /// Counting KDC that refuses every TGS-REQ with `KDC_ERR_TKT_EXPIRED`.
+    #[cfg(feature = "tokio")]
+    fn spawn_counting_kdc(
+        listener: TcpListener,
+        client_principal: Principal,
+        password: Vec<u8>,
+    ) -> CountingKdc {
+        spawn_counting_kdc_with_tgs_reply(listener, client_principal, password, |_, _, _| {
+            krb_error_bytes(32)
+        })
+    }
+
+    /// Counting KDC that answers each TGS-REQ through `tgs_reply`, which receives
+    /// the decoded request, its DER and the number of AS-REQs served before it.
+    #[cfg(feature = "tokio")]
+    fn spawn_counting_kdc_with_tgs_reply<F>(
+        listener: TcpListener,
+        client_principal: Principal,
+        password: Vec<u8>,
+        tgs_reply: F,
+    ) -> CountingKdc
+    where
+        F: Fn(rasn_kerberos::TgsReq, &[u8], usize) -> Result<Vec<u8>, TestError> + Send + 'static,
+    {
+        let as_requests = Arc::new(AtomicUsize::new(0));
+        let tgs_requests = Arc::new(AtomicUsize::new(0));
+        let as_count = Arc::clone(&as_requests);
+        let tgs_count = Arc::clone(&tgs_requests);
+        let handle = tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    return Ok::<(), TestError>(());
+                };
+                let mut header = [0_u8; 4];
+                if socket.read_exact(&mut header).await.is_err() {
+                    continue;
+                }
+                let mut body = vec![0_u8; usize::try_from(u32::from_be_bytes(header))?];
+                if socket.read_exact(&mut body).await.is_err() {
+                    continue;
+                }
+                let reply = match body.first().copied() {
+                    // AS-REQ and TGS-REQ application tags.
+                    Some(0x6a) => {
+                        let _: usize = as_count.fetch_add(1, Ordering::SeqCst);
+                        let decoded: rasn_kerberos::AsReq = der::decode(&body)?;
+                        let built = built_request_from_der(decoded, &body);
+                        let reply_key = derive_password_reply_key(
+                            &client_principal,
+                            &password,
+                            &password_key_info(),
+                        )?;
+                        synthetic_as_rep_with_reply_key(
+                            &built,
+                            built.nonce,
+                            built.service.clone(),
+                            &reply_key,
+                        )
+                    }
+                    Some(0x6c) => {
+                        let _: usize = tgs_count.fetch_add(1, Ordering::SeqCst);
+                        let decoded: rasn_kerberos::TgsReq = der::decode(&body)?;
+                        tgs_reply(decoded, &body, as_count.load(Ordering::SeqCst))?
+                    }
+                    _ => continue,
+                };
+                let mut response = Vec::with_capacity(reply.len().saturating_add(4));
+                response.extend_from_slice(&u32::try_from(reply.len())?.to_be_bytes());
+                response.extend_from_slice(&reply);
+                // A client that hung up gets no reply; keep serving the next one.
+                socket.write_all(&response).await.unwrap_or_default();
+            }
+        });
+        (handle, as_requests, tgs_requests)
+    }
+
+    /// DER of a KRB-ERROR from the test realm's TGS with `error_code`.
+    #[cfg(feature = "tokio")]
+    fn krb_error_bytes(error_code: i32) -> Result<Vec<u8>, TestError> {
+        let error = rasn_kerberos::KrbError {
+            pvno: Integer::from(5_i32),
+            msg_type: Integer::from(30_i32),
+            ctime: None,
+            cusec: None,
+            stime: kerberos_time(1_893_553_440),
+            susec: Integer::from(0_i32),
+            error_code,
+            crealm: Some(realm("TEST.GOKRB5")),
+            cname: Some(rasn_principal(&Principal::user("TEST.GOKRB5", "testuser1"))),
+            realm: realm("TEST.GOKRB5"),
+            sname: rasn_principal(&Principal::tgt_service("TEST.GOKRB5")),
+            e_text: None,
+            e_data: None,
+        };
+        Ok(der::encode(&error)?)
+    }
+
+    /// A TGT that expired a minute ago but stays renewable for another hour.
+    #[cfg(feature = "tokio")]
+    fn expired_renewable_tgt() -> Result<AsRepSession, TestError> {
+        let now = SystemTime::now();
+        let mut tgt = current_tgt_session(120, 0);
+        tgt.renew_till = Some(
+            now.checked_add(Duration::from_hours(1))
+                .ok_or("renew till")?,
+        );
+        Ok(tgt)
+    }
+
+    /// Pins that `affirm_login` with an expired renewable TGT and a password uses AS only.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_affirm_login_falls_back_to_as_for_expired_renewable_tgt()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
+            let (kdc, as_requests, tgs_requests) = spawn_counting_kdc(
+                listener,
+                client_principal.clone(),
+                TESTUSER_PASSWORD.to_vec(),
+            );
+
+            let mut client = TokioClient::from_tgt_session(
+                config_with_kdc_server(addr.to_string()),
+                KdcProtocol::Tcp,
+                expired_renewable_tgt()?,
+            )
+            .with_password_credential(TESTUSER_PASSWORD);
+
+            let _: &AsRepSession = client.affirm_login().await?;
+            assert!(as_requests.load(Ordering::SeqCst) >= 1);
+            assert_eq!(
+                tgs_requests.load(Ordering::SeqCst),
+                0,
+                "an expired TGT with a credential goes straight to the AS exchange"
+            );
+            kdc.abort();
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that `refresh_tgt_if_needed` with an expired renewable TGT skips the renewal.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_refresh_tgt_if_needed_falls_back_to_as_for_expired_renewable_tgt()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
+            let (kdc, as_requests, tgs_requests) = spawn_counting_kdc(
+                listener,
+                client_principal.clone(),
+                TESTUSER_PASSWORD.to_vec(),
+            );
+
+            let mut client = TokioClient::from_tgt_session(
+                config_with_kdc_server(addr.to_string()),
+                KdcProtocol::Tcp,
+                expired_renewable_tgt()?,
+            )
+            .with_password_credential(TESTUSER_PASSWORD);
+
+            let _: &AsRepSession = client.refresh_tgt_if_needed().await?;
+            assert!(as_requests.load(Ordering::SeqCst) >= 1);
+            assert_eq!(
+                tgs_requests.load(Ordering::SeqCst),
+                0,
+                "expired renewable TGTs do not spend a doomed TGS renewal first"
+            );
+            kdc.abort();
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that a cache-only client with an expired renewable TGT keeps the renewal error.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_cache_only_expired_renewable_tgt_keeps_renewal_error() -> Result<(), TestError>
+    {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
+            let (kdc, as_requests, tgs_requests) = spawn_counting_kdc(
+                listener,
+                client_principal.clone(),
+                TESTUSER_PASSWORD.to_vec(),
+            );
+
+            let mut client = TokioClient::from_tgt_session(
+                config_with_kdc_server(addr.to_string()),
+                KdcProtocol::Tcp,
+                expired_renewable_tgt()?,
+            );
+
+            if client.affirm_login().await.is_ok() {
+                return Err("a cache-only client must keep the renewal error".into());
+            }
+            assert_eq!(as_requests.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                tgs_requests.load(Ordering::SeqCst),
+                1,
+                "cache-only clients still attempt the in-grace renewal"
+            );
+            kdc.abort();
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Run `test` on a paused current-thread runtime in its own thread and return
+    /// its report, failing after 10 s of real time so a spinning loop cannot hang.
+    #[cfg(feature = "tokio")]
+    fn run_on_paused_runtime<T, F, Fut>(test: F) -> Result<T, TestError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = T>,
+    {
+        let (done, finished) = mpsc::channel();
+        drop(thread::spawn(move || {
+            let report = RuntimeBuilder::new_current_thread()
+                .enable_all()
+                .start_paused(true)
+                .build()
+                .map(|runtime| runtime.block_on(test()));
+            done.send(report)
+        }));
+        let report = finished
+            .recv_timeout(Duration::from_secs(10))
+            .map_err(|error| {
+                format!("the paused-clock test reports within 10 s of real time: {error}")
+            })?;
+        Ok(report?)
+    }
+
+    /// Whether `request` asks for a renewal (the `renew` KDC option is set).
+    #[cfg(feature = "tokio")]
+    fn is_renewal_request(request: &rasn_kerberos::TgsReq) -> bool {
+        <[u8; 4]>::try_from(request.0.req_body.kdc_options.0.as_raw_slice())
+            .is_ok_and(|options| u32::from_be_bytes(options) & KDC_OPTION_RENEW != 0)
+    }
+
+    /// Seconds from the Unix epoch to `time`.
+    #[cfg(feature = "tokio")]
+    fn unix_seconds(time: SystemTime) -> Result<u64, TestError> {
+        Ok(time.duration_since(UNIX_EPOCH)?.as_secs())
+    }
+
+    /// TGS-REP DER renewing the primary TGT the way RFC 4120 renewal does.
+    ///
+    /// `auth_time` stays 60 h old while `start_time` restarts a 10 h ticket life now.
+    /// The session key is unchanged, so every later renewal decrypts with it too.
+    #[cfg(feature = "tokio")]
+    fn renewed_tgt_reply_keeping_auth_time(
+        request: rasn_kerberos::TgsReq,
+        der: &[u8],
+    ) -> Result<Vec<u8>, TestError> {
+        let built = built_tgs_request_from_der(request, der);
+        let now = unix_seconds(SystemTime::now())?;
+        let session_key = EncryptionKey {
+            etype: 18,
+            value: decode_hex(SESSION_KEY),
+        };
+        let enc_part = rasn_kerberos::EncTgsRepPart(rasn_kerberos::EncKdcRepPart {
+            key: rasn_encryption_key(&session_key),
+            last_req: vec![rasn_kerberos::LastReqValue {
+                r#type: 0,
+                value: kerberos_time(now),
+            }],
+            nonce: built.nonce,
+            key_expiration: None,
+            flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(
+                TICKET_FLAGS,
+            )),
+            auth_time: kerberos_time(now.checked_sub(60 * 60 * 60).ok_or("auth time")?),
+            start_time: Some(kerberos_time(now)),
+            end_time: kerberos_time(now.checked_add(10 * 60 * 60).ok_or("end time")?),
+            renew_till: Some(kerberos_time(
+                now.checked_add(7 * 24 * 60 * 60).ok_or("renew till")?,
+            )),
+            srealm: realm(&built.service.realm),
+            sname: rasn_principal(&built.service),
+            caddr: None,
+            encrypted_pa_data: None,
+        });
+        let encrypted = encrypt_message(
+            &session_key,
+            &der::encode(&enc_part)?,
+            TGS_REP_ENCPART_SESSION_KEY_USAGE,
+            TGS_REP_CONFOUNDER,
+        );
+        let tgs_rep = rasn_kerberos::TgsRep(rasn_kerberos::KdcRep {
+            pvno: Integer::from(5_i32),
+            msg_type: Integer::from(13_i32),
+            padata: None,
+            crealm: realm(&built.client.realm),
+            cname: rasn_principal(&built.client),
+            ticket: rasn_kerberos::Ticket {
+                tkt_vno: Integer::from(5_i32),
+                realm: realm(&built.service.realm),
+                sname: rasn_principal(&built.service),
+                enc_part: rasn_kerberos::EncryptedData {
+                    etype: 18,
+                    kvno: Some(2),
+                    cipher: [0xde, 0xad, 0xbe, 0xef].as_slice().into(),
+                },
+            },
+            enc_part: rasn_kerberos::EncryptedData {
+                etype: session_key.etype,
+                kvno: None,
+                cipher: encrypted.into(),
+            },
+        });
+        Ok(der::encode(&tgs_rep)?)
+    }
+
+    /// After a renewal that keeps an old `auth_time`, auto-renewal measures the
+    /// refresh band from the renewed ticket's own life and sleeps instead of
+    /// renewing again.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_auto_renewal_paces_after_renewal() -> Result<(), TestError> {
+        let (as_requests, renewal_requests) = run_on_paused_runtime(async || {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let (kdc, as_requests, tgs_requests) = spawn_counting_kdc_with_tgs_reply(
+                listener,
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                TESTUSER_PASSWORD.to_vec(),
+                |request, der, _| renewed_tgt_reply_keeping_auth_time(request, der),
+            );
+
+            // Due (55 min old, 5 min left) and renewable; cache-only, so only a
+            // renewal can refresh it.
+            let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
+                config_with_kdc_server(addr.to_string()),
+                KdcProtocol::Tcp,
+                current_tgt_session(55, 5),
+            )));
+            let renewal = TokioClient::spawn_auto_renewal(Arc::clone(&client));
+
+            // Spin without timers until the first renewal is installed: an idle
+            // paused runtime auto-advances the clock while loopback I/O is still
+            // in flight, which would fire the transport timeout.
+            let renewed_life_floor = Duration::from_hours(1);
+            loop {
+                let renewed = tgs_requests.load(Ordering::SeqCst) >= 1
+                    && client.try_lock().is_ok_and(|guard| {
+                        guard.tgt_session().is_some_and(|tgt| {
+                            tgt.end_time
+                                .duration_since(SystemTime::now())
+                                .is_ok_and(|left| left > renewed_life_floor)
+                        })
+                    });
+                if renewed {
+                    break;
+                }
+                yield_now().await;
+            }
+
+            // 600 s of virtual time in 1 s steps; a loop that still treats the
+            // renewed ticket as due renews again on every step.
+            for _ in 0_u16..600 {
+                sleep(Duration::from_secs(1)).await;
+            }
+            renewal.abort();
+            kdc.abort();
+            Ok::<_, TestError>((
+                as_requests.load(Ordering::SeqCst),
+                tgs_requests.load(Ordering::SeqCst),
+            ))
+        })??;
+
+        assert_eq!(as_requests, 0, "a cache-only client never logs in");
+        assert_eq!(
+            renewal_requests, 1,
+            "a renewal with a fresh 10 h life is not due again within 600 s"
+        );
+        Ok(())
+    }
+
+    /// When the KDC refuses to renew a due TGT, auto-renewal with a configured
+    /// password falls back to a fresh AS exchange instead of retrying the renewal.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_auto_renewal_uses_as_when_renewal_refused() -> Result<(), TestError> {
+        let (as_requests, renewal_requests) = run_on_paused_runtime(async || {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let (kdc, as_requests, tgs_requests) = spawn_counting_kdc(
+                listener,
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                TESTUSER_PASSWORD.to_vec(),
+            );
+
+            // The paused clock auto-advances while loopback I/O is in flight, so
+            // keep the transport timeout beyond the 600 s window: the renewal must
+            // fail on the KDC's refusal, not on a virtual timeout.
+            let client = Arc::new(Mutex::new(
+                TokioClient::from_tgt_session(
+                    config_with_kdc_server(addr.to_string()),
+                    KdcProtocol::Tcp,
+                    current_tgt_session(55, 5),
+                )
+                .with_password_credential(TESTUSER_PASSWORD)
+                .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_hours(24))),
+            ));
+            let renewal = TokioClient::spawn_auto_renewal(client);
+
+            for _ in 0_u16..600 {
+                if as_requests.load(Ordering::SeqCst) >= 1 {
+                    break;
+                }
+                sleep(Duration::from_secs(1)).await;
+            }
+            renewal.abort();
+            kdc.abort();
+            Ok::<_, TestError>((
+                as_requests.load(Ordering::SeqCst),
+                tgs_requests.load(Ordering::SeqCst),
+            ))
+        })??;
+
+        assert!(
+            renewal_requests >= 1,
+            "the due TGT is offered for renewal first"
+        );
+        assert!(
+            as_requests >= 1,
+            "a refused renewal falls back to the AS exchange within 600 s"
+        );
+        Ok(())
+    }
+
+    /// `get_service_ticket` with an expired renewable TGT and a password skips the
+    /// renewal a conforming KDC refuses, logs in through AS, then requests the
+    /// service ticket with the fresh TGT.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_get_service_ticket_falls_back_to_as_for_expired_renewable_tgt()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let tgt_session_key = EncryptionKey {
+                etype: 18,
+                value: decode_hex(SESSION_KEY),
+            };
+            let (kdc, as_requests, tgs_requests) = spawn_counting_kdc_with_tgs_reply(
+                listener,
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                TESTUSER_PASSWORD.to_vec(),
+                move |request, der, as_requests_before| {
+                    // KDC_ERR_TKT_EXPIRED for a renewal of the expired TGT, and for
+                    // a service request that did not follow the AS exchange.
+                    if is_renewal_request(&request) || as_requests_before == 0 {
+                        return krb_error_bytes(32);
+                    }
+                    let built = built_tgs_request_from_der(request, der);
+                    Ok(synthetic_tgs_rep(&built, built.nonce, &tgt_session_key))
+                },
+            );
+
+            let mut client = TokioClient::from_tgt_session(
+                config_with_kdc_server(addr.to_string()),
+                KdcProtocol::Tcp,
+                expired_renewable_tgt()?,
+            )
+            .with_password_credential(TESTUSER_PASSWORD);
+
+            let ticket = client
+                .get_service_ticket(sample_service_principal())
+                .await?;
+            assert_eq!(ticket.service, sample_service_principal());
+            assert_eq!(as_requests.load(Ordering::SeqCst), 1);
+            assert_eq!(
+                tgs_requests.load(Ordering::SeqCst),
+                1,
+                "only the service TGS-REQ follows the AS exchange; no doomed renewal"
+            );
+            kdc.abort();
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that service realm resolution folds the DNS case of `domain_realm` hosts.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn service_realm_resolution_folds_dns_case() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ .example.com = PARTNER.REALM
+",
+        )?;
+        let tgt = sample_tgt_session();
+        let mut service_ticket = sample_service_ticket_session(&tgt);
+        let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
+        service_ticket.start_time = now
+            .checked_sub(Duration::from_mins(1))
+            .ok_or("start time")?;
+        service_ticket.end_time = now.checked_add(Duration::from_hours(1)).ok_or("end time")?;
+        service_ticket.service = Principal::new("PARTNER.REALM", 2, ["HTTP", "Host.Example.COM"]);
+
+        let mut client = TokioClient::from_tgt_session(config, KdcProtocol::Tcp, tgt);
+        client.cache_service_ticket(service_ticket.clone());
+
+        let lookup = Principal::new("", 2, ["HTTP", "Host.Example.COM"]);
+        let cached = client
+            .cached_service_ticket(lookup)
+            .ok_or("mixed-case host resolves to the partner realm")?;
+        assert_eq!(cached.service.realm, "PARTNER.REALM");
+        assert_eq!(cached.ticket, service_ticket.ticket);
+        Ok(())
+    }
 }

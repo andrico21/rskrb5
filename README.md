@@ -1,3 +1,8 @@
+> **This is a patched fork.** The published crate is **`rskrb5-patched`** - a
+> temporary fork of upstream `rskrb5`; please prefer
+> [upstream](https://github.com/clelange/rskrb5) unless you need one of the
+> patches listed in [FORK-NOTES.md](FORK-NOTES.md).
+
 # rskrb5
 
 `rskrb5` is a pure-Rust Kerberos v5 client/service library grown from a
@@ -15,7 +20,7 @@ compatibility-sensitive.
 | Keytab, ccache, and config files | File-backed keytab and MIT FILE/WRFILE/DIR ccache parsing, serialization, lookup, environment/default-name loading, and redacted metadata JSON are covered by gokrb5 fixtures. |
 | Crypto and Kerberos messages | AES-SHA1, AES-SHA2, DES3, RC4-HMAC, DER wrappers, KDC/AP/KRB-PRIV/KRB-SAFE/KRB-CRED helpers, and kpasswd frames are covered by unit vectors and fixture round-trips. |
 | High-level client | Tokio password/keytab/ccache login, AS/TGS exchange, referrals, renewal, service-ticket caching, S4U2Self/S4U2Proxy, kpasswd, diagnostics, and ccache write-back are implemented. |
-| Service and HTTP Negotiate | AP-REQ validation, replay detection, AP-REP mutual auth, SPNEGO/GSSAPI tokens, HTTP helpers, 401 retry client wrappers, Tower middleware, and an Axum example are implemented. |
+| Service and HTTP Negotiate | AP-REQ validation, replay detection, AP-REP mutual auth with mutual-required enforcement, SPNEGO/GSSAPI tokens, HTTP helpers, 401 retry client wrappers, Tower middleware, and an Axum example are implemented. |
 | PAC and AD parity | PAC container, validation info, UPN/DNS, credentials, delegation/device/claims data, checksums, and AD-shaped credential summaries are implemented with gated AD tests. |
 | Dependency posture | `rasn-kerberos` and `picky-krb` remain evaluation/data-type candidates; AGPL/LGPL Kerberos crates stay out of default/core features. |
 
@@ -75,7 +80,18 @@ let response = result.into_response();
 ```
 
 The request factory may be called twice: once for the initial request and again
-after a `401 WWW-Authenticate: Negotiate` challenge.
+after a `401 WWW-Authenticate: Negotiate` challenge. When mutual authentication
+is requested through `send_with_negotiate_options` or
+`send_with_blocking_negotiate_options` (`with_ap_option_bits(0x2000_0000)` or
+`CONTEXT_FLAG_MUTUAL`), the wrappers fail closed: unless the final response
+carries an AP-REP that verifies against the initiator context, they return
+`NegotiateHttpError::MutualAuthenticationNotProven`. That covers a final
+response without `WWW-Authenticate`, a final response without a Negotiate
+challenge, a completion without an AP-REP, and a first response that never
+challenged (so no authenticated retry was sent). The error carries the final
+response for diagnostics and the `ClientNegotiateResponse` classification
+(`None` when no retry happened). Without a mutual request the wrappers return
+the final response with its classification in `result.negotiation`.
 
 Blocking CLI-style use:
 
@@ -144,14 +160,10 @@ restoring it. Use `TEST_KPASSWD_ADDR`, `TEST_KPASSWD_PORT`, and
 `TEST_KPASSWD_SADDR` when the password-change service or sender address differs
 from the localhost defaults.
 
-The Active Directory integration tests mirror gokrb5's `TESTAD=1` cases but
-require a maintained two-domain AD lab. Use
-[`docs/ad-integration.md`](docs/ad-integration.md) for the realm, principal,
-SPN, endpoint, and strict `TESTAD_REQUIRED=1` release-evidence contract. The
-operational setup is split into
-[`docs/ad-lab-provisioning.md`](docs/ad-lab-provisioning.md) for the lab and
-[`docs/github-ad-gate-setup.md`](docs/github-ad-gate-setup.md) for the
-Actions runner mode and secrets.
+The Active Directory integration tests mirror gokrb5's `TESTAD=1` cases and
+default to the gokrb5 lab addresses `192.168.88.100:88` and
+`192.168.88.101:88`. Use `TEST_AD_USER_KDC_ADDR` and
+`TEST_AD_RESOURCE_KDC_ADDR` to point them at another AD test environment.
 
 ## Distribution Direction
 

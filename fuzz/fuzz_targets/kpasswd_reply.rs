@@ -5,9 +5,18 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
+use rskrb5::kadmin::{ChangePasswordResult, Reply, Request};
 
 fuzz_target!(|data: &[u8]| {
-    let _ = rskrb5::kadmin::Reply::parse(data);
-    let _ = rskrb5::kadmin::ChangePasswordResult::parse(data);
-    let _ = rskrb5::kadmin::Request::parse(data);
+    // Only returning matters: a rejected input is the `Err` arm, and an
+    // accepted one is dropped unused.
+    if let Ok(reply) = Reply::parse(data) {
+        drop(reply);
+    }
+    if let Ok(result) = ChangePasswordResult::parse(data) {
+        drop(result);
+    }
+    if let Ok(request) = Request::parse(data) {
+        drop(request);
+    }
 });

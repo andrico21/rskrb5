@@ -16,7 +16,7 @@ upstream_tests = ["config/*_test.go"]
 rskrb5_modules = ["src/config.rs"]
 rskrb5_tests = ["tests/config.rs"]
 status = "covered"
-evidence = ["unit tests cover parsing, defaults, realm lookup, enctype mapping, path-list loading, and gokrb5-shaped JSON"]
+evidence = ["unit tests cover parsing, defaults, realm lookup, enctype mapping, path-list loading, and gokrb5-shaped JSON", "unit tests cover the MIT [domain_realm] semantics that diverge from gokrb5: DNS case folding and bare tags applied to subdomains"]
 next = []
 
 [[area]]
@@ -38,7 +38,7 @@ upstream_tests = ["credentials/ccache_test.go", "credentials/ccache_integration_
 rskrb5_modules = ["src/ccache.rs", "src/client.rs"]
 rskrb5_tests = ["tests/ccache.rs", "tests/client.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["unit tests cover FILE/WRFILE/DIR parsing, writing, lookup, cacheconf entries, JSON, and env/default names", "GitHub Actions run 28073249506 passed external kinit and kvno ccache coverage with TESTPRIVILEGED=1 on ubuntu-latest"]
+evidence = ["unit tests cover FILE/WRFILE/DIR parsing, writing, lookup, cacheconf entries, JSON, and env/default names", "unit and property tests cover the record-count bounds checked against the remaining input, including the 32-bit LengthOverflow arms in the CI i686 job", "GitHub Actions run 28073249506 passed external kinit and kvno ccache coverage with TESTPRIVILEGED=1 on ubuntu-latest"]
 next = ["keep privileged kinit/kvno coverage green in Linux CI before release"]
 
 [[area]]
@@ -82,7 +82,7 @@ upstream_tests = ["client/*_test.go", "client/*_integration_test.go"]
 rskrb5_modules = ["src/client.rs", "src/client/options.rs", "src/client/principal.rs", "src/client/transport.rs", "src/client/kpasswd.rs"]
 rskrb5_tests = ["tests/client.rs", "tests/client_principal.rs", "tests/client_transport.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["unit tests cover password/keytab/ccache login, AS/TGS exchange, referrals, renewal, S4U2Self, S4U2Proxy, diagnostics, write-back, and cache behavior", "GitHub Actions run 28073249506 passed 40 Docker MIT client_integration tests on ubuntu-latest, including DNS-SRV, referrals, renewal, cached tickets, ccache, HTTP, and kpasswd"]
+evidence = ["unit tests cover password/keytab/ccache login, AS/TGS exchange, referrals, renewal, S4U2Self, S4U2Proxy, diagnostics, write-back, and cache behavior", "unit tests cover the renewal series: the refresh band from the current ticket life, auto-renewal pacing, and the AS fallback for an expired or refused renewal", "GitHub Actions run 28073249506 passed 40 Docker MIT client_integration tests on ubuntu-latest, including DNS-SRV, referrals, renewal, cached tickets, ccache, HTTP, and kpasswd"]
 next = ["keep full Docker MIT integration green in Linux CI before release"]
 
 [[area]]
@@ -93,7 +93,7 @@ upstream_tests = ["service/*_test.go", "messages/Ticket_test.go"]
 rskrb5_modules = ["src/service.rs", "src/http.rs"]
 rskrb5_tests = ["tests/service.rs", "tests/http.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["unit tests cover AP-REQ validation, replay cache, clock skew, client address checks, AP-REP mutual auth, keytab adapters, and PAC checksum validation", "GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
+evidence = ["unit tests cover AP-REQ validation, replay cache, clock skew, client address checks, AP-REP mutual auth, mutual-required completion enforcement (classifier and send wrappers fail closed), [libdefaults] clockskew on the Config-driven acceptors, keytab adapters, and PAC checksum validation", "GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
 next = ["keep Linux Docker HTTP/SPNEGO coverage green before release"]
 
 [[area]]

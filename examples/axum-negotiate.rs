@@ -1,25 +1,41 @@
-use std::error::Error;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+//! Axum server on `127.0.0.1:3000` whose middleware validates
+//! `Authorization: Negotiate` headers against the service keytab named by
+//! `KRB5_KTNAME` (default `http.keytab`) and answers with the authenticated client principal.
+extern crate alloc;
 
-use axum::Router;
-use axum::body::Body;
-use axum::extract::{Extension, State};
-use axum::http::header::WWW_AUTHENTICATE;
-use axum::http::{HeaderValue, Request};
-use axum::middleware::{self, Next};
-use axum::response::Response;
-use axum::routing::get;
-use rskrb5::http as krb_http;
-use rskrb5::keytab::Keytab;
-use rskrb5::service::{ApRepOptions, ServiceValidator};
-use rskrb5::spnego::AcceptedContext;
+use alloc::sync::Arc;
+use core::error::Error;
+use std::{path::PathBuf, sync::Mutex};
 
+use axum::{
+    Router,
+    body::Body,
+    extract::{Extension, State},
+    http::{HeaderValue, Request, header::WWW_AUTHENTICATE},
+    middleware::{self, Next},
+    response::Response,
+    routing::get,
+};
+use rskrb5::{
+    http as krb_http,
+    keytab::Keytab,
+    service::{ApRepOptions, ServiceValidator},
+    spnego::AcceptedContext,
+};
+
+#[expect(
+    clippy::missing_docs_in_private_items,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[derive(Clone)]
 struct AppState {
     validator: Arc<Mutex<ServiceValidator<'static>>>,
 }
 
+#[expect(
+    clippy::absolute_paths,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let keytab = Box::leak(Box::new(load_keytab()?));
@@ -37,6 +53,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[expect(
+    clippy::missing_docs_in_private_items,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 async fn index(Extension(context): Extension<AcceptedContext>) -> String {
     format!(
         "authenticated as {}@{}\n",
@@ -45,6 +65,13 @@ async fn index(Extension(context): Extension<AcceptedContext>) -> String {
     )
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_docs_in_private_items,
+    clippy::missing_panics_doc,
+    unused_results,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 async fn negotiate(
     State(state): State<AppState>,
     mut request: Request<Body>,
@@ -80,6 +107,14 @@ async fn negotiate(
     response
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::map_unwrap_or,
+    clippy::missing_docs_in_private_items,
+    clippy::missing_errors_doc,
+    clippy::shadow_reuse,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 fn load_keytab() -> Result<Keytab, Box<dyn Error>> {
     let path = std::env::var_os("KRB5_KTNAME")
         .map(PathBuf::from)

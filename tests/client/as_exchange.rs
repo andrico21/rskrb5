@@ -1,5 +1,14 @@
 use super::*;
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgt_as_req_with_expected_fields() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -36,6 +45,14 @@ fn builds_tgt_as_req_with_expected_fields() {
     assert!(body.additional_tickets.is_none());
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -57,6 +74,13 @@ fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn as_req_options_from_libdefaults_sets_canonicalize_flag() {
     let defaults = rskrb5::config::LibDefaults {
@@ -79,6 +103,15 @@ fn as_req_options_from_libdefaults_sets_canonicalize_flag() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::shadow_reuse,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_preauthenticated_as_req_for_explicit_service() {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
@@ -108,6 +141,14 @@ fn builds_preauthenticated_as_req_for_explicit_service() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_and_encrypts_pa_enc_timestamp() {
     let key = reply_key();
@@ -151,6 +192,14 @@ fn builds_and_encrypts_pa_enc_timestamp() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_pa_for_user_padata_with_s4u_checksum() {
     let user = Principal::new("ATHENA.MIT.EDU", 1, ["hftsai", "extra"]);
@@ -185,6 +234,15 @@ fn builds_pa_for_user_padata_with_s4u_checksum() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn processes_as_rep_and_exports_ccache_credential() {
     let request = sample_request();
@@ -220,6 +278,12 @@ fn processes_as_rep_and_exports_ccache_credential() {
     assert!(credential.second_ticket.is_empty());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_validates_pa_req_enc_pa_rep_checksum() {
     let request = sample_request_with_pa_req_enc_pa_rep();
@@ -242,6 +306,12 @@ fn process_as_rep_validates_pa_req_enc_pa_rep_checksum() {
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_rejects_invalid_pa_req_enc_pa_rep_checksum() {
     let request = sample_request_with_pa_req_enc_pa_rep();
@@ -262,6 +332,12 @@ fn process_as_rep_rejects_invalid_pa_req_enc_pa_rep_checksum() {
     assert!(matches!(error, Error::FastNegotiationChecksumMismatch));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_requires_fast_marker_with_pa_req_enc_pa_rep_checksum() {
     let request = sample_request_with_pa_req_enc_pa_rep();
@@ -280,6 +356,12 @@ fn process_as_rep_requires_fast_marker_with_pa_req_enc_pa_rep_checksum() {
     assert!(matches!(error, Error::InvalidFastNegotiationResponse));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_as_rep_surfaces_kdc_error_response() {
     let request = sample_request();
@@ -292,6 +374,12 @@ fn process_as_rep_surfaces_kdc_error_response() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_as_rep_nonce_mismatch() {
     let request = sample_request();
@@ -309,6 +397,12 @@ fn rejects_as_rep_nonce_mismatch() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn rejects_as_rep_ticket_service_mismatch() {
     let request = sample_request();
@@ -330,6 +424,12 @@ fn rejects_as_rep_ticket_service_mismatch() {
     ));
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn exchange_as_req_uses_transport_boundary() {
     let request = sample_request();
@@ -346,4 +446,217 @@ fn exchange_as_req_uses_transport_boundary() {
 
     assert!(transport.called);
     assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+}
+
+/// Fork-authored AS exchange tests: permitted enctypes, PA-DATA constants and nonces.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use core::iter;
+
+    use rasn::der;
+    use rskrb5::{
+        client::{PA_AS_FRESHNESS, PA_FX_COOKIE, random_nonce},
+        config::{Error as ConfigError, LibDefaults},
+    };
+
+    use super::*;
+
+    /// Pins that an explicit `permitted_enctypes` line narrows the AS-REQ etype list.
+    #[test]
+    fn as_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![18_i32, 17_i32, 23_i32],
+            permitted_enctype_ids: vec![18_i32],
+            permitted_enctypes_explicit: true,
+            ..Default::default()
+        };
+        let options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+        let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
+
+        let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
+        assert_eq!(decoded.0.req_body.etype, vec![18_i32]);
+        Ok(())
+    }
+
+    /// Pins that a request list disjoint from the permitted set fails closed.
+    #[test]
+    fn as_req_with_disjoint_permitted_enctypes_fails_closed() -> Result<(), TestError> {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![18_i32],
+            permitted_enctype_ids: vec![17_i32],
+            permitted_enctypes_explicit: true,
+            ..Default::default()
+        };
+        let options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+        assert!(
+            options.etypes.is_empty(),
+            "no requested etype is permitted: {:?}",
+            options.etypes
+        );
+
+        let Err(error) = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+        else {
+            return Err("an empty request list must fail closed".into());
+        };
+        assert!(matches!(error, Error::EmptyEtypes));
+        Ok(())
+    }
+
+    /// Pins that SHA2 request etypes survive when `permitted_enctypes` is implicit.
+    #[test]
+    fn sha2_request_list_survives_the_implicit_permitted_set() {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![19_i32, 20_i32],
+            permitted_enctype_ids: vec![18_i32, 17_i32, 23_i32],
+            ..Default::default()
+        };
+        let options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+
+        assert_eq!(options.etypes, vec![19_i32, 20_i32]);
+    }
+
+    /// Pins that a parsed config with only SHA2 `default_tkt_enctypes` keeps that list.
+    #[test]
+    fn config_with_sha2_tkt_enctypes_and_no_permitted_line_keeps_the_request_list()
+    -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha256-128
+",
+        )?;
+        assert!(!config.libdefaults.permitted_enctypes_explicit);
+
+        let options = AsReqOptions::from_libdefaults(
+            timestamp(1_893_553_447),
+            0x1122_3344,
+            &config.libdefaults,
+        );
+        assert_eq!(options.etypes, vec![19_i32]);
+        Ok(())
+    }
+
+    /// Pins that an explicit SHA2 request list outside an explicit allowlist is rejected.
+    #[test]
+    fn explicit_permitted_enctypes_reject_an_explicit_sha2_request_list() -> Result<(), TestError> {
+        let Err(error) = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes128-cts-hmac-sha256-128
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        ) else {
+            return Err(
+                "an explicit SHA2 request list outside the allowlist must be rejected".into(),
+            );
+        };
+
+        assert!(
+            matches!(
+                &error,
+                ConfigError::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                    if enctype == "aes128-cts-hmac-sha256-128"
+            ),
+            "unexpected error: {error:?}"
+        );
+        Ok(())
+    }
+
+    /// Pins that an AS-REP session key outside the requested etypes is rejected.
+    #[test]
+    fn process_as_rep_rejects_session_key_outside_requested_enctypes() -> Result<(), TestError> {
+        let request = build_tgt_as_req(
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![23_i32]),
+        )?;
+        let reply_key = reply_key();
+        let response = synthetic_as_rep_with_reply_key(
+            &request,
+            request.nonce,
+            request.service.clone(),
+            &reply_key,
+        );
+
+        let Err(error) = process_as_rep(&request, &response, &reply_key) else {
+            return Err("a session key outside the requested list must be rejected".into());
+        };
+        assert!(matches!(error, Error::EnctypeNotRequested(18_i32)));
+        Ok(())
+    }
+
+    /// Pins the IANA registrations of the exported `PA-FX-COOKIE` and `PA-AS-FRESHNESS`.
+    #[test]
+    fn exported_padata_constants_match_their_registrations() {
+        assert_eq!(PA_FX_COOKIE, 133_i32);
+        assert_eq!(PA_AS_FRESHNESS, 150_i32);
+    }
+
+    /// Pins that nonces keep the top bit clear and are not constant.
+    #[test]
+    fn random_nonce_keeps_the_top_bit_clear_and_varies() -> Result<(), TestError> {
+        let draws = iter::repeat_with(random_nonce)
+            .take(8)
+            .collect::<Result<Vec<u32>, _>>()?;
+        assert!(draws.iter().all(|nonce| nonce & 0x8000_0000 == 0));
+        assert!(
+            draws
+                .windows(2)
+                .any(|pair| matches!(pair, [first, second] if first != second))
+        );
+        Ok(())
+    }
+
+    /// Pins that an MIT-spelled `des3-cbc-sha1` request entry is requested as enctype 16.
+    #[test]
+    fn explicit_mit_des3_request_entry_is_requested() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+",
+        )?;
+
+        let options = AsReqOptions::from_libdefaults(
+            timestamp(1_893_553_447),
+            0x1122_3344,
+            &config.libdefaults,
+        );
+        let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
+        let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
+        assert_eq!(decoded.0.req_body.etype, vec![18_i32, 16_i32]);
+        Ok(())
+    }
+
+    /// Pins that an MIT-spelled DES3 request entry outside an explicit allowlist fails parsing.
+    #[test]
+    fn explicit_mit_des3_request_entry_outside_permitted_fails_parsing() -> Result<(), TestError> {
+        let Err(error) = Config::parse(
+            "
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+",
+        ) else {
+            return Err("a DES3 request entry outside the allowlist must be rejected".into());
+        };
+
+        assert!(
+            matches!(
+                &error,
+                ConfigError::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                    if enctype == "des3-cbc-sha1"
+            ),
+            "unexpected error: {error:?}"
+        );
+        Ok(())
+    }
 }

@@ -1,5 +1,15 @@
 use super::*;
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
     let tgt = sample_tgt_session();
@@ -90,6 +100,13 @@ fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
     ));
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() {
     let defaults = rskrb5::config::LibDefaults {
@@ -121,6 +138,14 @@ fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgs_req_for_explicit_kdc_realm() {
     let tgt = sample_tgt_session();
@@ -152,6 +177,15 @@ fn builds_tgs_req_for_explicit_kdc_realm() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_s4u2self_tgs_req_with_pa_for_user() {
     let mut service_tgt = sample_tgt_session();
@@ -208,6 +242,15 @@ fn builds_s4u2self_tgs_req_with_pa_for_user() {
     assert_eq!(pa_for_user.cksum.checksum.as_ref(), expected_checksum);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_s4u2proxy_tgs_req_with_evidence_ticket() {
     let user_tgt = sample_tgt_session();
@@ -257,6 +300,16 @@ fn builds_s4u2proxy_tgs_req_with_evidence_ticket() {
     assert_eq!(padata[0].r#type, PA_TGS_REQ);
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::shadow_unrelated,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_s4u2proxy_tgs_req_with_pac_options() {
     let user_tgt = sample_tgt_session();
@@ -293,6 +346,15 @@ fn builds_s4u2proxy_tgs_req_with_pac_options() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    clippy::unseparated_literal_suffix,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_service_ap_req_with_subkey_and_sequence_number() {
     let tgt = sample_tgt_session();
@@ -368,6 +430,15 @@ fn builds_service_ap_req_with_subkey_and_sequence_number() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_tgt_renewal_req_sets_renew_options() {
     let tgt = sample_tgt_session();
@@ -402,6 +473,15 @@ fn builds_tgt_renewal_req_sets_renew_options() {
     );
 }
 
+#[expect(
+    clippy::absolute_paths,
+    clippy::default_numeric_fallback,
+    clippy::duration_suboptimal_units,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn builds_ticket_renewal_req_sets_service_and_renew_options() {
     let tgt = sample_tgt_session();
@@ -437,6 +517,14 @@ fn builds_ticket_renewal_req_sets_service_and_renew_options() {
     );
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn processes_tgs_rep_and_exports_ccache_credential() {
     let tgt = sample_tgt_session();
@@ -471,6 +559,12 @@ fn processes_tgs_rep_and_exports_ccache_credential() {
     assert!(!credential.ticket.is_empty());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_tgs_rep_surfaces_kdc_error_response() {
     let tgt = sample_tgt_session();
@@ -488,6 +582,15 @@ fn process_tgs_rep_surfaces_kdc_error_response() {
     ));
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::rest_pattern_accessible_field,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn process_tgs_rep_with_referral_accepts_intermediate_tgt() {
     let tgt = sample_tgt_session();
@@ -508,6 +611,12 @@ fn process_tgs_rep_with_referral_accepts_intermediate_tgt() {
     assert!(!session.ticket.is_empty());
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn exchange_tgs_req_uses_transport_boundary() {
     let tgt = sample_tgt_session();
@@ -527,6 +636,13 @@ fn exchange_tgs_req_uses_transport_boundary() {
     assert_eq!(session.service, sample_service_principal());
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn s4u2self_uses_transport_boundary() {
     let mut service_tgt = sample_tgt_session();
@@ -552,6 +668,13 @@ fn s4u2self_uses_transport_boundary() {
     assert_eq!(session.service, service_tgt.client);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn s4u2proxy_uses_transport_boundary() {
     let user_tgt = sample_tgt_session();
@@ -581,6 +704,13 @@ fn s4u2proxy_uses_transport_boundary() {
     assert_eq!(session.service, target_service);
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_transport_s4u2self_uses_tcp_kdc() {
@@ -617,6 +747,13 @@ fn tokio_transport_s4u2self_uses_tcp_kdc() {
     });
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_s4u2self_uses_current_service_tgt_without_service_cache() {
@@ -656,6 +793,13 @@ fn tokio_client_s4u2self_uses_current_service_tgt_without_service_cache() {
     });
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_transport_s4u2proxy_uses_tcp_kdc() {
@@ -696,6 +840,13 @@ fn tokio_transport_s4u2proxy_uses_tcp_kdc() {
     });
 }
 
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[cfg(feature = "tokio")]
 #[test]
 fn tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache() {
@@ -739,6 +890,14 @@ fn tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache() {
     });
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn renew_tgt_uses_transport_boundary() {
     let tgt = sample_tgt_session();
@@ -761,6 +920,14 @@ fn renew_tgt_uses_transport_boundary() {
     assert!(!session.ticket.is_empty());
 }
 
+#[expect(
+    clippy::assert_is_empty,
+    clippy::default_numeric_fallback,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::tests_outside_test_module,
+    reason = "lint-migration: upstream baseline at ee9cb04"
+)]
 #[test]
 fn renew_ticket_uses_transport_boundary() {
     let tgt = sample_tgt_session();
@@ -782,4 +949,478 @@ fn renew_ticket_uses_transport_boundary() {
     assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
     assert_eq!(session.service, sample_service_principal());
     assert!(!session.ticket.is_empty());
+}
+
+/// Fork-authored TGS exchange tests: permitted enctypes and the implicit-armor subkey.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod fork_tests {
+    use rasn::{der, types::Integer};
+    use rskrb5::{ap_req::decrypt_ap_req_authenticator, config::LibDefaults};
+
+    use super::*;
+
+    /// Pins that a TGS-REP session key outside the requested etypes is rejected.
+    #[test]
+    fn process_tgs_rep_rejects_session_key_outside_requested_enctypes() -> Result<(), TestError> {
+        let tgt = sample_tgt_session();
+        let request = build_tgs_req_with_confounder(
+            &tgt,
+            sample_service_principal(),
+            TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![23_i32]),
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+        )?;
+        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+
+        let Err(error) = process_tgs_rep(&request, &response, &tgt.session_key) else {
+            return Err("a session key outside the requested list must be rejected".into());
+        };
+        assert!(matches!(error, Error::EnctypeNotRequested(18_i32)));
+        Ok(())
+    }
+
+    /// Pins that the configured AS exchange rejects a session key outside `permitted_enctypes`.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn exchange_as_req_with_config_rejects_session_key_outside_permitted_enctypes()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let config = Config::parse(&format!(
+                "
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = des3-cbc-sha1-kd
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"
+            ))?;
+            let request = build_tgt_as_req(
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18_i32]),
+            )?;
+            let reply_key = reply_key();
+            let response = synthetic_as_rep_with_reply_key(
+                &request,
+                request.nonce,
+                request.service.clone(),
+                &reply_key,
+            );
+            let task = tokio::spawn(async move {
+                let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+                write_tcp_kdc_response(&mut socket, &response).await;
+            });
+
+            let Err(error) = TokioKdcTransport::new()
+                .exchange_as_req_with_config(&config, KdcProtocol::Tcp, &request, &reply_key)
+                .await
+            else {
+                return Err("a session key outside the permit list must be rejected".into());
+            };
+            task.await?;
+            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that the configured TGS exchange rejects a session key outside `permitted_enctypes`.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn exchange_tgs_req_with_config_rejects_session_key_outside_permitted_enctypes()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let config = Config::parse(&format!(
+                "
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = des3-cbc-sha1-kd
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"
+            ))?;
+            let tgt = sample_tgt_session();
+            let request = build_tgs_req_with_confounder(
+                &tgt,
+                sample_service_principal(),
+                TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![18_i32]),
+                timestamp(1_893_553_451),
+                654_321,
+                &decode_hex(TGS_REQ_CONFOUNDER),
+            )?;
+            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+            let task = tokio::spawn(async move {
+                let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+                write_tcp_kdc_response(&mut socket, &response).await;
+            });
+
+            let Err(error) = TokioKdcTransport::new()
+                .exchange_tgs_req_with_config(&config, KdcProtocol::Tcp, &request, &tgt.session_key)
+                .await
+            else {
+                return Err("a session key outside the permit list must be rejected".into());
+            };
+            task.await?;
+            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that an explicit `permitted_enctypes` line narrows the TGS-REQ etype list.
+    #[test]
+    fn tgs_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
+        let defaults = LibDefaults {
+            default_tgs_enctype_ids: vec![18_i32, 17_i32, 23_i32],
+            permitted_enctype_ids: vec![18_i32],
+            permitted_enctypes_explicit: true,
+            ..Default::default()
+        };
+        let options =
+            TgsReqOptions::from_libdefaults(timestamp(1_893_553_450), 0x5566_7788, &defaults);
+        let request = build_tgs_req_with_confounder(
+            &sample_tgt_session(),
+            sample_service_principal(),
+            options,
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+        )?;
+
+        let decoded: rasn_kerberos::TgsReq = der::decode(&request.der)?;
+        assert_eq!(decoded.0.req_body.etype, vec![18_i32]);
+        Ok(())
+    }
+
+    /// Pins that a TGS-REQ for implicit FAST armor carries the caller's subkey.
+    ///
+    /// RFC 6113 section 5.4.2: a TGS request that will be FAST-armored with the TGT
+    /// in `PA-TGS-REQ` must carry a subkey in its authenticator, because the
+    /// implicit TGS armor key is
+    /// `KRB-FX-CF2(subkey, TGT session key, "subkeyarmor", "ticketarmor")`.
+    ///
+    /// This is the red test for the subkey seam: the unarmored builder leaves
+    /// `Authenticator.subkey` as `None`, so a caller's FAST layer has no subkey
+    /// to derive the armor key from. It asserts by decrypting the authenticator, not
+    /// by inspecting a flag.
+    #[test]
+    fn tgs_req_authenticator_carries_subkey_for_implicit_armor() -> Result<(), TestError> {
+        let tgt = sample_tgt_session();
+        let service = sample_service_principal();
+        let options = TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788)
+            .with_ticket_lifetime(Duration::from_hours(2))
+            .with_etypes(vec![18_i32]);
+
+        let subkey = EncryptionKey {
+            etype: 18,
+            value: vec![0x42; 32],
+        };
+        let parts = build_tgs_req_for_realm_with_confounder_and_subkey(
+            &tgt,
+            "TEST.GOKRB5",
+            service,
+            options,
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+            &subkey,
+        )?;
+        let decoded: rasn_kerberos::TgsReq = der::decode(&parts.request.der)?;
+        let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
+        let pa_tgs_req = padata.first().ok_or("TGS-REQ has a PA-TGS-REQ")?;
+        let ap_req: rasn_kerberos::ApReq = der::decode(pa_tgs_req.value.as_ref())?;
+
+        let authenticator =
+            decrypt_ap_req_authenticator(&ap_req, &tgt.session_key, TGS_REQ_AUTHENTICATOR_USAGE)?;
+        let carried = authenticator
+            .subkey
+            .as_ref()
+            .ok_or("implicit TGS armor needs the authenticator subkey (RFC 6113 section 5.4.2)")?;
+        assert_eq!(
+            carried.r#type, subkey.etype,
+            "the authenticator carries the supplied subkey's enctype"
+        );
+        assert_eq!(
+            carried.value.as_ref(),
+            subkey.value.as_slice(),
+            "the authenticator carries exactly the subkey the caller supplied"
+        );
+        assert_eq!(
+            parts.authenticator_subkey.value, subkey.value,
+            "and the seam hands the same subkey back for the armor key"
+        );
+        Ok(())
+    }
+
+    /// Pins that the seam exposes the AP-REQ DER the outer `PA-TGS-REQ` carries.
+    ///
+    /// Those are the bytes RFC 6113 section 5.4.2 keys the FAST `req-checksum` over,
+    /// so a caller must be able to name them without re-encoding the request.
+    #[test]
+    fn tgs_req_exposes_pa_tgs_req_ap_req_bytes() -> Result<(), TestError> {
+        let tgt = sample_tgt_session();
+        let service = sample_service_principal();
+        let options = TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788)
+            .with_ticket_lifetime(Duration::from_hours(2))
+            .with_etypes(vec![18_i32]);
+        let subkey = EncryptionKey {
+            etype: 18,
+            value: vec![0x24; 32],
+        };
+
+        let parts = build_tgs_req_for_realm_with_confounder_and_subkey(
+            &tgt,
+            "TEST.GOKRB5",
+            service,
+            options,
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+            &subkey,
+        )?;
+        let decoded: rasn_kerberos::TgsReq = der::decode(&parts.request.der)?;
+        let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
+        let pa_tgs_req = padata.first().ok_or("TGS-REQ has a PA-TGS-REQ")?;
+        assert_eq!(pa_tgs_req.r#type, PA_TGS_REQ);
+        assert_eq!(
+            pa_tgs_req.value.as_ref(),
+            parts.ap_req_der.as_slice(),
+            "the exposed bytes are the AP-REQ the outer PA-TGS-REQ carries"
+        );
+        let ap_req: rasn_kerberos::ApReq = der::decode(&parts.ap_req_der)?;
+        assert_eq!(ap_req.msg_type, Integer::from(14_i32));
+        Ok(())
+    }
+
+    /// The unarmored builders keep the shape every existing caller has: no subkey.
+    #[test]
+    fn legacy_tgs_builder_stays_unarmored_for_existing_callers() -> Result<(), TestError> {
+        let tgt = sample_tgt_session();
+        let service = sample_service_principal();
+        let options = TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788)
+            .with_ticket_lifetime(Duration::from_hours(2))
+            .with_etypes(vec![18_i32]);
+
+        let request = build_tgs_req_with_confounder(
+            &tgt,
+            service,
+            options,
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+        )?;
+        let decoded: rasn_kerberos::TgsReq = der::decode(&request.der)?;
+        let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
+        let pa_tgs_req = padata.first().ok_or("TGS-REQ has a PA-TGS-REQ")?;
+        let ap_req: rasn_kerberos::ApReq = der::decode(pa_tgs_req.value.as_ref())?;
+
+        let authenticator =
+            decrypt_ap_req_authenticator(&ap_req, &tgt.session_key, TGS_REQ_AUTHENTICATOR_USAGE)?;
+        assert!(
+            authenticator.subkey.is_none(),
+            "a caller that did not ask for implicit armor gets no subkey"
+        );
+        Ok(())
+    }
+
+    /// Pins that the deterministic builder refuses a subkey unlike the session key.
+    ///
+    /// It only accepts a subkey shaped like the random-subkey builder's, in the TGT
+    /// session key's enctype and length; anything else is refused.
+    #[test]
+    fn tgs_subkey_must_match_the_session_key_enctype_and_length() -> Result<(), TestError> {
+        let tgt = sample_tgt_session();
+        let build = |subkey: &EncryptionKey| {
+            build_tgs_req_for_realm_with_confounder_and_subkey(
+                &tgt,
+                "TEST.GOKRB5",
+                sample_service_principal(),
+                TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![18_i32]),
+                timestamp(1_893_553_451),
+                654_321,
+                &decode_hex(TGS_REQ_CONFOUNDER),
+                subkey,
+            )
+        };
+        let other_etype = EncryptionKey {
+            etype: 17,
+            value: vec![0x42; 16],
+        };
+        let Err(error) = build(&other_etype) else {
+            return Err("a subkey in another enctype must be refused".into());
+        };
+        assert!(matches!(
+            error,
+            Error::ApReqKeyEtypeMismatch {
+                key_etype: 17_i32,
+                encrypted_data_etype: _,
+            }
+        ));
+        let short = EncryptionKey {
+            etype: tgt.session_key.etype,
+            value: vec![0x42; 16],
+        };
+        assert!(matches!(build(&short), Err(Error::Crypto(_))));
+        Ok(())
+    }
+
+    /// Pins that the configured AS exchange rejects every session key when an
+    /// explicit allowlist holds no enctype ID.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn exchange_as_req_with_config_rejects_every_session_key_with_an_empty_explicit_allowlist()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let mut config = Config::parse(&format!(
+                "
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"
+            ))?;
+            config.libdefaults.permitted_enctype_ids.clear();
+            let request = build_tgt_as_req(
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18_i32]),
+            )?;
+            let reply_key = reply_key();
+            let response = synthetic_as_rep_with_reply_key(
+                &request,
+                request.nonce,
+                request.service.clone(),
+                &reply_key,
+            );
+            let task = tokio::spawn(async move {
+                let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+                write_tcp_kdc_response(&mut socket, &response).await;
+            });
+
+            let Err(error) = TokioKdcTransport::new()
+                .exchange_as_req_with_config(&config, KdcProtocol::Tcp, &request, &reply_key)
+                .await
+            else {
+                return Err("an empty explicit allowlist must permit no session key".into());
+            };
+            task.await?;
+            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that the configured TGS exchange rejects every session key when an
+    /// explicit allowlist holds no enctype ID.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn exchange_tgs_req_with_config_rejects_every_session_key_with_an_empty_explicit_allowlist()
+    -> Result<(), TestError> {
+        runtime().block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let mut config = Config::parse(&format!(
+                "
+[libdefaults]
+ dns_lookup_kdc = false
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+
+[realms]
+ TEST.GOKRB5 = {{
+  kdc = {addr}
+ }}
+"
+            ))?;
+            config.libdefaults.permitted_enctype_ids.clear();
+            let tgt = sample_tgt_session();
+            let request = build_tgs_req_with_confounder(
+                &tgt,
+                sample_service_principal(),
+                TgsReqOptions::new(timestamp(1_893_553_450), 0x5566_7788).with_etypes(vec![18_i32]),
+                timestamp(1_893_553_451),
+                654_321,
+                &decode_hex(TGS_REQ_CONFOUNDER),
+            )?;
+            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key);
+            let task = tokio::spawn(async move {
+                let (_request, mut socket) = read_tcp_kdc_request(&listener).await;
+                write_tcp_kdc_response(&mut socket, &response).await;
+            });
+
+            let Err(error) = TokioKdcTransport::new()
+                .exchange_tgs_req_with_config(&config, KdcProtocol::Tcp, &request, &tgt.session_key)
+                .await
+            else {
+                return Err("an empty explicit allowlist must permit no session key".into());
+            };
+            task.await?;
+            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            Ok::<(), TestError>(())
+        })
+    }
+
+    /// Pins that programmatic `LibDefaults` with the explicit flag and no permitted
+    /// enctype ID fail both request builders closed.
+    #[test]
+    fn programmatic_explicit_empty_permitted_ids_fail_closed() -> Result<(), TestError> {
+        let defaults = LibDefaults {
+            default_tkt_enctype_ids: vec![18_i32, 17_i32],
+            default_tgs_enctype_ids: vec![18_i32, 17_i32],
+            permitted_enctype_ids: Vec::new(),
+            permitted_enctypes_explicit: true,
+            ..Default::default()
+        };
+
+        let as_options =
+            AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &defaults);
+        assert!(
+            as_options.etypes.is_empty(),
+            "no AS-REQ etype is permitted: {:?}",
+            as_options.etypes
+        );
+        let Err(as_error) =
+            build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), as_options)
+        else {
+            return Err("an empty explicit allowlist must fail the AS-REQ closed".into());
+        };
+        assert!(matches!(as_error, Error::EmptyEtypes));
+
+        let tgs_options =
+            TgsReqOptions::from_libdefaults(timestamp(1_893_553_450), 0x5566_7788, &defaults);
+        assert!(
+            tgs_options.etypes.is_empty(),
+            "no TGS-REQ etype is permitted: {:?}",
+            tgs_options.etypes
+        );
+        let Err(tgs_error) = build_tgs_req_with_confounder(
+            &sample_tgt_session(),
+            sample_service_principal(),
+            tgs_options,
+            timestamp(1_893_553_451),
+            654_321,
+            &decode_hex(TGS_REQ_CONFOUNDER),
+        ) else {
+            return Err("an empty explicit allowlist must fail the TGS-REQ closed".into());
+        };
+        assert!(matches!(tgs_error, Error::EmptyEtypes));
+        Ok(())
+    }
 }

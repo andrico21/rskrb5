@@ -20,9 +20,58 @@ repo = "local"
 id = "cargo-fmt"
 name = "cargo fmt"
 language = "system"
-entry = "cargo fmt --check"
+entry = "cargo +nightly-2026-10-03 fmt --all -- --check"
 files = "\\.rs$|Cargo\\.toml$"
 pass_filenames = false
+
+[[repos.hooks]]
+id = "lint-gates"
+name = "lint-ratchet gates"
+language = "system"
+entry = "bash -c 'for s in scripts/lint-ratchet/*.py; do python3 \"$s\" --self-test || exit 1; done && python3 scripts/lint-ratchet/allow_gate.py --enforce && python3 scripts/lint-ratchet/profile_eq.py --clippy-toml && python3 scripts/lint-ratchet/baseline_gate.py --enforce && python3 scripts/lint-ratchet/completeness_check.py'"
+files = "\\.(rs|toml|py)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-deny"
+name = "cargo deny"
+language = "system"
+entry = "cargo deny check"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-machete"
+name = "cargo machete"
+language = "system"
+entry = "cargo machete"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "taplo"
+name = "taplo fmt"
+language = "system"
+entry = "taplo fmt --check"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-vet"
+name = "cargo vet"
+language = "system"
+entry = "cargo vet --locked"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "guidelines-checksums"
+name = "guidelines checksums"
+language = "system"
+entry = "bash -c 'cd docs/rust-guidelines && sha256sum -c SHA256SUMS'"
+pass_filenames = false
+stages = ["pre-push", "manual"]
 
 [[repos.hooks]]
 id = "cargo-clippy"
@@ -38,6 +87,60 @@ id = "cargo-check-no-default-features"
 name = "cargo check --no-default-features"
 language = "system"
 entry = "cargo check --no-default-features"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-lib-messages"
+name = "cargo check --lib --no-default-features --features messages"
+language = "system"
+entry = "cargo check --lib --no-default-features --features messages"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-lib-spnego"
+name = "cargo check --lib --no-default-features --features spnego"
+language = "system"
+entry = "cargo check --lib --no-default-features --features spnego"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-lib-http"
+name = "cargo check --lib --no-default-features --features http"
+language = "system"
+entry = "cargo check --lib --no-default-features --features http"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-lib-evaluation"
+name = "cargo check --lib --no-default-features --features evaluation"
+language = "system"
+entry = "cargo check --lib --no-default-features --features evaluation"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "cargo-check-compat-report-bin"
+name = "cargo check --no-default-features --features evaluation --bin rskrb5-compat-report"
+language = "system"
+entry = "cargo check --no-default-features --features evaluation --bin rskrb5-compat-report"
+files = "\\.rs$|Cargo\\.(toml|lock)$"
+pass_filenames = false
+stages = ["pre-push", "manual"]
+
+[[repos.hooks]]
+id = "axum-negotiate-example"
+name = "README axum-negotiate example (--no-default-features --features http)"
+language = "system"
+entry = "cargo build --example axum-negotiate --features http --no-default-features"
 files = "\\.rs$|Cargo\\.(toml|lock)$"
 pass_filenames = false
 stages = ["pre-push", "manual"]
