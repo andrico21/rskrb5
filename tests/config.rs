@@ -1018,6 +1018,7 @@ mod fork_tests {
     use pretty_assertions::assert_eq;
     #[cfg(feature = "messages")]
     use rasn::der;
+    #[cfg(any(feature = "serde", feature = "messages"))]
     use rskrb5::config::LibDefaults;
     #[cfg(feature = "messages")]
     use rskrb5::{
@@ -1518,8 +1519,8 @@ mod fork_tests {
 
     /// Pins that the seeded default request lists do not request DES3.
     #[test]
-    fn seeded_default_enctypes_do_not_request_des3() -> Result<(), TestError> {
-        let defaults = LibDefaults::default();
+    fn seeded_default_enctypes_do_not_request_des3() {
+        let defaults = Config::new().libdefaults;
 
         assert_eq!(
             defaults.default_tkt_enctype_ids,
@@ -1530,6 +1531,5 @@ mod fork_tests {
             vec![18_i32, 17_i32, 23_i32]
         );
         assert_eq!(defaults.permitted_enctype_ids, vec![18_i32, 17_i32, 23_i32]);
-        Ok(())
     }
 }
