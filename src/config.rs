@@ -17,10 +17,12 @@ const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &["C:\\ProgramData\\MIT\\Kerberos
 #[cfg(not(any(target_family = "unix", target_family = "windows")))]
 const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &[];
 
+// gokrb5 also lists des3-cbc-sha1 here, as its unimplemented etype 7. MIT
+// spells enctype 16 that way, so keeping the name would add DES3 to every
+// default request list.
 const DEFAULT_ENCTYPES: &[&str] = &[
     "aes256-cts-hmac-sha1-96",
     "aes128-cts-hmac-sha1-96",
-    "des3-cbc-sha1",
     "arcfour-hmac-md5",
     "camellia256-cts-cmac",
     "camellia128-cts-cmac",
@@ -1319,7 +1321,7 @@ fn supported_enctype_id(value: &str) -> Option<i32> {
         "aes256-cts-hmac-sha1-96" | "aes256-cts" | "aes256-sha1" => 18,
         "aes128-cts-hmac-sha256-128" | "aes128-sha2" => 19,
         "aes256-cts-hmac-sha384-192" | "aes256-sha2" => 20,
-        "des3-cbc-sha1-kd" => 16,
+        "des3-cbc-sha1" | "des3-hmac-sha1" | "des3-cbc-sha1-kd" => 16,
         "arcfour-hmac" | "rc4-hmac" | "arcfour-hmac-md5" => 23,
         _ => return None,
     })

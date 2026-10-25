@@ -139,6 +139,45 @@ fn explicit_permitted_enctypes_reject_an_explicit_sha2_request_list() {
 }
 
 #[test]
+fn explicit_mit_des3_request_entry_is_requested() {
+    let config = Config::parse(
+        r#"
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+"#,
+    )
+    .expect("config parses");
+
+    let options =
+        AsReqOptions::from_libdefaults(timestamp(1_893_553_447), 0x1122_3344, &config.libdefaults);
+    let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+        .expect("AS-REQ builds");
+    let decoded: rasn_kerberos::AsReq = rasn::der::decode(&request.der).expect("AS-REQ decodes");
+    assert_eq!(decoded.0.req_body.etype, vec![18, 16]);
+}
+
+#[test]
+fn explicit_mit_des3_request_entry_outside_permitted_fails_parsing() {
+    let error = Config::parse(
+        r#"
+[libdefaults]
+ default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+ permitted_enctypes = aes256-cts-hmac-sha1-96
+"#,
+    )
+    .expect_err("a DES3 request entry outside the allowlist is rejected");
+
+    assert!(
+        matches!(
+            &error,
+            rskrb5::config::Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }
+                if enctype == "des3-cbc-sha1"
+        ),
+        "unexpected error: {error:?}"
+    );
+}
+
+#[test]
 fn as_req_options_from_libdefaults_sets_canonicalize_flag() {
     let defaults = rskrb5::config::LibDefaults {
         canonicalize: true,
