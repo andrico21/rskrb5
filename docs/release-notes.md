@@ -94,7 +94,7 @@ Final local evidence for `0.2.0`, recorded on 2026-06-24:
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test --all-features`
 - `cargo doc --all-features --no-deps`
-- `cargo run --no-default-features --features evaluation --bin rskrb5-compat-report`
+- `cargo run --no-default-features --features evaluation --bin rskrb5-ng-compat-report`
   matches [`compatibility-report.md`](compatibility-report.md)
 - `cargo package --locked`
 - `cargo publish --locked --dry-run`

@@ -12,5 +12,5 @@
     reason = "lint-migration: upstream baseline at ee9cb04"
 )]
 fn main() {
-    print!("{}", rskrb5::evaluation::render_markdown());
+    print!("{}", rskrb5_ng::evaluation::render_markdown());
 }

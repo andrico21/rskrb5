@@ -3,7 +3,7 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::{
+use rskrb5_ng::{
     crypto::KerberosEtype,
     kdc_rep::{
         AS_REP_ENCPART_USAGE, Error, KRB_AS_REP_MSG_TYPE, KRB_TGS_REP_MSG_TYPE,

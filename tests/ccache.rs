@@ -6,7 +6,7 @@ use std::{
 };
 
 use pretty_assertions::assert_eq;
-use rskrb5::ccache::{CCache, CacheName, Credential, Error, Principal};
+use rskrb5_ng::ccache::{CCache, CacheName, Credential, Error, Principal};
 
 #[path = "support/env.rs"]
 mod env;
@@ -348,7 +348,7 @@ fn rejects_unsupported_cache_names() {
 )]
 #[test]
 fn encryption_key_debug_redacts_value() {
-    let key = rskrb5::ccache::EncryptionKey {
+    let key = rskrb5_ng::ccache::EncryptionKey {
         etype: 18,
         value: vec![1, 2, 3, 4],
     };
@@ -979,7 +979,7 @@ mod fork_property_tests {
         prelude::{Strategy, TestCaseError, any},
         prop_assert, prop_assert_eq, prop_oneof, proptest,
     };
-    use rskrb5::ccache::{CCache, Error};
+    use rskrb5_ng::ccache::{CCache, Error};
 
     /// A v4 cache header with an empty header-field block.
     const V4_EMPTY_HEADER: [u8; 4] = [0x05, 0x04, 0x00, 0x00];

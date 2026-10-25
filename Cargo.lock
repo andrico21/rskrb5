@@ -1495,7 +1495,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rskrb5-patched"
+name = "rskrb5-ng"
 version = "0.3.0"
 dependencies = [
  "aes",

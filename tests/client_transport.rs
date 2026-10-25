@@ -3,7 +3,7 @@
 
 use core::{error::Error, time::Duration};
 
-use rskrb5::{
+use rskrb5_ng::{
     client::{
         AsReqOptions, Error as ClientError, KRB_ERR_RESPONSE_TOO_BIG, KdcEndpoint,
         KdcEndpointSource, KdcProtocol, PA_ETYPE_INFO2, Principal, TokioKdcTransport,
@@ -2922,7 +2922,7 @@ mod fork_tests {
     };
 
     use rasn::{der, types::Integer};
-    use rskrb5::client::Error as ClientError;
+    use rskrb5_ng::client::Error as ClientError;
     use tokio::{net::TcpStream, time::timeout};
 
     use super::*;

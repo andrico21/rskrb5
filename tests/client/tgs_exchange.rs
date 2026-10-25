@@ -109,7 +109,7 @@ fn builds_tgs_req_with_pa_tgs_req_and_checksum() {
 )]
 #[test]
 fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() {
-    let defaults = rskrb5::config::LibDefaults {
+    let defaults = rskrb5_ng::config::LibDefaults {
         canonicalize: true,
         kdc_default_options: 0x0000_0010,
         ..Default::default()
@@ -225,7 +225,7 @@ fn builds_s4u2self_tgs_req_with_pa_for_user() {
     assert_eq!(padata.len(), 2);
     assert_eq!(padata[0].r#type, PA_TGS_REQ);
     assert_eq!(padata[1].r#type, PA_FOR_USER);
-    let pa_for_user = rskrb5::messages::PaForUser::decode_der(padata[1].value.as_ref())
+    let pa_for_user = rskrb5_ng::messages::PaForUser::decode_der(padata[1].value.as_ref())
         .expect("PA-FOR-USER decodes");
     assert_eq!(
         principal_from_parts(&pa_for_user.user_realm, &pa_for_user.user_name),
@@ -338,7 +338,7 @@ fn builds_s4u2proxy_tgs_req_with_pac_options() {
     assert_eq!(padata.len(), 2);
     assert_eq!(padata[0].r#type, PA_TGS_REQ);
     assert_eq!(padata[1].r#type, PA_PAC_OPTIONS);
-    let pac_options = rskrb5::messages::PaPacOptions::decode_der(padata[1].value.as_ref())
+    let pac_options = rskrb5_ng::messages::PaPacOptions::decode_der(padata[1].value.as_ref())
         .expect("PA-PAC-OPTIONS decodes");
     assert_eq!(
         pac_options.bits(),
@@ -961,7 +961,7 @@ fn renew_ticket_uses_transport_boundary() {
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod fork_tests {
     use rasn::{der, types::Integer};
-    use rskrb5::{ap_req::decrypt_ap_req_authenticator, config::LibDefaults};
+    use rskrb5_ng::{ap_req::decrypt_ap_req_authenticator, config::LibDefaults};
 
     use super::*;
 

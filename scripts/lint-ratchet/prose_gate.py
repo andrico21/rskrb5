@@ -166,7 +166,9 @@ def report(
         mapping = (
             provenance.mapping(root, relative, (source, upstream))
             if (root / ".git").exists()
-            else common.line_mapping(source, upstream)
+            else common.line_mapping(
+                provenance.crate_renamed(source), provenance.crate_renamed(upstream)
+            )
         )
         hits.extend(
             (gate, relative, line, detail)

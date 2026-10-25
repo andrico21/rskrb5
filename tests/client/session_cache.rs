@@ -1600,7 +1600,7 @@ fn negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
     let _ = std::fs::remove_file(&path);
 
     assert!(header.starts_with("Negotiate "));
-    rskrb5::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
+    rskrb5_ng::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
 }
 
 #[cfg_attr(
@@ -1686,7 +1686,7 @@ fn blocking_negotiate_client_builds_authorization_header_for_host_from_ccache_na
     let _ = std::fs::remove_file(&path);
 
     assert!(header.starts_with("Negotiate "));
-    rskrb5::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
+    rskrb5_ng::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
 }
 
 #[cfg_attr(
@@ -3049,7 +3049,7 @@ mod fork_tests {
     use std::{sync::mpsc, thread};
 
     use rasn::{der, types::Integer};
-    use rskrb5::client::AsRepSession;
+    use rskrb5_ng::client::AsRepSession;
     use tokio::{
         runtime::Builder as RuntimeBuilder,
         sync::Mutex,

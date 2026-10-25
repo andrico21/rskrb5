@@ -1,5 +1,5 @@
 [package]
-name = "rskrb5-patched-fuzz"
+name = "rskrb5-ng-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-rskrb5 = { version = "0.3.0", path = "..", package = "rskrb5-patched" }
+rskrb5-ng = { version = "0.3.0", path = ".." }
 
 [[bin]]
 name = "kpasswd_reply"

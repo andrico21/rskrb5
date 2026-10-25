@@ -5,7 +5,7 @@ use core::{error, time::Duration};
 use std::time::UNIX_EPOCH;
 
 use pretty_assertions::assert_eq;
-use rskrb5::{
+use rskrb5_ng::{
     crypto::{AesSha1Etype, KerberosEtype},
     keytab::{EncryptionKey, Keytab},
     pac::{

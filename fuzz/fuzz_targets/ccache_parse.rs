@@ -5,7 +5,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rskrb5::ccache::CCache;
+use rskrb5_ng::ccache::CCache;
 
 fuzz_target!(|data: &[u8]| {
     drop(CCache::parse(data));

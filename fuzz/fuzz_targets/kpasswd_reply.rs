@@ -5,7 +5,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rskrb5::kadmin::{ChangePasswordResult, Reply, Request};
+use rskrb5_ng::kadmin::{ChangePasswordResult, Reply, Request};
 
 fuzz_target!(|data: &[u8]| {
     // Only returning matters: a rejected input is the `Err` arm, and an

@@ -3,7 +3,7 @@
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::{
+use rskrb5_ng::{
     ap_rep::{
         AP_REP_ENCPART_USAGE, Error, KRB_AP_REP_MSG_TYPE, build_ap_rep,
         build_ap_rep_with_confounder, decode_ap_rep, decode_enc_ap_rep_part,

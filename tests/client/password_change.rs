@@ -349,7 +349,7 @@ fn tokio_client_changes_password_uses_kpasswd_ap_rep_subkey_for_result() {
             let mut request = vec![0; request_len];
             socket.read_exact(&mut request).await.expect("read request");
             let parsed = KpasswdRequest::parse(&request).expect("kpasswd request parses");
-            let authenticator = rskrb5::ap_req::decrypt_ap_req_authenticator(
+            let authenticator = rskrb5_ng::ap_req::decrypt_ap_req_authenticator(
                 &parsed.ap_req,
                 &changepw_session_key,
                 AP_REQ_AUTHENTICATOR_USAGE,
@@ -459,7 +459,7 @@ fn tokio_client_changes_explicit_target_password() {
             let mut request = vec![0; request_len];
             socket.read_exact(&mut request).await.expect("read request");
             let parsed = KpasswdRequest::parse(&request).expect("kpasswd request parses");
-            let authenticator = rskrb5::ap_req::decrypt_ap_req_authenticator(
+            let authenticator = rskrb5_ng::ap_req::decrypt_ap_req_authenticator(
                 &parsed.ap_req,
                 &changepw_session_key,
                 AP_REQ_AUTHENTICATOR_USAGE,
@@ -479,8 +479,9 @@ fn tokio_client_changes_explicit_target_password() {
                     .as_ref()
                     .to_vec(),
             };
-            let enc_part = rskrb5::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
-                .expect("KRB-PRIV payload decrypts");
+            let enc_part =
+                rskrb5_ng::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
+                    .expect("KRB-PRIV payload decrypts");
             let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
                 .expect("ChangePasswdData decodes");
             assert_eq!(
@@ -842,7 +843,7 @@ mod negotiate_explicit_target {
                 let mut request = vec![0; request_len];
                 socket.read_exact(&mut request).await.expect("read request");
                 let parsed = KpasswdRequest::parse(&request).expect("kpasswd request parses");
-                let authenticator = rskrb5::ap_req::decrypt_ap_req_authenticator(
+                let authenticator = rskrb5_ng::ap_req::decrypt_ap_req_authenticator(
                     &parsed.ap_req,
                     &changepw_session_key,
                     AP_REQ_AUTHENTICATOR_USAGE,
@@ -863,7 +864,7 @@ mod negotiate_explicit_target {
                         .to_vec(),
                 };
                 let enc_part =
-                    rskrb5::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
+                    rskrb5_ng::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
                         .expect("KRB-PRIV payload decrypts");
                 let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
                     .expect("ChangePasswdData decodes");
@@ -1188,7 +1189,7 @@ TEST.GOKRB5 = {{
                 for call in 0..2 {
                     let (request, mut socket) = read_tcp_kdc_request(&kpasswd_listener).await;
                     let parsed = KpasswdRequest::parse(&request).expect("kpasswd request parses");
-                    let authenticator = rskrb5::ap_req::decrypt_ap_req_authenticator(
+                    let authenticator = rskrb5_ng::ap_req::decrypt_ap_req_authenticator(
                         &parsed.ap_req,
                         &service_session_key,
                         AP_REQ_AUTHENTICATOR_USAGE,
@@ -1209,7 +1210,7 @@ TEST.GOKRB5 = {{
                             .to_vec(),
                     };
                     let enc_part =
-                        rskrb5::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
+                        rskrb5_ng::kadmin::decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
                             .expect("KRB-PRIV payload decrypts");
                     let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
                         .expect("ChangePasswdData decodes");
@@ -1435,7 +1436,7 @@ TEST.GOKRB5 = {{
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod fork_tests {
     use rasn::der;
-    use rskrb5::kadmin::Error as KadminError;
+    use rskrb5_ng::kadmin::Error as KadminError;
 
     use super::*;
 

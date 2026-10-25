@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::krb_error::{
+use rskrb5_ng::krb_error::{
     Error, KRB_ERROR_MSG_TYPE, KRB5_PVNO, decode_krb_error, decode_krb_error_info,
     decode_method_data, encode_krb_error, encode_method_data, preauth_method_data,
     validate_krb_error,

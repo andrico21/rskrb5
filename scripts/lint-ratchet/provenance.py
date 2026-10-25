@@ -40,6 +40,9 @@ RUST_KEYWORDS: Final = frozenset(
     std core alloc
 """.split()
 )
+# The crate rename (`rskrb5` -> `rskrb5_ng`) is not a fork edit. Upstream
+# 6f4abc9 never contains `rskrb5_ng`, so undoing it is one-sided.
+CRATE_RENAME: Final = re.compile(r"\brskrb5_ng\b")
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,13 +138,20 @@ def mapping(root: Path, file: str, texts: tuple[str, str]) -> dict[int, int]:
         if old == "tests/common/mod.rs"
     }
     history = revisions(root, file)
-    normalize = lambda text: (
-        renamed_paths(text, aliases) if file.startswith("tests/") else text
-    )
+
+    def normalize(text: str) -> str:
+        text = crate_renamed(text)
+        return renamed_paths(text, aliases) if file.startswith("tests/") else text
+
     return chain(
         *(normalize(text) for text in texts),
         [Revision(normalize(r.before), normalize(r.after)) for r in history],
     )
+
+
+def crate_renamed(text: str) -> str:
+    """Undo the crate rename everywhere: code, comments and strings."""
+    return CRATE_RENAME.sub("rskrb5", text)
 
 
 def renamed_paths(source: str, aliases: dict[str, str]) -> str:
@@ -186,7 +196,26 @@ def self_test() -> None:
             ),
             original,
         )
-    print("provenance self-test: ok (chained rewrites, fork edits, fork-only origins)")
+    # Given the crate rename, when a line differs from upstream only by
+    # `rskrb5::` -> `rskrb5_ng::`, then it maps; any other change does not.
+    upstream = 'use rskrb5::Config;\nlet cfg = rskrb5::Config::load()?; // rskrb5::x\n'
+    renamed = upstream.replace("rskrb5::", "rskrb5_ng::")
+    assert not common.line_mapping(renamed, upstream)
+    assert common.line_mapping(crate_renamed(renamed), crate_renamed(upstream)) == {
+        1: 1,
+        2: 2,
+    }
+    assert chain(crate_renamed(renamed), crate_renamed(upstream), []) == {1: 1, 2: 2}
+    for edited in (
+        renamed.replace("load()", "load_default()"),
+        renamed.replace("rskrb5_ng::Config::", "rskrb5_ng::Settings::"),
+        renamed.replace("// rskrb5_ng::x", "// rskrb5_ng::y"),
+    ):
+        assert chain(crate_renamed(edited), crate_renamed(upstream), []) == {1: 1}
+    assert crate_renamed("rskrb5_ngx rskrb5-ng rskrb5_ng") == "rskrb5_ngx rskrb5-ng rskrb5"
+    print(
+        "provenance self-test: ok (chained rewrites, fork edits, fork-only origins, crate rename)"
+    )
 
 
 if __name__ == "__main__":

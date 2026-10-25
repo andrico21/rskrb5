@@ -96,7 +96,7 @@ pub use data::{
 /// Render the current compatibility matrix as Markdown.
 pub fn render_markdown() -> String {
     let mut out = String::from("# rskrb5 Compatibility Spike\n\n");
-    out.push_str("This report is generated from `rskrb5::evaluation` and captures the dependency decision gate and ongoing candidate matrix for a gokrb5-equivalent Rust implementation.\n\n");
+    out.push_str("This report is generated from `rskrb5_ng::evaluation` and captures the dependency decision gate and ongoing candidate matrix for a gokrb5-equivalent Rust implementation.\n\n");
 
     render_contract(&mut out);
     render_decision_matrix(&mut out);

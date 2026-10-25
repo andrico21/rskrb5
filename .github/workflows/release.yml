@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes `rskrb5-patched` to crates.io only when (a) a `vN.N.N` tag exists
+# Publishes `rskrb5-ng` to crates.io only when (a) a `vN.N.N` tag exists
 # on a commit AND (b) the CI workflow on that exact commit completed
 # successfully. Triggered off `workflow_run: [CI]` (not `push: tags`) so a red
 # CI blocks the publish; the tag lookup below rejects every non-release run.
@@ -80,20 +80,20 @@ jobs:
         run: |
           set -euo pipefail
           # The crate name is part of the contract: consumers depend on
-          # `rskrb5-patched` (see FORK-NOTES.md). A rename without a release
-          # workflow update must fail here, not publish under a new name.
+          # `rskrb5-ng`. A rename without a release workflow update must fail
+          # here, not publish under a new name.
           META=$(cargo metadata --no-deps --format-version 1)
-          NAME=$(echo "$META" | jq -r --arg c "rskrb5-patched" '.packages[] | select(.name == $c) | .name')
-          VERSION=$(echo "$META" | jq -r --arg c "rskrb5-patched" '.packages[] | select(.name == $c) | .version')
-          if [ "$NAME" != "rskrb5-patched" ]; then
-            echo "::error::package rskrb5-patched not found; the fork's crate name changed without this workflow"
+          NAME=$(echo "$META" | jq -r --arg c "rskrb5-ng" '.packages[] | select(.name == $c) | .name')
+          VERSION=$(echo "$META" | jq -r --arg c "rskrb5-ng" '.packages[] | select(.name == $c) | .version')
+          if [ "$NAME" != "rskrb5-ng" ]; then
+            echo "::error::package rskrb5-ng not found; the crate name changed without this workflow"
             exit 1
           fi
           if [ "$VERSION" != "${{ steps.find-tag.outputs.version }}" ]; then
-            echo "::error::tag ${{ steps.find-tag.outputs.tag }} does not match rskrb5-patched's manifest version $VERSION"
+            echo "::error::tag ${{ steps.find-tag.outputs.tag }} does not match rskrb5-ng's manifest version $VERSION"
             exit 1
           fi
-          echo "rskrb5-patched $VERSION is publishable."
+          echo "rskrb5-ng $VERSION is publishable."
 
       - name: Release notes
         if: steps.find-tag.outputs.skip != 'true'
@@ -110,7 +110,7 @@ jobs:
             ' CHANGELOG.md > "$NOTES_PATH"
           fi
           if [ ! -s "$NOTES_PATH" ]; then
-            printf 'Patched fork of `rskrb5` %s, published as `rskrb5-patched`. See FORK-NOTES.md for the patch list, the upstream references and the retirement trigger.\n' "$VERSION" > "$NOTES_PATH"
+            printf 'rskrb5-ng %s; see CHANGELOG.md\n' "$VERSION" > "$NOTES_PATH"
           fi
           echo "NOTES_PATH=${NOTES_PATH}" >> "$GITHUB_ENV"
 
@@ -134,15 +134,15 @@ jobs:
           echo "$OUTPUT"
           if [ "$STATUS" -eq 0 ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Published rskrb5-patched@$TAG to crates.io."
+            echo "::notice::Published rskrb5-ng@$TAG to crates.io."
             exit 0
           fi
           if echo "$OUTPUT" | grep -qiF "already exists on crates.io index"; then
             echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::rskrb5-patched@$TAG was already on crates.io before this run; this pipeline did not upload these bytes and will not create a release for them. If this is not the expected duplicate trigger for the same SHA, the version was published out of band - verify the uploaded artifact."
+            echo "::warning::rskrb5-ng@$TAG was already on crates.io before this run; this pipeline did not upload these bytes and will not create a release for them. If this is not the expected duplicate trigger for the same SHA, the version was published out of band - verify the uploaded artifact."
             exit 0
           fi
-          echo "::error::cargo publish failed for rskrb5-patched@$TAG (exit $STATUS)."
+          echo "::error::cargo publish failed for rskrb5-ng@$TAG (exit $STATUS)."
           exit "$STATUS"
 
       - name: Create GitHub release
@@ -153,6 +153,6 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "${{ steps.find-tag.outputs.tag }}" \
-            --title "rskrb5-patched ${{ steps.find-tag.outputs.tag }}" \
+            --title "rskrb5-ng ${{ steps.find-tag.outputs.tag }}" \
             --notes-file "${NOTES_PATH}" \
             --verify-tag

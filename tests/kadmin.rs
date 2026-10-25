@@ -5,7 +5,7 @@ use core::error;
 
 use pretty_assertions::assert_eq;
 use rasn::types::Integer;
-use rskrb5::{
+use rskrb5_ng::{
     ap_req,
     crypto::KerberosEtype,
     kadmin::{

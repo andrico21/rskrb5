@@ -1,7 +1,7 @@
 name: CI
 
-# Fork-local CI and the release gate: `release.yml` triggers on this
-# workflow's completion and publishes `rskrb5-patched` when a `vN.N.N` tag
+# CI and the release gate: `release.yml` triggers on this
+# workflow's completion and publishes `rskrb5-ng` when a `vN.N.N` tag
 # points at the run's head SHA. Every job's `name:` equals its job id.
 #
 # Lint profile. The crate adopts the strictest-union profile: the core
@@ -130,7 +130,7 @@ jobs:
           - "--lib --no-default-features --features spnego"
           - "--lib --no-default-features --features http"
           - "--lib --no-default-features --features evaluation"
-          - "--no-default-features --features evaluation --bin rskrb5-compat-report"
+          - "--no-default-features --features evaluation --bin rskrb5-ng-compat-report"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
@@ -151,7 +151,7 @@ jobs:
       # README "Compatibility report", as the prek `compat-report` hook runs it.
       - name: The compatibility report is current
         run: |
-          cargo run --quiet --no-default-features --features evaluation --bin rskrb5-compat-report > "$RUNNER_TEMP/compatibility-report.md"
+          cargo run --quiet --no-default-features --features evaluation --bin rskrb5-ng-compat-report > "$RUNNER_TEMP/compatibility-report.md"
           diff -u docs/compatibility-report.md "$RUNNER_TEMP/compatibility-report.md"
 
   test:
@@ -246,6 +246,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # semver_baseline.py reads every release tag's Cargo.toml.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       # `--force` plus the version floor (as rmcp-server-kit): rust-cache can
@@ -253,8 +256,11 @@ jobs:
       # current stable.
       - name: Install cargo-semver-checks
         run: cargo install cargo-semver-checks --locked --force --version '^0.50'
-      - name: Check release semver (against the latest published rskrb5-patched)
-        run: cargo semver-checks check-release
+      # The baseline is the highest `vX.Y.Z` tag that names `rskrb5-ng` below
+      # the candidate version and is published on crates.io; without one (the
+      # first rskrb5-ng release) the script prints a notice and exits 0.
+      - name: Check release semver (against the latest published rskrb5-ng tag)
+        run: python3 scripts/lint-ratchet/semver_baseline.py
 
   publish-dryrun:
     name: publish-dryrun
@@ -283,13 +289,13 @@ jobs:
           cargo package --locked --no-verify
           metadata="$(cargo metadata --format-version 1 --no-deps)"
           target_dir="$(jq -r .target_directory <<<"$metadata")"
-          version="$(jq -r '.packages[] | select(.name == "rskrb5-patched") | .version' <<<"$metadata")"
+          version="$(jq -r '.packages[] | select(.name == "rskrb5-ng") | .version' <<<"$metadata")"
           root="$RUNNER_TEMP/consumer"
           rm -rf "$root"
           mkdir -p "$root/vendor" "$root/app/src" "$root/app/.cargo"
-          tar -xzf "$target_dir/package/rskrb5-patched-$version.crate" -C "$root/vendor"
+          tar -xzf "$target_dir/package/rskrb5-ng-$version.crate" -C "$root/vendor"
           cp .cargo/config.toml "$root/app/.cargo/config.toml"
-          printf 'use rskrb5 as _;\n\nfn main() {}\n' > "$root/app/src/main.rs"
+          printf 'use rskrb5_ng as _;\n\nfn main() {}\n' > "$root/app/src/main.rs"
           for defaults in false true; do
             printf '%s\n' \
               '[package]' \
@@ -299,7 +305,7 @@ jobs:
               'publish = false' \
               '' \
               '[dependencies]' \
-              "rskrb5 = { path = \"../vendor/rskrb5-patched-$version\", package = \"rskrb5-patched\", default-features = $defaults, features = [\"tokio\"] }" \
+              "rskrb5-ng = { path = \"../vendor/rskrb5-ng-$version\", default-features = $defaults, features = [\"tokio\"] }" \
               > "$root/app/Cargo.toml"
             echo "--- consumer: default-features = $defaults"
             (cd "$root/app" && cargo build && cargo test --no-run)
@@ -509,7 +515,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
-    # The fuzz crate builds rskrb5 as a path dependency, so the profile runs
+    # The fuzz crate builds rskrb5-ng as a path dependency, so the profile runs
     # on nightly; cap it there (lints are enforced on stable by `clippy`).
     env:
       RUSTFLAGS: "--cap-lints=warn"

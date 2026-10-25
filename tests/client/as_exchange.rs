@@ -83,7 +83,7 @@ fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() {
 )]
 #[test]
 fn as_req_options_from_libdefaults_sets_canonicalize_flag() {
-    let defaults = rskrb5::config::LibDefaults {
+    let defaults = rskrb5_ng::config::LibDefaults {
         canonicalize: true,
         kdc_default_options: 0x0000_0010,
         ..Default::default()
@@ -212,7 +212,7 @@ fn builds_pa_for_user_padata_with_s4u_checksum() {
 
     assert_eq!(padata.r#type, PA_FOR_USER);
     let decoded =
-        rskrb5::messages::PaForUser::decode_der(padata.value.as_ref()).expect("value decodes");
+        rskrb5_ng::messages::PaForUser::decode_der(padata.value.as_ref()).expect("value decodes");
     assert_eq!(
         principal_from_parts(&decoded.user_realm, &decoded.user_name),
         user
@@ -460,7 +460,7 @@ mod fork_tests {
     use core::iter;
 
     use rasn::der;
-    use rskrb5::{
+    use rskrb5_ng::{
         client::{PA_AS_FRESHNESS, PA_FX_COOKIE, random_nonce},
         config::{Error as ConfigError, LibDefaults},
     };
