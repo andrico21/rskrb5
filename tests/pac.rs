@@ -43,334 +43,270 @@ const CLAIMS_ENTRY_ID_INT64: &str = "ad://ext/msDS-SupportedE:88d5dea8f1af5f19";
 const CLAIMS_ENTRY_VALUE_INT64: i64 = 28;
 const CLAIMS_ENTRY_ID_UINT64: &str = "ad://ext/objectClass:88d5de791e7b27e6";
 
-/// The gokrb5 AD PAC container.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod pac_container {
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
         ),
-        expect(
-            clippy::expect_used,
-            reason = "lint-migration: upstream baseline at ee9cb04"
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
         )
-    )]
-    /// Pins the parsed gokrb5 PAC container header and its five buffers.
-    #[test]
-    fn parses_gokrb5_pac_container_and_buffers() -> Result<(), TestError> {
-        let bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
-        let pac = Pac::parse_and_process(&bytes).map_err(|cause| format!("PAC parses: {cause}"))?;
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn parses_gokrb5_pac_container_and_buffers() {
+    let bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
+    let pac = Pac::parse_and_process(&bytes).expect("PAC parses");
 
-        assert_eq!(pac.c_buffers, 5);
-        assert_eq!(pac.version, 0);
-        assert_eq!(pac.buffers.len(), 5);
-        assert!(pac.kerb_validation_info.is_some());
-        assert!(pac.client_info.is_some());
-        assert!(pac.upn_dns_info.is_some());
-        assert!(pac.server_checksum.is_some());
-        assert!(pac.kdc_checksum.is_some());
+    assert_eq!(pac.c_buffers, 5);
+    assert_eq!(pac.version, 0);
+    assert_eq!(pac.buffers.len(), 5);
+    assert!(pac.kerb_validation_info.is_some());
+    assert!(pac.client_info.is_some());
+    assert!(pac.upn_dns_info.is_some());
+    assert!(pac.server_checksum.is_some());
+    assert!(pac.kdc_checksum.is_some());
 
-        let kvi = pac.kerb_validation_info.as_ref().expect("KVI parsed");
-        assert_gokrb5_validation_info(kvi);
-        assert_client_info(pac.client_info.as_ref().expect("client info parsed"));
-        assert_upn_dns_info(pac.upn_dns_info.as_ref().expect("UPN/DNS info parsed"));
-        Ok(())
-    }
+    let kvi = pac.kerb_validation_info.as_ref().expect("KVI parsed");
+    assert_gokrb5_validation_info(kvi);
+    assert_client_info(pac.client_info.as_ref().expect("client info parsed"));
+    assert_upn_dns_info(pac.upn_dns_info.as_ref().expect("UPN/DNS info parsed"));
 }
 
-/// AD credentials derived from the PAC logon info.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod ad_credentials {
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
         ),
-        expect(
-            clippy::expect_used,
-            reason = "lint-migration: upstream baseline at ee9cb04"
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
         )
-    )]
-    /// Pins the AD credential summary derived from the processed logon info.
-    #[test]
-    fn derives_ad_credentials_from_kerb_validation_info() -> Result<(), TestError> {
-        let bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
-        assert!(
-            Pac::parse(&bytes)
-                .map_err(|cause| format!("raw PAC parses: {cause}"))?
-                .ad_credentials()
-                .is_none(),
-            "unprocessed PAC has no AD credential summary"
-        );
-
-        let pac = Pac::parse_and_process(&bytes).map_err(|cause| format!("PAC parses: {cause}"))?;
-        let kvi = pac.kerb_validation_info.as_ref().expect("KVI is processed");
-        let credentials = pac
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn derives_ad_credentials_from_kerb_validation_info() {
+    let bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
+    assert!(
+        Pac::parse(&bytes)
+            .expect("raw PAC parses")
             .ad_credentials()
-            .expect("AD credentials derive from KVI");
+            .is_none(),
+        "unprocessed PAC has no AD credential summary"
+    );
 
-        assert_eq!(credentials.effective_name, "testuser1");
-        assert_eq!(credentials.full_name, "Test1 User1");
-        assert_eq!(credentials.user_id, 1105);
-        assert_eq!(credentials.primary_group_id, 513);
-        assert_eq!(
-            credentials.logon_time,
-            unix_time(1_494_085_991, 825_766_900)
-        );
-        assert_eq!(credentials.logoff_time, kvi.logoff_time.system_time());
-        assert_eq!(
-            credentials.password_last_set,
-            unix_time(1_494_055_388, 968_750_000)
-        );
-        assert_eq!(
-            credentials.group_membership_sids,
-            kvi.group_membership_sids()
-        );
-        assert_eq!(credentials.logon_domain_name, "TEST");
-        assert_eq!(
-            credentials.logon_domain_id.as_deref(),
-            Some("S-1-5-21-3167651404-3865080224-2280184895")
-        );
-        assert_eq!(credentials.logon_server, "ADDC");
-        assert_eq!(kvi.ad_credentials(), credentials);
-        Ok(())
-    }
+    let pac = Pac::parse_and_process(&bytes).expect("PAC parses");
+    let kvi = pac.kerb_validation_info.as_ref().expect("KVI is processed");
+    let credentials = pac
+        .ad_credentials()
+        .expect("AD credentials derive from KVI");
+
+    assert_eq!(credentials.effective_name, "testuser1");
+    assert_eq!(credentials.full_name, "Test1 User1");
+    assert_eq!(credentials.user_id, 1105);
+    assert_eq!(credentials.primary_group_id, 513);
+    assert_eq!(
+        credentials.logon_time,
+        unix_time(1_494_085_991, 825_766_900)
+    );
+    assert_eq!(credentials.logoff_time, kvi.logoff_time.system_time());
+    assert_eq!(
+        credentials.password_last_set,
+        unix_time(1_494_055_388, 968_750_000)
+    );
+    assert_eq!(
+        credentials.group_membership_sids,
+        kvi.group_membership_sids()
+    );
+    assert_eq!(credentials.logon_domain_name, "TEST");
+    assert_eq!(
+        credentials.logon_domain_id.as_deref(),
+        Some("S-1-5-21-3167651404-3865080224-2280184895")
+    );
+    assert_eq!(credentials.logon_server, "ADDC");
+    assert_eq!(kvi.ad_credentials(), credentials);
 }
 
-/// PAC signature buffers.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-mod signature_data {
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
         ),
-        expect(
-            clippy::expect_used,
-            clippy::indexing_slicing,
-            reason = "lint-migration: upstream baseline at ee9cb04"
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
         )
-    )]
-    /// Pins the parsed server and KDC signatures and their zeroed checksum bytes.
-    #[test]
-    fn parses_signature_data_and_zeroes_checksum_bytes() -> Result<(), TestError> {
-        let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K))
-            .map_err(|cause| format!("PAC parses: {cause}"))?;
-        let server = pac
-            .server_checksum
-            .as_ref()
-            .expect("server checksum parsed");
-        let kdc = pac.kdc_checksum.as_ref().expect("KDC checksum parsed");
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn parses_signature_data_and_zeroes_checksum_bytes() {
+    let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC parses");
+    let server = pac
+        .server_checksum
+        .as_ref()
+        .expect("server checksum parsed");
+    let kdc = pac.kdc_checksum.as_ref().expect("KDC checksum parsed");
 
-        assert_eq!(server.signature_type, CHECKSUM_HMAC_SHA1_96_AES256);
-        assert_eq!(hex_encode(&server.signature), "1e251d98d552be7df384f550");
-        assert_eq!(
-            hex_encode(&server.zeroed_data),
-            "10000000000000000000000000000000"
-        );
+    assert_eq!(server.signature_type, CHECKSUM_HMAC_SHA1_96_AES256);
+    assert_eq!(hex_encode(&server.signature), "1e251d98d552be7df384f550");
+    assert_eq!(
+        hex_encode(&server.zeroed_data),
+        "10000000000000000000000000000000"
+    );
 
-        assert_eq!(kdc.signature_type, CHECKSUM_HMAC_MD5_UNSIGNED);
-        assert_eq!(
-            hex_encode(&kdc.signature),
-            "340be28b48765d0519ee9346cf53d822"
-        );
-        assert_eq!(
-            hex_encode(&kdc.zeroed_data),
-            "76ffffff00000000000000000000000000000000"
-        );
+    assert_eq!(kdc.signature_type, CHECKSUM_HMAC_MD5_UNSIGNED);
+    assert_eq!(
+        hex_encode(&kdc.signature),
+        "340be28b48765d0519ee9346cf53d822"
+    );
+    assert_eq!(
+        hex_encode(&kdc.zeroed_data),
+        "76ffffff00000000000000000000000000000000"
+    );
 
-        let server_buffer = pac
-            .buffer(INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
-            .expect("server checksum buffer exists");
-        let server_offset = usize::try_from(server_buffer.offset)
-            .map_err(|cause| format!("offset fits: {cause}"))?;
-        assert_eq!(
-            &pac.zero_signature_data[server_offset + 4..server_offset + 16],
-            &[0; 12]
-        );
+    let server_buffer = pac
+        .buffer(INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
+        .expect("server checksum buffer exists");
+    let server_offset = usize::try_from(server_buffer.offset).expect("offset fits");
+    assert_eq!(
+        &pac.zero_signature_data[server_offset + 4..server_offset + 16],
+        &[0; 12]
+    );
 
-        let kdc_buffer = pac
-            .buffer(INFO_TYPE_PAC_KDC_SIGNATURE_DATA)
-            .expect("KDC checksum buffer exists");
-        let kdc_offset =
-            usize::try_from(kdc_buffer.offset).map_err(|cause| format!("offset fits: {cause}"))?;
-        assert_eq!(
-            &pac.zero_signature_data[kdc_offset + 4..kdc_offset + 20],
-            &[0; 16]
-        );
-        Ok(())
-    }
+    let kdc_buffer = pac
+        .buffer(INFO_TYPE_PAC_KDC_SIGNATURE_DATA)
+        .expect("KDC checksum buffer exists");
+    let kdc_offset = usize::try_from(kdc_buffer.offset).expect("offset fits");
+    assert_eq!(
+        &pac.zero_signature_data[kdc_offset + 4..kdc_offset + 20],
+        &[0; 16]
+    );
 }
 
-/// PAC component buffers parsed one by one.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-mod component_buffers {
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
         ),
-        expect(
-            clippy::expect_used,
-            reason = "lint-migration: upstream baseline at ee9cb04"
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
         )
-    )]
-    /// Pins that the client, UPN/DNS and signature buffers parse on their own.
-    #[test]
-    fn parses_component_buffers_directly() -> Result<(), TestError> {
-        let pac = Pac::parse(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K))
-            .map_err(|cause| format!("PAC header parses: {cause}"))?;
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn parses_component_buffers_directly() {
+    let pac = Pac::parse(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC header parses");
 
-        let client_buffer = pac
-            .buffer(INFO_TYPE_PAC_CLIENT_INFO)
-            .expect("client buffer exists");
-        let client = ClientInfo::parse(
-            pac.buffer_bytes(client_buffer)
-                .map_err(|cause| format!("client bytes: {cause}"))?,
-        )
-        .map_err(|cause| format!("client: {cause}"))?;
-        assert_client_info(&client);
+    let client_buffer = pac
+        .buffer(INFO_TYPE_PAC_CLIENT_INFO)
+        .expect("client buffer exists");
+    let client =
+        ClientInfo::parse(pac.buffer_bytes(client_buffer).expect("client bytes")).expect("client");
+    assert_client_info(&client);
 
-        let upn_buffer = pac
-            .buffer(INFO_TYPE_UPN_DNS_INFO)
-            .expect("UPN/DNS buffer exists");
-        let upn = UpnDnsInfo::parse(
-            pac.buffer_bytes(upn_buffer)
-                .map_err(|cause| format!("UPN/DNS bytes: {cause}"))?,
-        )
-        .map_err(|cause| format!("UPN/DNS: {cause}"))?;
-        assert_upn_dns_info(&upn);
+    let upn_buffer = pac
+        .buffer(INFO_TYPE_UPN_DNS_INFO)
+        .expect("UPN/DNS buffer exists");
+    let upn =
+        UpnDnsInfo::parse(pac.buffer_bytes(upn_buffer).expect("UPN/DNS bytes")).expect("UPN/DNS");
+    assert_upn_dns_info(&upn);
 
-        let signature_buffer = pac
-            .buffer(INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
-            .expect("server checksum buffer exists");
-        let signature = SignatureData::parse(
-            pac.buffer_bytes(signature_buffer)
-                .map_err(|cause| format!("server checksum bytes: {cause}"))?,
-        )
-        .map_err(|cause| format!("signature parses: {cause}"))?;
-        assert_eq!(signature.signature_type, CHECKSUM_HMAC_SHA1_96_AES256);
-        Ok(())
-    }
+    let signature_buffer = pac
+        .buffer(INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
+        .expect("server checksum buffer exists");
+    let signature = SignatureData::parse(
+        pac.buffer_bytes(signature_buffer)
+            .expect("server checksum bytes"),
+    )
+    .expect("signature parses");
+    assert_eq!(signature.signature_type, CHECKSUM_HMAC_SHA1_96_AES256);
 }
 
 #[cfg_attr(
@@ -1113,6 +1049,54 @@ fn parses_credential_data_directly() {
     assert_credential_data(&credential_data);
 }
 
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        )
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn verifies_pac_server_checksum_with_service_key() {
+    let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)).expect("PAC parses");
+    let keytab = Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB)).expect("keytab parses");
+    let (key, kvno) = keytab
+        .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
+        .expect("service key exists");
+
+    assert_eq!(kvno, 2);
+    assert!(
+        pac.verify_server_checksum(key)
+            .expect("checksum verification runs")
+    );
+    pac.verify(key).expect("PAC verifies");
+}
+
 /// PAC server checksum verification with the service key.
 #[cfg(test)]
 #[expect(
@@ -1122,30 +1106,7 @@ fn parses_credential_data_directly() {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod server_checksum {
-    use pretty_assertions::assert_eq;
-
     use super::*;
-
-    /// Pins that the service key verifies the PAC server checksum.
-    #[test]
-    fn verifies_pac_server_checksum_with_service_key() -> Result<(), TestError> {
-        let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K))
-            .map_err(|cause| format!("PAC parses: {cause}"))?;
-        let keytab = Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB))
-            .map_err(|cause| format!("keytab parses: {cause}"))?;
-        let (key, kvno) = keytab
-            .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
-            .map_err(|cause| format!("service key exists: {cause}"))?;
-
-        assert_eq!(kvno, 2);
-        assert!(
-            pac.verify_server_checksum(key)
-                .map_err(|cause| format!("checksum verification runs: {cause}"))?
-        );
-        pac.verify(key)
-            .map_err(|cause| format!("PAC verifies: {cause}"))?;
-        Ok(())
-    }
 
     #[cfg_attr(
         any(
@@ -1205,181 +1166,154 @@ mod server_checksum {
     }
 }
 
-/// Logon info of a domain-trust PAC.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-mod trust_validation_info {
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
         ),
-        expect(
-            clippy::decimal_literal_representation,
-            clippy::expect_used,
-            clippy::indexing_slicing,
-            clippy::unreadable_literal,
-            reason = "lint-migration: upstream baseline at ee9cb04"
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
         )
-    )]
-    /// Pins the trust KVI fields, extra SIDs and resource groups.
-    #[test]
-    fn parses_domain_trust_validation_info_resource_groups() -> Result<(), TestError> {
-        let kvi = KerbValidationInfo::parse(&decode_hex(pac_trust::PAC_KERB_VALIDATION_INFO_TRUST))
-            .map_err(|cause| format!("trust KVI parses: {cause}"))?;
+    ),
+    expect(
+        clippy::decimal_literal_representation,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        clippy::unreadable_literal,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn parses_domain_trust_validation_info_resource_groups() {
+    let kvi = KerbValidationInfo::parse(&decode_hex(pac_trust::PAC_KERB_VALIDATION_INFO_TRUST))
+        .expect("trust KVI parses");
 
-        assert_eq!(kvi.effective_name.value, "testuser1");
-        assert_eq!(kvi.full_name.value, "Test1 User1");
-        assert_eq!(kvi.logon_count, 46);
-        assert_eq!(kvi.user_id, 1106);
-        assert_eq!(kvi.primary_group_id, 513);
-        assert_eq!(
-            kvi.group_ids,
-            vec![group(1110, 7), group(513, 7), group(1109, 7),]
-        );
-        assert_eq!(kvi.user_flags, 544);
-        assert_eq!(kvi.logon_server.value, "UDC");
-        assert_eq!(kvi.logon_domain_name.value, "USER");
-        assert_eq!(
-            kvi.logon_domain_id
-                .as_ref()
-                .expect("logon domain SID")
-                .to_string(),
-            "S-1-5-21-2284869408-3503417140-1141177250"
-        );
-        assert_eq!(kvi.sid_count, 1);
-        assert_eq!(kvi.extra_sids.len(), 1);
-        assert_eq!(kvi.extra_sids[0].sid.to_string(), "S-1-18-1");
-        assert_eq!(kvi.extra_sids[0].attributes, 7);
-        assert_eq!(
-            kvi.resource_group_domain_sid
-                .as_ref()
-                .expect("resource group domain SID")
-                .to_string(),
-            "S-1-5-21-3062750306-1230139592-1973306805"
-        );
-        assert_eq!(
-            kvi.resource_group_ids,
-            vec![group(1107, 536870919), group(1108, 536870919)]
-        );
-        assert_eq!(
-            kvi.group_membership_sids(),
-            vec![
-                "S-1-5-21-2284869408-3503417140-1141177250-1110",
-                "S-1-5-21-2284869408-3503417140-1141177250-513",
-                "S-1-5-21-2284869408-3503417140-1141177250-1109",
-                "S-1-18-1",
-                "S-1-5-21-3062750306-1230139592-1973306805-1107",
-                "S-1-5-21-3062750306-1230139592-1973306805-1108",
-            ]
-        );
-        Ok(())
-    }
+    assert_eq!(kvi.effective_name.value, "testuser1");
+    assert_eq!(kvi.full_name.value, "Test1 User1");
+    assert_eq!(kvi.logon_count, 46);
+    assert_eq!(kvi.user_id, 1106);
+    assert_eq!(kvi.primary_group_id, 513);
+    assert_eq!(
+        kvi.group_ids,
+        vec![group(1110, 7), group(513, 7), group(1109, 7),]
+    );
+    assert_eq!(kvi.user_flags, 544);
+    assert_eq!(kvi.logon_server.value, "UDC");
+    assert_eq!(kvi.logon_domain_name.value, "USER");
+    assert_eq!(
+        kvi.logon_domain_id
+            .as_ref()
+            .expect("logon domain SID")
+            .to_string(),
+        "S-1-5-21-2284869408-3503417140-1141177250"
+    );
+    assert_eq!(kvi.sid_count, 1);
+    assert_eq!(kvi.extra_sids.len(), 1);
+    assert_eq!(kvi.extra_sids[0].sid.to_string(), "S-1-18-1");
+    assert_eq!(kvi.extra_sids[0].attributes, 7);
+    assert_eq!(
+        kvi.resource_group_domain_sid
+            .as_ref()
+            .expect("resource group domain SID")
+            .to_string(),
+        "S-1-5-21-3062750306-1230139592-1973306805"
+    );
+    assert_eq!(
+        kvi.resource_group_ids,
+        vec![group(1107, 536870919), group(1108, 536870919)]
+    );
+    assert_eq!(
+        kvi.group_membership_sids(),
+        vec![
+            "S-1-5-21-2284869408-3503417140-1141177250-1110",
+            "S-1-5-21-2284869408-3503417140-1141177250-513",
+            "S-1-5-21-2284869408-3503417140-1141177250-1109",
+            "S-1-18-1",
+            "S-1-5-21-3062750306-1230139592-1973306805-1107",
+            "S-1-5-21-3062750306-1230139592-1973306805-1108",
+        ]
+    );
 }
 
-/// PAC lookup in authorization data.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-mod if_relevant_pac {
-    use pretty_assertions::assert_eq;
-    use rasn::der;
-
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
         ),
-        expect(
-            clippy::expect_used,
-            reason = "lint-migration: upstream baseline at ee9cb04"
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
         )
-    )]
-    /// Pins that the PAC is found inside AD-IF-RELEVANT authorization data.
-    #[test]
-    fn extracts_pac_from_if_relevant_authorization_data() -> Result<(), TestError> {
-        let pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
-        let nested =
-            rasn_kerberos::AuthorizationData::from(vec![rasn_kerberos::AuthorizationDataValue {
-                r#type: pac::AD_WIN2K_PAC,
-                data: pac_bytes.into(),
-            }]);
-        let nested_der = der::encode(&nested)
-            .map_err(|cause| format!("nested authorization-data encodes: {cause}"))?;
-        let authorization_data =
-            rasn_kerberos::AuthorizationData::from(vec![rasn_kerberos::AuthorizationDataValue {
-                r#type: pac::AD_IF_RELEVANT,
-                data: nested_der.into(),
-            }]);
+    ),
+    expect(
+        clippy::absolute_paths,
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn extracts_pac_from_if_relevant_authorization_data() {
+    let pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
+    let nested =
+        rasn_kerberos::AuthorizationData::from(vec![rasn_kerberos::AuthorizationDataValue {
+            r#type: pac::AD_WIN2K_PAC,
+            data: pac_bytes.into(),
+        }]);
+    let nested_der = rasn::der::encode(&nested).expect("nested authorization-data encodes");
+    let authorization_data =
+        rasn_kerberos::AuthorizationData::from(vec![rasn_kerberos::AuthorizationDataValue {
+            r#type: pac::AD_IF_RELEVANT,
+            data: nested_der.into(),
+        }]);
 
-        let pac = pac::find_pac_in_authorization_data(&authorization_data)
-            .map_err(|cause| format!("authorization-data search succeeds: {cause}"))?
-            .expect("PAC exists");
+    let pac = pac::find_pac_in_authorization_data(&authorization_data)
+        .expect("authorization-data search succeeds")
+        .expect("PAC exists");
 
-        assert_eq!(pac.c_buffers, 5);
-        assert_eq!(
-            pac.kerb_validation_info
-                .as_ref()
-                .expect("KVI parsed")
-                .effective_name
-                .value,
-            "testuser1"
-        );
-        Ok(())
-    }
+    assert_eq!(pac.c_buffers, 5);
+    assert_eq!(
+        pac.kerb_validation_info
+            .as_ref()
+            .expect("KVI parsed")
+            .effective_name
+            .value,
+        "testuser1"
+    );
 }
 
 #[cfg_attr(

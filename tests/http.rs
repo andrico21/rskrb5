@@ -10,6 +10,38 @@ use alloc::rc::Rc;
 use core::cell::{Cell, RefCell};
 #[cfg(any(feature = "tokio", feature = "tower"))]
 use core::convert::Infallible;
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        )
+    ),
+    expect(
+        redundant_imports,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[cfg(feature = "tower")]
+use core::future::Future;
 #[cfg(feature = "tower")]
 use core::task::{Context, Poll, Waker};
 use core::{error, time::Duration};

@@ -902,116 +902,101 @@ fn validates_ap_req_with_verified_ticket_pac() {
     );
 }
 
-/// Ticket PAC server checksum verification.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod invalid_pac_checksum {
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
+#[cfg_attr(
+    any(
+        all(
+            feature = "default",
+            feature = "evaluation",
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
         ),
-        expect(
-            clippy::expect_used,
-            clippy::indexing_slicing,
-            reason = "lint-migration: upstream baseline at ee9cb04"
+        all(
+            feature = "default",
+            feature = "evaluation",
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            feature = "tower",
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            feature = "http",
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            feature = "default",
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            feature = "serde",
+            feature = "spnego",
+            feature = "tokio",
+            not(feature = "tower"),
+            test
+        ),
+        all(
+            not(feature = "default"),
+            not(feature = "evaluation"),
+            not(feature = "http"),
+            feature = "messages",
+            not(feature = "serde"),
+            not(feature = "spnego"),
+            feature = "tokio",
+            not(feature = "tower"),
+            test
         )
-    )]
-    /// Pins that a ticket PAC with a broken server checksum is rejected.
-    #[test]
-    fn rejects_ap_req_with_invalid_ticket_pac_checksum() -> Result<(), TestError> {
-        let keytab = syshttp_keytab();
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
-        let mut pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
-        let pac_header =
-            pac::Pac::parse(&pac_bytes).map_err(|cause| format!("PAC header parses: {cause}"))?;
-        let server_signature = pac_header
-            .buffer(pac::INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
-            .expect("server checksum buffer exists");
-        let signature_offset = usize::try_from(server_signature.offset)
-            .map_err(|cause| format!("offset fits: {cause}"))?
-            + 4;
-        pac_bytes[signature_offset] ^= 0x01;
+    ),
+    expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::missing_panics_doc,
+        clippy::tests_outside_test_module,
+        reason = "lint-migration: upstream baseline at ee9cb04"
+    )
+)]
+#[test]
+fn rejects_ap_req_with_invalid_ticket_pac_checksum() {
+    let keytab = syshttp_keytab();
+    let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447));
+    let mut pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K);
+    let pac_header = pac::Pac::parse(&pac_bytes).expect("PAC header parses");
+    let server_signature = pac_header
+        .buffer(pac::INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
+        .expect("server checksum buffer exists");
+    let signature_offset = usize::try_from(server_signature.offset).expect("offset fits") + 4;
+    pac_bytes[signature_offset] ^= 0x01;
 
-        assert!(matches!(
-            validator
-                .validate_ap_req(&ap_req_with_pac_bytes(pac_bytes))
-                .expect_err("bad PAC checksum is rejected"),
-            Error::Pac(pac::Error::ServerChecksumVerificationFailed)
-        ));
-        Ok(())
-    }
+    assert!(matches!(
+        validator
+            .validate_ap_req(&ap_req_with_pac_bytes(pac_bytes))
+            .expect_err("bad PAC checksum is rejected"),
+        Error::Pac(pac::Error::ServerChecksumVerificationFailed)
+    ));
 }
 
 #[cfg_attr(
