@@ -15,9 +15,8 @@ contract").
 
 ## The project (verified 2026-10-25)
 
-Facts about the 0.3.0 line were measured on the local branch `release/0.3.0` at `d63aeb9`.
-That branch was not yet on `andrico21/rskrb5` when this was written (the remote had
-`release/0.2.1` and `release/0.2.2` only).
+Facts about the 0.3.0 line were measured on the branch `release/0.3.0` at `8f11734`,
+pushed to `andrico21/rskrb5`.
 
 - **What:** `andrico21/rskrb5`, a temporary fork of `clelange/rskrb5`.
   - It is published to crates.io as **`rskrb5-patched`**: 0.2.1 (2026-10-06), and 0.2.2 (2026-10-23, tag `v0.2.2` at `58b27bb`).
@@ -27,7 +26,7 @@ That branch was not yet on `andrico21/rskrb5` when this was written (the remote 
 - **Base:** upstream `main` at `6f4abc9` plus:
   - the 0.2.1 series: Rust 1.98 clippy drift, `hex` dev-dependency, padata exports, verbatim kpasswd result bytes, environment-free `Config`/`LibDefaults`, `include`/`includedir`, the TGS authenticator subkey;
   - the 0.2.2 additions: AP-REQ replay identity (PR #20), authenticator realm binding (PR #21), the TCP framing/preauth stream (upstream PR #19 plus Gittingc0dez/rskrb5#1);
-  - the 0.3.0 additions: the eight run-2 fix branches, proposed upstream as PRs #22 to #29 (ccache count bounds, authenticated kpasswd success, clockskew handoff, host-case SPN, domain-realm normalization, enctype policy, client renewal series, mutual-auth classification).
+  - the 0.3.0 additions: the eight run-2 fix branches, proposed upstream as PRs #22 to #29 (ccache count bounds, authenticated kpasswd success, clockskew handoff, host-case SPN, domain-realm normalization, enctype policy, client renewal series, mutual-auth classification). The enctype-policy branch (PR #27, head `752832b`) also fails closed on an allowlist with no supported enctype (`cc8060c`) and maps MIT's `des3-cbc-sha1`/`des3-hmac-sha1` names to enctype 16 (`752832b`); merge `7b9ee1c` brings both into `release/0.3.0`.
 
   `FORK-NOTES.md` carries the table.
 - **Branches:**
@@ -40,16 +39,17 @@ That branch was not yet on `andrico21/rskrb5` when this was written (the remote 
   - `src/lib.rs` has `#![forbid(unsafe_code)]`, and no `unsafe` remains in `tests/`: environment-dependent tests set variables in a child test process (`b61c3f2`);
   - no `allow` attribute anywhere (`allow_gate.py --enforce`);
   - one dev-dependency added, `proptest`, for the ccache, serde-flag and realm case-fold property tests.
-- **CI (`release/0.3.0`, `7e05965`):** `ci.yml` runs on floating `stable`, with `nightly-2026-10-03` for rustfmt, the second rustdoc run, the fork-lines gate and fuzz, and `1.99.0` for the MSRV build.
-  - Blocking: `fmt`, `clippy`, `features-matrix` (K1 to K7, including the consumer's `--no-default-features --features tokio`), `test` (Linux, macOS, Windows), `i686`, `docs`, `msrv`, `semver-checks`, `publish-dryrun`, `consumer`, `deny`, `audit`, `vet`, `machete`, `taplo`, `docs-validate`, `lint-gates`, `fork-lines`, `package`.
-  - Advisory (`continue-on-error`): `geiger`, `rustdoc-nightly-canary`, and the scheduled `mutants` and `fuzz`.
+- **CI (`release/0.3.0`, `7e05965`, extended in `e64de51`):** `ci.yml` runs on floating `stable`, with `nightly-2026-10-03` for rustfmt, the second rustdoc run, the fork-lines gate and fuzz, and `1.99.0` for the MSRV build.
+  - Blocking: `fmt`, `clippy`, `features-matrix` (K1 to K7, including the consumer's `--no-default-features --features tokio`), `lib-feature-sets` (`cargo check --lib --no-default-features` with `messages`, `spnego`, `http` or `evaluation`, plus the compatibility-report binary), `readme-commands` (the README `axum-negotiate` build and the compatibility-report diff), `test` (Linux, macOS, Windows), `i686` (check plus the ccache tests), `docs`, `msrv`, `semver-checks`, `publish-dryrun`, `consumer`, `deny`, `audit`, `vet`, `machete`, `taplo`, `docs-validate`, `lint-gates`, `fork-lines`, `package`.
+  - Advisory (`continue-on-error`): `geiger`, `rustdoc-nightly-canary`, `mutants` and `fuzz`. The last two run only on `schedule` and `workflow_dispatch`; `schedule` fires only on the default branch `main`, so the release line runs them by dispatch (`FORK-NOTES.md` "CI").
   - `fuzz/Cargo.toml` depends on the renamed package (`dd5e57d`); the fuzz targets are `kpasswd_reply` and `ccache_parse`.
-- **Lint baseline (measured 2026-10-25 at `d63aeb9`):**
-  - `python3 scripts/lint-ratchet/baseline_gate.py --report` prints `current 6520 / base 7396 entries` (7,396 at adoption in `473ca10`);
-  - 2,730 source lines carry a `lint-migration:` reason;
-  - 2 `deliberate:` expectations, 84 core-sanctioned test-module expectations (45 `test code is not rendered API documentation`, 39 `a test fails by panicking`) and one crate-root `public facade` expectation.
+- **Lint baseline (measured 2026-10-25 at `8f11734`):**
+  - `python3 scripts/lint-ratchet/baseline_gate.py --report` prints `current 6514 / base 7396 entries` (7,396 at adoption in `473ca10`);
+  - 2,728 lines of `.rs` files carry a `lint-migration:` reason (`rg -c 'lint-migration:' -g '*.rs'`, summed);
+  - 2 `deliberate:` expectations (`http::NegotiateHttpError`, mirroring upstream PR #29, and exception (i) below), 84 core-sanctioned test-module expectations (45 `test code is not rendered API documentation`, 39 `a test fails by panicking`) and one crate-root `public facade` expectation.
 
-  `docs/lint-baseline.md` records the measures, the gates and the authorized exceptions. Its section "Authorized upstream-line rewrites and exceptions" lists (a) to (o), including the one `deliberate:` expectation without an upstream PR number (exception (i), `client::build_tgs_req_for_realm_with_confounder_and_subkey`). Read them there; this file does not repeat them.
+  `docs/lint-baseline.md` records the measures, the gates and the authorized exceptions. Its section "Authorized upstream-line rewrites and exceptions" lists (a) to (p), including the one `deliberate:` expectation without an upstream PR number (exception (i), `client::build_tgs_req_for_realm_with_confounder_and_subkey`). Read them there; this file does not repeat them.
+- **Feature sets:** the strict profile supports exactly the K1 to K7 sets. Advisory O-7 in [`docs/lint-baseline.md`](https://github.com/andrico21/rskrb5/blob/release/0.3.0/docs/lint-baseline.md#advisories) records which other sets pass the lib-only check and which fail; read it there.
 - **Profile gap before adoption (measured 2026-10-23):** the core Section 9 profile at warn on `release/0.2.2` reported 7,906 distinct diagnostics, covering 104 lints in 54 files; 285 were on fork-authored lines.
 - **Vendored rules:** committed on `release/0.3.0` at `docs/rust-guidelines/` (`7e21b25`): the core, the two domain overlays and this file, with `SHA256SUMS`. The root `RUST_GUIDELINES.md` index names the pin and the re-vendor procedure. CI checks the checksums, and `profile_eq.py --clippy-toml` checks `Cargo.toml` and `clippy.toml` against the vendored core.
 
@@ -102,7 +102,8 @@ That branch was not yet on `andrico21/rskrb5` when this was written (the remote 
 ## Deviations to resolve (status 2026-10-25)
 
 Each open item is a task. The alignment plan (`rskrb5-review-fixes-lint-alignment`) closed
-1, 3, 4 and 9 on `release/0.3.0` and started the burn-down in 2. Closed items stay listed
+1, 3, 4, 9 and 11 and the cancel-safety item of 7 on `release/0.3.0`, and started the
+burn-down in 2. Closed items stay listed
 with the commits that closed them, until the release line is published.
 
 1. **Closed: the profile is adopted on `release/0.3.0`.** `473ca10` added the `[lints]` tables, `.cargo/config.toml` and the baseline; `8eb3977` added `rustfmt.toml`; `62191fe` added `clippy.toml`. `fix/*` branches stay without the profile (rule 6).
@@ -115,7 +116,7 @@ with the commits that closed them, until the release line is published.
    - the weak-enctype predicate misses `rc4-hmac`/DES3 (upstream #3);
    - RC4 is in the default enctypes (run-2 lead);
    - kpasswd re-sends after a possible commit (upstream #7, run-2 lead);
-   - `change_password*` cancel safety is undocumented (upstream #8);
+   - **Closed (`4cd7423`): `change_password*` cancel safety** (upstream #8). Every public async password-change entry point has a `# Cancel safety` section saying `NOT cancel-safe: this mutates credentials on the KDC`: `TokioClient::change_password*` (4, `src/client/kpasswd.rs`), `NegotiateClient::change_password*` (4, `src/client/negotiate.rs`), and the `TokioKdcTransport` kpasswd exchanges (`exchange_kpasswd_request*`, `exchange_kpasswd_result*`, `send_to_kpasswd_realm` and the private `send_to_kpasswd_realm_explicit`; 6, `src/client/transport.rs`). Check: `rg -c 'NOT cancel-safe: this mutates credentials on the KDC' src/client`;
    - zeroization gaps (upstream #1, #6);
    - ambient-environment constructors are kept for upstream parity; the environment-free ones exist since 0.2.1.
 
@@ -127,6 +128,7 @@ with the commits that closed them, until the release line is published.
     - move `kpasswd-rs` back to `rskrb5`;
     - delete this overlay;
     - archive the repository.
+11. **Closed: the explicit enctype allowlist failed open, and MIT's DES3 names were unknown** (Kerberos overlay, found 2026-10-25). An explicit `permitted_enctypes` that resolved to no supported enctype acted as no allowlist, and `des3-cbc-sha1`/`des3-hmac-sha1` did not mean enctype 16. `cc8060c` fails closed (`config::Error::NoPermittedEnctypes`); `752832b` maps the MIT names. Both are on `fix/enctype-policy` (upstream PR #27, head `752832b`) and reach `release/0.3.0` through merge `7b9ee1c`.
 
 ## Common alignment steps (every project)
 

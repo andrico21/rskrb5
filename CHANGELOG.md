@@ -117,8 +117,9 @@ retirement trigger.
 - **Breaking:** `rust-version` is raised from 1.88 to 1.99. The lockfile holds
   the latest Rust 1.99-compatible versions, and `proptest` is a new
   dev-dependency.
-- The universal Rust guidelines are vendored at `docs/rust-guidelines/` (pin
-  `8b52023`, checksummed) with the `RUST_GUIDELINES.md` index.
+- The universal Rust guidelines are vendored at `docs/rust-guidelines/`
+  (pinned and checksummed) with the `RUST_GUIDELINES.md` index, which names
+  the pin.
 - **Breaking** for configs that relied on silent narrowing: an explicit
   `default_tkt_enctypes` or `default_tgs_enctypes` naming an enctype outside an
   explicit `permitted_enctypes` is a parse error
