@@ -96,7 +96,8 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   `from_keytab_cow`) keep the 300 s default. Earlier `rskrb5` releases ignored
   a configured `clockskew` in these constructors. gokrb5 v8.4.4 reads
   `clockskew` on the client side only (`messages.ASRep.Verify`,
-  `messages.TGSRep.Verify`); its acceptor takes no krb5.conf and uses the
+  `messages.TGSRep.Verify`); its AP-REQ acceptor (`service.VerifyAPREQ`,
+  `spnego.SPNEGOService`) takes no krb5.conf and uses the
   `service.MaxClockSkew` setting or a 5-minute default
   (`service.Settings.MaxClockSkew`).
 - **TGT refresh and renewal series.** A TGT is due for refresh in the last
