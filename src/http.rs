@@ -14,6 +14,8 @@ use alloc::borrow::Cow;
 use core::future::Future;
 #[cfg(feature = "tower")]
 use core::pin::Pin;
+#[cfg(feature = "tokio")]
+use core::result::Result as CoreResult;
 #[cfg(feature = "tower")]
 use core::task::{Context, Poll};
 #[cfg(feature = "tower")]
@@ -39,6 +41,7 @@ use crate::keytab::{self, Keytab};
 #[cfg(feature = "tower")]
 use crate::service::{ApRepOptions, HostAddress, SharedReplayCache};
 use crate::{
+    ap_req::ap_options_to_bits,
     service::{ServiceValidator, VerifiedApRep},
     spnego::{self, AcceptedContext},
 };
@@ -297,86 +300,16 @@ pub enum TowerError<E> {
     Inner(E),
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::exhaustive_enums,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Client-side HTTP Negotiate wrapper error.
 ///
 /// `E` is the caller-provided sender's error type and `B` is the response body
 /// type, so a response that failed mutual authentication can be returned to the
 /// caller for diagnostics.
 #[cfg(feature = "tokio")]
+#[expect(
+    clippy::exhaustive_enums,
+    reason = "deliberate: http::NegotiateHttpError - mirrors upstream PR #29"
+)]
 #[derive(Debug, thiserror::Error)]
 pub enum NegotiateHttpError<E, B> {
     /// HTTP Negotiate processing failed.
@@ -1710,6 +1643,13 @@ pub async fn authorize_request_context_with_negotiate_client_options<B>(
 /// final response is returned with its [`ClientNegotiateResponse`]
 /// classification and the caller decides how to treat it. Use
 /// [`send_with_negotiate_options`] to require mutual authentication.
+///
+/// # Cancel safety
+///
+/// NOT cancel-safe. Once `send_request` has been called, dropping the future
+/// leaves unknown whether the server received the unauthenticated request or
+/// the authenticated retry, so the caller must treat a request that is not
+/// idempotent as possibly delivered.
 #[cfg(feature = "tokio")]
 pub async fn send_with_negotiate<
     ReqBody,
@@ -1723,7 +1663,7 @@ pub async fn send_with_negotiate<
     service: Principal,
     make_request: MakeRequest,
     send_request: SendRequest,
-) -> std::result::Result<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
+) -> CoreResult<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
 where
     MakeRequest: FnMut() -> Request<ReqBody>,
     SendRequest: FnMut(Request<ReqBody>) -> SendFuture,
@@ -1831,6 +1771,13 @@ where
 /// challenge and a final response without `WWW-Authenticate`, without a
 /// Negotiate challenge, or without a valid AP-REP. Without a mutual request
 /// the final response is returned with its classification.
+///
+/// # Cancel safety
+///
+/// NOT cancel-safe. Once `send_request` has been called, dropping the future
+/// leaves unknown whether the server received the unauthenticated request or
+/// the authenticated retry, so the caller must treat a request that is not
+/// idempotent as possibly delivered.
 #[cfg(feature = "tokio")]
 pub async fn send_with_negotiate_options<
     ReqBody,
@@ -1845,7 +1792,7 @@ pub async fn send_with_negotiate_options<
     options: spnego::InitiatorContextOptions,
     mut make_request: MakeRequest,
     mut send_request: SendRequest,
-) -> std::result::Result<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
+) -> CoreResult<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
 where
     MakeRequest: FnMut() -> Request<ReqBody>,
     SendRequest: FnMut(Request<ReqBody>) -> SendFuture,
@@ -1962,7 +1909,7 @@ pub fn send_with_blocking_negotiate<ReqBody, RespBody, MakeRequest, SendRequest,
     service: Principal,
     make_request: MakeRequest,
     send_request: SendRequest,
-) -> std::result::Result<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
+) -> CoreResult<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
 where
     MakeRequest: FnMut() -> Request<ReqBody>,
     SendRequest: FnMut(Request<ReqBody>) -> std::result::Result<Response<RespBody>, SendError>,
@@ -2071,7 +2018,7 @@ pub fn send_with_blocking_negotiate_options<
     options: spnego::InitiatorContextOptions,
     mut make_request: MakeRequest,
     mut send_request: SendRequest,
-) -> std::result::Result<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
+) -> CoreResult<NegotiateHttpResponse<RespBody>, NegotiateHttpError<SendError, RespBody>>
 where
     MakeRequest: FnMut() -> Request<ReqBody>,
     SendRequest: FnMut(Request<ReqBody>) -> std::result::Result<Response<RespBody>, SendError>,
@@ -2596,128 +2543,19 @@ fn mutual_requested_by(options: &spnego::InitiatorContextOptions) -> bool {
         || options.context_flags.contains(&spnego::CONTEXT_FLAG_MUTUAL)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::missing_errors_doc,
-        clippy::std_instead_of_core,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// The outcome when the first response carried no Negotiate challenge, so no
+/// authenticated retry was sent.
+///
+/// # Errors
+///
+/// Returns [`NegotiateHttpError::MutualAuthenticationNotProven`] with that
+/// response when mutual authentication was requested: no AP-REP can have
+/// proven the server.
 #[cfg(feature = "tokio")]
 fn unchallenged_result<E, B>(
     mutual: bool,
     first: Response<B>,
-) -> std::result::Result<NegotiateHttpResponse<B>, NegotiateHttpError<E, B>> {
+) -> CoreResult<NegotiateHttpResponse<B>, NegotiateHttpError<E, B>> {
     if mutual {
         return Err(NegotiateHttpError::MutualAuthenticationNotProven {
             negotiation: None,
@@ -2727,129 +2565,20 @@ fn unchallenged_result<E, B>(
     Ok(NegotiateHttpResponse::not_negotiated(first))
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::missing_errors_doc,
-        clippy::std_instead_of_core,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// The outcome of an authenticated retry: its final response, classified
+/// against the initiator context that produced the request's token.
+///
+/// # Errors
+///
+/// Returns [`NegotiateHttpError::MutualAuthenticationNotProven`] with the
+/// final response when mutual authentication was requested and the response
+/// did not carry an AP-REP that verified against `context`.
 #[cfg(feature = "tokio")]
 fn negotiated_result<E, B>(
     mutual: bool,
     response: Response<B>,
     context: spnego::InitiatorContext,
-) -> std::result::Result<NegotiateHttpResponse<B>, NegotiateHttpError<E, B>> {
+) -> CoreResult<NegotiateHttpResponse<B>, NegotiateHttpError<E, B>> {
     let negotiation = classify_negotiate_response(&context, &response);
     if mutual
         && !matches!(
@@ -3173,83 +2902,9 @@ fn negotiate_challenge(header: &str) -> Option<&str> {
 /// RFC 4120 AP option `mutual-required`.
 const AP_OPTION_MUTUAL_REQUIRED: u32 = 0x2000_0000;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Whether the initiator asked for mutual authentication in any supported form.
 fn mutual_authentication_requested(context: &spnego::InitiatorContext) -> bool {
-    crate::ap_req::ap_options_to_bits(&context.ap_req.ap_options) & AP_OPTION_MUTUAL_REQUIRED != 0
+    ap_options_to_bits(&context.ap_req.ap_options) & AP_OPTION_MUTUAL_REQUIRED != 0
         || context.context_flags.contains(&spnego::CONTEXT_FLAG_MUTUAL)
 }
 
@@ -5051,10 +4706,8 @@ impl NegotiateLayer<'static> {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::missing_errors_doc,
             clippy::missing_inline_in_public_items,
-            unused_qualifications,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
@@ -5064,7 +4717,7 @@ impl NegotiateLayer<'static> {
     /// `config.libdefaults.default_keytab_name`. The configured
     /// `[libdefaults] clockskew` becomes the acceptance window.
     pub fn from_default_keytab(config: &Config) -> Result<Self> {
-        Ok(Self::from_keytab_name(crate::keytab::default_keytab_name(
+        Ok(Self::from_keytab_name(keytab::default_keytab_name(
             &config.libdefaults.default_keytab_name,
         )?)?
         .with_max_clock_skew(config.libdefaults.clockskew))
@@ -6838,5 +6491,48 @@ impl Default for NegotiateResponseOptions {
             ap_rep_options: ApRepOptions::default(),
             reject_invalid: true,
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::error;
+
+    use http_types::{Response, StatusCode};
+
+    use super::{NegotiateHttpError, unchallenged_result};
+
+    /// A first response without a Negotiate challenge fails closed when
+    /// mutual authentication was requested, keeping the response for
+    /// diagnostics, and is returned as not negotiated otherwise.
+    #[test]
+    fn unchallenged_response_fails_closed_only_when_mutual_was_requested()
+    -> Result<(), Box<dyn error::Error>> {
+        let refused = unchallenged_result::<(), &str>(true, Response::new("first"));
+        assert!(
+            matches!(
+                &refused,
+                Err(NegotiateHttpError::MutualAuthenticationNotProven {
+                    negotiation: None,
+                    response,
+                }) if *response.body() == "first"
+            ),
+            "requested mutual authentication with no challenge is not proven: {refused:?}"
+        );
+
+        let accepted = unchallenged_result::<(), &str>(false, Response::new("first"))?;
+        assert!(
+            !accepted.did_negotiate(),
+            "without mutual authentication the response is passed through"
+        );
+        assert_eq!(accepted.into_response().status(), StatusCode::OK);
+        Ok(())
     }
 }

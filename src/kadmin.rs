@@ -5152,7 +5152,6 @@ impl ChangePasswordResult {
             )
         ),
         expect(
-            clippy::indexing_slicing,
             clippy::missing_errors_doc,
             clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
@@ -5165,7 +5164,7 @@ impl ChangePasswordResult {
                 actual: bytes.len(),
             });
         }
-        let text_raw = bytes[2..].to_vec();
+        let text_raw = bytes.get(2..).unwrap_or_default().to_vec();
         Ok(Self {
             code: read_u16(bytes, 0),
             text: String::from_utf8_lossy(&text_raw).into_owned(),
