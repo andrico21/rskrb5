@@ -29,6 +29,8 @@ REVIEWED_REWRITES: Final = frozenset(
         "0a22457f7456bb189cd0047c649fc210b03a7f5f",
         "7d8926e3d1cbfff5fc08debd6bbcfb73adc6130e",
         "cd371cc36923a572c3e798a51053c4504faf1045",
+        # The crate rename: three statements rustfmt rewrapped for `rskrb5_ng`.
+        "c54d3cd4b649242117a83cf1fe3480d9a1526d37",
     }
 )
 RUST_KEYWORDS: Final = frozenset(
@@ -213,6 +215,17 @@ def self_test() -> None:
     ):
         assert chain(crate_renamed(edited), crate_renamed(upstream), []) == {1: 1}
     assert crate_renamed("rskrb5_ngx rskrb5-ng rskrb5_ng") == "rskrb5_ngx rskrb5-ng rskrb5"
+    # Given a statement rustfmt rewrapped only because of the longer name,
+    # when the rename commit is a reviewed rewrite, every wrapped line inherits.
+    upstream = "    let part = rskrb5::kadmin::decrypt_part(&parsed.krb_priv, &reply_key)\n        .expect(\"decrypts\");\n"
+    rewrapped = "    let part =\n        rskrb5_ng::kadmin::decrypt_part(&parsed.krb_priv, &reply_key)\n            .expect(\"decrypts\");\n"
+    assert 2 not in chain(crate_renamed(rewrapped), crate_renamed(upstream), [])
+    renamed_revision = Revision(crate_renamed(upstream), crate_renamed(rewrapped))
+    assert chain(crate_renamed(rewrapped), upstream, [renamed_revision]) == {
+        1: 1,
+        2: 1,
+        3: 2,
+    }
     print(
         "provenance self-test: ok (chained rewrites, fork edits, fork-only origins, crate rename)"
     )
