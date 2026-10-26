@@ -197,7 +197,7 @@ required-features = ["messages"]
 [[test]]
 name = "pac"
 path = "tests/pac.rs"
-required-features = ["evaluation"]
+required-features = ["messages"]
 
 [[test]]
 name = "service"

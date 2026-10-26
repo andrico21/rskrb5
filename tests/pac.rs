@@ -1,5 +1,5 @@
 //! PAC container, buffer, claims and checksum tests against the gokrb5 vectors.
-#![cfg(feature = "evaluation")]
+#![cfg(feature = "messages")]
 
 #[path = "support/context.rs"]
 mod context;

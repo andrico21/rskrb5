@@ -31,6 +31,7 @@ from rust_lex import (
     iter_attributes,
     line_of,
     match_bracket,
+    opaque_constructs,
     split_top_level,
     strip_comments_and_strings,
 )
@@ -44,6 +45,41 @@ def iter_rust_files(root: Path) -> Iterator[Path]:
 def read_source(path: Path) -> tuple[str, str]:
     text = path.read_bytes().decode("utf-8")
     return text, strip_comments_and_strings(text)
+
+
+# A path that stays inside the including file's directory and names a `.rs`
+# file: `iter_rust_files` then scans the target as a file of its own.
+SCANNED_PATH: Final = re.compile(r"(?!/)(?:(?!\.\.(?:/|\Z))[\w.-]+/)*[\w.-]+\.rs")
+
+
+def foreign_sources(original: str, stripped: str) -> list[tuple[int, str]]:
+    """Report code pulled in from a file the gates do not scan.
+
+    `include!` and `#[path = ..]` (also inside `cfg_attr`) must name, as one plain
+    string literal, a relative `.rs` path without `..`; anything else (a `.txt`
+    file, `concat!`/`env!`, a metavariable, a parent directory) is reported.
+    `include_str!`/`include_bytes!` yield a literal, never code, and pass.
+    """
+    found = []
+    for match in re.finditer(r"(?<![\w$])(?:r#)?include\s*!\s*[(\[{]", stripped):
+        close = match_bracket(stripped, match.end() - 1)
+        argument = original[match.end() : close if close is not None else len(original)]
+        literal = re.fullmatch(r'\s*"([^"\\]*)"\s*,?\s*', argument)
+        if literal is None or not SCANNED_PATH.fullmatch(literal[1]):
+            found.append((match.start(), f"include!({argument.strip()}) is not a scanned .rs file"))
+    for start, end, _, _ in iter_attributes(stripped):
+        for match in re.finditer(r"[\[(,]\s*(?:r#)?path\s*=", stripped[start:end]):
+            at = start + match.end()
+            literal = re.match(r'\s*"([^"\\]*)"', original[at:end])
+            if literal is None or not SCANNED_PATH.fullmatch(literal[1]):
+                value = original[at:end].split(",", 1)[0].strip().rstrip(")]")
+                found.append((start, f"#[path = {value}] is not a scanned .rs file"))
+    return found
+
+
+def unscannable(original: str, stripped: str) -> list[tuple[int, str]]:
+    """Every construct that could hide an `allow`/`expect` from the gates."""
+    return sorted(opaque_constructs(stripped) + foreign_sources(original, stripped))
 
 
 
@@ -126,7 +162,16 @@ def self_test() -> int:
         )[0].predicate
         == "all(test, unix)"
     )
-    print("common self-test: ok (cfg_attr siblings, lexemes)")
+    # Tokens may be spaced: the reason is still read from the right offset.
+    spaced = attribute_calls('# ! [ expect ( dead_code , reason = "why" ) ]')
+    assert len(spaced) == 1 and spaced[0].inner and spaced[0].reason == "why"
+    spaced = attribute_calls('#\n[cfg_attr(test, r#allow(x))]')
+    assert [(c.form, c.lints, c.inner) for c in spaced] == [("allow", ("x",), False)]
+    for opaque in ("#[$m]", "# $t", '#[cfg_attr(test, $($t)*)]', "m!(expect(x));", "#[[x]]"):
+        assert unscannable(opaque, strip_comments_and_strings(opaque)), opaque
+    for plain in ('#[path = "a/b.rs"] mod b;', 'include!("x.rs");', "a.expect(1); A::expect(b);"):
+        assert not unscannable(plain, strip_comments_and_strings(plain)), plain
+    print("common self-test: ok (cfg_attr siblings, lexemes, spacing, unscannable forms)")
     return 0
 
 
