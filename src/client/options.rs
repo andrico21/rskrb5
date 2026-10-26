@@ -10,7 +10,7 @@ use crate::{config::LibDefaults, keytab::EncryptionKey};
 /// Options for constructing an AS-REQ.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub struct AsReqOptions {
+pub struct AsReq {
     /// Client clock used for request time fields.
     pub now: SystemTime,
     /// Requested ticket lifetime.
@@ -31,7 +31,7 @@ pub struct AsReqOptions {
     pub fast_negotiation: bool,
 }
 
-impl AsReqOptions {
+impl AsReq {
     #[must_use]
     /// Construct options with gokrb5-compatible AES defaults.
     #[inline]
@@ -148,7 +148,7 @@ impl AsReqOptions {
 /// Options for constructing a TGS-REQ.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub struct TgsReqOptions {
+pub struct TgsReq {
     /// Client clock used for request time fields.
     pub now: SystemTime,
     /// Requested service-ticket lifetime.
@@ -167,7 +167,7 @@ pub struct TgsReqOptions {
     pub additional_tickets: Vec<rasn_kerberos::Ticket>,
 }
 
-impl TgsReqOptions {
+impl TgsReq {
     #[must_use]
     /// Construct options with gokrb5-compatible AES defaults.
     #[inline]
@@ -286,7 +286,7 @@ impl TgsReqOptions {
 /// Options for constructing a client AP-REQ.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub struct ApReqOptions {
+pub struct ApReq {
     /// Raw AP option bit string.
     pub ap_option_bits: u32,
     /// Optional authenticator checksum.
@@ -297,7 +297,7 @@ pub struct ApReqOptions {
     pub sequence_number: Option<u32>,
 }
 
-impl ApReqOptions {
+impl ApReq {
     #[must_use]
     /// Construct AP-REQ options with no flags or optional authenticator fields.
     #[inline]
@@ -343,7 +343,7 @@ impl ApReqOptions {
     }
 }
 
-impl Default for ApReqOptions {
+impl Default for ApReq {
     #[inline]
     fn default() -> Self {
         Self::new()

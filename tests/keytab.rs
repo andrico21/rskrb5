@@ -24,7 +24,10 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use rskrb5_ng::keytab::{EncryptionKey, Entry, Error, Keytab, KeytabName, Principal};
+    use rskrb5_ng::{
+        error::Keytab as Error,
+        keytab::{EncryptionKey, Entry, Keytab, Name, Principal},
+    };
 
     use super::env;
 
@@ -285,17 +288,16 @@ mod tests {
     /// Pins the file paths of typed `FILE:`, `WRFILE:` and Windows keytab names.
     #[test]
     fn parses_typed_file_keytab_names() -> Result<(), TestError> {
-        let parsed =
-            KeytabName::parse("FILE:/etc/krb5.keytab").context("FILE keytab name parses")?;
+        let parsed = Name::parse("FILE:/etc/krb5.keytab").context("FILE keytab name parses")?;
         assert_eq!(parsed.file_path(), PathBuf::from("/etc/krb5.keytab"));
         assert_eq!(parsed.into_file_path(), PathBuf::from("/etc/krb5.keytab"));
 
-        let wrfile: KeytabName = "WRFILE:relative.keytab"
+        let wrfile: Name = "WRFILE:relative.keytab"
             .parse()
             .context("WRFILE keytab name parses through FromStr")?;
         assert_eq!(wrfile.file_path(), PathBuf::from("relative.keytab"));
 
-        let windows = KeytabName::parse("C:\\temp\\krb5.keytab").context("Windows path parses")?;
+        let windows = Name::parse("C:\\temp\\krb5.keytab").context("Windows path parses")?;
         assert_eq!(windows.file_path(), PathBuf::from("C:\\temp\\krb5.keytab"));
         Ok(())
     }

@@ -5,11 +5,10 @@ use rasn::{
     types::{Integer, OctetString},
 };
 
-pub use crate::krb_priv::{
-    EncKrbPrivPartOptions, KRB_PRIV_ENCPART_USAGE, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO, host_address,
-    ipv4_host_address, ipv6_host_address,
+use crate::{
+    ap_rep, ap_req, crypto::KerberosEtype, error, keytab::EncryptionKey, krb_error, krb_priv,
+    krb_priv::EncKrbPrivPartOptions,
 };
-use crate::{ap_rep, ap_req, crypto::KerberosEtype, keytab::EncryptionKey, krb_error, krb_priv};
 
 /// Password-change request protocol version (`0xff80`).
 pub const CHANGE_PASSWORD_REQUEST_VERSION: u16 = 0xff80;
@@ -159,7 +158,7 @@ pub fn build_krb_priv<P>(
 where
     P: AsRef<[u8]>,
 {
-    krb_priv::build_krb_priv(user_data, options, key, None).map_err(krb_priv_error)
+    krb_priv::build(user_data, options, key, None).map_err(krb_priv_error)
 }
 
 /// Decode and validate a DER-encoded KRB-PRIV message.
@@ -171,7 +170,7 @@ where
 /// is wrong.
 #[inline]
 pub fn decode_krb_priv(bytes: &[u8]) -> Result<rasn_kerberos::KrbPriv, Error> {
-    krb_priv::decode_krb_priv(bytes).map_err(krb_priv_error)
+    krb_priv::decode(bytes).map_err(krb_priv_error)
 }
 
 /// Encode a KRB-PRIV message as DER.
@@ -181,7 +180,7 @@ pub fn decode_krb_priv(bytes: &[u8]) -> Result<rasn_kerberos::KrbPriv, Error> {
 /// Returns [`Error::Encode`] when the DER encoder fails.
 #[inline]
 pub fn encode_krb_priv(krb_priv: &rasn_kerberos::KrbPriv) -> Result<Vec<u8>, Error> {
-    krb_priv::encode_krb_priv(krb_priv).map_err(krb_priv_error)
+    krb_priv::encode(krb_priv).map_err(krb_priv_error)
 }
 
 /// Decode a DER-encoded `EncKrbPrivPart`.
@@ -307,7 +306,7 @@ impl Request {
             .split_at_checked(ap_req_end)
             .ok_or(invalid_length)?;
 
-        let ap_req = ap_req::decode_ap_req(ap_req_bytes).map_err(ap_req_error)?;
+        let ap_req = ap_req::decode(ap_req_bytes).map_err(ap_req_error)?;
         let krb_priv = decode_krb_priv(krb_priv_bytes)?;
         Ok(Self { ap_req, krb_priv })
     }
@@ -321,7 +320,7 @@ impl Request {
     /// field, and [`Error::FrameTooLarge`] when the whole frame does not.
     #[inline]
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        let ap_req = ap_req::encode_ap_req(&self.ap_req).map_err(ap_req_error)?;
+        let ap_req = ap_req::encode(&self.ap_req).map_err(ap_req_error)?;
         let krb_priv = encode_krb_priv(&self.krb_priv)?;
         let Ok(ap_req_length) = u16::try_from(ap_req.len()) else {
             return Err(Error::ApReqTooLarge {
@@ -578,7 +577,7 @@ impl Reply {
         }
 
         if frame.payload_length == 0 {
-            let krb_error = krb_error::decode_krb_error(frame.body).map_err(krb_error_error)?;
+            let krb_error = krb_error::decode(frame.body).map_err(krb_error_error)?;
             let result = krb_error
                 .e_data
                 .as_ref()
@@ -608,7 +607,7 @@ impl Reply {
             .split_at_checked(ap_rep_end)
             .ok_or(invalid_length)?;
 
-        let ap_rep = ap_rep::decode_ap_rep(ap_rep_bytes).map_err(ap_rep_error)?;
+        let ap_rep = ap_rep::decode(ap_rep_bytes).map_err(ap_rep_error)?;
         let krb_priv = decode_krb_priv(krb_priv_bytes)?;
 
         Ok(Self {
@@ -665,7 +664,7 @@ impl Reply {
     /// # Errors
     ///
     /// Returns [`Error::InvalidErrorReplyPayload`] for a KRB-ERROR reply that
-    /// also carries an AP-REP or KRB-PRIV, [`Error::MissingKrbError`],
+    /// also carries an AP-REP or KRB-PRIV, [`Error::MissingKrb`],
     /// [`Error::MissingApRep`] or [`Error::MissingKrbPriv`] for a missing
     /// message, the encode errors of each message, and [`Error::FrameTooLarge`]
     /// when the AP-REP or the whole frame does not fit its 16-bit length field.
@@ -682,8 +681,8 @@ impl Reply {
                 return Err(Error::InvalidErrorReplyPayload);
             }
             let body = krb_error_part
-                .map(|message| krb_error::encode_krb_error(message).map_err(krb_error_error))
-                .ok_or(Error::MissingKrbError)??;
+                .map(|message| krb_error::encode(message).map_err(krb_error_error))
+                .ok_or(Error::MissingKrb)??;
             // Saturating: a total past `usize::MAX` is past `u16::MAX` too, and
             // is refused as too large just below.
             let frame_length = HEADER_LEN.saturating_add(body.len());
@@ -703,7 +702,7 @@ impl Reply {
 
         let ap_rep = ap_rep_part.ok_or(Error::MissingApRep)?;
         let krb_priv = krb_priv_part.ok_or(Error::MissingKrbPriv)?;
-        let encoded_ap_rep = ap_rep::encode_ap_rep(ap_rep).map_err(ap_rep_error)?;
+        let encoded_ap_rep = ap_rep::encode(ap_rep).map_err(ap_rep_error)?;
         let Ok(ap_rep_length) = u16::try_from(encoded_ap_rep.len()) else {
             return Err(Error::FrameTooLarge {
                 actual: encoded_ap_rep.len(),
@@ -793,286 +792,7 @@ impl ChangePasswordResult {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::enum_variant_names,
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// kadmin message parsing errors.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// The frame is too short to contain the kpasswd header.
-    #[error("kadmin reply frame is too short: {actual} bytes")]
-    FrameTooShort {
-        /// Actual byte length.
-        actual: usize,
-    },
-    /// The frame prefix length is smaller than the fixed kpasswd header.
-    #[error("invalid kadmin reply message length: {0}")]
-    InvalidMessageLength(u16),
-    /// Kerberos message field did not contain the expected value.
-    #[error("invalid {field}: expected {expected}, got {actual}")]
-    InvalidKerberosMessage {
-        /// Field name.
-        field: &'static str,
-        /// Expected value.
-        expected: i32,
-        /// Actual value.
-        actual: String,
-    },
-    /// The frame prefix length exceeds the supplied byte slice.
-    #[error("truncated kadmin reply frame: expected {expected} bytes, got {actual}")]
-    TruncatedFrame {
-        /// Expected frame byte length.
-        expected: usize,
-        /// Actual supplied byte length.
-        actual: usize,
-    },
-    /// The reply protocol version is not supported.
-    #[error("invalid kadmin reply protocol version: {0}")]
-    InvalidReplyVersion(u16),
-    /// The request protocol version is not supported.
-    #[error("invalid kadmin request protocol version: {0:#06x}")]
-    InvalidRequestVersion(u16),
-    /// The AP-REQ length points outside the frame body.
-    #[error("invalid kadmin AP-REQ length {ap_req_length} for body length {body_length}")]
-    InvalidApReqLength {
-        /// AP-REQ byte length from the frame header.
-        ap_req_length: u16,
-        /// Available frame body byte length.
-        body_length: usize,
-    },
-    /// The AP-REP length points outside the frame body.
-    #[error("invalid kadmin AP-REP length {ap_rep_length} for body length {body_length}")]
-    InvalidApRepLength {
-        /// AP-REP byte length from the frame header.
-        ap_rep_length: u16,
-        /// Available frame body byte length.
-        body_length: usize,
-    },
-    /// The response data is too short to hold a result code.
-    #[error("kadmin response data is too short: {actual} bytes")]
-    ResponseTooShort {
-        /// Actual response byte length.
-        actual: usize,
-    },
-    /// A KRB-ERROR reply did not include kpasswd response data.
-    #[error("kadmin reply does not contain response data")]
-    MissingReplyResult,
-    /// A KRB-ERROR reply carried a success result without authenticated
-    /// provenance.
-    #[error("kadmin success result is not authenticated")]
-    UnauthenticatedSuccess,
-    /// A non-error reply did not include a KRB-PRIV section.
-    #[error("kadmin reply does not contain KRB-PRIV")]
-    MissingKrbPriv,
-    /// A failure reply did not include a KRB-ERROR section.
-    #[error("kadmin reply does not contain KRB-ERROR")]
-    MissingKrbError,
-    /// A successful reply did not include an AP-REP section.
-    #[error("kadmin reply does not contain AP-REP")]
-    MissingApRep,
-    /// A KRB-ERROR reply included AP-REP and/or KRB-PRIV payload fields.
-    #[error("kadmin error reply cannot include AP-REP or KRB-PRIV")]
-    InvalidErrorReplyPayload,
-    /// The encrypted data etype is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-    /// The supplied key etype did not match the encrypted KRB-PRIV etype.
-    #[error(
-        "key etype {key_etype} does not match KRB-PRIV encrypted data etype {encrypted_data_etype}"
-    )]
-    KeyEtypeMismatch {
-        /// Supplied key encryption type.
-        key_etype: i32,
-        /// KRB-PRIV encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-    /// Cryptographic decrypt or integrity verification failed.
-    #[error("kadmin crypto operation failed: {message}")]
-    Crypto {
-        /// Crypto error message.
-        message: String,
-    },
-    /// kpasswd returned a non-success result code.
-    #[error("kpasswd failed with code {code}: {text}")]
-    PasswordChangeFailed {
-        /// kpasswd result code.
-        code: u16,
-        /// kpasswd result text.
-        text: String,
-        /// kpasswd result text as received, before lossy UTF-8 conversion.
-        text_raw: Vec<u8>,
-    },
-    /// DER decoding failed for a framed Kerberos message.
-    #[error("{target} decode failed: {message}")]
-    Decode {
-        /// Kerberos message being decoded.
-        target: &'static str,
-        /// Decoder error.
-        message: String,
-    },
-    /// DER encoding failed for a framed Kerberos message.
-    #[error("{target} encode failed: {message}")]
-    Encode {
-        /// Kerberos message being encoded.
-        target: &'static str,
-        /// Encoder error.
-        message: String,
-    },
-    /// A Kerberos string value could not be constructed.
-    #[error("invalid Kerberos string value: {0}")]
-    InvalidKerberosString(String),
-    /// Encoded AP-REQ is too large for the two-byte kpasswd length field.
-    #[error("encoded AP-REQ is too large: {actual} bytes")]
-    ApReqTooLarge {
-        /// Encoded AP-REQ byte length.
-        actual: usize,
-    },
-    /// Encoded kadmin frame is too large for the two-byte length prefix.
-    #[error("encoded kadmin frame is too large: {actual} bytes")]
-    FrameTooLarge {
-        /// Encoded frame byte length.
-        actual: usize,
-    },
-}
+use crate::error::Kadmin as Error;
 
 /// A kpasswd frame split into its header fields and body.
 struct Frame<'bytes> {
@@ -1117,11 +837,11 @@ where
 }
 
 /// Map an AP-REQ error onto the kadmin [`Error`].
-fn ap_req_error(error: ap_req::Error) -> Error {
+fn ap_req_error(error: error::ApReq) -> Error {
     match error {
-        ap_req::Error::Decode { target, message } => Error::Decode { target, message },
-        ap_req::Error::Encode { target, message } => Error::Encode { target, message },
-        ap_req::Error::InvalidMessage {
+        error::ApReq::Decode { target, message } => Error::Decode { target, message },
+        error::ApReq::Encode { target, message } => Error::Encode { target, message },
+        error::ApReq::InvalidMessage {
             field,
             expected,
             actual,
@@ -1130,13 +850,13 @@ fn ap_req_error(error: ap_req::Error) -> Error {
             expected,
             actual,
         },
-        other @ (ap_req::Error::UnsupportedEtype(_)
-        | ap_req::Error::KeyEtypeMismatch {
+        other @ (error::ApReq::UnsupportedEtype(_)
+        | error::ApReq::KeyEtypeMismatch {
             key_etype: _,
             encrypted_data_etype: _,
         }
-        | ap_req::Error::Random(_)
-        | ap_req::Error::Crypto(_)) => Error::Decode {
+        | error::ApReq::Random(_)
+        | error::ApReq::Crypto(_)) => Error::Decode {
             target: "AP-REQ",
             message: other.to_string(),
         },
@@ -1144,11 +864,11 @@ fn ap_req_error(error: ap_req::Error) -> Error {
 }
 
 /// Map an AP-REP error onto the kadmin [`Error`].
-fn ap_rep_error(error: ap_rep::Error) -> Error {
+fn ap_rep_error(error: error::ApRep) -> Error {
     match error {
-        ap_rep::Error::Decode { target, message } => Error::Decode { target, message },
-        ap_rep::Error::Encode { target, message } => Error::Encode { target, message },
-        ap_rep::Error::InvalidMessage {
+        error::ApRep::Decode { target, message } => Error::Decode { target, message },
+        error::ApRep::Encode { target, message } => Error::Encode { target, message },
+        error::ApRep::InvalidMessage {
             field,
             expected,
             actual,
@@ -1157,13 +877,13 @@ fn ap_rep_error(error: ap_rep::Error) -> Error {
             expected,
             actual,
         },
-        other @ (ap_rep::Error::UnsupportedEtype(_)
-        | ap_rep::Error::KeyEtypeMismatch {
+        other @ (error::ApRep::UnsupportedEtype(_)
+        | error::ApRep::KeyEtypeMismatch {
             key_etype: _,
             encrypted_data_etype: _,
         }
-        | ap_rep::Error::Random(_)
-        | ap_rep::Error::Crypto(_)) => Error::Decode {
+        | error::ApRep::Random(_)
+        | error::ApRep::Crypto(_)) => Error::Decode {
             target: "AP-REP",
             message: other.to_string(),
         },
@@ -1171,11 +891,11 @@ fn ap_rep_error(error: ap_rep::Error) -> Error {
 }
 
 /// Map a KRB-ERROR error onto the kadmin [`Error`].
-fn krb_error_error(error: krb_error::Error) -> Error {
+fn krb_error_error(error: error::KrbErrorCodec) -> Error {
     match error {
-        krb_error::Error::Decode { target, message } => Error::Decode { target, message },
-        krb_error::Error::Encode { target, message } => Error::Encode { target, message },
-        krb_error::Error::InvalidMessage {
+        error::KrbErrorCodec::Decode { target, message } => Error::Decode { target, message },
+        error::KrbErrorCodec::Encode { target, message } => Error::Encode { target, message },
+        error::KrbErrorCodec::InvalidMessage {
             field,
             expected,
             actual,
@@ -1184,10 +904,10 @@ fn krb_error_error(error: krb_error::Error) -> Error {
             expected,
             actual,
         },
-        other @ (krb_error::Error::InvalidString(_)
-        | krb_error::Error::IntegerOutOfRange { field: _, value: _ }
-        | krb_error::Error::KvnoOutOfRange { target: _, kvno: _ }
-        | krb_error::Error::TimeOverflow) => Error::Decode {
+        other @ (error::KrbErrorCodec::InvalidString(_)
+        | error::KrbErrorCodec::IntegerOutOfRange { field: _, value: _ }
+        | error::KrbErrorCodec::KvnoOutOfRange { target: _, kvno: _ }
+        | error::KrbErrorCodec::TimeOverflow) => Error::Decode {
             target: "KRB-ERROR",
             message: other.to_string(),
         },
@@ -1195,11 +915,11 @@ fn krb_error_error(error: krb_error::Error) -> Error {
 }
 
 /// Map a KRB-PRIV error onto the kadmin [`Error`].
-fn krb_priv_error(error: krb_priv::Error) -> Error {
+fn krb_priv_error(error: error::KrbPriv) -> Error {
     match error {
-        krb_priv::Error::Decode { target, message } => Error::Decode { target, message },
-        krb_priv::Error::Encode { target, message } => Error::Encode { target, message },
-        krb_priv::Error::InvalidMessage {
+        error::KrbPriv::Decode { target, message } => Error::Decode { target, message },
+        error::KrbPriv::Encode { target, message } => Error::Encode { target, message },
+        error::KrbPriv::InvalidMessage {
             field,
             expected,
             actual,
@@ -1208,18 +928,18 @@ fn krb_priv_error(error: krb_priv::Error) -> Error {
             expected,
             actual,
         },
-        krb_priv::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        krb_priv::Error::KeyEtypeMismatch {
+        error::KrbPriv::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::KrbPriv::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        krb_priv::Error::Crypto(source) => Error::Crypto {
+        error::KrbPriv::Crypto(source) => Error::Crypto {
             message: source.to_string(),
         },
-        krb_priv::Error::Random(source) => Error::Crypto {
+        error::KrbPriv::Random(source) => Error::Crypto {
             message: source.to_string(),
         },
     }

@@ -9,7 +9,8 @@
 )]
 mod tests {
     use rskrb5_ng::evaluation::{
-        ASN1_FIXTURES, ASSESSMENTS, REPORTS, V8_CONTRACT, render_markdown,
+        data::{ASN1_FIXTURES, ASSESSMENTS, REPORTS, V8_CONTRACT},
+        render_markdown,
     };
 
     /// Pins that the rendered report names every candidate, contract area and fixture.

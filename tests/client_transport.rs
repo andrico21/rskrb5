@@ -10,12 +10,14 @@ use core::{error::Error, time::Duration};
 
 use rskrb5_ng::{
     client::{
-        AsReqOptions, Error as ClientError, KRB_ERR_RESPONSE_TOO_BIG, KdcEndpoint,
-        KdcEndpointSource, KdcProtocol, PA_ETYPE_INFO2, Principal, TokioKdcTransport,
-        build_tgt_as_req,
+        KRB_ERR_RESPONSE_TOO_BIG, PA_ETYPE_INFO2, build_tgt_as_req,
+        options::AsReq,
+        principal::Principal,
+        transport::{KdcEndpoint, KdcEndpointSource, KdcProtocol, Tokio},
     },
     config::Config,
-    kadmin::{Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS, Request as KpasswdRequest},
+    error::{Client as ClientError, Kadmin as KadminError},
+    kadmin::{KPASSWD_AUTHERROR, KPASSWD_SUCCESS, Request as KpasswdRequest},
     keytab::EncryptionKey,
 };
 use tokio::{
@@ -73,7 +75,7 @@ mod tests {
                 Ok::<_, io::Error>(())
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send(KdcProtocol::Udp, addr, b"udp-as-req")
                 .await?;
@@ -99,7 +101,7 @@ mod tests {
                 Ok::<_, io::Error>(())
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send_tcp(addr, b"tcp-as-req")
                 .await?;
@@ -166,7 +168,7 @@ mod tests {
                 Ok::<_, io::Error>(())
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send_to_realm(
                     &config,
@@ -198,7 +200,7 @@ mod tests {
                 Ok::<_, io::Error>(())
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send_to_realm(
                     &config,
@@ -223,7 +225,7 @@ mod tests {
                 1465,
             )?;
 
-            let endpoints = TokioKdcTransport::new()
+            let endpoints = Tokio::new()
                 .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
                 .await?;
 
@@ -249,7 +251,7 @@ mod tests {
             let mut config = config_with_kpasswd_servers(["kpasswd.test.gokrb5".to_owned()], 1465)?;
             config.libdefaults.dns_lookup_kdc = true.into();
 
-            let endpoints = TokioKdcTransport::new()
+            let endpoints = Tokio::new()
                 .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Udp)
                 .await?;
 
@@ -278,7 +280,7 @@ mod tests {
                 write_tcp_response(&mut socket, b"kpasswd-tcp-rep").await
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"kpasswd-tcp-req")
                 .await?;
@@ -306,7 +308,7 @@ mod tests {
                 write_tcp_response(&mut socket, &response).await
             });
 
-            let reply = TokioKdcTransport::new()
+            let reply = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .exchange_kpasswd_request_with_config(
                     &config,
@@ -346,7 +348,7 @@ mod tests {
                 write_tcp_response(&mut socket, &response).await
             });
 
-            let error = TokioKdcTransport::new()
+            let error = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .exchange_kpasswd_result_with_config(
                     &config,
@@ -387,7 +389,7 @@ mod tests {
                 write_tcp_response(&mut socket, &response).await
             });
 
-            let error = TokioKdcTransport::new()
+            let error = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .exchange_kpasswd_result_with_config(
                     &config,
@@ -426,7 +428,7 @@ mod tests {
                 Ok::<_, io::Error>(())
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send_to_realm(
                     &config,
@@ -464,7 +466,7 @@ mod tests {
                 write_tcp_response(&mut socket, b"auto-tcp-as-rep").await
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send(KdcProtocol::Auto, addr, b"auto-as-req")
                 .await?;
@@ -489,7 +491,7 @@ mod tests {
                 write_tcp_response(&mut socket, b"auto-config-tcp-as-rep").await
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send_to_realm(
                     &config,
@@ -519,7 +521,7 @@ mod tests {
                 write_tcp_response(&mut socket, b"auto-kpasswd-tcp-rep").await
             });
 
-            let response = TokioKdcTransport::new()
+            let response = Tokio::new()
                 .with_timeout(Duration::from_secs(2))
                 .send_to_kpasswd_realm(
                     &config,
@@ -936,8 +938,8 @@ mod tests {
 
     /// Drive a password TGT login over the given protocol against a stub KDC.
     async fn login_over(addr: SocketAddr, protocol: KdcProtocol) -> Result<(), ClientError> {
-        let options = AsReqOptions::new(SystemTime::now(), 1);
-        TokioKdcTransport::new()
+        let options = AsReq::new(SystemTime::now(), 1);
+        Tokio::new()
             .with_timeout(Duration::from_secs(2))
             .login_tgt_with_password(
                 protocol,
@@ -1038,7 +1040,7 @@ mod tests {
         nonce: u32,
     ) -> Result<ProbeOutcome, TestError> {
         let client = Principal::user(realm, user);
-        let request = build_tgt_as_req(client, AsReqOptions::new(SystemTime::now(), nonce))?;
+        let request = build_tgt_as_req(client, AsReq::new(SystemTime::now(), nonce))?;
 
         let mut framed = Vec::with_capacity(request.der.len().saturating_add(4));
         framed.extend_from_slice(&u32::try_from(request.der.len())?.to_be_bytes());

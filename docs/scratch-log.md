@@ -8,7 +8,7 @@
 - Review note: preserve existing local edit in `tests/spnego.rs`; it aligns SPNEGO fixture assertions with rskrb5 AP-REQ helpers.
 - Decision: keep `spnego_header*` and `authorization_header*` as convenience wrappers, while adding context-returning methods as the canonical path for AP-REP verification.
 - Decision: HTTP response verification scans every `WWW-Authenticate` value and accepts comma-separated challenges. The parser is intentionally limited to finding a `Negotiate` challenge; it does not try to fully parse every auth scheme's parameter grammar.
-- Trade-off: tests adjust only cached-session metadata to current time when exercising `TokioClient`'s cache path; the DER ticket fixture remains unchanged for SPNEGO token compatibility checks.
+- Trade-off: tests adjust only cached-session metadata to current time when exercising `Tokio`'s cache path; the DER ticket fixture remains unchanged for SPNEGO token compatibility checks.
 - Review fix: focused HTTP tests initially missed the cached service ticket because the fixture metadata is future-dated relative to the current test clock; fixed by making the cache metadata current in that one test.
 - Decision: add a transport-agnostic HTTP Negotiate client classifier instead of binding retry logic to a concrete HTTP client. Callers can keep ownership of request cloning, body replay policy, and redirect handling.
 - Trade-off: classify malformed or unexpected response tokens into an enum variant instead of returning early with an error, so client response handling can stay exhaustive and single-pass.
@@ -37,7 +37,7 @@
 - Decision: extract client-side kpasswd request construction, AP-REP verification, and Tokio password-change methods into `src/client/kpasswd.rs` while re-exporting the public API from `rskrb5::client`. This keeps compatibility paths stable and reduces the main `client.rs` surface before adding a fuller gokrb5-shaped password-change message API.
 - Trade-off: keep the child module private and let it use parent-private AP-REQ and time helpers. That avoids widening internal helper visibility only for refactoring.
 - Review fix: workflow-dispatched Docker integration exposed that the DNS ACL relaxation sent `SIGHUP` to a foreground `named` process, killing the gokrb5 DNS fixture. The runner now reloads BIND through `rndc reconfig` and probes both direct fixture DNS and the configured system resolver before running DNS-dependent Rust tests.
-- Trade-off: keep application DNS discovery tied to the OS resolver for parity; harden the fixture runner instead of adding test-only resolver injection to `TokioKdcTransport`.
+- Trade-off: keep application DNS discovery tied to the OS resolver for parity; harden the fixture runner instead of adding test-only resolver injection to `Tokio`.
 - Verification: `bash -n scripts/run-gated-integration.sh` passes, local Docker fixture startup leaves `dns` running after ACL relaxation, direct fixture DNS answers SRV/A records via the generated `DNS_IP`, focused `TEST_KPASSWD=1` password-change integration passes with resolver mutation disabled, and DNS-enabled startup passes the new direct readiness probe.
 - Review fix: GitHub Actions preserved successful DNS setup within the `start` step but the following `test` step still resolved through the default runner DNS. The runner now reapplies and verifies resolver configuration inside `scripts/run-gated-integration.sh test` immediately before invoking `cargo test`.
 - Review fix: shell-level `dig` verification can pass while `hickory-resolver` still observes the hosted runner's default resolver behavior. The Tokio DNS SRV path now honors `RSKRB5_DNS_SERVER=ip[:port]` when set by the gated runner, while normal client behavior continues to use system resolver configuration.
@@ -48,8 +48,8 @@
 
 ## 2026-06-20
 
-- Decision: add `TokioClient::change_password_for` and
-  `TokioClient::change_password_for_with_options` to support explicit target
+- Decision: add `Tokio::change_password_for` and
+  `Tokio::change_password_for_with_options` to support explicit target
   principals in kadmin change flows while preserving existing
   `change_password*` default-target behavior.
 - Decision: update in-place password credential rotation only when target matches the
@@ -77,7 +77,7 @@
 
 ## 2026-06-22
 
-- Decision: mirror `TokioClient` password-change methods on `NegotiateClient` and
+- Decision: mirror `Tokio` password-change methods on `NegotiateClient` and
   `BlockingNegotiateClient` as thin pass-throughs (`change_password*` methods).
 - Trade-off: this expands the high-level HTTP wrapper API but keeps behavior
   centralized in `client/kpasswd.rs`, avoiding duplicated logic and preserving

@@ -16,10 +16,13 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rasn::types::Integer;
     use rasn_kerberos::{MethodData, PaData};
-    use rskrb5_ng::krb_error::{
-        Error, KRB_ERROR_MSG_TYPE, KRB5_PVNO, decode_krb_error, decode_krb_error_info,
-        decode_method_data, encode_krb_error, encode_method_data, preauth_method_data,
-        validate_krb_error,
+    use rskrb5_ng::{
+        error::KrbErrorCodec as Error,
+        krb_error::{
+            KRB_ERROR_MSG_TYPE, KRB5_PVNO, decode as decode_krb_error, decode_krb_error_info,
+            decode_method_data, encode as encode_krb_error, encode_method_data,
+            preauth_method_data, validate as validate_krb_error,
+        },
     };
 
     /// Error type of the `Result`-returning tests.

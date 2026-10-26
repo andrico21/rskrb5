@@ -21,15 +21,15 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_ne};
     use rasn::der;
     use rskrb5_ng::{
-        ap_req::decode_ap_req,
-        client::{AsRepSession, Principal},
+        ap_req::decode as decode_ap_req,
+        client::{AsRepSession, principal::Principal},
         crypto::AesSha1Etype,
         keytab::{EncryptionKey, Keytab},
-        service::{ApRepOptions, ServiceValidator},
+        service::{ApRepOptions, Validator},
         spnego::{
             self, CONTEXT_FLAG_CONF, CONTEXT_FLAG_INTEG, InitiatorContextOptions, Krb5MechToken,
-            Krb5TokenId, NegState, NegTokenInit, NegTokenResp, NegotiationToken, ObjectIdentifier,
-            SpnegoToken,
+            Krb5TokenId, NegState, NegTokenInit, NegTokenResp, NegotiationToken, Token,
+            oid::ObjectIdentifier,
         },
     };
 
@@ -212,9 +212,8 @@ mod tests {
     #[test]
     fn decodes_and_roundtrips_full_spnego_tokens() -> Result<(), TestError> {
         let spnego_init = format!("{SPNEGO_INIT_PREFIX}{NEG_TOKEN_INIT}");
-        let init =
-            SpnegoToken::decode(&decode_hex(&spnego_init)?).context("SPNEGO init decodes")?;
-        let SpnegoToken::Init(init_token) = &init else {
+        let init = Token::decode(&decode_hex(&spnego_init)?).context("SPNEGO init decodes")?;
+        let Token::Init(init_token) = &init else {
             return Err("expected NegTokenInit".into());
         };
         assert_eq!(init_token.mech_types.len(), 4);
@@ -227,8 +226,8 @@ mod tests {
             spnego_init
         );
 
-        let resp = SpnegoToken::decode(&decode_hex(SPNEGO_RESP)?).context("SPNEGO resp decodes")?;
-        let SpnegoToken::Resp(resp_token) = &resp else {
+        let resp = Token::decode(&decode_hex(SPNEGO_RESP)?).context("SPNEGO resp decodes")?;
+        let Token::Resp(resp_token) = &resp else {
             return Err("expected NegTokenResp".into());
         };
         assert_eq!(resp_token.neg_state, Some(NegState::AcceptCompleted));
@@ -249,7 +248,7 @@ mod tests {
             ))?)
         );
         let token = spnego::parse_negotiate_header(&header).context("header parses")?;
-        assert!(matches!(token, SpnegoToken::Init(_)));
+        assert!(matches!(token, Token::Init(_)));
 
         assert_eq!(spnego::challenge_header(), "Negotiate");
         assert_eq!(
@@ -275,7 +274,7 @@ mod tests {
         let parsed = spnego::parse_negotiate_header(&header).context("raw KRB5 header parses")?;
         let krb5 = Krb5MechToken::decode(&raw).context("raw KRB5 token decodes")?;
 
-        assert!(matches!(parsed, SpnegoToken::Init(_)));
+        assert!(matches!(parsed, Token::Init(_)));
         assert_eq!(
             parsed.krb5_ap_req().context("AP-REQ unwraps")?,
             krb5.message
@@ -290,11 +289,11 @@ mod tests {
         let ap_req_token = Krb5MechToken::ap_req(decode_hex(VALID_AP_REQ)?)
             .encode()
             .context("KRB5 AP-REQ token encodes")?;
-        let spnego_token = SpnegoToken::Init(NegTokenInit::krb5(ap_req_token));
+        let spnego_token = Token::Init(NegTokenInit::krb5(ap_req_token));
         let header = spnego::negotiate_header(&spnego_token).context("Negotiate header encodes")?;
 
         let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("HTTP keytab parses")?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let accepted = spnego::accept_sec_context_header(&mut validator, &header)
             .context("SPNEGO AP-REQ validates")?;
         assert_eq!(accepted.ap_req.client.name(), "testuser1");
@@ -308,7 +307,7 @@ mod tests {
         assert_eq!(ap_rep_header, AP_REP_RESPONSE_HEADER);
         let response =
             spnego::parse_negotiate_header(&ap_rep_header).context("AP-REP header parses")?;
-        let SpnegoToken::Resp(resp) = response else {
+        let Token::Resp(resp) = response else {
             return Err("expected NegTokenResp".into());
         };
         let response_token = resp.response_token.context("response token exists")?;
@@ -372,7 +371,7 @@ mod tests {
         assert_eq!(authenticator.seq_number, Some(42));
 
         let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("HTTP keytab parses")?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)
             .context("client SPNEGO header validates")?;
         assert_eq!(accepted.ap_req.client.name(), "testuser1");
@@ -394,7 +393,7 @@ mod tests {
         )
         .context("client SPNEGO context builds")?;
         let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("HTTP keytab parses")?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)
             .context("client SPNEGO header validates")?;
         let response_header = accepted

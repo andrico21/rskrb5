@@ -211,7 +211,7 @@ def ratchet(
         now = manifest(common.git(root, "show", f"{commit}:{MANIFEST}"))
         errors.extend(transition(previous, now, commit))
         now_clean = ratchet_lines(common.git(root, "show", f"{commit}:{clean}"))
-        now_facade = ratchet_lines(common.git(root, "show", f"{commit}:{facade}"))
+        now_facade = ratchet_lines(historical_optional(root, commit, facade))
         errors.extend(list_transition(previous_clean, now_clean, commit, grow=True))
         errors.extend(list_transition(previous_facade, now_facade, commit, grow=False))
         previous_clean, previous_facade = now_clean, now_facade
@@ -228,12 +228,20 @@ def ratchet(
     errors.extend(
         list_transition(
             previous_facade,
-            ratchet_lines((root / facade).read_text()),
+            ratchet_lines(
+                (root / facade).read_text() if (root / facade).exists() else ""
+            ),
             "working tree",
             grow=False,
         )
     )
     return errors, base_count
+
+
+def historical_optional(root: Path, commit: str, file: str) -> str:
+    """Treat a removed facade list as empty, without hiding Git failures."""
+    present = common.git(root, "ls-tree", "--name-only", commit, "--", file).strip()
+    return common.git(root, "show", f"{commit}:{file}") if present else ""
 
 
 def ratchet_lines(text: str) -> list[str]:
@@ -367,6 +375,8 @@ def self_test() -> int:
         assert transition(Counter(), wrapped, "wrapped restore")
         row = '[[baseline]]\nfile = "src/lib.rs"\nitem = "fn f"\nlint = "dead_code"\npredicate = "always"\ncount = 1\n'
         assert manifest(row) == actual
+        assert manifest("") == Counter()
+        assert manifest("# The migration baseline is empty.\n") == Counter()
         path.write_text(
             '//! docs\n#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "lint-migration: upstream baseline at abc1234"))]\npub fn f() {}\n'
         )

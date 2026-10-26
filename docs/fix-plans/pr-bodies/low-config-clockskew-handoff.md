@@ -5,9 +5,9 @@
 
 ## Problem
 
-`Config` parses `[libdefaults] clockskew` into `LibDefaults.clockskew`, but nothing on the acceptor side reads it. The `Config`-driven constructors copy only `default_keytab_name` and leave `ServiceValidator::max_clock_skew` at the compile-time default of 300 s:
+`Config` parses `[libdefaults] clockskew` into `LibDefaults.clockskew`, but nothing on the acceptor side reads it. The `Config`-driven constructors copy only `default_keytab_name` and leave `Validator::max_clock_skew` at the compile-time default of 300 s:
 
-- `ServiceValidator::from_default_keytab_name` and `ServiceValidator::from_default_keytab`;
+- `Validator::from_default_keytab_name` and `Validator::from_default_keytab`;
 - `NegotiateLayer::from_default_keytab_name` and `NegotiateLayer::from_default_keytab` (and the `NegotiateService` constructors that delegate to them).
 
 An operator who tightens `clockskew = 1s` still gets a validator that accepts authenticators 2 to 299 seconds stale, and tickets up to 300 s past `end_time`. A captured AP-REQ stays replayable for that whole window against any acceptor whose replay cache hasn't seen it (a second instance, a restart). The declared policy is silently not enforced. Deployments on the default value aren't affected, because the default equals the enforced 300 s.
@@ -17,15 +17,15 @@ RFC basis: RFC 4120 section 3.2.3 has the server reject an authenticator whose t
 ## Change
 
 - The four constructors above pass the parsed value through the existing `with_max_clock_skew` builder.
-- `ServiceValidator::new`, `from_keytab` and `from_keytab_cow` keep the gokrb5-compatible 300 s default. `DEFAULT_MAX_CLOCK_SKEW` and `ValidatorOptions` are unchanged.
+- `Validator::new`, `from_keytab` and `from_keytab_cow` keep the gokrb5-compatible 300 s default. `DEFAULT_MAX_CLOCK_SKEW` and `ValidatorOptions` are unchanged.
 
 ## Tests
 
 New tests:
 
-- `tests/service.rs::config_clockskew_bounds_authenticator_freshness`: with `clockskew = 1s`, both `ServiceValidator::from_default_keytab_name` and `from_default_keytab` reject the fixture authenticator 2 s after its `ctime`, and accept it at its own `ctime`.
+- `tests/service.rs::config_clockskew_bounds_authenticator_freshness`: with `clockskew = 1s`, both `Validator::from_default_keytab_name` and `from_default_keytab` reject the fixture authenticator 2 s after its `ctime`, and accept it at its own `ctime`.
 - `tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator`: `NegotiateLayer::from_default_keytab_name` with `clockskew = 1s` answers `401 Unauthorized` 2 s after the authenticator's `ctime`.
-- `tests/service.rs::service_validator_new_keeps_default_skew`: `ServiceValidator::new` still accepts at `ctime + 2s` and rejects at `ctime + 301s`. It pins the 300 s default.
+- `tests/service.rs::service_validator_new_keeps_default_skew`: `Validator::new` still accepts at `ctime + 2s` and rejects at `ctime + 301s`. It pins the 300 s default.
 
 Fail-before evidence: with `src/service.rs` and `src/http.rs` restored to `6f4abc9`, `config_clockskew_bounds_authenticator_freshness` and `tower_layer_config_clockskew_rejects_stale_authenticator` fail. `service_validator_new_keeps_default_skew` passes there too, as it should: it's the control for the unchanged default.
 
@@ -41,7 +41,7 @@ All runs used stable Rust 1.99.1 on the branch tip.
 
 - No signature or type change.
 - Behaviour: services built through the `Config` constructors now enforce the configured `clockskew`. With the default (300 s) nothing changes. A configured value larger than 300 s now widens the window on those paths too, because the configured value is what gets applied.
-- Services built with `ServiceValidator::new` or `from_keytab*` behave as before. The `clockskew` doc should say it applies on the `Config` paths only.
+- Services built with `Validator::new` or `from_keytab*` behave as before. The `clockskew` doc should say it applies on the `Config` paths only.
 
 ## Series and merge order
 

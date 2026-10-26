@@ -57,7 +57,7 @@ if session_renewable_at(&tgt, now) && !(expired && has_credentials) {
 ```
 
 ## Regression tests
-- `tests/client/session_cache.rs::tokio_client_affirm_login_falls_back_to_as_for_expired_renewable_tgt` (new, runs under `--test client`) — bind the loopback TCP mock KDC (`tests/client.rs:1038-1089` helpers), build `TokioClient::from_tgt_session(...)` with an expired `end_time` and future `renew_till`, `.with_password_credential(...)`, answer each TGS-REQ with a rasn-encoded KRB-ERROR code 32, and assert `affirm_login()` succeeds via an AS-REQ (counters: `as_requests >= 1`, `tgs_requests <= 1`).
+- `tests/client/session_cache.rs::tokio_client_affirm_login_falls_back_to_as_for_expired_renewable_tgt` (new, runs under `--test client`) — bind the loopback TCP mock KDC (`tests/client.rs:1038-1089` helpers), build `Tokio::from_tgt_session(...)` with an expired `end_time` and future `renew_till`, `.with_password_credential(...)`, answer each TGS-REQ with a rasn-encoded KRB-ERROR code 32, and assert `affirm_login()` succeeds via an AS-REQ (counters: `as_requests >= 1`, `tgs_requests <= 1`).
 - Same fixture for `refresh_tgt_if_needed()` and `get_service_ticket(...)`, asserting all three paths reach the AS exchange instead of returning the renewal error.
 - `tests/client/session_cache.rs::tokio_client_auto_renewal_uses_as_when_renewal_refused` — spawn auto-renewal against the mock refusing renewals and assert at least one AS-REQ appears (cf. the audit's `renew_requests_in_700ms=13 as_requests=0` baseline).
 - Keep a cache-only control test: with `credentials == None` the renewal `Err` must still be returned (no AS login possible), preserving `session_renewable_at` retention semantics.

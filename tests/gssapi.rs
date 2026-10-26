@@ -16,11 +16,12 @@ mod tests {
     use hex::FromHexError;
     use pretty_assertions::assert_eq;
     use rskrb5_ng::{
+        error::Spnego as Error,
         keytab::EncryptionKey,
         spnego::{
-            Error, GSS_TOKEN_FLAG_SEALED, GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
-            GSSAPI_ACCEPTOR_SEAL_USAGE, GSSAPI_ACCEPTOR_SIGN_USAGE, GSSAPI_INITIATOR_SEAL_USAGE,
-            GSSAPI_INITIATOR_SIGN_USAGE, MicToken, WrapToken,
+            GSS_TOKEN_FLAG_SEALED, GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, GSSAPI_ACCEPTOR_SEAL_USAGE,
+            GSSAPI_ACCEPTOR_SIGN_USAGE, GSSAPI_INITIATOR_SEAL_USAGE, GSSAPI_INITIATOR_SIGN_USAGE,
+            MicToken, WrapToken,
         },
     };
 

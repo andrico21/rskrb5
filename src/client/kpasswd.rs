@@ -4,21 +4,22 @@ use core::time::Duration;
 use std::time::SystemTime;
 
 use super::{
-    ApReqOptions, BuiltApReq, Error, TgsRepSession, ap_rep_error, build_ap_req_with_confounder,
+    ApReq, BuiltApReq, Error, TgsRepSession, ap_rep_error, build_ap_req_with_confounder,
     encryption_key_from_rasn, integer_to_u32, kerberos_time_from_system_time,
     system_time_from_kerberos_time,
 };
 use crate::{
-    ap_rep::{decrypt_ap_rep_enc_part, validate_ap_rep},
+    ap_rep::{decrypt_ap_rep_enc_part, validate as validate_ap_rep},
     crypto::KerberosEtype,
     kadmin,
     keytab::EncryptionKey,
+    krb_priv::EncKrbPrivPartOptions,
 };
 
 /// Options for constructing a kpasswd request from a service ticket.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub struct KpasswdRequestOptions {
+pub struct RequestOptions {
     /// Authenticator and KRB-PRIV timestamp.
     pub timestamp: SystemTime,
     /// Authenticator and KRB-PRIV microseconds.
@@ -31,7 +32,7 @@ pub struct KpasswdRequestOptions {
     pub recipient_address: Option<rasn_kerberos::HostAddress>,
 }
 
-impl KpasswdRequestOptions {
+impl RequestOptions {
     /// Construct options with the required timestamp, sequence number, and sender address.
     #[inline]
     pub const fn new(
@@ -103,7 +104,7 @@ pub fn build_kpasswd_request_with_confounders(
     service_ticket: &TgsRepSession,
     change_data: &kadmin::ChangePasswdData,
     reply_key: EncryptionKey,
-    options: &KpasswdRequestOptions,
+    options: &RequestOptions,
     ap_req_confounder: &[u8],
     krb_priv_confounder: &[u8],
 ) -> Result<BuiltKpasswdRequest, Error> {
@@ -142,7 +143,7 @@ pub fn build_kpasswd_request_with_confounders(
 pub fn build_kpasswd_request(
     service_ticket: &TgsRepSession,
     change_data: &kadmin::ChangePasswdData,
-    options: &KpasswdRequestOptions,
+    options: &RequestOptions,
 ) -> Result<BuiltKpasswdRequest, Error> {
     let etype = KerberosEtype::from_etype_id(service_ticket.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
@@ -186,12 +187,12 @@ pub fn build_kpasswd_request(
 fn build_kpasswd_ap_req_with_confounder(
     service_ticket: &TgsRepSession,
     reply_key: &EncryptionKey,
-    options: &KpasswdRequestOptions,
+    options: &RequestOptions,
     ap_req_confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
     build_ap_req_with_confounder(
         service_ticket,
-        ApReqOptions::new()
+        ApReq::new()
             .with_subkey(Some(reply_key.clone()))
             .with_sequence_number(Some(options.sequence_number)),
         options.timestamp,
@@ -206,10 +207,8 @@ fn build_kpasswd_ap_req_with_confounder(
 ///
 /// Returns an error when the request timestamp is outside the Kerberos time
 /// range.
-fn kpasswd_krb_priv_options(
-    options: &KpasswdRequestOptions,
-) -> Result<kadmin::EncKrbPrivPartOptions, Error> {
-    let mut krb_priv_options = kadmin::EncKrbPrivPartOptions::new(options.sender_address.clone())
+fn kpasswd_krb_priv_options(options: &RequestOptions) -> Result<EncKrbPrivPartOptions, Error> {
+    let mut krb_priv_options = EncKrbPrivPartOptions::new(options.sender_address.clone())
         .with_timestamp(
             kerberos_time_from_system_time(options.timestamp)?,
             options.cusec,

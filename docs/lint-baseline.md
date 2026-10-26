@@ -1,5 +1,12 @@
 # Lint profile, migration baseline and gates
 
+## Current state after API pass C
+
+The migration manifest is empty: `baseline_gate.py --report` prints `current 0`.
+There are no `lint-migration` attributes. The facade exception list has been
+deleted; only `src/lib.rs` may publicly re-export items. The historical counts
+and transition details below describe the earlier migration checkpoints.
+
 This page describes how the `release/0.3.0` line enforces the strictest lint
 profile on code it inherited from upstream `rskrb5` (`6f4abc9`) and on code
 the fork wrote. Inherited violations are recorded one item at a time in a
@@ -20,7 +27,7 @@ Numbers on this page were measured on the release line at `f18676f`:
 
 Two later commits shrank the baseline by six more entries: `e09b0c0`
 removed the five on `Config::json` and `4cd7423` one on
-`TokioKdcTransport::send_to_kpasswd_realm_explicit`.
+`Tokio::send_to_kpasswd_realm_explicit`.
 `baseline_gate.py --report` now prints `current 6514 / base 7396 entries`.
 
 ## Where the profile comes from
@@ -337,7 +344,7 @@ item, never a wider or file-level expectation. Each rewrite is its own
 
 | Commit | Rewrite |
 |---|---|
-| `52b8cdc` | Single-character lifetimes renamed on derived types (`clippy::single_char_lifetime_names` survives an item `expect` on derived code): `ConfigEntry` (`'cache`), `ConfigJson`, `LibDefaultsJson`, `RealmJson` (`'config`), `IncludeDirective` (`'line`), `NegotiateLayer`, `NegotiateService`, `ServiceValidator` (`'keytab`), `Reader`, `Tlv` (`'buffer`). Independently bound lifetimes in impls are unchanged. |
+| `52b8cdc` | Single-character lifetimes renamed on derived types (`clippy::single_char_lifetime_names` survives an item `expect` on derived code): `ConfigEntry` (`'cache`), `ConfigJson`, `LibDefaultsJson`, `RealmJson` (`'config`), `IncludeDirective` (`'line`), `NegotiateLayer`, `NegotiateService`, `Validator` (`'keytab`), `Reader`, `Tlv` (`'buffer`). Independently bound lifetimes in impls are unchanged. |
 | `1cf7b68` | The public aliases `pub type Result<T> = std::result::Result<T, Error>;` in `src/lib.rs` and `src/http.rs` use `core::result::Result`. Same type, same name. |
 | `4d3d3a2` | `src/evaluation/data.rs` imports `alloc::fmt` instead of `std::fmt`. |
 | `20f6404` | 36 derived-field paths use imports for the same types (`crate::<module>::Error` to `<module>::Error`, `std::io::Error` to `io::Error`, `std::str::Utf8Error` to an imported `core::str::Utf8Error`, `http_types::header::InvalidHeaderValue` to an imported name, `BuiltKpasswdRequest.request` to `kadmin::Request`) in `ap_rep`, `ap_req`, `ccache`, `client/kpasswd`, `client`, `config`, `http`, `kdc_rep`, `kdc_req`, `keytab`, `krb_cred`, `krb_priv`, `krb_safe`, `messages`, `service`, `spnego` and `ticket`. Feature guards and `From` implementations are unchanged. |
@@ -356,7 +363,7 @@ behavior-preserving classes under the same principle as (j)/(k):
   `crate::spnego::`, `crate::messages::`, `crate::keytab::` and
   `crate::kadmin::` prefixes dropped where the release line already imports
   the module (`unused_qualifications`), `std::io::ErrorKind` to
-  `io::ErrorKind`, `keytab::Error::NoMatchingKey { .. }` to explicit
+  `io::ErrorKind`, `rskrb5_ng::error::Keytab::NoMatchingKey { .. }` to explicit
   `field: _` bindings, and `DEFAULT_TICKET_LIFETIME` written as
   `Duration::from_hours(24)`.
 - `src/ccache.rs`: `std::io::ErrorKind` to `io::ErrorKind`.

@@ -32,12 +32,11 @@ mod tests {
     use rasn::der;
     use rskrb5_ng::{
         config::Config,
-        crypto::{AesSha1Etype, Error as CryptoError},
+        crypto::AesSha1Etype,
+        error::{Crypto as CryptoError, Pac as PacError, Service as Error},
         keytab::{EncryptionKey, Keytab},
         pac,
-        service::{
-            ApRepOptions, Error, Principal, ServiceValidator, SharedReplayCache, ValidatedApReq,
-        },
+        service::{ApRepOptions, Principal, SharedReplayCache, ValidatedApReq, Validator},
         ticket::decrypt_ticket_enc_part,
     };
 
@@ -130,7 +129,7 @@ mod tests {
     #[test]
     fn validates_gokrb5_ap_req_fixture() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
 
         let validated = validator
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -172,7 +171,7 @@ mod tests {
         let path = temp_service_keytab_file("validate-name")?;
         let name = format!("FILE:{}", path.display());
         keytab.save_name(&name).context("keytab saves by name")?;
-        let mut validator = ServiceValidator::from_keytab_name(&name)
+        let mut validator = Validator::from_keytab_name(&name)
             .context("validator loads keytab by name")?
             .with_now(timestamp(1_893_553_447)?);
         fs::remove_file(&path).context("temporary keytab is removed")?;
@@ -187,7 +186,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that `ServiceValidator::from_keytab_env` validates with the `KRB5_KTNAME` keytab.
+    /// Pins that `Validator::from_keytab_env` validates with the `KRB5_KTNAME` keytab.
     #[test]
     fn validates_ap_req_from_keytab_env() -> Result<(), TestError> {
         const TEST_PATH: &str = "tests::validates_ap_req_from_keytab_env";
@@ -207,7 +206,7 @@ mod tests {
         keytab
             .save_name(&name)
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
-        let mut validator = ServiceValidator::from_keytab_env()
+        let mut validator = Validator::from_keytab_env()
             .map_err(|cause| format!("validator loads keytab from env: {cause}"))?
             .with_now(timestamp(1_893_553_447)?);
         fs::remove_file(&path).context("temporary keytab is removed")?;
@@ -230,7 +229,7 @@ mod tests {
         let name = format!("FILE:{}", path.display());
         keytab.save_name(&name).context("keytab saves by name")?;
         let config = config_with_default_keytab_name(&name)?;
-        let mut validator = ServiceValidator::from_default_keytab_name(&config)
+        let mut validator = Validator::from_default_keytab_name(&config)
             .context("validator loads default keytab name")?
             .with_now(timestamp(1_893_553_447)?);
         fs::remove_file(&path).context("temporary keytab is removed")?;
@@ -260,7 +259,7 @@ mod tests {
             .save_name(&name)
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
         let config = config_with_default_keytab_name(&name)?;
-        let mut validator = ServiceValidator::from_default_keytab(&config)
+        let mut validator = Validator::from_default_keytab(&config)
             .map_err(|cause| format!("validator loads default keytab: {cause}"))?
             .with_now(timestamp(1_893_553_447)?);
         fs::remove_file(&path).context("temporary keytab is removed")?;
@@ -301,7 +300,7 @@ mod tests {
             temp_service_keytab_file("missing-config-default")?.display()
         );
         let config = config_with_default_keytab_name(&missing_config_name)?;
-        let mut validator = ServiceValidator::from_default_keytab(&config)
+        let mut validator = Validator::from_default_keytab(&config)
             .map_err(|cause| format!("validator loads env keytab before config default: {cause}"))?
             .with_now(timestamp(1_893_553_447)?);
         fs::remove_file(&path).context("temporary keytab is removed")?;
@@ -320,7 +319,7 @@ mod tests {
     #[test]
     fn validates_ap_req_with_verified_ticket_pac() -> Result<(), TestError> {
         let keytab = syshttp_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
 
         let validated = validator
             .validate_ap_req(&ap_req_with_pac()?)
@@ -354,7 +353,7 @@ mod tests {
     #[test]
     fn rejects_ap_req_with_invalid_ticket_pac_checksum() -> Result<(), TestError> {
         let keytab = syshttp_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let mut pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?;
         let pac_header = pac::Pac::parse(&pac_bytes).context("PAC header parses")?;
         let server_signature = pac_header
@@ -374,7 +373,7 @@ mod tests {
                 .validate_ap_req(&ap_req_with_pac_bytes(pac_bytes)?)
                 .err()
                 .context("bad PAC checksum is rejected")?,
-            Error::Pac(pac::Error::ServerChecksumVerificationFailed)
+            Error::Pac(PacError::ServerChecksumVerificationFailed)
         ));
         Ok(())
     }
@@ -449,7 +448,7 @@ mod tests {
     #[test]
     fn detects_ap_req_replay() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         drop(
             validator
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -478,7 +477,7 @@ mod tests {
     fn clears_old_replay_cache_entries() -> Result<(), TestError> {
         let keytab = http_keytab()?;
         let now = timestamp(1_893_553_447)?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(now);
+        let mut validator = Validator::new(&keytab).with_now(now);
         drop(
             validator
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -512,10 +511,10 @@ mod tests {
         let keytab = http_keytab()?;
         let now = timestamp(1_893_553_447)?;
         let replay_cache = SharedReplayCache::new();
-        let mut first = ServiceValidator::new(&keytab)
+        let mut first = Validator::new(&keytab)
             .with_now(now)
             .with_shared_replay_cache(replay_cache.clone());
-        let mut second = ServiceValidator::new(&keytab)
+        let mut second = Validator::new(&keytab)
             .with_now(now)
             .with_shared_replay_cache(replay_cache.clone());
 
@@ -554,7 +553,7 @@ mod tests {
                 .context("aged shared replay entry no longer rejects request")?,
         );
 
-        let mut local = ServiceValidator::new(&keytab)
+        let mut local = Validator::new(&keytab)
             .with_now(now)
             .with_shared_replay_cache(replay_cache)
             .without_shared_replay_cache();
@@ -570,7 +569,7 @@ mod tests {
     #[test]
     fn validates_keytab_principal_override_failure() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab)
+        let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
             .with_keytab_principal(["foo"]);
 
@@ -588,7 +587,7 @@ mod tests {
     #[test]
     fn rejects_client_principal_mismatch() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
 
         assert!(matches!(
             validator
@@ -607,8 +606,7 @@ mod tests {
     #[test]
     fn rejects_invalid_future_and_expired_tickets() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut invalid_validator =
-            ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut invalid_validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         assert!(matches!(
             invalid_validator
                 .validate_ap_req(&decode_hex(INVALID_TICKET_AP_REQ)?)
@@ -621,7 +619,7 @@ mod tests {
         ));
 
         let mut future_validator =
-            ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_445 - 301)?);
+            Validator::new(&keytab).with_now(timestamp(1_893_553_445 - 301)?);
         assert!(matches!(
             future_validator
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -634,7 +632,7 @@ mod tests {
         ));
 
         let mut expired_validator =
-            ServiceValidator::new(&keytab).with_now(timestamp(1_893_639_845 + 301)?);
+            Validator::new(&keytab).with_now(timestamp(1_893_639_845 + 301)?);
         assert!(matches!(
             expired_validator
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -652,8 +650,7 @@ mod tests {
     #[test]
     fn rejects_large_authenticator_clock_skew() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator =
-            ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 301)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447 + 301)?);
 
         assert!(matches!(
             validator
@@ -669,7 +666,7 @@ mod tests {
     #[test]
     fn rejects_addressless_ticket_when_client_address_is_required() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab)
+        let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
             .require_client_address(true);
 
@@ -864,7 +861,7 @@ mod tests {
 
     fn valid_ap_req() -> Result<ValidatedApReq, TestError> {
         let keytab = http_keytab()?;
-        ServiceValidator::new(&keytab)
+        Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
             .context("AP-REQ validates")
@@ -902,7 +899,7 @@ mod tests {
     #[test]
     fn replay_identity_ignores_the_ticket_name_type() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         drop(
             validator
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -934,7 +931,7 @@ mod tests {
     #[test]
     fn replay_identity_follows_the_accepted_key_identity() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab)
+        let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
             .with_keytab_principal(["HTTP", "host.test.gokrb5"]);
 
@@ -968,7 +965,7 @@ mod tests {
     #[test]
     fn replay_identity_survives_a_shared_key_sname_alias() -> Result<(), TestError> {
         let keytab = http_keytab_with_alias()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         drop(
             validator
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -991,10 +988,10 @@ mod tests {
     fn shared_replay_cache_rejects_a_shared_key_sname_alias() -> Result<(), TestError> {
         let keytab = http_keytab_with_alias()?;
         let replay_cache = SharedReplayCache::new();
-        let mut first = ServiceValidator::new(&keytab)
+        let mut first = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
             .with_shared_replay_cache(replay_cache.clone());
-        let mut second = ServiceValidator::new(&keytab)
+        let mut second = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
             .with_shared_replay_cache(replay_cache.clone());
         drop(
@@ -1023,7 +1020,7 @@ mod tests {
     #[test]
     fn clearing_old_entries_also_forgets_authenticator_digests() -> Result<(), TestError> {
         let keytab = http_keytab_with_alias()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         drop(
             validator
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -1050,7 +1047,7 @@ mod tests {
     #[test]
     fn rejects_authenticator_client_realm_mismatch() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
 
         // RFC 4120 section 3.2.3: the ticket's client realm must match the
         // authenticator's. The components match here; only the realm differs.
@@ -1079,7 +1076,7 @@ mod tests {
     #[test]
     fn returns_the_ticket_client_identity() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
 
         // RFC 4120 section 6.2: the name-type is advisory, so a differing
         // authenticator name-type is not a mismatch - but the accepted identity
@@ -1127,7 +1124,7 @@ mod tests {
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
         let config = config_with_default_keytab_name_and_clockskew(&name, "1s")?;
 
-        let mut named = ServiceValidator::from_default_keytab_name(&config)
+        let mut named = Validator::from_default_keytab_name(&config)
             .map_err(|cause| format!("validator loads the configured keytab: {cause}"))?
             .with_now(timestamp(1_893_553_447 + 2)?);
         assert!(matches!(
@@ -1138,7 +1135,7 @@ mod tests {
             Error::ClockSkew { max_clock_skew: _ }
         ));
 
-        let mut fresh = ServiceValidator::from_default_keytab_name(&config)
+        let mut fresh = Validator::from_default_keytab_name(&config)
             .map_err(|cause| format!("validator loads the configured keytab: {cause}"))?
             .with_now(timestamp(1_893_553_447)?);
         drop(
@@ -1147,7 +1144,7 @@ mod tests {
                 .map_err(|cause| format!("fresh authenticator stays accepted: {cause}"))?,
         );
 
-        let mut default = ServiceValidator::from_default_keytab(&config)
+        let mut default = Validator::from_default_keytab(&config)
             .map_err(|cause| format!("validator loads the default keytab: {cause}"))?
             .with_now(timestamp(1_893_553_447 + 2)?);
         assert!(matches!(
@@ -1162,11 +1159,11 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that `ServiceValidator::new` keeps the gokrb5-compatible 300 s default skew.
+    /// Pins that `Validator::new` keeps the gokrb5-compatible 300 s default skew.
     #[test]
     fn service_validator_new_keeps_default_skew() -> Result<(), TestError> {
         let keytab = http_keytab()?;
-        let mut tolerant = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 2)?);
+        let mut tolerant = Validator::new(&keytab).with_now(timestamp(1_893_553_447 + 2)?);
         drop(
             tolerant
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -1175,7 +1172,7 @@ mod tests {
                 })?,
         );
 
-        let mut strict = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447 + 301)?);
+        let mut strict = Validator::new(&keytab).with_now(timestamp(1_893_553_447 + 301)?);
         assert!(matches!(
             strict
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)

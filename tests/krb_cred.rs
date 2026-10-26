@@ -18,14 +18,15 @@ mod tests {
     use rskrb5_ng::{
         ccache,
         crypto::KerberosEtype,
+        error::KrbCred as Error,
         keytab::EncryptionKey,
         krb_cred::{
-            Error, KRB_CRED_ENCPART_USAGE, KRB_CRED_MSG_TYPE, ccache_credentials_to_krb_cred_parts,
-            decode_decrypt_krb_cred_to_ccache_credentials, decode_enc_krb_cred_part,
-            decode_krb_cred, decrypt_krb_cred_enc_part, decrypt_krb_cred_to_ccache_credentials,
-            decrypted_krb_cred_to_ccache_credentials,
-            encode_encrypt_ccache_credentials_to_krb_cred,
+            KRB_CRED_ENCPART_USAGE, KRB_CRED_MSG_TYPE, ccache_credentials_to_krb_cred_parts,
+            decode as decode_krb_cred, decode_decrypt_krb_cred_to_ccache_credentials,
+            decode_enc_krb_cred_part, decrypt_krb_cred_enc_part,
+            decrypt_krb_cred_to_ccache_credentials, decrypted_krb_cred_to_ccache_credentials,
             encode_encrypt_ccache_credentials_to_krb_cred_with_confounder,
+            encode_encrypted_ccache_credentials as encode_encrypt_ccache_credentials_to_krb_cred,
             encrypt_ccache_credentials_to_krb_cred_with_confounder,
         },
     };

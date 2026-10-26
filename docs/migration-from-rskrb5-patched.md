@@ -46,7 +46,7 @@ and writable. `Option` builders accept the complete `Option<T>`, including
 | Type | Construction path |
 | --- | --- |
 | `ccache::EncryptionKey`, `keytab::EncryptionKey` | `new(etype, value)` |
-| `ccache::Principal`, `keytab::Principal`, `client::Principal` | Existing `new(realm, name_type, components)` |
+| `ccache::Principal`, `keytab::Principal`, `client::principal::Principal` | Existing `new(realm, name_type, components)` |
 | `service::Principal` | `new(realm, name_type, components)` |
 | `ccache::AuthorizationDataEntry` | `new(ad_type, data)` |
 | `ccache::Credential` | `new(client, server, key, times, ticket_flags, ticket)`; `with_is_skey`, `with_addresses`, `with_auth_data`, `with_second_ticket` |
@@ -71,14 +71,14 @@ and writable. `Option` builders accept the complete `Option<T>`, including
 | Other decoded message, PAC, metadata, and context views | Existing decode/parse/build operations; no literal construction |
 
 Existing request-option and context-option constructors/builders remain the
-construction paths for `AsReqOptions`, `TgsReqOptions`, `ApReqOptions`,
-`KpasswdRequestOptions`, `EncKrbPrivPartOptions`, `ChangePasswdMessageOptions`,
+construction paths for `AsReq`, `TgsReq`, `ApReq`,
+`RequestOptions`, `EncKrbPrivPartOptions`, `ChangePasswdMessageOptions`,
 and `InitiatorContextOptions`. Existing token constructors remain available for
 `NegTokenInit`, `NegTokenResp`, and `Krb5MechToken`.
 
 ## Earlier source-compatible signature changes
 
-`TokioClient::{change_password, change_password_for, change_password_with_options,
+`Tokio::{change_password, change_password_for, change_password_with_options,
 change_password_for_with_options}` accept a named generic `P: AsRef<[u8]>`
 instead of an `impl AsRef<[u8]>` argument. Ordinary calls are unchanged.
 
@@ -86,7 +86,7 @@ instead of an `impl AsRef<[u8]>` argument. Ordinary calls are unchanged.
 
 ### Earlier compliance passes
 
-The lifetime parameter on `service::ServiceValidator`, `http::NegotiateLayer`,
+The lifetime parameter on `service::Validator`, `http::NegotiateLayer`,
 and `http::NegotiateService` is named `'keytab` instead of `'a`; the Tower
 `Service` implementation uses an anonymous lifetime. Lifetime semantics are
 unchanged. `http::{challenge_response, reject_response}` retain their generic
@@ -102,14 +102,14 @@ The earlier pass added `#[must_use]` to these public APIs:
   with_ap_rep_options, with_client_address, with_keytab_principal,
   with_max_clock_skew, with_now, with_reject_invalid, with_shared_replay_cache,
   without_shared_replay_cache}`;
-- `service::ServiceValidator::{new, require_client_address, shared_replay_cache,
+- `service::Validator::{new, require_client_address, shared_replay_cache,
   with_client_address, with_keytab_principal, with_max_clock_skew, with_now,
   with_shared_replay_cache, without_shared_replay_cache}`;
 - `evaluation::render_markdown`.
 
 The earlier pass also made these public APIs `const fn`:
 
-- `service::ServiceValidator::{with_now, with_max_clock_skew,
+- `service::Validator::{with_now, with_max_clock_skew,
   require_client_address, shared_replay_cache, replay_cache_mut}`;
 - `http::NegotiateLayer::{with_now, with_max_clock_skew, require_client_address,
   with_ap_rep, with_reject_invalid}`;
@@ -129,8 +129,8 @@ arguments using turbofish syntax.
   Both direct serde and gokrb5 JSON snapshots retain boolean representations;
   missing `permitted_enctypes_explicit` still means disabled.
 - `config::Realm::realm` is now `name`. Serialized field names remain unchanged.
-- `client::{build_kpasswd_request, build_kpasswd_request_with_confounders}` borrow
-  their `KpasswdRequestOptions`; `service::ValidatedApReq::build_ap_rep_with_confounder`
+- `client::{kpasswd::build_kpasswd_request, kpasswd::build_kpasswd_request_with_confounders}` borrow
+  their `RequestOptions`; `service::ValidatedApReq::build_ap_rep_with_confounder`
   and the corresponding SPNEGO response-header helpers borrow `ApRepOptions`.
 - `client::build_tgs_req_for_realm_with_confounder_and_subkey` now takes
   `(tgt, kdc_realm, service, parts)`. Build `parts` with
@@ -174,63 +174,63 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `ccache::Principal::name_string`.
 - `ccache::Principal::principal_string`.
 - `ccache::Principal::matches_components`.
-- `client::kpasswd::KpasswdRequestOptions::with_recipient_address`.
-- `client::negotiate::NegotiateClient::from_tokio_client`.
-- `client::negotiate::NegotiateClient::with_keytab`.
-- `client::negotiate::NegotiateClient::inner`.
-- `client::negotiate::NegotiateClient::into_inner`.
-- `client::options::AsReqOptions::new`.
-- `client::options::AsReqOptions::from_libdefaults`.
-- `client::options::AsReqOptions::with_ticket_lifetime`.
-- `client::options::AsReqOptions::with_renew_lifetime`.
-- `client::options::AsReqOptions::with_etypes`.
-- `client::options::AsReqOptions::with_kdc_option_bits`.
-- `client::options::AsReqOptions::with_padata`.
-- `client::options::AsReqOptions::with_assume_preauthentication`.
-- `client::options::AsReqOptions::with_fast_negotiation`.
-- `client::options::TgsReqOptions::new`.
-- `client::options::TgsReqOptions::from_libdefaults`.
-- `client::options::TgsReqOptions::with_ticket_lifetime`.
-- `client::options::TgsReqOptions::with_renew_lifetime`.
-- `client::options::TgsReqOptions::with_etypes`.
-- `client::options::TgsReqOptions::with_kdc_option_bits`.
-- `client::options::TgsReqOptions::with_padata`.
-- `client::options::TgsReqOptions::with_additional_tickets`.
-- `client::options::TgsReqOptions::with_renewal`.
-- `client::options::ApReqOptions::new`.
-- `client::options::ApReqOptions::with_ap_option_bits`.
-- `client::options::ApReqOptions::with_checksum`.
-- `client::options::ApReqOptions::with_subkey`.
-- `client::options::ApReqOptions::with_sequence_number`.
+- `client::kpasswd::RequestOptions::with_recipient_address`.
+- `client::negotiate::Client::from_tokio_client`.
+- `client::negotiate::Client::with_keytab`.
+- `client::negotiate::Client::inner`.
+- `client::negotiate::Client::into_inner`.
+- `client::options::AsReq::new`.
+- `client::options::AsReq::from_libdefaults`.
+- `client::options::AsReq::with_ticket_lifetime`.
+- `client::options::AsReq::with_renew_lifetime`.
+- `client::options::AsReq::with_etypes`.
+- `client::options::AsReq::with_kdc_option_bits`.
+- `client::options::AsReq::with_padata`.
+- `client::options::AsReq::with_assume_preauthentication`.
+- `client::options::AsReq::with_fast_negotiation`.
+- `client::options::TgsReq::new`.
+- `client::options::TgsReq::from_libdefaults`.
+- `client::options::TgsReq::with_ticket_lifetime`.
+- `client::options::TgsReq::with_renew_lifetime`.
+- `client::options::TgsReq::with_etypes`.
+- `client::options::TgsReq::with_kdc_option_bits`.
+- `client::options::TgsReq::with_padata`.
+- `client::options::TgsReq::with_additional_tickets`.
+- `client::options::TgsReq::with_renewal`.
+- `client::options::ApReq::new`.
+- `client::options::ApReq::with_ap_option_bits`.
+- `client::options::ApReq::with_checksum`.
+- `client::options::ApReq::with_subkey`.
+- `client::options::ApReq::with_sequence_number`.
 - `client::principal::Principal::name`.
 - `client::transport::KdcEndpoint::authority`.
-- `client::transport::TokioKdcTransport::new`.
-- `client::transport::TokioKdcTransport::with_timeout`.
-- `client::transport::TokioKdcTransport::with_udp_response_limit`.
-- `client::transport::TokioKdcTransport::with_tcp_response_limit`.
+- `client::transport::Tokio::new`.
+- `client::transport::Tokio::with_timeout`.
+- `client::transport::Tokio::with_udp_response_limit`.
+- `client::transport::Tokio::with_tcp_response_limit`.
 - `client::TokioClientDiagnostics::is_ok`.
 - `client::PrunedSessions::is_empty`.
 - `client::TokioClientAutoRenewal::is_finished`.
-- `client::TokioClient::with_keytab`.
-- `client::TokioClient::with_password_credential`.
-- `client::TokioClient::with_keytab_credential`.
-- `client::TokioClient::from_ccache`.
-- `client::TokioClient::from_tgt_session`.
-- `client::TokioClient::with_transport`.
-- `client::TokioClient::with_assume_preauthentication`.
-- `client::TokioClient::with_fast_negotiation`.
-- `client::TokioClient::config`.
-- `client::TokioClient::protocol`.
-- `client::TokioClient::client_principal`.
-- `client::TokioClient::is_configured`.
-- `client::TokioClient::assume_preauthentication`.
-- `client::TokioClient::fast_negotiation`.
-- `client::TokioClient::tgt_session`.
-- `client::TokioClient::tgt_refresh_due`.
-- `client::TokioClient::tgt_session_count`.
-- `client::TokioClient::tgt_session_for_realm`.
-- `client::TokioClient::cached_service_ticket_count`.
-- `client::TokioClient::cached_service_ticket`.
+- `client::Tokio::with_keytab`.
+- `client::Tokio::with_password_credential`.
+- `client::Tokio::with_keytab_credential`.
+- `client::Tokio::from_ccache`.
+- `client::Tokio::from_tgt_session`.
+- `client::Tokio::with_transport`.
+- `client::Tokio::with_assume_preauthentication`.
+- `client::Tokio::with_fast_negotiation`.
+- `client::Tokio::config`.
+- `client::Tokio::protocol`.
+- `client::Tokio::client_principal`.
+- `client::Tokio::is_configured`.
+- `client::Tokio::assume_preauthentication`.
+- `client::Tokio::fast_negotiation`.
+- `client::Tokio::tgt_session`.
+- `client::Tokio::tgt_refresh_due`.
+- `client::Tokio::tgt_session_count`.
+- `client::Tokio::tgt_session_for_realm`.
+- `client::Tokio::cached_service_ticket_count`.
+- `client::Tokio::cached_service_ticket`.
 - `client::<'request>TgsRequestParts<'request>::new`.
 - `client::<'request>TgsRequestParts<'request>::with_timestamp`.
 - `client::default_password_salt`.
@@ -296,8 +296,8 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `kadmin::ChangePasswdMessageOptions::with_recipient_address`.
 - `kadmin::<'request>PasswordEncryption<'request>::new`.
 - `kadmin::ChangePasswordResult::is_success`.
-- `keytab::KeytabName::file_path`.
-- `keytab::KeytabName::into_file_path`.
+- `keytab::Name::file_path`.
+- `keytab::Name::into_file_path`.
 - `keytab::Keytab::new`.
 - `keytab::Keytab::version`.
 - `keytab::Keytab::entries`.
@@ -330,7 +330,7 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `service::ReplayCache::is_empty`.
 - `service::SharedReplayCache::new`.
 - `service::SharedReplayCache::from_cache`.
-- `service::ServiceValidator<'static>::from_keytab`.
+- `service::Validator<'static>::from_keytab`.
 - `spnego::oid::ObjectIdentifier::krb5`.
 - `spnego::oid::ObjectIdentifier::ms_legacy_krb5`.
 - `spnego::oid::ObjectIdentifier::spnego`.
@@ -375,50 +375,50 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `ccache::CCache::upsert_config_entry`: `pub fn upsert_config_entry<P, Q>( &mut self, key: P, principal: Option<String>, value: Q, ) -> Option<Credential> where P: Into<String>, Q: Into<Vec<u8>>,`.
 - `ccache::Principal::new`: `pub fn new<P>(realm: P, name_type: i32, components: Vec<String>) -> Self where P: Into<String>,`.
 - `ccache::Credential::config_entry`: `pub fn config_entry<P, Q>( client: Principal, key: P, principal: Option<String>, value: Q, ) -> Self where P: Into<String>, Q: Into<Vec<u8>>,`.
-- `client::kpasswd::KpasswdRequestOptions::new`: `pub const fn new( timestamp: SystemTime, cusec: u32, sequence_number: u32, sender_address: rasn_kerberos::HostAddress, ) -> Self`.
-- `client::kpasswd::build_kpasswd_request_with_confounders`: `pub fn build_kpasswd_request_with_confounders( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, reply_key: EncryptionKey, options: &KpasswdRequestOptions, ap_req_confounder: &[u8], krb_priv_confounder: &[u8], ) -> Result<BuiltKpasswdRequest, Error>`.
-- `client::kpasswd::build_kpasswd_request`: `pub fn build_kpasswd_request( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, options: &KpasswdRequestOptions, ) -> Result<BuiltKpasswdRequest, Error>`.
-- `client::negotiate::NegotiateClient::from_tokio_client`: `pub const fn from_tokio_client(client: TokioClient) -> Self`.
-- `client::negotiate::NegotiateClient::with_password`: `pub fn with_password<P>(config: Config, client: Principal, password: P) -> Self where P: Into<Vec<u8>>,`.
-- `client::negotiate::NegotiateClient::with_keytab`: `pub const fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Self`.
-- `client::negotiate::NegotiateClient::with_keytab_name`: `pub fn with_keytab_name<P>( config: Config, client: Principal, keytab_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
-- `client::negotiate::NegotiateClient::from_ccache_name`: `pub fn from_ccache_name<P>(config: Config, cache_name: P) -> Result<Self, Error> where P: AsRef<str>,`.
-- `client::negotiate::NegotiateClient::inner`: `pub const fn inner(&self) -> &TokioClient`.
-- `client::negotiate::NegotiateClient::inner_mut`: `pub const fn inner_mut(&mut self) -> &mut TokioClient`.
-- `client::negotiate::NegotiateClient::authorization_header_for_host`: `pub async fn authorization_header_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<String, Error> where P: AsRef<str>, Q: AsRef<str>,`.
-- `client::negotiate::NegotiateClient::authorization_context_for_host`: `pub async fn authorization_context_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<InitiatorContext, Error> where P: AsRef<str>, Q: AsRef<str>,`.
-- `client::negotiate::NegotiateClient::change_password`: `pub async fn change_password<P>( &mut self, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::negotiate::NegotiateClient::change_password_for`: `pub async fn change_password_for<P>( &mut self, target: Principal, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::negotiate::NegotiateClient::change_password_with_options`: `pub async fn change_password_with_options<P>( &mut self, new_password: P, options: KpasswdRequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::negotiate::NegotiateClient::change_password_for_with_options`: `pub async fn change_password_for_with_options<P>( &mut self, target: Principal, new_password: P, options: KpasswdRequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::negotiate::BlockingNegotiateClient::with_password`: `pub fn with_password<P>(config: Config, client: Principal, password: P) -> Result<Self, Error> where P: Into<Vec<u8>>,`.
-- `client::negotiate::BlockingNegotiateClient::with_keytab_name`: `pub fn with_keytab_name<P>( config: Config, client: Principal, keytab_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
-- `client::negotiate::BlockingNegotiateClient::from_ccache_name`: `pub fn from_ccache_name<P>(config: Config, cache_name: P) -> Result<Self, Error> where P: AsRef<str>,`.
-- `client::negotiate::BlockingNegotiateClient::client`: `pub const fn client(&self) -> &NegotiateClient`.
-- `client::negotiate::BlockingNegotiateClient::client_mut`: `pub const fn client_mut(&mut self) -> &mut NegotiateClient`.
-- `client::negotiate::BlockingNegotiateClient::authorization_header_for_host`: `pub fn authorization_header_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<String, Error> where P: AsRef<str>, Q: AsRef<str>,`.
-- `client::negotiate::BlockingNegotiateClient::authorization_context_for_host`: `pub fn authorization_context_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<InitiatorContext, Error> where P: AsRef<str>, Q: AsRef<str>,`.
-- `client::negotiate::BlockingNegotiateClient::change_password`: `pub fn change_password<P>( &mut self, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::negotiate::BlockingNegotiateClient::change_password_for`: `pub fn change_password_for<P>( &mut self, target: Principal, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::negotiate::BlockingNegotiateClient::change_password_with_options`: `pub fn change_password_with_options<P>( &mut self, new_password: P, options: KpasswdRequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::negotiate::BlockingNegotiateClient::change_password_for_with_options`: `pub fn change_password_for_with_options<P>( &mut self, target: Principal, new_password: P, options: KpasswdRequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
-- `client::options::AsReqOptions::with_ticket_lifetime`: `pub const fn with_ticket_lifetime(mut self, ticket_lifetime: Duration) -> Self`.
-- `client::options::AsReqOptions::with_renew_lifetime`: `pub const fn with_renew_lifetime(mut self, renew_lifetime: Option<Duration>) -> Self`.
-- `client::options::AsReqOptions::with_etypes`: `pub fn with_etypes<P>(mut self, etypes: P) -> Self where P: Into<Vec<i32>>,`.
-- `client::options::AsReqOptions::with_kdc_option_bits`: `pub const fn with_kdc_option_bits(mut self, kdc_option_bits: u32) -> Self`.
-- `client::options::AsReqOptions::with_padata`: `pub fn with_padata<P>(mut self, padata: P) -> Self where P: Into<Vec<rasn_kerberos::PaData>>,`.
-- `client::options::AsReqOptions::with_assume_preauthentication`: `pub const fn with_assume_preauthentication(mut self, assume_preauthentication: bool) -> Self`.
-- `client::options::AsReqOptions::with_fast_negotiation`: `pub const fn with_fast_negotiation(mut self, fast_negotiation: bool) -> Self`.
-- `client::options::TgsReqOptions::with_ticket_lifetime`: `pub const fn with_ticket_lifetime(mut self, ticket_lifetime: Duration) -> Self`.
-- `client::options::TgsReqOptions::with_renew_lifetime`: `pub const fn with_renew_lifetime(mut self, renew_lifetime: Option<Duration>) -> Self`.
-- `client::options::TgsReqOptions::with_etypes`: `pub fn with_etypes<P>(mut self, etypes: P) -> Self where P: Into<Vec<i32>>,`.
-- `client::options::TgsReqOptions::with_kdc_option_bits`: `pub const fn with_kdc_option_bits(mut self, kdc_option_bits: u32) -> Self`.
-- `client::options::TgsReqOptions::with_padata`: `pub fn with_padata<P>(mut self, padata: P) -> Self where P: Into<Vec<rasn_kerberos::PaData>>,`.
-- `client::options::TgsReqOptions::with_additional_tickets`: `pub fn with_additional_tickets<P>(mut self, additional_tickets: P) -> Self where P: Into<Vec<rasn_kerberos::Ticket>>,`.
-- `client::options::TgsReqOptions::with_renewal`: `pub const fn with_renewal(mut self) -> Self`.
-- `client::options::ApReqOptions::new`: `pub const fn new() -> Self`.
-- `client::options::ApReqOptions::with_ap_option_bits`: `pub const fn with_ap_option_bits(mut self, ap_option_bits: u32) -> Self`.
-- `client::options::ApReqOptions::with_sequence_number`: `pub const fn with_sequence_number(mut self, sequence_number: Option<u32>) -> Self`.
+- `client::kpasswd::RequestOptions::new`: `pub const fn new( timestamp: SystemTime, cusec: u32, sequence_number: u32, sender_address: rasn_kerberos::HostAddress, ) -> Self`.
+- `client::kpasswd::build_kpasswd_request_with_confounders`: `pub fn build_kpasswd_request_with_confounders( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, reply_key: EncryptionKey, options: &RequestOptions, ap_req_confounder: &[u8], krb_priv_confounder: &[u8], ) -> Result<BuiltKpasswdRequest, Error>`.
+- `client::kpasswd::build_kpasswd_request`: `pub fn build_kpasswd_request( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, options: &RequestOptions, ) -> Result<BuiltKpasswdRequest, Error>`.
+- `client::negotiate::Client::from_tokio_client`: `pub const fn from_tokio_client(client: Tokio) -> Self`.
+- `client::negotiate::Client::with_password`: `pub fn with_password<P>(config: Config, client: Principal, password: P) -> Self where P: Into<Vec<u8>>,`.
+- `client::negotiate::Client::with_keytab`: `pub const fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Self`.
+- `client::negotiate::Client::with_keytab_name`: `pub fn with_keytab_name<P>( config: Config, client: Principal, keytab_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
+- `client::negotiate::Client::from_ccache_name`: `pub fn from_ccache_name<P>(config: Config, cache_name: P) -> Result<Self, Error> where P: AsRef<str>,`.
+- `client::negotiate::Client::inner`: `pub const fn inner(&self) -> &Tokio`.
+- `client::negotiate::Client::inner_mut`: `pub const fn inner_mut(&mut self) -> &mut Tokio`.
+- `client::negotiate::Client::authorization_header_for_host`: `pub async fn authorization_header_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<String, Error> where P: AsRef<str>, Q: AsRef<str>,`.
+- `client::negotiate::Client::authorization_context_for_host`: `pub async fn authorization_context_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<InitiatorContext, Error> where P: AsRef<str>, Q: AsRef<str>,`.
+- `client::negotiate::Client::change_password`: `pub async fn change_password<P>( &mut self, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::negotiate::Client::change_password_for`: `pub async fn change_password_for<P>( &mut self, target: Principal, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::negotiate::Client::change_password_with_options`: `pub async fn change_password_with_options<P>( &mut self, new_password: P, options: RequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::negotiate::Client::change_password_for_with_options`: `pub async fn change_password_for_with_options<P>( &mut self, target: Principal, new_password: P, options: RequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::negotiate::BlockingClient::with_password`: `pub fn with_password<P>(config: Config, client: Principal, password: P) -> Result<Self, Error> where P: Into<Vec<u8>>,`.
+- `client::negotiate::BlockingClient::with_keytab_name`: `pub fn with_keytab_name<P>( config: Config, client: Principal, keytab_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
+- `client::negotiate::BlockingClient::from_ccache_name`: `pub fn from_ccache_name<P>(config: Config, cache_name: P) -> Result<Self, Error> where P: AsRef<str>,`.
+- `client::negotiate::BlockingClient::client`: `pub const fn client(&self) -> &NegotiateClient`.
+- `client::negotiate::BlockingClient::client_mut`: `pub const fn client_mut(&mut self) -> &mut NegotiateClient`.
+- `client::negotiate::BlockingClient::authorization_header_for_host`: `pub fn authorization_header_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<String, Error> where P: AsRef<str>, Q: AsRef<str>,`.
+- `client::negotiate::BlockingClient::authorization_context_for_host`: `pub fn authorization_context_for_host<P, Q>( &mut self, service: P, host: Q, ) -> Result<InitiatorContext, Error> where P: AsRef<str>, Q: AsRef<str>,`.
+- `client::negotiate::BlockingClient::change_password`: `pub fn change_password<P>( &mut self, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::negotiate::BlockingClient::change_password_for`: `pub fn change_password_for<P>( &mut self, target: Principal, new_password: P, sender_address: rasn_kerberos::HostAddress, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::negotiate::BlockingClient::change_password_with_options`: `pub fn change_password_with_options<P>( &mut self, new_password: P, options: RequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::negotiate::BlockingClient::change_password_for_with_options`: `pub fn change_password_for_with_options<P>( &mut self, target: Principal, new_password: P, options: RequestOptions, ) -> Result<ChangePasswordResult, Error> where P: AsRef<[u8]>,`.
+- `client::options::AsReq::with_ticket_lifetime`: `pub const fn with_ticket_lifetime(mut self, ticket_lifetime: Duration) -> Self`.
+- `client::options::AsReq::with_renew_lifetime`: `pub const fn with_renew_lifetime(mut self, renew_lifetime: Option<Duration>) -> Self`.
+- `client::options::AsReq::with_etypes`: `pub fn with_etypes<P>(mut self, etypes: P) -> Self where P: Into<Vec<i32>>,`.
+- `client::options::AsReq::with_kdc_option_bits`: `pub const fn with_kdc_option_bits(mut self, kdc_option_bits: u32) -> Self`.
+- `client::options::AsReq::with_padata`: `pub fn with_padata<P>(mut self, padata: P) -> Self where P: Into<Vec<rasn_kerberos::PaData>>,`.
+- `client::options::AsReq::with_assume_preauthentication`: `pub const fn with_assume_preauthentication(mut self, assume_preauthentication: bool) -> Self`.
+- `client::options::AsReq::with_fast_negotiation`: `pub const fn with_fast_negotiation(mut self, fast_negotiation: bool) -> Self`.
+- `client::options::TgsReq::with_ticket_lifetime`: `pub const fn with_ticket_lifetime(mut self, ticket_lifetime: Duration) -> Self`.
+- `client::options::TgsReq::with_renew_lifetime`: `pub const fn with_renew_lifetime(mut self, renew_lifetime: Option<Duration>) -> Self`.
+- `client::options::TgsReq::with_etypes`: `pub fn with_etypes<P>(mut self, etypes: P) -> Self where P: Into<Vec<i32>>,`.
+- `client::options::TgsReq::with_kdc_option_bits`: `pub const fn with_kdc_option_bits(mut self, kdc_option_bits: u32) -> Self`.
+- `client::options::TgsReq::with_padata`: `pub fn with_padata<P>(mut self, padata: P) -> Self where P: Into<Vec<rasn_kerberos::PaData>>,`.
+- `client::options::TgsReq::with_additional_tickets`: `pub fn with_additional_tickets<P>(mut self, additional_tickets: P) -> Self where P: Into<Vec<rasn_kerberos::Ticket>>,`.
+- `client::options::TgsReq::with_renewal`: `pub const fn with_renewal(mut self) -> Self`.
+- `client::options::ApReq::new`: `pub const fn new() -> Self`.
+- `client::options::ApReq::with_ap_option_bits`: `pub const fn with_ap_option_bits(mut self, ap_option_bits: u32) -> Self`.
+- `client::options::ApReq::with_sequence_number`: `pub const fn with_sequence_number(mut self, sequence_number: Option<u32>) -> Self`.
 - `client::principal::Principal::new`: `pub fn new<I, S, P>(realm: P, name_type: i32, components: I) -> Self where I: IntoIterator<Item = S>, S: Into<String>, P: Into<String>,`.
 - `client::principal::Principal::user`: `pub fn user<P, Q>(realm: P, name: Q) -> Self where P: Into<String>, Q: Into<String>,`.
 - `client::principal::Principal::parse_user`: `pub fn parse_user<P>(value: P) -> Result<Self, Error> where P: AsRef<str>,`.
@@ -426,34 +426,34 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `client::principal::Principal::host_based_service`: `pub fn host_based_service<P, Q>(service: P, host: Q) -> Result<Self, Error> where P: AsRef<str>, Q: AsRef<str>,`.
 - `client::principal::Principal::host_based_service_in_realm`: `pub fn host_based_service_in_realm<P, Q, R>( service: P, host: Q, realm: R, ) -> Result<Self, Error> where P: AsRef<str>, Q: AsRef<str>, R: AsRef<str>,`.
 - `client::principal::Principal::tgt_service`: `pub fn tgt_service<P>(realm: P) -> Self where P: Into<String>,`.
-- `client::transport::TokioKdcTransport::new`: `pub const fn new() -> Self`.
-- `client::transport::TokioKdcTransport::with_timeout`: `pub const fn with_timeout(mut self, timeout: Duration) -> Self`.
-- `client::transport::TokioKdcTransport::with_udp_response_limit`: `pub const fn with_udp_response_limit(mut self, udp_response_limit: usize) -> Self`.
-- `client::transport::TokioKdcTransport::with_tcp_response_limit`: `pub const fn with_tcp_response_limit(mut self, tcp_response_limit: usize) -> Self`.
+- `client::transport::Tokio::new`: `pub const fn new() -> Self`.
+- `client::transport::Tokio::with_timeout`: `pub const fn with_timeout(mut self, timeout: Duration) -> Self`.
+- `client::transport::Tokio::with_udp_response_limit`: `pub const fn with_udp_response_limit(mut self, udp_response_limit: usize) -> Self`.
+- `client::transport::Tokio::with_tcp_response_limit`: `pub const fn with_tcp_response_limit(mut self, tcp_response_limit: usize) -> Self`.
 - `client::TokioClientDiagnostics::is_ok`: `pub const fn is_ok(&self) -> bool`.
 - `client::PrunedSessions::is_empty`: `pub const fn is_empty(&self) -> bool`.
-- `client::TokioClient::with_password`: `pub fn with_password<P>( config: Config, protocol: KdcProtocol, client: Principal, password: P, ) -> Self where P: Into<Vec<u8>>,`.
-- `client::TokioClient::with_keytab`: `pub const fn with_keytab( config: Config, protocol: KdcProtocol, client: Principal, keytab: Keytab, ) -> Self`.
-- `client::TokioClient::with_keytab_name`: `pub fn with_keytab_name<P>( config: Config, protocol: KdcProtocol, client: Principal, keytab_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
-- `client::TokioClient::with_password_credential`: `pub fn with_password_credential<P>(mut self, password: P) -> Self where P: Into<Vec<u8>>,`.
-- `client::TokioClient::from_ccache_name`: `pub fn from_ccache_name<P>( config: Config, protocol: KdcProtocol, cache_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
-- `client::TokioClient::save_ccache`: `pub fn save_ccache<P>(&self, path: P) -> Result<(), Error> where P: AsRef<Path>,`.
-- `client::TokioClient::save_ccache_name`: `pub fn save_ccache_name<P>(&self, cache_name: P) -> Result<(), Error> where P: AsRef<str>,`.
-- `client::TokioClient::update_ccache_file`: `pub fn update_ccache_file<P>(&self, path: P) -> Result<(), Error> where P: AsRef<Path>,`.
-- `client::TokioClient::update_ccache_name`: `pub fn update_ccache_name<P>(&self, cache_name: P) -> Result<(), Error> where P: AsRef<str>,`.
-- `client::TokioClient::with_transport`: `pub const fn with_transport(mut self, transport: TokioKdcTransport) -> Self`.
-- `client::TokioClient::with_assume_preauthentication`: `pub const fn with_assume_preauthentication(mut self, assume_preauthentication: bool) -> Self`.
-- `client::TokioClient::with_fast_negotiation`: `pub const fn with_fast_negotiation(mut self, fast_negotiation: bool) -> Self`.
-- `client::TokioClient::config`: `pub const fn config(&self) -> &Config`.
-- `client::TokioClient::protocol`: `pub const fn protocol(&self) -> KdcProtocol`.
-- `client::TokioClient::client_principal`: `pub const fn client_principal(&self) -> &Principal`.
-- `client::TokioClient::assume_preauthentication`: `pub const fn assume_preauthentication(&self) -> bool`.
-- `client::TokioClient::fast_negotiation`: `pub const fn fast_negotiation(&self) -> bool`.
-- `client::TokioClient::tgt_session`: `pub const fn tgt_session(&self) -> Option<&AsRepSession>`.
-- `client::build_tgs_req_for_realm`: `pub fn build_tgs_req_for_realm<P>( tgt: &AsRepSession, kdc_realm: P, service: Principal, options: TgsReqOptions, ) -> Result<BuiltTgsReq, Error> where P: Into<String>,`.
-- `client::build_tgs_req_for_realm_with_confounder`: `pub fn build_tgs_req_for_realm_with_confounder<P>( tgt: &AsRepSession, kdc_realm: P, service: Principal, options: TgsReqOptions, timestamp: SystemTime, cusec: u32, confounder: &[u8], ) -> Result<BuiltTgsReq, Error> where P: Into<String>,`.
+- `client::Tokio::with_password`: `pub fn with_password<P>( config: Config, protocol: KdcProtocol, client: Principal, password: P, ) -> Self where P: Into<Vec<u8>>,`.
+- `client::Tokio::with_keytab`: `pub const fn with_keytab( config: Config, protocol: KdcProtocol, client: Principal, keytab: Keytab, ) -> Self`.
+- `client::Tokio::with_keytab_name`: `pub fn with_keytab_name<P>( config: Config, protocol: KdcProtocol, client: Principal, keytab_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
+- `client::Tokio::with_password_credential`: `pub fn with_password_credential<P>(mut self, password: P) -> Self where P: Into<Vec<u8>>,`.
+- `client::Tokio::from_ccache_name`: `pub fn from_ccache_name<P>( config: Config, protocol: KdcProtocol, cache_name: P, ) -> Result<Self, Error> where P: AsRef<str>,`.
+- `client::Tokio::save_ccache`: `pub fn save_ccache<P>(&self, path: P) -> Result<(), Error> where P: AsRef<Path>,`.
+- `client::Tokio::save_ccache_name`: `pub fn save_ccache_name<P>(&self, cache_name: P) -> Result<(), Error> where P: AsRef<str>,`.
+- `client::Tokio::update_ccache_file`: `pub fn update_ccache_file<P>(&self, path: P) -> Result<(), Error> where P: AsRef<Path>,`.
+- `client::Tokio::update_ccache_name`: `pub fn update_ccache_name<P>(&self, cache_name: P) -> Result<(), Error> where P: AsRef<str>,`.
+- `client::Tokio::with_transport`: `pub const fn with_transport(mut self, transport: Tokio) -> Self`.
+- `client::Tokio::with_assume_preauthentication`: `pub const fn with_assume_preauthentication(mut self, assume_preauthentication: bool) -> Self`.
+- `client::Tokio::with_fast_negotiation`: `pub const fn with_fast_negotiation(mut self, fast_negotiation: bool) -> Self`.
+- `client::Tokio::config`: `pub const fn config(&self) -> &Config`.
+- `client::Tokio::protocol`: `pub const fn protocol(&self) -> KdcProtocol`.
+- `client::Tokio::client_principal`: `pub const fn client_principal(&self) -> &Principal`.
+- `client::Tokio::assume_preauthentication`: `pub const fn assume_preauthentication(&self) -> bool`.
+- `client::Tokio::fast_negotiation`: `pub const fn fast_negotiation(&self) -> bool`.
+- `client::Tokio::tgt_session`: `pub const fn tgt_session(&self) -> Option<&AsRepSession>`.
+- `client::build_tgs_req_for_realm`: `pub fn build_tgs_req_for_realm<P>( tgt: &AsRepSession, kdc_realm: P, service: Principal, options: TgsReq, ) -> Result<BuiltTgsReq, Error> where P: Into<String>,`.
+- `client::build_tgs_req_for_realm_with_confounder`: `pub fn build_tgs_req_for_realm_with_confounder<P>( tgt: &AsRepSession, kdc_realm: P, service: Principal, options: TgsReq, timestamp: SystemTime, cusec: u32, confounder: &[u8], ) -> Result<BuiltTgsReq, Error> where P: Into<String>,`.
 - `client::build_tgs_req_for_realm_with_confounder_and_subkey`: `pub fn build_tgs_req_for_realm_with_confounder_and_subkey<R>( tgt: &AsRepSession, kdc_realm: R, service: Principal, parts: TgsRequestParts<'_>, ) -> Result<TgsFastRequestParts, Error> where R: Into<String>,`.
-- `client::<'request>TgsRequestParts<'request>::new`: `pub const fn new( options: TgsReqOptions, confounder: &'request [u8], subkey: &'request EncryptionKey, ) -> Self`.
+- `client::<'request>TgsRequestParts<'request>::new`: `pub const fn new( options: TgsReq, confounder: &'request [u8], subkey: &'request EncryptionKey, ) -> Self`.
 - `client::<'request>TgsRequestParts<'request>::with_timestamp`: `pub const fn with_timestamp(mut self, timestamp: SystemTime, cusec: u32) -> Self`.
 - `config::Config::load`: `pub fn load<P>(path: P) -> Result<Self, Error> where P: AsRef<Path>,`.
 - `config::Toggle::from_bool`: `pub const fn from_bool(value: bool) -> Self`.
@@ -540,7 +540,7 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `kadmin::<'request>PasswordEncryption<'request>::new`: `pub const fn new( reply_key: EncryptionKey, ap_req_confounder: &'request [u8], krb_priv_confounder: &'request [u8], ) -> Self`.
 - `kadmin::Reply::is_krb_error`: `pub const fn is_krb_error(&self) -> bool`.
 - `kadmin::ChangePasswordResult::is_success`: `pub const fn is_success(&self) -> bool`.
-- `keytab::KeytabName::parse`: `pub fn parse<P>(name: P) -> Result<Self, Error> where P: AsRef<str>,`.
+- `keytab::Name::parse`: `pub fn parse<P>(name: P) -> Result<Self, Error> where P: AsRef<str>,`.
 - `keytab::Keytab::new`: `pub const fn new() -> Self`.
 - `keytab::Keytab::load`: `pub fn load<P>(path: P) -> Result<Self, Error> where P: AsRef<Path>,`.
 - `keytab::Keytab::load_name`: `pub fn load_name<P>(name: P) -> Result<Self, Error> where P: AsRef<str>,`.
@@ -556,7 +556,7 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `krb_priv::EncKrbPrivPartOptions::with_sequence_number`: `pub const fn with_sequence_number(mut self, seq_number: u32) -> Self`.
 - `krb_priv::host_address`: `pub fn host_address<P>(addr_type: i32, address: P) -> rasn_kerberos::HostAddress where P: AsRef<[u8]>,`.
 - `krb_priv::build_enc_krb_priv_part`: `pub fn build_enc_krb_priv_part<P>( user_data: P, options: EncKrbPrivPartOptions, ) -> rasn_kerberos::EncKrbPrivPart where P: AsRef<[u8]>,`.
-- `krb_priv::build_krb_priv`: `pub fn build_krb_priv<P>( user_data: P, options: EncKrbPrivPartOptions, key: &EncryptionKey, kvno: Option<u32>, ) -> Result<rasn_kerberos::KrbPriv, Error> where P: AsRef<[u8]>,`.
+- `krb_priv::build`: `pub fn build_krb_priv<P>( user_data: P, options: EncKrbPrivPartOptions, key: &EncryptionKey, kvno: Option<u32>, ) -> Result<rasn_kerberos::KrbPriv, Error> where P: AsRef<[u8]>,`.
 - `krb_priv::build_krb_priv_with_confounder`: `pub fn build_krb_priv_with_confounder<P>( user_data: P, options: EncKrbPrivPartOptions, key: &EncryptionKey, kvno: Option<u32>, confounder: &[u8], ) -> Result<rasn_kerberos::KrbPriv, Error> where P: AsRef<[u8]>,`.
 - `pac::NtlmSupplementalCredential::has_lm_password`: `pub const fn has_lm_password(&self) -> bool`.
 - `pac::NtlmSupplementalCredential::has_nt_password`: `pub const fn has_nt_password(&self) -> bool`.
@@ -565,7 +565,7 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `pac::FileTime::from_ticks`: `pub const fn from_ticks(ticks: u64) -> Self`.
 - `pac::FileTime::ticks`: `pub const fn ticks(self) -> u64`.
 - `service::ValidatedApReq::build_ap_rep_with_confounder`: `pub fn build_ap_rep_with_confounder( &self, confounder: &[u8], options: &ApRepOptions, ) -> Result<Vec<u8>, Error>`.
-- `service::ServiceValidator<'static>::from_keytab_name`: `pub fn from_keytab_name<P>(keytab_name: P) -> Result<Self, Error> where P: AsRef<str>,`.
+- `service::Validator<'static>::from_keytab_name`: `pub fn from_keytab_name<P>(keytab_name: P) -> Result<Self, Error> where P: AsRef<str>,`.
 - `spnego::oid::validate_arcs`: `pub(super) const fn validate_arcs(arcs: &[u32]) -> Result<(), Error>`.
 - `spnego::MicToken::new`: `pub const fn new(flags: u8, snd_seq_num: u64) -> Self`.
 - `spnego::MicToken::with_payload`: `pub fn with_payload<P>(mut self, payload: P) -> Self where P: Into<Vec<u8>>,`.
@@ -583,3 +583,138 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `spnego::AcceptedContext::ap_rep_response_header`: `pub fn ap_rep_response_header(&self, options: &ApRepOptions) -> Result<String, Error>`.
 - `spnego::AcceptedContext::ap_rep_response_header_with_confounder`: `pub fn ap_rep_response_header_with_confounder( &self, confounder: &[u8], options: &ApRepOptions, ) -> Result<String, Error>`.
 - `spnego::challenge_header`: `pub const fn challenge_header() -> &'static str`.
+
+## Renamed paths
+
+The following map is exhaustive. Paths are relative to `rskrb5_ng`; error
+texts and runtime behavior are unchanged.
+
+| From | To |
+| --- | --- |
+| `Error` | `error::Any` |
+| `ap_rep::Error` | `error::ApRep` |
+| `ap_req::Error` | `error::ApReq` |
+| `ccache::Error` | `error::Ccache` |
+| `client::Error` | `error::Client` |
+| `config::Error` | `error::Config` |
+| `crypto::Error` | `error::Crypto` |
+| `http::Error` | `error::Http` |
+| `kadmin::Error` | `error::Kadmin` |
+| `kdc_rep::Error` | `error::KdcRep` |
+| `kdc_req::Error` | `error::KdcReq` |
+| `keytab::Error` | `error::Keytab` |
+| `krb_cred::Error` | `error::KrbCred` |
+| `krb_error::Error` | `error::KrbErrorCodec` |
+| `krb_priv::Error` | `error::KrbPriv` |
+| `krb_safe::Error` | `error::KrbSafe` |
+| `messages::Error` | `error::Messages` |
+| `pac::Error` | `error::Pac` |
+| `service::Error` | `error::Service` |
+| `spnego::Error` | `error::Spnego` |
+| `ticket::Error` | `error::Ticket` |
+| `ap_rep::build_ap_rep` | `ap_rep::build` |
+| `ap_rep::decode_ap_rep` | `ap_rep::decode` |
+| `ap_rep::encode_ap_rep` | `ap_rep::encode` |
+| `ap_rep::validate_ap_rep` | `ap_rep::validate` |
+| `ap_rep::encode_build_ap_rep` | `ap_rep::build_encoded` |
+| `ap_req::build_ap_req` | `ap_req::build` |
+| `ap_req::decode_ap_req` | `ap_req::decode` |
+| `ap_req::encode_ap_req` | `ap_req::encode` |
+| `ap_req::validate_ap_req` | `ap_req::validate` |
+| `ap_req::encode_build_ap_req` | `ap_req::build_encoded` |
+| `ticket::build_ticket` | `ticket::build` |
+| `ticket::decode_ticket` | `ticket::decode` |
+| `ticket::encode_ticket` | `ticket::encode` |
+| `ticket::validate_ticket` | `ticket::validate` |
+| `ticket::encode_build_ticket` | `ticket::build_encoded` |
+| `krb_priv::build_krb_priv` | `krb_priv::build` |
+| `krb_priv::decode_krb_priv` | `krb_priv::decode` |
+| `krb_priv::encode_krb_priv` | `krb_priv::encode` |
+| `krb_priv::validate_krb_priv` | `krb_priv::validate` |
+| `krb_safe::build_krb_safe` | `krb_safe::build` |
+| `krb_safe::decode_krb_safe` | `krb_safe::decode` |
+| `krb_safe::encode_krb_safe` | `krb_safe::encode` |
+| `krb_error::decode_krb_error` | `krb_error::decode` |
+| `krb_error::encode_krb_error` | `krb_error::encode` |
+| `krb_error::validate_krb_error` | `krb_error::validate` |
+| `krb_safe::krb_safe_checksum` | `krb_safe::checksum` |
+| `krb_error::krb_error_info` | `krb_error::info` |
+| `krb_cred::decode_krb_cred` | `krb_cred::decode` |
+| `krb_cred::encrypt_ccache_credentials_to_krb_cred` | `krb_cred::encrypt_ccache_credentials` |
+| `krb_cred::encode_encrypt_ccache_credentials_to_krb_cred` | `krb_cred::encode_encrypted_ccache_credentials` |
+| `client::TokioClient` | `client::Tokio` |
+| `client::NegotiateClient` | `client::negotiate::Client` |
+| `client::BlockingNegotiateClient` | `client::negotiate::BlockingClient` |
+| `service::ServiceValidator` | `service::Validator` |
+| `keytab::KeytabName` | `keytab::Name` |
+| `keytab::KeytabEntryMetadata` | `keytab::EntryMetadata` |
+| `spnego::SpnegoToken` | `spnego::Token` |
+| `spnego::ObjectIdentifier` | `spnego::oid::ObjectIdentifier` |
+| `krb_error::KrbErrorInfo` | `messages::KrbErrorInfo` |
+| `krb_error::PrincipalNameInfo` | `messages::PrincipalNameInfo` |
+| `client::Principal` | `client::principal::Principal` |
+| `client::AsReqOptions` | `client::options::AsReq` |
+| `client::TgsReqOptions` | `client::options::TgsReq` |
+| `client::ApReqOptions` | `client::options::ApReq` |
+| `client::KdcEndpoint` | `client::transport::KdcEndpoint` |
+| `client::KdcEndpointSource` | `client::transport::KdcEndpointSource` |
+| `client::KdcProtocol` | `client::transport::KdcProtocol` |
+| `client::TokioKdcTransport` | `client::transport::Tokio` |
+| `client::BuiltKpasswdRequest` | `client::kpasswd::BuiltKpasswdRequest` |
+| `client::KpasswdRequestOptions` | `client::kpasswd::RequestOptions` |
+| `client::VerifiedKpasswdApRep` | `client::kpasswd::VerifiedKpasswdApRep` |
+| `client::build_kpasswd_request` | `client::kpasswd::build_kpasswd_request` |
+| `client::build_kpasswd_request_with_confounders` | `client::kpasswd::build_kpasswd_request_with_confounders` |
+| `client::verify_kpasswd_ap_rep` | `client::kpasswd::verify_kpasswd_ap_rep` |
+| `kadmin::EncKrbPrivPartOptions` | `krb_priv::EncKrbPrivPartOptions` |
+| `kadmin::KRB_PRIV_ENCPART_USAGE` | `krb_priv::KRB_PRIV_ENCPART_USAGE` |
+| `kadmin::KRB_PRIV_MSG_TYPE` | `krb_priv::KRB_PRIV_MSG_TYPE` |
+| `kadmin::KRB_PRIV_PVNO` | `krb_priv::KRB_PRIV_PVNO` |
+| `kadmin::host_address` | `krb_priv::host_address` |
+| `kadmin::ipv4_host_address` | `krb_priv::ipv4_host_address` |
+| `kadmin::ipv6_host_address` | `krb_priv::ipv6_host_address` |
+| `evaluation::ASN1_FIXTURES` | `evaluation::data::ASN1_FIXTURES` |
+| `evaluation::ASSESSMENTS` | `evaluation::data::ASSESSMENTS` |
+| `evaluation::Asn1Fixture` | `evaluation::data::Asn1Fixture` |
+| `evaluation::Candidate` | `evaluation::data::Candidate` |
+| `evaluation::CandidateAssessment` | `evaluation::data::CandidateAssessment` |
+| `evaluation::CandidateReport` | `evaluation::data::CandidateReport` |
+| `evaluation::Capability` | `evaluation::data::Capability` |
+| `evaluation::ContractArea` | `evaluation::data::ContractArea` |
+| `evaluation::DerType` | `evaluation::data::DerType` |
+| `evaluation::REPORTS` | `evaluation::data::REPORTS` |
+| `evaluation::Support` | `evaluation::data::Support` |
+| `evaluation::SupportByArea` | `evaluation::data::SupportByArea` |
+| `evaluation::V8_CONTRACT` | `evaluation::data::V8_CONTRACT` |
+| `client::Error::ClientPrincipalMismatch` | `error::Client::PrincipalMismatch` |
+| `config::Error::NoDefaultConfig` | `error::Config::NoDefault` |
+| `kadmin::Error::MissingKrbError` | `error::Kadmin::MissingKrb` |
+| `Error::KrbError` | `error::Any::Krb` |
+
+The newly public defining modules are `client::{kpasswd, negotiate, options,
+principal, transport}`, `spnego::oid`, and `evaluation::data`; `error` is new.
+The only public re-exports are the crate-root facade: `Principal`,
+`TokioClient`, `NegotiateClient`, `BlockingNegotiateClient`, `Config`, and
+`ServiceValidator`. These keep their familiar root names. References in the
+API dump normalize these aliases to their defining paths; duplicate alias
+expansions do not represent distinct items.
+
+The old module-local error path is private and no longer resolves externally:
+
+```compile_fail
+use rskrb5_ng::client::Error;
+```
+
+Use the public domain error instead:
+
+```rust
+# #[cfg(feature = "messages")]
+# {
+use rskrb5_ng::error::Client;
+let error = Client::PrincipalMismatch {
+    expected: "alice@EXAMPLE.COM".to_owned(),
+    actual: "bob@EXAMPLE.COM".to_owned(),
+};
+assert!(matches!(error, Client::PrincipalMismatch { .. }));
+# }
+```

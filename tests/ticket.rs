@@ -17,11 +17,12 @@ mod tests {
     use rasn_kerberos::{PrincipalName, TicketFlags};
     use rskrb5_ng::{
         crypto::KerberosEtype,
+        error::Ticket as Error,
         keytab::EncryptionKey,
         ticket::{
-            Error, KDC_REP_TICKET_USAGE, KRB5_TKT_VNO, build_ticket, build_ticket_with_confounder,
-            decode_enc_ticket_part, decode_ticket, decrypt_ticket_enc_part,
-            encode_build_ticket_with_confounder, encode_ticket,
+            KDC_REP_TICKET_USAGE, KRB5_TKT_VNO, build as build_ticket,
+            build_ticket_with_confounder, decode as decode_ticket, decode_enc_ticket_part,
+            decrypt_ticket_enc_part, encode as encode_ticket, encode_build_ticket_with_confounder,
         },
     };
 

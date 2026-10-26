@@ -5,199 +5,34 @@
 
 use alloc::fmt;
 use core::{
-    str::{self, FromStr, Utf8Error},
+    str::{self, FromStr},
     time::Duration,
 };
 use std::{
-    env, fs, io,
+    env, fs,
     path::{Path, PathBuf},
-    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{
-    crypto::{self, KerberosEtype},
-    file_name,
-};
+use crate::{crypto::KerberosEtype, file_name};
 
 /// First byte of every keytab file.
 const KEYTAB_FIRST_BYTE: u8 = 5;
 /// Environment variable naming the default keytab.
 const KRB5_KTNAME_ENV: &str = "KRB5_KTNAME";
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Parsed MIT-style keytab name.
 ///
 /// `rskrb5` currently supports file-backed keytabs only. The explicit name
 /// type gives callers a validation point before attempting filesystem access.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum KeytabName {
+pub enum Name {
     /// A file-backed keytab.
     File(PathBuf),
 }
 
-impl KeytabName {
+impl Name {
     /// Parse a MIT-style keytab name.
     ///
     /// Bare paths, `FILE:path`, and `WRFILE:path` are supported. Collection
@@ -234,7 +69,7 @@ impl KeytabName {
     }
 }
 
-impl FromStr for KeytabName {
+impl FromStr for Name {
     type Err = Error;
 
     #[inline]
@@ -300,13 +135,13 @@ impl Keytab {
     ///
     /// # Errors
     ///
-    /// Returns any error of [`KeytabName::parse`] and [`Keytab::load`].
+    /// Returns any error of [`Name::parse`] and [`Keytab::load`].
     #[inline]
     pub fn load_name<P>(name: P) -> Result<Self, Error>
     where
         P: AsRef<str>,
     {
-        Self::load(KeytabName::parse(name)?.into_file_path())
+        Self::load(Name::parse(name)?.into_file_path())
     }
 
     /// Parse keytab bytes.
@@ -427,13 +262,13 @@ impl Keytab {
     ///
     /// # Errors
     ///
-    /// Returns any error of [`KeytabName::parse`] and [`Keytab::save`].
+    /// Returns any error of [`Name::parse`] and [`Keytab::save`].
     #[inline]
     pub fn save_name<P>(&self, name: P) -> Result<(), Error>
     where
         P: AsRef<str>,
     {
-        self.save(KeytabName::parse(name)?.into_file_path())
+        self.save(Name::parse(name)?.into_file_path())
     }
 
     /// Resolve a MIT-style keytab name to a file path.
@@ -510,11 +345,8 @@ impl Keytab {
     /// Redacted entry metadata, suitable for diagnostics and JSON rendering.
     #[cfg(feature = "serde")]
     #[inline]
-    pub fn entry_metadata(&self) -> Vec<KeytabEntryMetadata> {
-        self.entries
-            .iter()
-            .map(KeytabEntryMetadata::from_entry)
-            .collect()
+    pub fn entry_metadata(&self) -> Vec<EntryMetadata> {
+        self.entries.iter().map(EntryMetadata::from_entry).collect()
     }
 
     /// Return redacted entry metadata as pretty-printed JSON.
@@ -893,130 +725,12 @@ impl fmt::Debug for EncryptionKey {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Redacted keytab entry metadata.
 #[cfg(feature = "serde")]
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "PascalCase")]
 #[non_exhaustive]
-pub struct KeytabEntryMetadata {
+pub struct EntryMetadata {
     /// Principal as `name@REALM`.
     pub principal: String,
     /// Principal realm.
@@ -1041,7 +755,7 @@ pub struct KeytabEntryMetadata {
 }
 
 #[cfg(feature = "serde")]
-impl KeytabEntryMetadata {
+impl EntryMetadata {
     /// Redacted metadata of one entry.
     fn from_entry(entry: &Entry) -> Self {
         Self {
@@ -1058,246 +772,7 @@ impl KeytabEntryMetadata {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Keytab parsing and serialization error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// File loading or saving failed.
-    #[error("keytab file could not be read or written: {0}")]
-    Io(#[from] io::Error),
-    /// The default keytab name could not be read from `KRB5_KTNAME`.
-    #[error("default keytab name could not be read from KRB5_KTNAME: {0}")]
-    DefaultKeytabName(env::VarError),
-    /// A keytab name was empty or did not include a path.
-    #[error("invalid keytab name")]
-    InvalidKeytabName,
-    /// The keytab name uses a keytab type this module cannot parse.
-    #[error("unsupported keytab type: {keytab_type}")]
-    UnsupportedKeytabType {
-        /// Keytab type prefix before the first colon.
-        keytab_type: String,
-    },
-    /// A principal name was empty or contained empty components.
-    #[error("invalid keytab principal name")]
-    InvalidPrincipalName,
-    /// Input is too short to contain the keytab header.
-    #[error("keytab is too short: {actual} bytes")]
-    TooShort {
-        /// Actual input length.
-        actual: usize,
-    },
-    /// Keytab does not start with the required first byte.
-    #[error("invalid keytab first byte: {0}")]
-    InvalidFirstByte(u8),
-    /// Unsupported keytab version.
-    #[error("invalid keytab version: {0}")]
-    InvalidVersion(u8),
-    /// A read would exceed the input length.
-    #[error("keytab data is truncated at offset {offset}; need {needed} bytes, have {remaining}")]
-    Truncated {
-        /// Offset where the read started.
-        offset: usize,
-        /// Bytes needed.
-        needed: usize,
-        /// Bytes remaining from offset.
-        remaining: usize,
-    },
-    /// A signed length was negative where the field cannot be negative.
-    #[error("negative keytab length: {0}")]
-    NegativeLength(i32),
-    /// A length cannot fit in the target integer type.
-    #[error("keytab length overflow")]
-    LengthOverflow,
-    /// A keytab entry timestamp was before the Unix epoch.
-    #[error("keytab timestamp is before the Unix epoch: {0}")]
-    TimestampBeforeUnixEpoch(#[from] SystemTimeError),
-    /// A keytab entry timestamp cannot fit in the file format.
-    #[error("keytab timestamp overflow")]
-    TimestampOverflow,
-    /// Principal strings must be valid UTF-8.
-    #[error("invalid keytab string: {0}")]
-    InvalidString(#[from] Utf8Error),
-    /// The encrypted data etype is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-    /// Key derivation failed.
-    #[error("crypto error: {0}")]
-    Crypto(#[from] crypto::Error),
-    /// Key lookup did not find a matching entry.
-    #[error("matching key not found in keytab for {principal}@{realm}, kvno {kvno}, etype {etype}")]
-    NoMatchingKey {
-        /// Principal components joined by `/`.
-        principal: String,
-        /// Principal realm.
-        realm: String,
-        /// Requested kvno, or 0 for latest.
-        kvno: u32,
-        /// Requested encryption type.
-        etype: i32,
-    },
-}
+use crate::error::Keytab as Error;
 
 /// Byte order of the integers in a keytab file.
 #[derive(Clone, Copy, Debug)]

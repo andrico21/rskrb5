@@ -12,25 +12,28 @@ use base64::{Engine as _, engine::general_purpose};
 use rasn::types::Integer;
 
 use crate::{
-    ap_rep::{self, decode_ap_rep, decrypt_ap_rep_enc_part},
-    client::{self, ApReqOptions, Principal, TgsRepSession, build_ap_req_with_confounder},
-    crypto::{self, KerberosEtype},
+    ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
+    client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
+    crypto::KerberosEtype,
+    error,
     keytab::EncryptionKey,
-    service::{self, ApRepOptions, ServiceValidator, ValidatedApReq, VerifiedApRep},
+    service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
 };
 
 /// Minimal DER reader and writer for the GSS-API and SPNEGO token layer.
 mod der;
 /// GSS-API object identifiers.
-mod oid;
+pub mod oid;
 
-use self::der::{
-    DerReader, TAG_APPLICATION_0, TAG_BIT_STRING, TAG_CONTEXT_0, TAG_CONTEXT_1, TAG_CONTEXT_2,
-    TAG_CONTEXT_3, TAG_ENUMERATED, TAG_OBJECT_IDENTIFIER, TAG_OCTET_STRING, TAG_SEQUENCE, Tlv,
-    decode_oid_tlv, decode_u32, encode_explicit, encode_oid, encode_tlv, encode_u32,
-    read_single_tlv,
+use self::{
+    der::{
+        DerReader, TAG_APPLICATION_0, TAG_BIT_STRING, TAG_CONTEXT_0, TAG_CONTEXT_1, TAG_CONTEXT_2,
+        TAG_CONTEXT_3, TAG_ENUMERATED, TAG_OBJECT_IDENTIFIER, TAG_OCTET_STRING, TAG_SEQUENCE, Tlv,
+        decode_oid_tlv, decode_u32, encode_explicit, encode_oid, encode_tlv, encode_u32,
+        read_single_tlv,
+    },
+    oid::ObjectIdentifier,
 };
-pub use self::oid::ObjectIdentifier;
 
 /// RFC 4121 token ID of a KRB5 mech token that carries an AP-REQ.
 const TOK_ID_KRB_AP_REQ: [u8; 2] = [0x01, 0x00];
@@ -1248,135 +1251,17 @@ impl NegotiationToken {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Full SPNEGO GSS context token.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum SpnegoToken {
+pub enum Token {
     /// Initial context token with SPNEGO OID and `NegTokenInit`.
     Init(NegTokenInit),
     /// Bare `NegTokenResp` response token.
     Resp(NegTokenResp),
 }
 
-impl SpnegoToken {
+impl Token {
     /// Decode a full SPNEGO context token.
     ///
     /// # Errors
@@ -1555,7 +1440,7 @@ pub struct InitiatorContext {
     /// KRB5 mech token carrying the AP-REQ.
     pub krb5_token: Krb5MechToken,
     /// SPNEGO `NegTokenInit` context token.
-    pub spnego_token: SpnegoToken,
+    pub spnego_token: Token,
     /// HTTP `Authorization` header value.
     pub header: String,
     /// Client principal placed in the authenticator.
@@ -1589,8 +1474,8 @@ impl InitiatorContext {
     pub fn verify_ap_rep_response_header(&self, header: &str) -> Result<VerifiedApRep, Error> {
         let token = parse_negotiate_header(header)?;
         let response = match token {
-            SpnegoToken::Resp(response) => response,
-            SpnegoToken::Init(_) => {
+            Token::Resp(response) => response,
+            Token::Init(_) => {
                 return Err(Error::WrongNegotiationToken {
                     expected: "NegTokenResp",
                     actual: "NegTokenInit",
@@ -1690,11 +1575,11 @@ impl AcceptedContext {
 ///
 /// # Errors
 ///
-/// Returns the errors of [`parse_negotiate_header`] and [`SpnegoToken::krb5_ap_req`], and
+/// Returns the errors of [`parse_negotiate_header`] and [`Token::krb5_ap_req`], and
 /// [`Error::Service`] when the validator rejects the AP-REQ.
 #[inline]
 pub fn accept_sec_context_header(
-    validator: &mut ServiceValidator<'_>,
+    validator: &mut Validator<'_>,
     header: &str,
 ) -> Result<AcceptedContext, Error> {
     let token = parse_negotiate_header(header)?;
@@ -1743,7 +1628,7 @@ pub fn init_sec_context_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<InitiatorContext, Error> {
-    let ap_req_options = ApReqOptions::new()
+    let ap_req_options = ApReq::new()
         .with_ap_option_bits(options.ap_option_bits)
         .with_checksum(Some(rasn_kerberos::Checksum {
             r#type: GSSAPI_CHECKSUM_TYPE,
@@ -1757,7 +1642,7 @@ pub fn init_sec_context_with_confounder(
     let ap_req_der = built_ap_req.der.clone();
     let krb5_token = Krb5MechToken::ap_req(ap_req_der.clone());
     let krb5_token_der = krb5_token.encode()?;
-    let spnego_token = SpnegoToken::Init(NegTokenInit::krb5(krb5_token_der));
+    let spnego_token = Token::Init(NegTokenInit::krb5(krb5_token_der));
     let header = negotiate_header(&spnego_token)?;
 
     Ok(InitiatorContext {
@@ -1799,9 +1684,9 @@ pub fn authorization_header(
 ///
 /// Returns [`Error::InvalidNegotiateHeader`] when the scheme is not `Negotiate` or the token is
 /// missing, [`Error::Base64`] when the token is not valid base64, and the errors of
-/// [`SpnegoToken::decode`] when the bytes are neither a SPNEGO token nor a raw KRB5 mech token.
+/// [`Token::decode`] when the bytes are neither a SPNEGO token nor a raw KRB5 mech token.
 #[inline]
-pub fn parse_negotiate_header(header: &str) -> Result<SpnegoToken, Error> {
+pub fn parse_negotiate_header(header: &str) -> Result<Token, Error> {
     let mut parts = header.splitn(2, char::is_whitespace);
     let scheme = parts.next().unwrap_or_default();
     let encoded = parts.next().ok_or(Error::InvalidNegotiateHeader)?;
@@ -1811,17 +1696,16 @@ pub fn parse_negotiate_header(header: &str) -> Result<SpnegoToken, Error> {
     let bytes = general_purpose::STANDARD
         .decode(encoded.trim())
         .map_err(Error::Base64)?;
-    SpnegoToken::decode(&bytes)
-        .or_else(|spnego_error| raw_krb5_negotiate_token(&bytes, spnego_error))
+    Token::decode(&bytes).or_else(|spnego_error| raw_krb5_negotiate_token(&bytes, spnego_error))
 }
 
 /// Encode a SPNEGO token as an HTTP `Negotiate` header value.
 ///
 /// # Errors
 ///
-/// Returns the errors of [`SpnegoToken::encode`].
+/// Returns the errors of [`Token::encode`].
 #[inline]
-pub fn negotiate_header(token: &SpnegoToken) -> Result<String, Error> {
+pub fn negotiate_header(token: &Token) -> Result<String, Error> {
     Ok(format!(
         "{HTTP_NEGOTIATE} {}",
         general_purpose::STANDARD.encode(token.encode()?)
@@ -1834,16 +1718,16 @@ pub fn negotiate_header(token: &SpnegoToken) -> Result<String, Error> {
 /// # Errors
 ///
 /// Returns `spnego_error` unchanged when `bytes` is not a KRB5 mech token.
-fn raw_krb5_negotiate_token(bytes: &[u8], spnego_error: Error) -> Result<SpnegoToken, Error> {
+fn raw_krb5_negotiate_token(bytes: &[u8], spnego_error: Error) -> Result<Token, Error> {
     let Ok(krb5) = Krb5MechToken::decode(bytes) else {
         return Err(spnego_error);
     };
     match krb5.token_id {
-        Krb5TokenId::ApReq => Ok(SpnegoToken::Init(NegTokenInit::krb5(bytes.to_vec()))),
-        Krb5TokenId::ApRep => Ok(SpnegoToken::Resp(
+        Krb5TokenId::ApReq => Ok(Token::Init(NegTokenInit::krb5(bytes.to_vec()))),
+        Krb5TokenId::ApRep => Ok(Token::Resp(
             NegTokenResp::accept_completed().with_response_token(bytes.to_vec()),
         )),
-        Krb5TokenId::KrbError => Ok(SpnegoToken::Resp(
+        Krb5TokenId::KrbError => Ok(Token::Resp(
             NegTokenResp::reject().with_response_token(bytes.to_vec()),
         )),
     }
@@ -1990,417 +1874,14 @@ fn constant_time_eq(expected: &[u8], actual: &[u8]) -> bool {
     diff == 0
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// SPNEGO/GSS token processing error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// Input was absent.
-    #[error("input is empty")]
-    EmptyInput,
-
-    /// DER input ended before a complete value could be read.
-    #[error("truncated DER value")]
-    TruncatedDer,
-
-    /// DER used an unsupported high-tag-number form.
-    #[error("high-tag-number DER form is not supported")]
-    HighTagNumber,
-
-    /// DER used an unsupported indefinite length.
-    #[error("indefinite DER length is not supported")]
-    IndefiniteLength,
-
-    /// DER length exceeds the remaining input.
-    #[error("DER length exceeds remaining input")]
-    LengthExceedsInput,
-
-    /// DER value used an unexpected tag.
-    #[error("unexpected DER tag: expected 0x{expected:02x}, got 0x{actual:02x}")]
-    UnexpectedTag {
-        /// Expected one-byte tag.
-        expected: u8,
-        /// Actual one-byte tag.
-        actual: u8,
-    },
-
-    /// DER contained trailing bytes after the expected value.
-    #[error("trailing DER data")]
-    TrailingData,
-
-    /// OID arcs were invalid.
-    #[error("invalid object identifier")]
-    InvalidOid,
-
-    /// OID base-128 encoding was malformed.
-    #[error("invalid object identifier encoding")]
-    InvalidOidEncoding,
-
-    /// SPNEGO OID did not match `1.3.6.1.5.5.2`.
-    #[error("unexpected SPNEGO OID: {0:?}")]
-    UnexpectedSpnegoOid(ObjectIdentifier),
-
-    /// The mechanism OID is not a supported Kerberos mechanism.
-    #[error("unsupported mechanism OID: {0:?}")]
-    UnsupportedMechanism(ObjectIdentifier),
-
-    /// KRB5 token ID was unknown.
-    #[error("unknown KRB5 token ID: {0:02x?}")]
-    UnknownKrb5TokenId([u8; 2]),
-
-    /// KRB5 token omitted its Kerberos message bytes.
-    #[error("KRB5 token does not contain a Kerberos message")]
-    MissingKerberosMessage,
-
-    /// GSS-API MIC/Wrap token was too short.
-    #[error("GSS token too short: expected at least {minimum} bytes, got {actual}")]
-    GssTokenTooShort {
-        /// Minimum accepted byte length.
-        minimum: usize,
-        /// Actual byte length.
-        actual: usize,
-    },
-
-    /// GSS-API MIC/Wrap token ID was not the expected value.
-    #[error("invalid GSS token ID: expected {expected:02x?}, got {actual:02x?}")]
-    InvalidGssTokenId {
-        /// Expected two-byte token id.
-        expected: [u8; 2],
-        /// Actual two-byte token id.
-        actual: [u8; 2],
-    },
-
-    /// GSS-API token sender direction did not match the caller's expectation.
-    #[error(
-        "unexpected GSS token sender: expected_from_acceptor={expected_from_acceptor}, actual_from_acceptor={actual_from_acceptor}"
-    )]
-    UnexpectedGssTokenSender {
-        /// Whether caller expected an acceptor token.
-        expected_from_acceptor: bool,
-        /// Whether token flags identify an acceptor token.
-        actual_from_acceptor: bool,
-    },
-
-    /// GSS-API token filler bytes were invalid.
-    #[error("invalid GSS token filler")]
-    InvalidGssFiller,
-
-    /// GSS-API token has no payload for checksum calculation.
-    #[error("GSS token payload has not been set")]
-    MissingGssPayload,
-
-    /// GSS-API token has no checksum.
-    #[error("GSS token checksum has not been set")]
-    MissingGssChecksum,
-
-    /// GSS-API token checksum was already set.
-    #[error("GSS token checksum has already been set")]
-    GssChecksumAlreadySet,
-
-    /// GSS-API sealed token encrypted body was absent.
-    #[error("GSS sealed token encrypted body has not been set")]
-    MissingGssEncryptedBody,
-
-    /// GSS-API sealed token encrypted body was already set.
-    #[error("GSS sealed token encrypted body has already been set")]
-    GssEncryptedBodyAlreadySet,
-
-    /// GSS-API token needs encryption instead of a separate checksum.
-    #[error("GSS sealed token must be encrypted, not checksummed")]
-    SealedGssTokenNeedsEncryption,
-
-    /// GSS-API token was not sealed.
-    #[error("GSS token is not sealed")]
-    GssTokenNotSealed,
-
-    /// GSS-API token checksum length did not match the header.
-    #[error("invalid GSS checksum length: expected {expected} bytes, got {actual}")]
-    InvalidGssChecksumLength {
-        /// Expected checksum length.
-        expected: usize,
-        /// Actual checksum length.
-        actual: usize,
-    },
-
-    /// GSS-API wrap token EC length exceeded remaining bytes.
-    #[error(
-        "inconsistent wrap checksum length: token has {token_len} bytes, checksum length is {checksum_len}"
-    )]
-    InconsistentWrapChecksumLength {
-        /// Whole token length.
-        token_len: usize,
-        /// Claimed checksum length.
-        checksum_len: usize,
-    },
-
-    /// GSS-API checksum verification failed.
-    #[error("GSS token checksum mismatch")]
-    GssChecksumMismatch,
-
-    /// GSS-API sealed token decrypted to too few bytes.
-    #[error("GSS decrypted token too short: expected at least {minimum} bytes, got {actual}")]
-    GssDecryptedTokenTooShort {
-        /// Minimum accepted byte length.
-        minimum: usize,
-        /// Actual byte length.
-        actual: usize,
-    },
-
-    /// GSS-API sealed token embedded header did not match the clear header.
-    #[error("GSS sealed token embedded header mismatch")]
-    InvalidGssEncryptedHeader,
-
-    /// `NegTokenInit` omitted the mechanism list.
-    #[error("NegTokenInit does not contain any mechanism types")]
-    MissingMechTypes,
-
-    /// SPNEGO token omitted the mechanism token.
-    #[error("SPNEGO token does not contain a mechanism token")]
-    MissingMechToken,
-
-    /// SPNEGO token does not carry an AP-REQ.
-    #[error("SPNEGO token does not carry a KRB5 AP-REQ")]
-    MissingApReq,
-
-    /// SPNEGO token does not carry an AP-REP.
-    #[error("SPNEGO token does not carry a KRB5 AP-REP")]
-    MissingApRep,
-
-    /// A negotiation token had the wrong CHOICE variant.
-    #[error("expected {expected}, got {actual}")]
-    WrongNegotiationToken {
-        /// Expected variant.
-        expected: &'static str,
-        /// Actual variant.
-        actual: &'static str,
-    },
-
-    /// SPNEGO negotiation state was invalid.
-    #[error("invalid SPNEGO negState: {0}")]
-    InvalidNegState(u32),
-
-    /// INTEGER/ENUMERATED value was not supported.
-    #[error("invalid DER integer value")]
-    InvalidInteger,
-
-    /// HTTP header was not a usable `Negotiate` value.
-    #[error("invalid Negotiate header")]
-    InvalidNegotiateHeader,
-
-    /// Base64 decoding failed.
-    #[error("base64 decode error: {0}")]
-    Base64(base64::DecodeError),
-
-    /// ASN.1 DER decode failed.
-    #[error("failed to decode {target}: {message}")]
-    Decode {
-        /// Decoded type name.
-        target: &'static str,
-        /// Decoder error text.
-        message: String,
-    },
-
-    /// ASN.1 DER encode failed.
-    #[error("failed to encode {target}: {message}")]
-    Encode {
-        /// Encoded type name.
-        target: &'static str,
-        /// Encoder error text.
-        message: String,
-    },
-
-    /// A Kerberos string value could not be constructed.
-    #[error("invalid Kerberos string value: {0}")]
-    InvalidKerberosString(String),
-
-    /// A Kerberos integer could not fit in the expected Rust type.
-    #[error("integer field {field} is out of range: {value}")]
-    IntegerOutOfRange {
-        /// Field name.
-        field: &'static str,
-        /// Integer value.
-        value: String,
-    },
-
-    /// Message field did not contain the expected value.
-    #[error("invalid {field}: expected {expected}, got {actual}")]
-    InvalidMessage {
-        /// Field name.
-        field: &'static str,
-        /// Expected value.
-        expected: i32,
-        /// Actual value.
-        actual: String,
-    },
-
-    /// The encrypted data etype is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-
-    /// A key did not match the encrypted AP-REP data etype.
-    #[error(
-        "key etype {key_etype} does not match AP-REP encrypted data etype {encrypted_data_etype}"
-    )]
-    ApRepKeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// AP-REP encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// Crypto operation failed.
-    #[error("crypto error: {0}")]
-    Crypto(#[from] crypto::Error),
-
-    /// Random byte generation failed.
-    #[error("random byte generation failed: {0}")]
-    Random(#[from] getrandom::Error),
-
-    /// A Kerberos time could not be represented as a `SystemTime`.
-    #[error("Kerberos time overflows SystemTime")]
-    TimeOverflow,
-
-    /// AP-REP did not echo the AP-REQ authenticator timestamp.
-    #[error("AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
-    ApRepTimestampMismatch {
-        /// Expected AP-REQ authenticator timestamp.
-        expected: SystemTime,
-        /// Timestamp supplied by AP-REP.
-        actual: SystemTime,
-    },
-
-    /// Service AP-REQ validation failed.
-    #[error("service validation error: {0}")]
-    Service(#[from] service::Error),
-
-    /// Client AP-REQ construction failed.
-    #[error("client AP-REQ construction error: {0}")]
-    Client(String),
-}
+use crate::error::Spnego as Error;
 
 /// Map an AP-REP processing error onto the SPNEGO error type.
-fn ap_rep_error(error: ap_rep::Error) -> Error {
+fn ap_rep_error(error: error::ApRep) -> Error {
     match error {
-        ap_rep::Error::Decode { target, message } => Error::Decode { target, message },
-        ap_rep::Error::Encode { target, message } => Error::Encode { target, message },
-        ap_rep::Error::InvalidMessage {
+        error::ApRep::Decode { target, message } => Error::Decode { target, message },
+        error::ApRep::Encode { target, message } => Error::Encode { target, message },
+        error::ApRep::InvalidMessage {
             field,
             expected,
             actual,
@@ -2409,16 +1890,16 @@ fn ap_rep_error(error: ap_rep::Error) -> Error {
             expected,
             actual,
         },
-        ap_rep::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        ap_rep::Error::KeyEtypeMismatch {
+        error::ApRep::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::ApRep::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::ApRepKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        ap_rep::Error::Random(source) => Error::Random(source),
-        ap_rep::Error::Crypto(source) => Error::Crypto(source),
+        error::ApRep::Random(source) => Error::Random(source),
+        error::ApRep::Crypto(source) => Error::Crypto(source),
     }
 }
 
@@ -2447,29 +1928,29 @@ fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionK
 
 /// Map an AP-REQ construction error onto the SPNEGO error type. Variants without a SPNEGO
 /// counterpart become [`Error::Client`] with their message.
-fn client_error_to_spnego(error: client::Error) -> Error {
-    if let client::Error::Decode { target, message } = error {
+fn client_error_to_spnego(error: error::Client) -> Error {
+    if let error::Client::Decode { target, message } = error {
         return Error::Decode { target, message };
     }
-    if let client::Error::Encode { target, message } = error {
+    if let error::Client::Encode { target, message } = error {
         return Error::Encode { target, message };
     }
-    if let client::Error::InvalidString(source) = error {
+    if let error::Client::InvalidString(source) = error {
         return Error::InvalidKerberosString(source.to_string());
     }
-    if let client::Error::InvalidKerberosString(message) = error {
+    if let error::Client::InvalidKerberosString(message) = error {
         return Error::InvalidKerberosString(message);
     }
-    if let client::Error::UnsupportedEtype(etype) = error {
+    if let error::Client::UnsupportedEtype(etype) = error {
         return Error::UnsupportedEtype(etype);
     }
-    if let client::Error::Crypto(source) = error {
+    if let error::Client::Crypto(source) = error {
         return Error::Crypto(source);
     }
-    if let client::Error::Random(source) = error {
+    if let error::Client::Random(source) = error {
         return Error::Random(source);
     }
-    if matches!(error, client::Error::TimeOverflow) {
+    if matches!(error, error::Client::TimeOverflow) {
         return Error::TimeOverflow;
     }
     Error::Client(error.to_string())

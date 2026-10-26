@@ -16,11 +16,12 @@ mod tests {
     use rasn::types::Integer;
     use rskrb5_ng::{
         ap_rep::{
-            AP_REP_ENCPART_USAGE, Error, KRB_AP_REP_MSG_TYPE, build_ap_rep,
-            build_ap_rep_with_confounder, decode_ap_rep, decode_enc_ap_rep_part,
-            decrypt_ap_rep_enc_part, encode_ap_rep, encode_build_ap_rep_with_confounder,
+            AP_REP_ENCPART_USAGE, KRB_AP_REP_MSG_TYPE, build as build_ap_rep,
+            build_ap_rep_with_confounder, decode as decode_ap_rep, decode_enc_ap_rep_part,
+            decrypt_ap_rep_enc_part, encode as encode_ap_rep, encode_build_ap_rep_with_confounder,
         },
         crypto::KerberosEtype,
+        error::ApRep as Error,
         keytab::EncryptionKey,
     };
 

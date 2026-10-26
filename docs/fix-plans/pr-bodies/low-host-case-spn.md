@@ -28,7 +28,7 @@ New tests:
 
 - `tests/client_principal.rs::host_based_service_folds_dns_host_case`: upper- and mixed-case hosts become `["HTTP", "auth.cern.ch"]` through both constructors, and `parse_service("HTTP/AUTH.CERN.CH@CERN.CH")` still preserves the case.
 - `tests/client_principal.rs::host_based_service_preserves_service_and_realm_case`: the service component and the realm keep their case.
-- `tests/client/session_cache.rs::cached_service_ticket_identity_is_case_folded`: a `TokioClient` with no network I/O caches a service ticket for `HTTP/auth.cern.ch@CERN.CH`. The lookup through `host_based_service_in_realm("HTTP", "AUTH.CERN.CH", "CERN.CH")` hits it, and caching a second session built from `"Auth.Cern.CH"` keeps `cached_service_ticket_count()` at 1.
+- `tests/client/session_cache.rs::cached_service_ticket_identity_is_case_folded`: a `Tokio` with no network I/O caches a service ticket for `HTTP/auth.cern.ch@CERN.CH`. The lookup through `host_based_service_in_realm("HTTP", "AUTH.CERN.CH", "CERN.CH")` hits it, and caching a second session built from `"Auth.Cern.CH"` keeps `cached_service_ticket_count()` at 1.
 
 Fail-before evidence: with `src/client/principal.rs` restored to `6f4abc9`, all three tests fail. In the cache test, the upper-case lookup returns `None`.
 

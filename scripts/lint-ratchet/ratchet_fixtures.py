@@ -44,6 +44,18 @@ def self_test() -> int:
         (path.parent / "facade-exceptions.txt").write_text("")
         anchor = commit(root, "anchor")
         assert ratchet(root, Counter(), anchor)[0] == []
+        # Given an empty manifest, deleting the exhausted facade list is valid;
+        # restoring an exception later must still be rejected by history.
+        facade = path.parent / "facade-exceptions.txt"
+        facade.unlink()
+        commit(root, "remove exhausted facade list")
+        assert ratchet(root, Counter(), anchor)[0] == []
+        facade.write_text("crate::a\tpubusecrate::Thing;\n")
+        commit(root, "restore facade exception")
+        assert ratchet(root, Counter(), anchor)[0]
+        common.git(root, "checkout", "-b", "clean", anchor)
+        common.git(root, "branch", "-f", "main", anchor)
+        common.git(root, "checkout", "main")
         row = '[[baseline]]\nfile = "src/a.rs"\nitem = "fn f"\nlint = "dead_code"\npredicate = "always"\ncount = 1\n'
 
         # Given a pre-anchor branch, when main is its second parent (S9),

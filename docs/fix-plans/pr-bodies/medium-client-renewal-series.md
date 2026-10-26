@@ -11,7 +11,7 @@
 
 ## Problem
 
-Three defects in the `TokioClient` TGT refresh logic. They share the same functions, so they ship together.
+Three defects in the `Tokio` TGT refresh logic. They share the same functions, so they ship together.
 
 **1. The refresh band grew with the age of the login.** `session_refresh_due_at` and `session_refresh_delay_at` measured the ticket lifetime as `end_time - auth_time`. A renewal advances `start_time` but keeps `auth_time`, so the measured lifetime grew with every renewal. After roughly five ticket lifetimes, the band (`lifetime / 6`) was larger than the whole remaining validity. Every freshly renewed TGT was then due at once, and `spawn_auto_renewal_with_retry` sent one TGS renewal per transport round trip until `renew_till` (600 requests in 1.2 s on loopback), holding the client mutex the whole time.
 

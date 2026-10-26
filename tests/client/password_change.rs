@@ -1,3 +1,5 @@
+use rskrb5_ng::error::Kadmin as KadminError;
+
 use super::*;
 
 /// Password-change tests: kpasswd requests and replies, cached `kadmin/changepw`
@@ -16,7 +18,7 @@ mod tests {
     use rskrb5_ng::{
         ap_req::decrypt_ap_req_authenticator,
         client::{AsRepSession, TgsRepSession},
-        kadmin::{Error as KadminError, decrypt_krb_priv_enc_part},
+        kadmin::decrypt_krb_priv_enc_part,
     };
 
     use super::*;
@@ -109,7 +111,7 @@ TEST.GOKRB5 = {{
         let request = build_tgs_req_with_confounder(
             tgt,
             change_password_principal(),
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x2233_4455).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x2233_4455).with_etypes(vec![18_i32]),
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -149,7 +151,7 @@ TEST.GOKRB5 = {{
             &service_ticket,
             &change_data,
             reply_key.clone(),
-            &KpasswdRequestOptions::new(
+            &RequestOptions::new(
                 timestamp(1_893_553_452)?,
                 456_789,
                 42,
@@ -228,7 +230,7 @@ TEST.GOKRB5 = {{
         let built = build_kpasswd_request(
             &service_ticket,
             &change_data,
-            &KpasswdRequestOptions::new(
+            &RequestOptions::new(
                 timestamp(1_893_553_452)?,
                 456_789,
                 42,
@@ -307,7 +309,7 @@ TEST.GOKRB5 = {{
                 .await
                 .context("bind local kpasswd listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kpasswd_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 tgt,
@@ -328,7 +330,7 @@ TEST.GOKRB5 = {{
             let result = client
                 .change_password_with_options(
                     b"newpassword",
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
                         42,
@@ -358,7 +360,7 @@ TEST.GOKRB5 = {{
                 .await
                 .context("bind local kpasswd listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kpasswd_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 tgt,
@@ -388,7 +390,7 @@ TEST.GOKRB5 = {{
             let result = client
                 .change_password_with_options(
                     b"newpassword",
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
                         42,
@@ -420,7 +422,7 @@ TEST.GOKRB5 = {{
                 .await
                 .context("bind local kpasswd listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kpasswd_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 tgt,
@@ -460,7 +462,7 @@ TEST.GOKRB5 = {{
                 .change_password_for_with_options(
                     target.clone(),
                     b"newpassword",
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
                         42,
@@ -490,7 +492,7 @@ TEST.GOKRB5 = {{
                 .await
                 .context("bind local kpasswd listener")?;
             let listener_addr = listener.local_addr().context("local listener address")?;
-            let mut tokio_client = TokioClient::from_tgt_session(
+            let mut tokio_client = Tokio::from_tgt_session(
                 config_with_kpasswd_server(&listener_addr.to_string())?,
                 KdcProtocol::Tcp,
                 tgt,
@@ -511,7 +513,7 @@ TEST.GOKRB5 = {{
             let result = client
                 .change_password_with_options(
                     b"newpassword",
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
                         42,
@@ -544,7 +546,7 @@ TEST.GOKRB5 = {{
                 .await
                 .context("bind local kpasswd listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut tokio_client = TokioClient::from_tgt_session(
+            let mut tokio_client = Tokio::from_tgt_session(
                 config_with_kpasswd_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 tgt,
@@ -587,7 +589,7 @@ TEST.GOKRB5 = {{
                 .change_password_for_with_options(
                     target,
                     b"newpassword",
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
                         42,
@@ -617,7 +619,7 @@ TEST.GOKRB5 = {{
         let listener_addr = listener
             .local_addr()
             .map_err(|cause| format!("local listener address: {cause}"))?;
-        let mut tokio_client = TokioClient::from_tgt_session(
+        let mut tokio_client = Tokio::from_tgt_session(
             config_with_kpasswd_server(&listener_addr.to_string())?,
             KdcProtocol::Tcp,
             tgt,
@@ -652,7 +654,7 @@ TEST.GOKRB5 = {{
         let result = client
             .change_password_with_options(
                 b"newpassword",
-                KpasswdRequestOptions::new(
+                RequestOptions::new(
                     timestamp(1_893_553_452)?,
                     456_789,
                     42,
@@ -685,7 +687,7 @@ TEST.GOKRB5 = {{
             let service_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
 
             let (kdc_listener, kpasswd_listener, config) = local_kdc_and_kpasswd().await?;
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 config,
                 KdcProtocol::Tcp,
                 self_client.clone(),
@@ -732,7 +734,7 @@ TEST.GOKRB5 = {{
                 Ok::<(), TestError>(())
             });
 
-            let options = KpasswdRequestOptions::new(
+            let options = RequestOptions::new(
                 timestamp(1_893_553_452)?,
                 456_789,
                 42,
@@ -745,7 +747,7 @@ TEST.GOKRB5 = {{
             let change_self = client
                 .change_password_with_options(
                     old_password,
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_453)?,
                         456_790,
                         43,
@@ -781,7 +783,7 @@ TEST.GOKRB5 = {{
                     .context("new reply key derives")?;
 
             let (kdc_listener, kpasswd_listener, config) = local_kdc_and_kpasswd().await?;
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 config,
                 KdcProtocol::Tcp,
                 self_client.clone(),
@@ -808,7 +810,7 @@ TEST.GOKRB5 = {{
             let change_self_with_new = client
                 .change_password_with_options(
                     new_password,
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
                         42,
@@ -820,7 +822,7 @@ TEST.GOKRB5 = {{
             let change_self_with_updated = client
                 .change_password_with_options(
                     new_password,
-                    KpasswdRequestOptions::new(
+                    RequestOptions::new(
                         timestamp(1_893_553_453)?,
                         456_790,
                         43,
@@ -869,7 +871,7 @@ TEST.GOKRB5 = {{
 }}
 "
             ))?;
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 config,
                 KdcProtocol::Tcp,
                 self_client.clone(),
@@ -914,7 +916,7 @@ TEST.GOKRB5 = {{
                 let Err(error) = client
                     .change_password_with_options(
                         new_password,
-                        KpasswdRequestOptions::new(
+                        RequestOptions::new(
                             timestamp(1_893_553_452 + attempt)?,
                             456_789,
                             42,

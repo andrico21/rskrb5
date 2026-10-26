@@ -66,7 +66,7 @@ pub fn resolve_realm(&self, domain_name: &str) -> Option<&str> {
 
 - `tests/config.rs::resolve_realm_folds_dns_case` — `Config::parse` a config with `[domain_realm] foo.example.com = PARTNER.REALM` and `.example.com = SUFFIX.REALM`; assert `resolve_realm` returns identical values for `"FOO.EXAMPLE.COM"`, `"Foo.Example.com"`, `"FOO.EXAMPLE.COM."` as for the lower-case spelling, and that realm values keep their case. (Base has no `Config::parse_without_env`; use `Config::parse` for the upstream-targeted test.)
 - `tests/client_principal.rs::host_based_service_folds_dns_host_case` — shared with the host-case plan: upper/mixed hosts fold to `["HTTP","auth.cern.ch"]`; `parse_service` and the service/realm case stay unchanged.
-- `tests/client_integration.rs::resolve_service_principal_uses_case_folded_domain_realm` (or a unit test over `TokioClient::from_ccache` + `cache_service_ticket`/`cached_service_ticket`) — given `[domain_realm]` mapping for a domain, a client with a different own realm must select the mapped realm (and cache key) for an upper-case host, not fall back to the client realm.
+- `tests/client_integration.rs::resolve_service_principal_uses_case_folded_domain_realm` (or a unit test over `Tokio::from_ccache` + `cache_service_ticket`/`cached_service_ticket`) — given `[domain_realm]` mapping for a domain, a client with a different own realm must select the mapped realm (and cache key) for an upper-case host, not fall back to the client realm.
 
 ## Verification
 

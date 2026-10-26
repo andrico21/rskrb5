@@ -15,9 +15,12 @@ mod tests {
 
     use rasn::der;
     use rasn_kerberos::{Checksum, KrbError};
-    use rskrb5_ng::messages::{
-        EncryptedData, Error, KrbErrorInfo, PaForUser, PaPacOptions, PaReqEncPaRep, decode_der,
-        encode_der,
+    use rskrb5_ng::{
+        error::Messages as Error,
+        messages::{
+            EncryptedData, KrbErrorInfo, PaForUser, PaPacOptions, PaReqEncPaRep, decode_der,
+            encode_der,
+        },
     };
 
     /// Error type of the `Result`-returning tests.

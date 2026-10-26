@@ -1,15 +1,15 @@
 //! KRB-CRED decoding and encrypted-part helpers.
 
 use alloc::str;
-use core::str::Utf8Error;
 
 use rasn::{der, types::Integer};
 
 use crate::{
     ccache,
-    crypto::{self, KerberosEtype},
+    crypto::KerberosEtype,
+    error::Ticket as TicketError,
     keytab::EncryptionKey,
-    ticket::{Error as TicketError, decode_ticket, encode_ticket},
+    ticket::{decode as decode_ticket, encode as encode_ticket},
 };
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
@@ -21,146 +21,6 @@ pub const KRB_CRED_MSG_TYPE: i32 = 22;
 /// Key usage for KRB-CRED encrypted parts.
 pub const KRB_CRED_ENCPART_USAGE: u32 = 14;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Decode and validate a DER-encoded KRB-CRED message.
 ///
 /// # Errors
@@ -168,8 +28,8 @@ pub const KRB_CRED_ENCPART_USAGE: u32 = 14;
 /// Returns [`Error::Decode`] when `bytes` is not a DER KRB-CRED, and
 /// [`Error::InvalidMessage`] when its protocol version or message type is wrong.
 #[inline]
-pub fn decode_krb_cred(bytes: &[u8]) -> Result<rasn_kerberos::KrbCred, Error> {
-    let krb_cred = decode::<rasn_kerberos::KrbCred>("KRB-CRED", bytes)?;
+pub fn decode(bytes: &[u8]) -> Result<rasn_kerberos::KrbCred, Error> {
+    let krb_cred = decode_der::<rasn_kerberos::KrbCred>("KRB-CRED", bytes)?;
     validate_integer("pvno", &krb_cred.pvno, KRB5_PVNO)?;
     validate_integer("msg-type", &krb_cred.msg_type, KRB_CRED_MSG_TYPE)?;
     Ok(krb_cred)
@@ -182,7 +42,7 @@ pub fn decode_krb_cred(bytes: &[u8]) -> Result<rasn_kerberos::KrbCred, Error> {
 /// Returns [`Error::Decode`] when `bytes` is not a DER `EncKrbCredPart`.
 #[inline]
 pub fn decode_enc_krb_cred_part(bytes: &[u8]) -> Result<rasn_kerberos::EncKrbCredPart, Error> {
-    decode::<rasn_kerberos::EncKrbCredPart>("EncKrbCredPart", bytes)
+    decode_der::<rasn_kerberos::EncKrbCredPart>("EncKrbCredPart", bytes)
 }
 
 /// Decrypt and decode a KRB-CRED encrypted part.
@@ -233,14 +93,14 @@ pub fn decrypt_krb_cred_to_ccache_credentials(
 ///
 /// # Errors
 ///
-/// Returns the errors of [`decode_krb_cred`] and
+/// Returns the errors of [`decode`] and
 /// [`decrypt_krb_cred_to_ccache_credentials`].
 #[inline]
 pub fn decode_decrypt_krb_cred_to_ccache_credentials(
     bytes: &[u8],
     key: &EncryptionKey,
 ) -> Result<Vec<ccache::Credential>, Error> {
-    let krb_cred = decode_krb_cred(bytes)?;
+    let krb_cred = decode(bytes)?;
     decrypt_krb_cred_to_ccache_credentials(&krb_cred, key)
 }
 
@@ -288,146 +148,6 @@ pub fn ccache_credentials_to_krb_cred_parts(
     ))
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Encrypt ccache credentials into a KRB-CRED using a random confounder.
 ///
 /// # Errors
@@ -436,7 +156,7 @@ pub fn ccache_credentials_to_krb_cred_parts(
 /// implemented, [`Error::Random`] when the confounder cannot be generated, and
 /// the errors of [`encrypt_ccache_credentials_to_krb_cred_with_confounder`].
 #[inline]
-pub fn encrypt_ccache_credentials_to_krb_cred(
+pub fn encrypt_ccache_credentials(
     credentials: &[ccache::Credential],
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::KrbCred, Error> {
@@ -462,7 +182,7 @@ pub fn encrypt_ccache_credentials_to_krb_cred_with_confounder(
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbCred, Error> {
     let (tickets, enc_part) = ccache_credentials_to_krb_cred_parts(credentials)?;
-    let plaintext = encode("EncKrbCredPart", &enc_part)?;
+    let plaintext = encode_der("EncKrbCredPart", &enc_part)?;
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(
@@ -483,159 +203,19 @@ pub fn encrypt_ccache_credentials_to_krb_cred_with_confounder(
     })
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Encode ccache credentials as a DER KRB-CRED using a random confounder.
 ///
 /// # Errors
 ///
-/// Returns the errors of [`encrypt_ccache_credentials_to_krb_cred`] and
+/// Returns the errors of [`encrypt_ccache_credentials`] and
 /// [`Error::Encode`] when the KRB-CRED cannot be encoded.
 #[inline]
-pub fn encode_encrypt_ccache_credentials_to_krb_cred(
+pub fn encode_encrypted_ccache_credentials(
     credentials: &[ccache::Credential],
     key: &EncryptionKey,
 ) -> Result<Vec<u8>, Error> {
-    let krb_cred = encrypt_ccache_credentials_to_krb_cred(credentials, key)?;
-    encode("KRB-CRED", &krb_cred)
+    let krb_cred = encrypt_ccache_credentials(credentials, key)?;
+    encode_der("KRB-CRED", &krb_cred)
 }
 
 /// Encode ccache credentials as a DER KRB-CRED using an explicit confounder.
@@ -653,7 +233,7 @@ pub fn encode_encrypt_ccache_credentials_to_krb_cred_with_confounder(
 ) -> Result<Vec<u8>, Error> {
     let krb_cred =
         encrypt_ccache_credentials_to_krb_cred_with_confounder(credentials, key, confounder)?;
-    encode("KRB-CRED", &krb_cred)
+    encode_der("KRB-CRED", &krb_cred)
 }
 
 /// Convert decrypted KRB-CRED contents into ccache credentials.
@@ -943,7 +523,7 @@ fn ticket_flags_to_bytes(flags: &rasn_kerberos::TicketFlags) -> [u8; 4] {
 ///
 /// Returns [`Error::Decode`] naming `target` when `bytes` is not valid DER for
 /// `T`.
-fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
+fn decode_der<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
@@ -958,7 +538,7 @@ where
 /// # Errors
 ///
 /// Returns [`Error::Encode`] naming `target` when the DER encoder fails.
-fn encode<T>(target: &'static str, value: &T) -> Result<Vec<u8>, Error>
+fn encode_der<T>(target: &'static str, value: &T) -> Result<Vec<u8>, Error>
 where
     T: rasn::Encode,
 {
@@ -1012,243 +592,4 @@ fn validate_integer(field: &'static str, actual: &Integer, expected: i32) -> Res
     Ok(())
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// KRB-CRED helper error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// ASN.1 DER decode failed.
-    #[error("failed to decode {target}: {message}")]
-    Decode {
-        /// Decoded type name.
-        target: &'static str,
-        /// Decoder error text.
-        message: String,
-    },
-
-    /// ASN.1 DER encode failed.
-    #[error("failed to encode {target}: {message}")]
-    Encode {
-        /// Encoded type name.
-        target: &'static str,
-        /// Encoder error text.
-        message: String,
-    },
-
-    /// ASN.1 string value was not valid UTF-8.
-    #[error("invalid Kerberos string: {0}")]
-    InvalidString(#[from] Utf8Error),
-
-    /// A string could not be encoded as a Kerberos `GeneralString`.
-    #[error("invalid Kerberos string: {0}")]
-    InvalidKerberosString(String),
-
-    /// Message field did not contain the expected value.
-    #[error("invalid {field}: expected {expected}, got {actual}")]
-    InvalidMessage {
-        /// Field name.
-        field: &'static str,
-        /// Expected value.
-        expected: i32,
-        /// Actual value.
-        actual: String,
-    },
-
-    /// The encrypted data etype is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-
-    /// A key did not match the encrypted KRB-CRED data etype.
-    #[error(
-        "key etype {key_etype} does not match KRB-CRED encrypted data etype {encrypted_data_etype}"
-    )]
-    KeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// KRB-CRED encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// A key did not match the encrypted ticket data etype.
-    #[error(
-        "key etype {key_etype} does not match Ticket encrypted data etype {encrypted_data_etype}"
-    )]
-    TicketKeyEtypeMismatch {
-        /// Key encryption type.
-        key_etype: i32,
-        /// Ticket encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// The KRB-CRED ticket count and ticket-info count differed.
-    #[error("KRB-CRED has {ticket_count} tickets but {info_count} ticket-info entries")]
-    TicketInfoCountMismatch {
-        /// Ticket count.
-        ticket_count: usize,
-        /// Ticket-info count.
-        info_count: usize,
-    },
-
-    /// A field required for ccache conversion was absent.
-    #[error("KRB-CRED missing required field {0}")]
-    MissingKrbCredInfoField(&'static str),
-
-    /// A Kerberos time could not fit in a ccache timestamp.
-    #[error("Kerberos time cannot be represented as a ccache timestamp")]
-    TimeOutOfRange,
-
-    /// Ccache authorization data cannot be represented in KRB-CRED info.
-    #[error("ccache credential authorization data cannot be represented in KRB-CRED")]
-    UnsupportedCredentialAuthData,
-
-    /// Ccache second-ticket data cannot be represented in KRB-CRED info.
-    #[error("ccache credential second ticket cannot be represented in KRB-CRED")]
-    UnsupportedSecondTicket,
-
-    /// Random byte generation failed.
-    #[error("random byte generation failed: {0}")]
-    Random(#[from] getrandom::Error),
-
-    /// Crypto operation failed.
-    #[error("crypto error: {0}")]
-    Crypto(#[from] crypto::Error),
-}
+use crate::error::KrbCred as Error;

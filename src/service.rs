@@ -8,10 +8,7 @@
 //! authenticator timestamp.
 
 use alloc::{borrow::Cow, sync::Arc};
-use core::{
-    str::{Utf8Error, from_utf8},
-    time::Duration,
-};
+use core::{str::from_utf8, time::Duration};
 use std::{
     collections::HashMap,
     sync::Mutex,
@@ -24,7 +21,7 @@ use sha2::{Digest as _, Sha256};
 use crate::{
     ap_rep, ap_req,
     config::Config,
-    crypto,
+    error,
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, Pac},
     ticket,
@@ -148,7 +145,7 @@ impl ValidatedApReq {
             confounder,
         )
         .map_err(ap_rep_error)?;
-        ap_rep::encode_ap_rep(&ap_rep).map_err(ap_rep_error)
+        ap_rep::encode(&ap_rep).map_err(ap_rep_error)
     }
 
     /// Verify an AP-REP mutual-auth reply against this AP-REQ.
@@ -165,7 +162,7 @@ impl ValidatedApReq {
     /// when its timestamp differs from the AP-REQ authenticator's.
     #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
-        let ap_rep = ap_rep::decode_ap_rep(bytes).map_err(ap_rep_error)?;
+        let ap_rep = ap_rep::decode(bytes).map_err(ap_rep_error)?;
         let enc_part =
             ap_rep::decrypt_ap_rep_enc_part(&ap_rep, &self.session_key).map_err(ap_rep_error)?;
         let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
@@ -449,149 +446,9 @@ impl SharedReplayCache {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// AP-REQ validator backed by a service keytab.
 #[derive(Debug)]
-pub struct ServiceValidator<'keytab> {
+pub struct Validator<'keytab> {
     /// The service keytab, borrowed or owned.
     keytab: Cow<'keytab, Keytab>,
     /// The accepted clock skew between the authenticator time and now.
@@ -610,7 +467,7 @@ pub struct ServiceValidator<'keytab> {
     shared_replay_cache: Option<SharedReplayCache>,
 }
 
-impl<'keytab> ServiceValidator<'keytab> {
+impl<'keytab> Validator<'keytab> {
     /// Create a validator with gokrb5-compatible defaults.
     #[must_use]
     #[inline]
@@ -726,7 +583,7 @@ impl<'keytab> ServiceValidator<'keytab> {
     /// [`Error::ReplayCachePoisoned`].
     #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
-        let ap_req = ap_req::decode_ap_req(bytes).map_err(ap_req_error)?;
+        let ap_req = ap_req::decode(bytes).map_err(ap_req_error)?;
 
         let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
         let ticket_etype = ap_req.ticket.enc_part.etype;
@@ -946,7 +803,7 @@ impl<'keytab> ServiceValidator<'keytab> {
     }
 }
 
-impl ServiceValidator<'static> {
+impl Validator<'static> {
     #[must_use]
     /// Create a validator from an owned keytab.
     #[inline]
@@ -1018,318 +875,7 @@ impl ServiceValidator<'static> {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// AP-REQ service validation error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// ASN.1 DER decode failed.
-    #[error("failed to decode {target}: {message}")]
-    Decode {
-        /// Decoded type name.
-        target: &'static str,
-        /// Decoder error text.
-        message: String,
-    },
-
-    /// ASN.1 DER encode failed.
-    #[error("failed to encode {target}: {message}")]
-    Encode {
-        /// Encoded type name.
-        target: &'static str,
-        /// Encoder error text.
-        message: String,
-    },
-
-    /// ASN.1 string value was not valid UTF-8.
-    #[error("invalid Kerberos string: {0}")]
-    InvalidString(#[from] Utf8Error),
-
-    /// A Kerberos integer could not fit in the expected Rust type.
-    #[error("integer field {field} is out of range: {value}")]
-    IntegerOutOfRange {
-        /// Field name.
-        field: &'static str,
-        /// Integer value.
-        value: String,
-    },
-
-    /// Message field did not contain the expected value.
-    #[error("invalid {field}: expected {expected}, got {actual}")]
-    InvalidMessage {
-        /// Field name.
-        field: &'static str,
-        /// Expected value.
-        expected: i32,
-        /// Actual value.
-        actual: String,
-    },
-
-    /// The encrypted data etype is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-
-    /// A key did not match the encrypted AP-REP data etype.
-    #[error(
-        "key etype {key_etype} does not match AP-REP encrypted data etype {encrypted_data_etype}"
-    )]
-    ApRepKeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// AP-REP encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// A key did not match the encrypted AP-REQ authenticator etype.
-    #[error(
-        "key etype {key_etype} does not match AP-REQ authenticator etype {encrypted_data_etype}"
-    )]
-    ApReqKeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// AP-REQ authenticator encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// A key did not match the encrypted ticket data etype.
-    #[error(
-        "key etype {key_etype} does not match Ticket encrypted data etype {encrypted_data_etype}"
-    )]
-    TicketKeyEtypeMismatch {
-        /// Service key encryption type.
-        key_etype: i32,
-        /// Ticket encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// Keytab lookup failed.
-    #[error("keytab error: {0}")]
-    Keytab(#[from] keytab::Error),
-
-    /// Crypto operation failed.
-    #[error("crypto error: {0}")]
-    Crypto(#[from] crypto::Error),
-
-    /// Random byte generation failed.
-    #[error("random byte generation failed: {0}")]
-    Random(#[from] getrandom::Error),
-
-    /// PAC parsing or verification failed.
-    #[error("PAC error: {0}")]
-    Pac(#[from] pac::Error),
-
-    /// Ticket has not become valid or carries the invalid ticket flag.
-    #[error("ticket for {service}@{realm} is not yet valid")]
-    TicketNotYetValid {
-        /// Service principal.
-        service: String,
-        /// Service realm.
-        realm: String,
-    },
-
-    /// Ticket has expired.
-    #[error("ticket for {service}@{realm} has expired")]
-    TicketExpired {
-        /// Service principal.
-        service: String,
-        /// Service realm.
-        realm: String,
-    },
-
-    /// Ticket client and authenticator client do not match.
-    #[error("authenticator client {authenticator} does not match ticket client {ticket}")]
-    ClientPrincipalMismatch {
-        /// Ticket client principal (`name@realm`).
-        ticket: String,
-        /// Authenticator client principal (`name@realm`).
-        authenticator: String,
-    },
-
-    /// Authenticator timestamp exceeded the accepted clock skew.
-    #[error("authenticator clock skew exceeds {max_clock_skew:?}")]
-    ClockSkew {
-        /// Maximum accepted skew.
-        max_clock_skew: Duration,
-    },
-
-    /// AP-REQ replay detected.
-    #[error("AP-REQ replay detected")]
-    Replay,
-
-    /// Shared replay cache lock could not be acquired.
-    #[error("shared replay cache lock is poisoned")]
-    ReplayCachePoisoned,
-
-    /// AP-REP did not echo the AP-REQ authenticator timestamp.
-    #[error("AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
-    ApRepTimestampMismatch {
-        /// Expected AP-REQ authenticator timestamp.
-        expected: SystemTime,
-        /// Timestamp supplied by AP-REP.
-        actual: SystemTime,
-    },
-
-    /// Ticket client address list did not include the observed client address.
-    #[error("client address not accepted for ticket {service}@{realm}")]
-    BadClientAddress {
-        /// Service principal.
-        service: String,
-        /// Service realm.
-        realm: String,
-    },
-
-    /// The service requires client addresses but the ticket is addressless.
-    #[error("ticket for {service}@{realm} does not contain required client addresses")]
-    RequiredClientAddressMissing {
-        /// Service principal.
-        service: String,
-        /// Service realm.
-        realm: String,
-    },
-
-    /// A Kerberos time could not be represented as a `SystemTime`.
-    #[error("Kerberos time overflows SystemTime")]
-    TimeOverflow,
-}
+use crate::error::Service as Error;
 
 /// RFC 4120 section 3.2.3 replay-cache key of one authenticator.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1345,11 +891,11 @@ struct ReplayKey {
 }
 
 /// Map an AP-REQ message error onto the service error.
-fn ap_req_error(error: ap_req::Error) -> Error {
+fn ap_req_error(error: error::ApReq) -> Error {
     match error {
-        ap_req::Error::Decode { target, message } => Error::Decode { target, message },
-        ap_req::Error::Encode { target, message } => Error::Encode { target, message },
-        ap_req::Error::InvalidMessage {
+        error::ApReq::Decode { target, message } => Error::Decode { target, message },
+        error::ApReq::Encode { target, message } => Error::Encode { target, message },
+        error::ApReq::InvalidMessage {
             field,
             expected,
             actual,
@@ -1358,25 +904,25 @@ fn ap_req_error(error: ap_req::Error) -> Error {
             expected,
             actual,
         },
-        ap_req::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        ap_req::Error::KeyEtypeMismatch {
+        error::ApReq::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::ApReq::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::ApReqKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        ap_req::Error::Random(source) => Error::Random(source),
-        ap_req::Error::Crypto(source) => Error::Crypto(source),
+        error::ApReq::Random(source) => Error::Random(source),
+        error::ApReq::Crypto(source) => Error::Crypto(source),
     }
 }
 
 /// Map a ticket message error onto the service error.
-fn ticket_error(error: ticket::Error) -> Error {
+fn ticket_error(error: error::Ticket) -> Error {
     match error {
-        ticket::Error::Decode { target, message } => Error::Decode { target, message },
-        ticket::Error::Encode { target, message } => Error::Encode { target, message },
-        ticket::Error::InvalidMessage {
+        error::Ticket::Decode { target, message } => Error::Decode { target, message },
+        error::Ticket::Encode { target, message } => Error::Encode { target, message },
+        error::Ticket::InvalidMessage {
             field,
             expected,
             actual,
@@ -1385,25 +931,25 @@ fn ticket_error(error: ticket::Error) -> Error {
             expected,
             actual,
         },
-        ticket::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        ticket::Error::KeyEtypeMismatch {
+        error::Ticket::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::Ticket::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::TicketKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        ticket::Error::Random(source) => Error::Random(source),
-        ticket::Error::Crypto(source) => Error::Crypto(source),
+        error::Ticket::Random(source) => Error::Random(source),
+        error::Ticket::Crypto(source) => Error::Crypto(source),
     }
 }
 
 /// Map an AP-REP message error onto the service error.
-fn ap_rep_error(error: ap_rep::Error) -> Error {
+fn ap_rep_error(error: error::ApRep) -> Error {
     match error {
-        ap_rep::Error::Decode { target, message } => Error::Decode { target, message },
-        ap_rep::Error::Encode { target, message } => Error::Encode { target, message },
-        ap_rep::Error::InvalidMessage {
+        error::ApRep::Decode { target, message } => Error::Decode { target, message },
+        error::ApRep::Encode { target, message } => Error::Encode { target, message },
+        error::ApRep::InvalidMessage {
             field,
             expected,
             actual,
@@ -1412,16 +958,16 @@ fn ap_rep_error(error: ap_rep::Error) -> Error {
             expected,
             actual,
         },
-        ap_rep::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        ap_rep::Error::KeyEtypeMismatch {
+        error::ApRep::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::ApRep::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::ApRepKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        ap_rep::Error::Random(source) => Error::Random(source),
-        ap_rep::Error::Crypto(source) => Error::Crypto(source),
+        error::ApRep::Random(source) => Error::Random(source),
+        error::ApRep::Crypto(source) => Error::Crypto(source),
     }
 }
 

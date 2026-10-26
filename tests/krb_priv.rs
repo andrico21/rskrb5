@@ -19,9 +19,9 @@ mod tests {
         crypto::KerberosEtype,
         keytab::EncryptionKey,
         krb_priv::{
-            EncKrbPrivPartOptions, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO, build_krb_priv,
-            build_krb_priv_with_confounder, decode_enc_krb_priv_part, decode_krb_priv,
-            decrypt_krb_priv_enc_part, encode_enc_krb_priv_part, encode_krb_priv,
+            EncKrbPrivPartOptions, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO, build as build_krb_priv,
+            build_krb_priv_with_confounder, decode as decode_krb_priv, decode_enc_krb_priv_part,
+            decrypt_krb_priv_enc_part, encode as encode_krb_priv, encode_enc_krb_priv_part,
             ipv4_host_address, ipv6_host_address,
         },
     };
