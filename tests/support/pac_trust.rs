@@ -1,8 +1,7 @@
-#[expect(
-    unreachable_pub,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-pub const PAC_KERB_VALIDATION_INFO_TRUST: &str = concat!(
+//! gokrb5 fixture from a PAC issued across a domain trust.
+
+/// A `KERB_VALIDATION_INFO` buffer with trust resource groups (hex).
+pub(crate) const PAC_KERB_VALIDATION_INFO_TRUST: &str = concat!(
     "01100800cccccccc000200000000000000000200c30bcc79e444d301ffffffffffffff7fffffffffffffff7fc764125a",
     "0842d301c7247c84d142d301ffffffffffffff7f12001200040002001600160008000200000000000c00020000000000",
     "10000200000000001400020000000000180002002e0000005204000001020000030000001c0002002002000000000000",

@@ -1,1590 +1,612 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! GSS-API MIC and wrap token tests against the gokrb5 vectors.
 #![cfg(feature = "spnego")]
 
-use pretty_assertions::assert_eq;
-use rskrb5_ng::{
-    keytab::EncryptionKey,
-    spnego::{
-        Error, GSS_TOKEN_FLAG_SEALED, GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, GSSAPI_ACCEPTOR_SEAL_USAGE,
-        GSSAPI_ACCEPTOR_SIGN_USAGE, GSSAPI_INITIATOR_SEAL_USAGE, GSSAPI_INITIATOR_SIGN_USAGE,
-        MicToken, WrapToken,
-    },
-};
+#[path = "support/context.rs"]
+mod context;
 
-const MIC_PAYLOAD: &str = "deadbeef";
-const MIC_FROM_ACCEPTOR: &str = "040401ffffffffff00000000575e85d6c34d12ba3e5b1b1310cd9cb3";
-const MIC_FROM_INITIATOR: &str = "040400ffffffffff00000000000000009649ca09d2f1bc51ff6e5ca3";
-
-const WRAP_FROM_ACCEPTOR: &str = "050401ff000c000000000000575e85d601010000853b728d5268525a1386c19f";
-const WRAP_FROM_INITIATOR: &str =
-    "050400ff000c000000000000000000000101000079a033510b6f127212242b97";
-const WRAP_PAYLOAD: &str = "01010000";
-const WRAP_SEALED_CONFOUNDER: &str = "000102030405060708090a0b0c0d0e0f";
-const WRAP_SEALED_FROM_INITIATOR: &str = "050402ff000000000000000000000000debcb2b270f4152cfe1cde9c62f90d12a59afda0127a094f4b18e8d8b8fc253c63239cc38ef96b6ce3e92c754f8a97b3";
-const WRAP_SEALED_RRC_FROM_INITIATOR: &str = "050402ff00000009000000000000000741b1ec99c834f8c7d3debcb2b270f4152cfe1cde9c62f90d12bde6bc91659577018ad4118b1e18e27263239cc39150a9";
-
-const SESSION_KEY: &str = "14f9bde6b50ec508201a97f74c4e5bd3";
-const RC4_SESSION_KEY: &str = "ac8e657f83df82beea5d43bdaf7800cc";
-const RC4_MIC_FROM_ACCEPTOR: &str =
-    "040401ffffffffff00000000575e85d666d5c8d8c6568a15db2d0c324ec32414";
-const RC4_MIC_FROM_INITIATOR: &str =
-    "040400ffffffffff000000000000000074a9a679e1682edfc21ba70654fd1ccc";
-const RC4_WRAP_FROM_ACCEPTOR: &str =
-    "050401ff0010000000000000575e85d601010000fd1aa518115cffc141a7edbd4b844482";
-const RC4_WRAP_FROM_INITIATOR: &str =
-    "050400ff001000000000000000000000010100009a6def57aa756af352904deb83ca78ff";
-const DES3_SESSION_KEY: &str = "850bb51358548cd05e86768c313e3bfef7511937dcf72c3e";
-const DES3_MIC_FROM_ACCEPTOR: &str =
-    "040401ffffffffff00000000575e85d6c139350ffc99da64e9a2591db9a21d609aa2748f";
-const DES3_MIC_FROM_INITIATOR: &str =
-    "040400ffffffffff0000000000000000e6c29e7e63d5fdc851285c34c1d1453b6abea103";
-const DES3_WRAP_FROM_ACCEPTOR: &str =
-    "050401ff0014000000000000575e85d6010100004fb03cbebce9ef771327d9f394804c27884a8e66";
-const DES3_WRAP_FROM_INITIATOR: &str =
-    "050400ff001400000000000000000000010100004cdcec3881979bb4af72359f96cdea61b05cc1f7";
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::missing_panics_doc,
-        clippy::shadow_unrelated,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_used,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// GSS-API MIC and wrap token tests.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn mic_token_decodes_and_roundtrips_gokrb5_vectors() {
-    let acceptor_bytes = decode_hex(MIC_FROM_ACCEPTOR);
-    let token = MicToken::decode(&acceptor_bytes, true).expect("acceptor MIC decodes");
-    assert_eq!(
-        token,
-        MicToken {
-            flags: GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
-            snd_seq_num: u64::from_be_bytes(acceptor_bytes[8..16].try_into().unwrap()),
-            payload: None,
-            checksum: Some(acceptor_bytes[16..].to_vec()),
-        }
-    );
-    assert_eq!(
-        hex_encode(&token.encode().expect("acceptor MIC encodes")),
-        MIC_FROM_ACCEPTOR
-    );
-
-    let initiator_bytes = decode_hex(MIC_FROM_INITIATOR);
-    let token = MicToken::decode(&initiator_bytes, false).expect("initiator MIC decodes");
-    assert_eq!(
-        token,
-        MicToken {
-            flags: 0,
-            snd_seq_num: 0,
-            payload: None,
-            checksum: Some(initiator_bytes[16..].to_vec()),
-        }
-    );
-    assert_eq!(
-        hex_encode(&token.encode().expect("initiator MIC encodes")),
-        MIC_FROM_INITIATOR
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn mic_token_rejects_wrong_sender_and_missing_checksum() {
-    assert!(matches!(
-        MicToken::decode(&decode_hex(MIC_FROM_ACCEPTOR), false),
-        Err(Error::UnexpectedGssTokenSender {
-            expected_from_acceptor: false,
-            actual_from_acceptor: true,
-        })
-    ));
-    assert!(matches!(
-        MicToken::decode(&decode_hex(MIC_FROM_INITIATOR), true),
-        Err(Error::UnexpectedGssTokenSender {
-            expected_from_acceptor: true,
-            actual_from_acceptor: false,
-        })
-    ));
-    assert!(matches!(
-        MicToken::new(0, 0).encode(),
-        Err(Error::MissingGssChecksum)
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::string_slice,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn mic_token_verifies_and_builds_initiator_token() {
-    let key = session_key();
-    let acceptor = MicToken::decode(&decode_hex(MIC_FROM_ACCEPTOR), true)
-        .expect("acceptor MIC decodes")
-        .with_payload(decode_hex(MIC_PAYLOAD));
-    assert!(
-        acceptor
-            .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
-            .expect("acceptor MIC verifies")
-    );
-    assert!(matches!(
-        acceptor.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE),
-        Err(Error::GssChecksumMismatch)
-    ));
-
-    let wrong_key = EncryptionKey {
-        etype: 17,
-        value: decode_hex("14f9bde6b50ec508201a97f74c4effff"),
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use hex::FromHexError;
+    use pretty_assertions::assert_eq;
+    use rskrb5_ng::{
+        keytab::EncryptionKey,
+        spnego::{
+            Error, GSS_TOKEN_FLAG_SEALED, GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
+            GSSAPI_ACCEPTOR_SEAL_USAGE, GSSAPI_ACCEPTOR_SIGN_USAGE, GSSAPI_INITIATOR_SEAL_USAGE,
+            GSSAPI_INITIATOR_SIGN_USAGE, MicToken, WrapToken,
+        },
     };
-    assert!(matches!(
-        acceptor.verify(&wrong_key, GSSAPI_ACCEPTOR_SIGN_USAGE),
-        Err(Error::GssChecksumMismatch)
-    ));
 
-    let mut initiator =
-        MicToken::new_initiator(decode_hex(MIC_PAYLOAD), &key).expect("initiator MIC builds");
-    initiator.payload = None;
-    assert_eq!(
-        initiator,
-        MicToken {
-            flags: 0,
-            snd_seq_num: 0,
-            payload: None,
-            checksum: Some(decode_hex(&MIC_FROM_INITIATOR[32..])),
-        }
-    );
-    assert_eq!(
-        hex_encode(&initiator.encode().expect("initiator MIC encodes")),
-        MIC_FROM_INITIATOR
-    );
-}
+    use super::context::{Context as _, TestError};
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn mic_token_matches_gokrb5_rc4_hmac_vectors() {
-    let key = rc4_session_key();
-    let acceptor_bytes = decode_hex(RC4_MIC_FROM_ACCEPTOR);
-    let acceptor = MicToken::decode(&acceptor_bytes, true)
-        .expect("RC4 acceptor MIC decodes")
-        .with_payload(decode_hex(MIC_PAYLOAD));
-    assert!(
-        acceptor
-            .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
-            .expect("RC4 acceptor MIC verifies")
-    );
+    const MIC_PAYLOAD: &str = "deadbeef";
+    const MIC_FROM_ACCEPTOR: &str = "040401ffffffffff00000000575e85d6c34d12ba3e5b1b1310cd9cb3";
+    const MIC_FROM_INITIATOR: &str = "040400ffffffffff00000000000000009649ca09d2f1bc51ff6e5ca3";
 
-    let initiator =
-        MicToken::new_initiator(decode_hex(MIC_PAYLOAD), &key).expect("RC4 initiator MIC builds");
-    assert_eq!(
-        hex_encode(&initiator.encode().expect("RC4 initiator MIC encodes")),
-        RC4_MIC_FROM_INITIATOR
-    );
+    const WRAP_FROM_ACCEPTOR: &str =
+        "050401ff000c000000000000575e85d601010000853b728d5268525a1386c19f";
+    const WRAP_FROM_INITIATOR: &str =
+        "050400ff000c000000000000000000000101000079a033510b6f127212242b97";
+    const WRAP_PAYLOAD: &str = "01010000";
+    const WRAP_SEALED_CONFOUNDER: &str = "000102030405060708090a0b0c0d0e0f";
+    const WRAP_SEALED_FROM_INITIATOR: &str = "050402ff000000000000000000000000debcb2b270f4152cfe1cde9c62f90d12a59afda0127a094f4b18e8d8b8fc253c63239cc38ef96b6ce3e92c754f8a97b3";
+    const WRAP_SEALED_RRC_FROM_INITIATOR: &str = "050402ff00000009000000000000000741b1ec99c834f8c7d3debcb2b270f4152cfe1cde9c62f90d12bde6bc91659577018ad4118b1e18e27263239cc39150a9";
 
-    let decoded = MicToken::decode(&decode_hex(RC4_MIC_FROM_INITIATOR), false)
-        .expect("RC4 MIC decodes")
-        .with_payload(decode_hex(MIC_PAYLOAD));
-    assert!(
-        decoded
-            .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
-            .expect("RC4 initiator MIC verifies")
-    );
-    assert_eq!(
-        hex_encode(&decoded.encode().expect("RC4 MIC roundtrips")),
-        RC4_MIC_FROM_INITIATOR
-    );
-}
+    const SESSION_KEY: &str = "14f9bde6b50ec508201a97f74c4e5bd3";
+    const RC4_SESSION_KEY: &str = "ac8e657f83df82beea5d43bdaf7800cc";
+    const RC4_MIC_FROM_ACCEPTOR: &str =
+        "040401ffffffffff00000000575e85d666d5c8d8c6568a15db2d0c324ec32414";
+    const RC4_MIC_FROM_INITIATOR: &str =
+        "040400ffffffffff000000000000000074a9a679e1682edfc21ba70654fd1ccc";
+    const RC4_WRAP_FROM_ACCEPTOR: &str =
+        "050401ff0010000000000000575e85d601010000fd1aa518115cffc141a7edbd4b844482";
+    const RC4_WRAP_FROM_INITIATOR: &str =
+        "050400ff001000000000000000000000010100009a6def57aa756af352904deb83ca78ff";
+    const DES3_SESSION_KEY: &str = "850bb51358548cd05e86768c313e3bfef7511937dcf72c3e";
+    const DES3_MIC_FROM_ACCEPTOR: &str =
+        "040401ffffffffff00000000575e85d6c139350ffc99da64e9a2591db9a21d609aa2748f";
+    const DES3_MIC_FROM_INITIATOR: &str =
+        "040400ffffffffff0000000000000000e6c29e7e63d5fdc851285c34c1d1453b6abea103";
+    const DES3_WRAP_FROM_ACCEPTOR: &str =
+        "050401ff0014000000000000575e85d6010100004fb03cbebce9ef771327d9f394804c27884a8e66";
+    const DES3_WRAP_FROM_INITIATOR: &str =
+        "050400ff001400000000000000000000010100004cdcec3881979bb4af72359f96cdea61b05cc1f7";
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn mic_token_matches_gokrb5_des3_vectors() {
-    let key = des3_session_key();
-    let acceptor_bytes = decode_hex(DES3_MIC_FROM_ACCEPTOR);
-    let acceptor = MicToken::decode(&acceptor_bytes, true)
-        .expect("DES3 acceptor MIC decodes")
-        .with_payload(decode_hex(MIC_PAYLOAD));
-    assert!(
-        acceptor
-            .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
-            .expect("DES3 acceptor MIC verifies")
-    );
+    /// Pins that the gokrb5 acceptor and initiator MIC tokens decode and re-encode byte for byte.
+    #[test]
+    fn mic_token_decodes_and_roundtrips_gokrb5_vectors() -> Result<(), TestError> {
+        let acceptor_bytes = decode_hex(MIC_FROM_ACCEPTOR)?;
+        let token = MicToken::decode(&acceptor_bytes, true).context("acceptor MIC decodes")?;
+        assert_eq!(
+            token,
+            MicToken {
+                flags: GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
+                snd_seq_num: u64::from_be_bytes(
+                    acceptor_bytes
+                        .get(8..16)
+                        .context("token carries a sequence number")?
+                        .try_into()?
+                ),
+                payload: None,
+                checksum: Some(
+                    acceptor_bytes
+                        .get(16..)
+                        .context("MIC carries a checksum")?
+                        .to_vec()
+                ),
+            }
+        );
+        assert_eq!(
+            hex_encode(&token.encode().context("acceptor MIC encodes")?),
+            MIC_FROM_ACCEPTOR
+        );
 
-    let initiator =
-        MicToken::new_initiator(decode_hex(MIC_PAYLOAD), &key).expect("DES3 initiator MIC builds");
-    assert_eq!(
-        hex_encode(&initiator.encode().expect("DES3 initiator MIC encodes")),
-        DES3_MIC_FROM_INITIATOR
-    );
+        let initiator_bytes = decode_hex(MIC_FROM_INITIATOR)?;
+        let initiator_token =
+            MicToken::decode(&initiator_bytes, false).context("initiator MIC decodes")?;
+        assert_eq!(
+            initiator_token,
+            MicToken {
+                flags: 0,
+                snd_seq_num: 0,
+                payload: None,
+                checksum: Some(
+                    initiator_bytes
+                        .get(16..)
+                        .context("MIC carries a checksum")?
+                        .to_vec()
+                ),
+            }
+        );
+        assert_eq!(
+            hex_encode(&initiator_token.encode().context("initiator MIC encodes")?),
+            MIC_FROM_INITIATOR
+        );
+        Ok(())
+    }
 
-    let decoded = MicToken::decode(&decode_hex(DES3_MIC_FROM_INITIATOR), false)
-        .expect("DES3 MIC decodes")
-        .with_payload(decode_hex(MIC_PAYLOAD));
-    assert!(
-        decoded
-            .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
-            .expect("DES3 initiator MIC verifies")
-    );
-    assert_eq!(
-        hex_encode(&decoded.encode().expect("DES3 MIC roundtrips")),
-        DES3_MIC_FROM_INITIATOR
-    );
-}
+    /// Pins that a MIC token from the wrong sender, or without a checksum, is rejected.
+    #[test]
+    fn mic_token_rejects_wrong_sender_and_missing_checksum() -> Result<(), TestError> {
+        assert!(matches!(
+            MicToken::decode(&decode_hex(MIC_FROM_ACCEPTOR)?, false),
+            Err(Error::UnexpectedGssTokenSender {
+                expected_from_acceptor: false,
+                actual_from_acceptor: true,
+            })
+        ));
+        assert!(matches!(
+            MicToken::decode(&decode_hex(MIC_FROM_INITIATOR)?, true),
+            Err(Error::UnexpectedGssTokenSender {
+                expected_from_acceptor: true,
+                actual_from_acceptor: false,
+            })
+        ));
+        assert!(matches!(
+            MicToken::new(0, 0).encode(),
+            Err(Error::MissingGssChecksum)
+        ));
+        Ok(())
+    }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::missing_panics_doc,
-        clippy::shadow_unrelated,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_used,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn wrap_token_decodes_and_roundtrips_gokrb5_vectors() {
-    let acceptor_bytes = decode_hex(WRAP_FROM_ACCEPTOR);
-    let token = WrapToken::decode(&acceptor_bytes, true).expect("acceptor wrap decodes");
-    assert_eq!(
-        token,
-        WrapToken {
-            flags: GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
-            ec: 12,
-            rrc: 0,
-            snd_seq_num: u64::from_be_bytes(acceptor_bytes[8..16].try_into().unwrap()),
-            payload: Some(decode_hex(WRAP_PAYLOAD)),
-            checksum: Some(acceptor_bytes[20..].to_vec()),
-            encrypted_body: None,
-        }
-    );
-    assert_eq!(
-        hex_encode(&token.encode().expect("acceptor wrap encodes")),
-        WRAP_FROM_ACCEPTOR
-    );
+    /// Pins that an AES MIC verifies only with its key and usage, and that the initiator MIC matches gokrb5.
+    #[test]
+    fn mic_token_verifies_and_builds_initiator_token() -> Result<(), TestError> {
+        let key = session_key()?;
+        let acceptor = MicToken::decode(&decode_hex(MIC_FROM_ACCEPTOR)?, true)
+            .context("acceptor MIC decodes")?
+            .with_payload(decode_hex(MIC_PAYLOAD)?);
+        assert!(
+            acceptor
+                .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+                .context("acceptor MIC verifies")?
+        );
+        assert!(matches!(
+            acceptor.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE),
+            Err(Error::GssChecksumMismatch)
+        ));
 
-    let initiator_bytes = decode_hex(WRAP_FROM_INITIATOR);
-    let token = WrapToken::decode(&initiator_bytes, false).expect("initiator wrap decodes");
-    assert_eq!(
-        token,
-        WrapToken {
-            flags: 0,
-            ec: 12,
-            rrc: 0,
-            snd_seq_num: 0,
-            payload: Some(decode_hex(WRAP_PAYLOAD)),
-            checksum: Some(initiator_bytes[20..].to_vec()),
-            encrypted_body: None,
-        }
-    );
-    assert_eq!(
-        hex_encode(&token.encode().expect("initiator wrap encodes")),
-        WRAP_FROM_INITIATOR
-    );
-}
+        let wrong_key = EncryptionKey {
+            etype: 17,
+            value: decode_hex("14f9bde6b50ec508201a97f74c4effff")?,
+        };
+        assert!(matches!(
+            acceptor.verify(&wrong_key, GSSAPI_ACCEPTOR_SIGN_USAGE),
+            Err(Error::GssChecksumMismatch)
+        ));
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn wrap_token_matches_gokrb5_rc4_hmac_vectors() {
-    let key = rc4_session_key();
-    let acceptor =
-        WrapToken::decode(&decode_hex(RC4_WRAP_FROM_ACCEPTOR), true).expect("RC4 wrap decodes");
-    assert_eq!(acceptor.ec, 16);
-    assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)));
-    assert!(
-        acceptor
-            .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
-            .expect("RC4 acceptor wrap verifies")
-    );
+        let mut initiator = MicToken::new_initiator(decode_hex(MIC_PAYLOAD)?, &key)
+            .context("initiator MIC builds")?;
+        initiator.payload = None;
+        assert_eq!(
+            initiator,
+            MicToken {
+                flags: 0,
+                snd_seq_num: 0,
+                payload: None,
+                checksum: Some(decode_hex(
+                    MIC_FROM_INITIATOR
+                        .get(32..)
+                        .context("MIC carries a checksum")?
+                )?),
+            }
+        );
+        assert_eq!(
+            hex_encode(&initiator.encode().context("initiator MIC encodes")?),
+            MIC_FROM_INITIATOR
+        );
+        Ok(())
+    }
 
-    let initiator =
-        WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD), &key).expect("RC4 wrap builds");
-    assert_eq!(initiator.ec, 16);
-    assert_eq!(
-        hex_encode(&initiator.encode().expect("RC4 wrap encodes")),
-        RC4_WRAP_FROM_INITIATOR
-    );
+    /// Pins that RC4-HMAC MIC tokens verify and build as gokrb5 does.
+    #[test]
+    fn mic_token_matches_gokrb5_rc4_hmac_vectors() -> Result<(), TestError> {
+        let key = rc4_session_key()?;
+        let acceptor_bytes = decode_hex(RC4_MIC_FROM_ACCEPTOR)?;
+        let acceptor = MicToken::decode(&acceptor_bytes, true)
+            .context("RC4 acceptor MIC decodes")?
+            .with_payload(decode_hex(MIC_PAYLOAD)?);
+        assert!(
+            acceptor
+                .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+                .context("RC4 acceptor MIC verifies")?
+        );
 
-    let decoded =
-        WrapToken::decode(&decode_hex(RC4_WRAP_FROM_INITIATOR), false).expect("RC4 wrap decodes");
-    assert_eq!(
-        hex_encode(&decoded.encode().expect("RC4 wrap roundtrips")),
-        RC4_WRAP_FROM_INITIATOR
-    );
-}
+        let initiator = MicToken::new_initiator(decode_hex(MIC_PAYLOAD)?, &key)
+            .context("RC4 initiator MIC builds")?;
+        assert_eq!(
+            hex_encode(&initiator.encode().context("RC4 initiator MIC encodes")?),
+            RC4_MIC_FROM_INITIATOR
+        );
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn wrap_token_matches_gokrb5_des3_vectors() {
-    let key = des3_session_key();
-    let acceptor =
-        WrapToken::decode(&decode_hex(DES3_WRAP_FROM_ACCEPTOR), true).expect("DES3 wrap decodes");
-    assert_eq!(acceptor.ec, 20);
-    assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)));
-    assert!(
-        acceptor
-            .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
-            .expect("DES3 acceptor wrap verifies")
-    );
+        let decoded = MicToken::decode(&decode_hex(RC4_MIC_FROM_INITIATOR)?, false)
+            .context("RC4 MIC decodes")?
+            .with_payload(decode_hex(MIC_PAYLOAD)?);
+        assert!(
+            decoded
+                .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
+                .context("RC4 initiator MIC verifies")?
+        );
+        assert_eq!(
+            hex_encode(&decoded.encode().context("RC4 MIC roundtrips")?),
+            RC4_MIC_FROM_INITIATOR
+        );
+        Ok(())
+    }
 
-    let initiator =
-        WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD), &key).expect("DES3 wrap builds");
-    assert_eq!(initiator.ec, 20);
-    assert_eq!(
-        hex_encode(&initiator.encode().expect("DES3 wrap encodes")),
-        DES3_WRAP_FROM_INITIATOR
-    );
+    /// Pins that DES3 MIC tokens verify and build as gokrb5 does.
+    #[test]
+    fn mic_token_matches_gokrb5_des3_vectors() -> Result<(), TestError> {
+        let key = des3_session_key()?;
+        let acceptor_bytes = decode_hex(DES3_MIC_FROM_ACCEPTOR)?;
+        let acceptor = MicToken::decode(&acceptor_bytes, true)
+            .context("DES3 acceptor MIC decodes")?
+            .with_payload(decode_hex(MIC_PAYLOAD)?);
+        assert!(
+            acceptor
+                .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+                .context("DES3 acceptor MIC verifies")?
+        );
 
-    let decoded =
-        WrapToken::decode(&decode_hex(DES3_WRAP_FROM_INITIATOR), false).expect("DES3 wrap decodes");
-    assert_eq!(
-        hex_encode(&decoded.encode().expect("DES3 wrap roundtrips")),
-        DES3_WRAP_FROM_INITIATOR
-    );
-}
+        let initiator = MicToken::new_initiator(decode_hex(MIC_PAYLOAD)?, &key)
+            .context("DES3 initiator MIC builds")?;
+        assert_eq!(
+            hex_encode(&initiator.encode().context("DES3 initiator MIC encodes")?),
+            DES3_MIC_FROM_INITIATOR
+        );
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn wrap_token_rejects_invalid_inputs() {
-    assert!(matches!(
-        WrapToken::decode(&decode_hex(WRAP_FROM_ACCEPTOR), false),
-        Err(Error::UnexpectedGssTokenSender {
-            expected_from_acceptor: false,
-            actual_from_acceptor: true,
-        })
-    ));
-    assert!(matches!(
-        WrapToken::decode(&decode_hex(WRAP_FROM_INITIATOR), true),
-        Err(Error::UnexpectedGssTokenSender {
-            expected_from_acceptor: true,
-            actual_from_acceptor: false,
-        })
-    ));
-    assert!(matches!(
-        WrapToken::new(0, 0).encode(),
-        Err(Error::MissingGssPayload)
-    ));
-    assert!(matches!(
-        WrapToken::new(0, 0)
-            .with_payload(decode_hex(WRAP_PAYLOAD))
-            .encode(),
-        Err(Error::MissingGssChecksum)
-    ));
-}
+        let decoded = MicToken::decode(&decode_hex(DES3_MIC_FROM_INITIATOR)?, false)
+            .context("DES3 MIC decodes")?
+            .with_payload(decode_hex(MIC_PAYLOAD)?);
+        assert!(
+            decoded
+                .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
+                .context("DES3 initiator MIC verifies")?
+        );
+        assert_eq!(
+            hex_encode(&decoded.encode().context("DES3 MIC roundtrips")?),
+            DES3_MIC_FROM_INITIATOR
+        );
+        Ok(())
+    }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::string_slice,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn wrap_token_verifies_and_builds_initiator_token() {
-    let key = session_key();
-    let acceptor =
-        WrapToken::decode(&decode_hex(WRAP_FROM_ACCEPTOR), true).expect("acceptor wrap decodes");
-    assert!(
-        acceptor
-            .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
-            .expect("acceptor wrap verifies")
-    );
-    assert!(matches!(
-        acceptor.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE),
-        Err(Error::GssChecksumMismatch)
-    ));
+    /// Pins that the gokrb5 acceptor and initiator wrap tokens decode and re-encode byte for byte.
+    #[test]
+    fn wrap_token_decodes_and_roundtrips_gokrb5_vectors() -> Result<(), TestError> {
+        let acceptor_bytes = decode_hex(WRAP_FROM_ACCEPTOR)?;
+        let token = WrapToken::decode(&acceptor_bytes, true).context("acceptor wrap decodes")?;
+        assert_eq!(
+            token,
+            WrapToken {
+                flags: GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
+                ec: 12,
+                rrc: 0,
+                snd_seq_num: u64::from_be_bytes(
+                    acceptor_bytes
+                        .get(8..16)
+                        .context("token carries a sequence number")?
+                        .try_into()?
+                ),
+                payload: Some(decode_hex(WRAP_PAYLOAD)?),
+                checksum: Some(
+                    acceptor_bytes
+                        .get(20..)
+                        .context("wrap carries a checksum")?
+                        .to_vec()
+                ),
+                encrypted_body: None,
+            }
+        );
+        assert_eq!(
+            hex_encode(&token.encode().context("acceptor wrap encodes")?),
+            WRAP_FROM_ACCEPTOR
+        );
 
-    let wrong_key = EncryptionKey {
-        etype: 17,
-        value: decode_hex("14f9bde6b50ec508201a97f74c4effff"),
-    };
-    assert!(matches!(
-        acceptor.verify(&wrong_key, GSSAPI_ACCEPTOR_SEAL_USAGE),
-        Err(Error::GssChecksumMismatch)
-    ));
+        let initiator_bytes = decode_hex(WRAP_FROM_INITIATOR)?;
+        let initiator_token =
+            WrapToken::decode(&initiator_bytes, false).context("initiator wrap decodes")?;
+        assert_eq!(
+            initiator_token,
+            WrapToken {
+                flags: 0,
+                ec: 12,
+                rrc: 0,
+                snd_seq_num: 0,
+                payload: Some(decode_hex(WRAP_PAYLOAD)?),
+                checksum: Some(
+                    initiator_bytes
+                        .get(20..)
+                        .context("wrap carries a checksum")?
+                        .to_vec()
+                ),
+                encrypted_body: None,
+            }
+        );
+        assert_eq!(
+            hex_encode(&initiator_token.encode().context("initiator wrap encodes")?),
+            WRAP_FROM_INITIATOR
+        );
+        Ok(())
+    }
 
-    let initiator =
-        WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD), &key).expect("initiator wrap builds");
-    assert_eq!(
-        initiator,
-        WrapToken {
-            flags: 0,
-            ec: 12,
-            rrc: 0,
-            snd_seq_num: 0,
-            payload: Some(decode_hex(WRAP_PAYLOAD)),
-            checksum: Some(decode_hex(&WRAP_FROM_INITIATOR[40..])),
-            encrypted_body: None,
-        }
-    );
-    assert_eq!(
-        hex_encode(&initiator.encode().expect("initiator wrap encodes")),
-        WRAP_FROM_INITIATOR
-    );
-}
+    /// Pins that RC4-HMAC wrap tokens verify and build as gokrb5 does.
+    #[test]
+    fn wrap_token_matches_gokrb5_rc4_hmac_vectors() -> Result<(), TestError> {
+        let key = rc4_session_key()?;
+        let acceptor = WrapToken::decode(&decode_hex(RC4_WRAP_FROM_ACCEPTOR)?, true)
+            .context("RC4 wrap decodes")?;
+        assert_eq!(acceptor.ec, 16);
+        assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        assert!(
+            acceptor
+                .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
+                .context("RC4 acceptor wrap verifies")?
+        );
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::shadow_same,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn sealed_wrap_token_encrypts_decrypts_and_roundtrips() {
-    let key = session_key();
-    let token = WrapToken::new_initiator_sealed_with_confounder(
-        decode_hex(WRAP_PAYLOAD),
-        &key,
-        &decode_hex(WRAP_SEALED_CONFOUNDER),
-    )
-    .expect("sealed initiator wrap builds");
+        let initiator =
+            WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key).context("RC4 wrap builds")?;
+        assert_eq!(initiator.ec, 16);
+        assert_eq!(
+            hex_encode(&initiator.encode().context("RC4 wrap encodes")?),
+            RC4_WRAP_FROM_INITIATOR
+        );
 
-    assert_eq!(token.flags, GSS_TOKEN_FLAG_SEALED);
-    assert_eq!(token.ec, 0);
-    assert_eq!(token.rrc, 0);
-    assert_eq!(token.snd_seq_num, 0);
-    assert_eq!(token.payload, Some(decode_hex(WRAP_PAYLOAD)));
-    assert!(token.checksum.is_none());
-    assert!(token.encrypted_body.is_some());
+        let decoded = WrapToken::decode(&decode_hex(RC4_WRAP_FROM_INITIATOR)?, false)
+            .context("RC4 wrap decodes")?;
+        assert_eq!(
+            hex_encode(&decoded.encode().context("RC4 wrap roundtrips")?),
+            RC4_WRAP_FROM_INITIATOR
+        );
+        Ok(())
+    }
 
-    let encoded = token.encode().expect("sealed wrap encodes");
-    assert_eq!(hex_encode(&encoded), WRAP_SEALED_FROM_INITIATOR);
-    let decoded = WrapToken::decode(&encoded, false).expect("sealed wrap decodes");
-    assert!(decoded.is_sealed());
-    assert!(decoded.payload.is_none());
-    assert_eq!(
-        decoded
-            .decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
-            .expect("sealed wrap decrypts"),
-        decode_hex(WRAP_PAYLOAD)
-    );
-    assert!(
-        decoded
-            .verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)
-            .expect("sealed wrap verifies")
-    );
+    /// Pins that DES3 wrap tokens verify and build as gokrb5 does.
+    #[test]
+    fn wrap_token_matches_gokrb5_des3_vectors() -> Result<(), TestError> {
+        let key = des3_session_key()?;
+        let acceptor = WrapToken::decode(&decode_hex(DES3_WRAP_FROM_ACCEPTOR)?, true)
+            .context("DES3 wrap decodes")?;
+        assert_eq!(acceptor.ec, 20);
+        assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        assert!(
+            acceptor
+                .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
+                .context("DES3 acceptor wrap verifies")?
+        );
 
-    let mut decoded = decoded;
-    assert_eq!(
-        decoded
-            .decrypt_and_set_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
-            .expect("sealed wrap decrypts into token"),
-        decode_hex(WRAP_PAYLOAD).as_slice()
-    );
-    assert_eq!(decoded.payload, Some(decode_hex(WRAP_PAYLOAD)));
-}
+        let initiator = WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key)
+            .context("DES3 wrap builds")?;
+        assert_eq!(initiator.ec, 20);
+        assert_eq!(
+            hex_encode(&initiator.encode().context("DES3 wrap encodes")?),
+            DES3_WRAP_FROM_INITIATOR
+        );
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        clippy::unwrap_used,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn sealed_wrap_token_supports_rrc_rotation() {
-    let key = session_key();
-    let mut token = WrapToken::new(GSS_TOKEN_FLAG_SEALED, 7).with_payload(decode_hex(WRAP_PAYLOAD));
-    token.rrc = 9;
-    token
-        .encrypt_payload_with_confounder(
+        let decoded = WrapToken::decode(&decode_hex(DES3_WRAP_FROM_INITIATOR)?, false)
+            .context("DES3 wrap decodes")?;
+        assert_eq!(
+            hex_encode(&decoded.encode().context("DES3 wrap roundtrips")?),
+            DES3_WRAP_FROM_INITIATOR
+        );
+        Ok(())
+    }
+
+    /// Pins that wrap tokens from the wrong sender, or without a payload or checksum, are rejected.
+
+    #[test]
+    fn wrap_token_rejects_invalid_inputs() -> Result<(), TestError> {
+        assert!(matches!(
+            WrapToken::decode(&decode_hex(WRAP_FROM_ACCEPTOR)?, false),
+            Err(Error::UnexpectedGssTokenSender {
+                expected_from_acceptor: false,
+                actual_from_acceptor: true,
+            })
+        ));
+        assert!(matches!(
+            WrapToken::decode(&decode_hex(WRAP_FROM_INITIATOR)?, true),
+            Err(Error::UnexpectedGssTokenSender {
+                expected_from_acceptor: true,
+                actual_from_acceptor: false,
+            })
+        ));
+        assert!(matches!(
+            WrapToken::new(0, 0).encode(),
+            Err(Error::MissingGssPayload)
+        ));
+        assert!(matches!(
+            WrapToken::new(0, 0)
+                .with_payload(decode_hex(WRAP_PAYLOAD)?)
+                .encode(),
+            Err(Error::MissingGssChecksum)
+        ));
+        Ok(())
+    }
+
+    /// Pins that an AES wrap token verifies only with its key and usage, and that the initiator token matches gokrb5.
+    #[test]
+    fn wrap_token_verifies_and_builds_initiator_token() -> Result<(), TestError> {
+        let key = session_key()?;
+        let acceptor = WrapToken::decode(&decode_hex(WRAP_FROM_ACCEPTOR)?, true)
+            .context("acceptor wrap decodes")?;
+        assert!(
+            acceptor
+                .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
+                .context("acceptor wrap verifies")?
+        );
+        assert!(matches!(
+            acceptor.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE),
+            Err(Error::GssChecksumMismatch)
+        ));
+
+        let wrong_key = EncryptionKey {
+            etype: 17,
+            value: decode_hex("14f9bde6b50ec508201a97f74c4effff")?,
+        };
+        assert!(matches!(
+            acceptor.verify(&wrong_key, GSSAPI_ACCEPTOR_SEAL_USAGE),
+            Err(Error::GssChecksumMismatch)
+        ));
+
+        let initiator = WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key)
+            .context("initiator wrap builds")?;
+        assert_eq!(
+            initiator,
+            WrapToken {
+                flags: 0,
+                ec: 12,
+                rrc: 0,
+                snd_seq_num: 0,
+                payload: Some(decode_hex(WRAP_PAYLOAD)?),
+                checksum: Some(decode_hex(
+                    WRAP_FROM_INITIATOR
+                        .get(40..)
+                        .context("wrap carries a checksum")?
+                )?),
+                encrypted_body: None,
+            }
+        );
+        assert_eq!(
+            hex_encode(&initiator.encode().context("initiator wrap encodes")?),
+            WRAP_FROM_INITIATOR
+        );
+        Ok(())
+    }
+
+    /// Pins that a sealed wrap token encrypts to the expected bytes, decrypts, verifies and round-trips.
+    #[test]
+    fn sealed_wrap_token_encrypts_decrypts_and_roundtrips() -> Result<(), TestError> {
+        let key = session_key()?;
+        let token = WrapToken::new_initiator_sealed_with_confounder(
+            decode_hex(WRAP_PAYLOAD)?,
             &key,
-            GSSAPI_INITIATOR_SEAL_USAGE,
-            &decode_hex(WRAP_SEALED_CONFOUNDER),
+            &decode_hex(WRAP_SEALED_CONFOUNDER)?,
         )
-        .expect("sealed wrap encrypts");
+        .context("sealed initiator wrap builds")?;
 
-    let encoded = token.encode().expect("rotated sealed wrap encodes");
-    assert_eq!(hex_encode(&encoded), WRAP_SEALED_RRC_FROM_INITIATOR);
-    assert_eq!(u16::from_be_bytes(encoded[6..8].try_into().unwrap()), 9);
+        assert_eq!(token.flags, GSS_TOKEN_FLAG_SEALED);
+        assert_eq!(token.ec, 0);
+        assert_eq!(token.rrc, 0);
+        assert_eq!(token.snd_seq_num, 0);
+        assert_eq!(token.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        assert!(token.checksum.is_none());
+        assert!(token.encrypted_body.is_some());
 
-    let decoded = WrapToken::decode(&encoded, false).expect("rotated sealed wrap decodes");
-    assert_eq!(decoded.rrc, 9);
-    assert_eq!(
-        decoded
-            .decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
-            .expect("rotated sealed wrap decrypts"),
-        decode_hex(WRAP_PAYLOAD)
-    );
-}
+        let encoded = token.encode().context("sealed wrap encodes")?;
+        assert_eq!(hex_encode(&encoded), WRAP_SEALED_FROM_INITIATOR);
+        let mut decoded = WrapToken::decode(&encoded, false).context("sealed wrap decodes")?;
+        assert!(decoded.is_sealed());
+        assert!(decoded.payload.is_none());
+        assert_eq!(
+            decoded
+                .decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
+                .context("sealed wrap decrypts")?,
+            decode_hex(WRAP_PAYLOAD)?
+        );
+        assert!(
+            decoded
+                .verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)
+                .context("sealed wrap verifies")?
+        );
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::missing_panics_doc,
-        clippy::shadow_unrelated,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn sealed_wrap_token_rejects_tampering_and_wrong_usage() {
-    let key = session_key();
-    let token = WrapToken::new_initiator_sealed_with_confounder(
-        decode_hex(WRAP_PAYLOAD),
-        &key,
-        &decode_hex(WRAP_SEALED_CONFOUNDER),
-    )
-    .expect("sealed initiator wrap builds");
-    let mut decoded =
-        WrapToken::decode(&token.encode().expect("sealed wrap encodes"), false).expect("decodes");
-
-    assert!(matches!(
-        decoded.decrypt_payload(&key, GSSAPI_ACCEPTOR_SEAL_USAGE),
-        Err(Error::Crypto(_))
-    ));
-
-    decoded.snd_seq_num = 1;
-    assert!(matches!(
-        decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE),
-        Err(Error::InvalidGssEncryptedHeader)
-    ));
-
-    let mut encoded = token.encode().expect("sealed wrap encodes");
-    let last = encoded.len() - 1;
-    encoded[last] ^= 0x01;
-    let decoded = WrapToken::decode(&encoded, false).expect("tampered sealed wrap still parses");
-    assert!(matches!(
-        decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE),
-        Err(Error::Crypto(_))
-    ));
-}
-
-fn session_key() -> EncryptionKey {
-    EncryptionKey {
-        etype: 17,
-        value: decode_hex(SESSION_KEY),
+        assert_eq!(
+            decoded
+                .decrypt_and_set_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
+                .context("sealed wrap decrypts into token")?,
+            decode_hex(WRAP_PAYLOAD)?.as_slice()
+        );
+        assert_eq!(decoded.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        Ok(())
     }
-}
 
-fn rc4_session_key() -> EncryptionKey {
-    EncryptionKey {
-        etype: 23,
-        value: decode_hex(RC4_SESSION_KEY),
+    /// Pins that a sealed wrap token with a right rotation count encodes, decodes and decrypts.
+    #[test]
+    fn sealed_wrap_token_supports_rrc_rotation() -> Result<(), TestError> {
+        let key = session_key()?;
+        let mut token =
+            WrapToken::new(GSS_TOKEN_FLAG_SEALED, 7).with_payload(decode_hex(WRAP_PAYLOAD)?);
+        token.rrc = 9;
+        token
+            .encrypt_payload_with_confounder(
+                &key,
+                GSSAPI_INITIATOR_SEAL_USAGE,
+                &decode_hex(WRAP_SEALED_CONFOUNDER)?,
+            )
+            .context("sealed wrap encrypts")?;
+
+        let encoded = token.encode().context("rotated sealed wrap encodes")?;
+        assert_eq!(hex_encode(&encoded), WRAP_SEALED_RRC_FROM_INITIATOR);
+        assert_eq!(
+            u16::from_be_bytes(
+                encoded
+                    .get(6..8)
+                    .context("wrap carries an RRC")?
+                    .try_into()?
+            ),
+            9
+        );
+
+        let decoded = WrapToken::decode(&encoded, false).context("rotated sealed wrap decodes")?;
+        assert_eq!(decoded.rrc, 9);
+        assert_eq!(
+            decoded
+                .decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
+                .context("rotated sealed wrap decrypts")?,
+            decode_hex(WRAP_PAYLOAD)?
+        );
+        Ok(())
     }
-}
 
-fn des3_session_key() -> EncryptionKey {
-    EncryptionKey {
-        etype: 16,
-        value: decode_hex(DES3_SESSION_KEY),
+    /// Pins that a sealed wrap token fails to decrypt under the wrong usage, a changed header or a flipped ciphertext bit.
+    #[test]
+    fn sealed_wrap_token_rejects_tampering_and_wrong_usage() -> Result<(), TestError> {
+        let key = session_key()?;
+        let token = WrapToken::new_initiator_sealed_with_confounder(
+            decode_hex(WRAP_PAYLOAD)?,
+            &key,
+            &decode_hex(WRAP_SEALED_CONFOUNDER)?,
+        )
+        .context("sealed initiator wrap builds")?;
+        let mut decoded = WrapToken::decode(&token.encode().context("sealed wrap encodes")?, false)
+            .context("decodes")?;
+
+        assert!(matches!(
+            decoded.decrypt_payload(&key, GSSAPI_ACCEPTOR_SEAL_USAGE),
+            Err(Error::Crypto(_))
+        ));
+
+        decoded.snd_seq_num = 1;
+        assert!(matches!(
+            decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE),
+            Err(Error::InvalidGssEncryptedHeader)
+        ));
+
+        let mut encoded = token.encode().context("sealed wrap encodes")?;
+        let last = encoded.last_mut().context("sealed wrap is not empty")?;
+        *last ^= 0x01;
+        let tampered =
+            WrapToken::decode(&encoded, false).context("tampered sealed wrap still parses")?;
+        assert!(matches!(
+            tampered.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE),
+            Err(Error::Crypto(_))
+        ));
+        Ok(())
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::integer_division_remainder_used,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn decode_hex(input: &str) -> Vec<u8> {
-    assert_eq!(input.len() % 2, 0, "hex input has even length");
-    input
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| (hex_value(pair[0]) << 4) | hex_value(pair[1]))
-        .collect()
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::as_conversions,
-        clippy::default_numeric_fallback,
-        clippy::indexing_slicing,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn hex_encode(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0f) as usize] as char);
+    fn session_key() -> Result<EncryptionKey, TestError> {
+        Ok(EncryptionKey {
+            etype: 17,
+            value: decode_hex(SESSION_KEY)?,
+        })
     }
-    out
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn hex_value(byte: u8) -> u8 {
-    match byte {
-        b'0'..=b'9' => byte - b'0',
-        b'a'..=b'f' => byte - b'a' + 10,
-        b'A'..=b'F' => byte - b'A' + 10,
-        _ => panic!("invalid hex byte: {byte}"),
+    fn rc4_session_key() -> Result<EncryptionKey, TestError> {
+        Ok(EncryptionKey {
+            etype: 23,
+            value: decode_hex(RC4_SESSION_KEY)?,
+        })
+    }
+
+    fn des3_session_key() -> Result<EncryptionKey, TestError> {
+        Ok(EncryptionKey {
+            etype: 16,
+            value: decode_hex(DES3_SESSION_KEY)?,
+        })
+    }
+
+    /// Decodes a hex fixture.
+    fn decode_hex(input: &str) -> Result<Vec<u8>, FromHexError> {
+        hex::decode(input)
+    }
+
+    /// Encodes bytes as lowercase hex.
+    fn hex_encode(bytes: &[u8]) -> String {
+        hex::encode(bytes)
     }
 }
