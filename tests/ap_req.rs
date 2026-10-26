@@ -241,10 +241,7 @@ mod tests {
             None,
             &confounder,
         )?;
-        let wrong_key = EncryptionKey {
-            etype: 17,
-            value: vec![0; 16],
-        };
+        let wrong_key = EncryptionKey::new(17, vec![0; 16]);
 
         let error = decrypt_ap_req_authenticator(&ap_req, &wrong_key, AP_REQ_AUTHENTICATOR_USAGE)
             .err()
@@ -272,10 +269,7 @@ mod tests {
 
     /// Returns the AES256 key used to encrypt the authenticators.
     fn reply_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 18,
-            value: hex::decode(REPLY_KEY)?,
-        })
+        Ok(EncryptionKey::new(18, hex::decode(REPLY_KEY)?))
     }
 
     /// Returns the bytes of a Kerberos string.

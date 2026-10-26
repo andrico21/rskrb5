@@ -180,10 +180,7 @@ mod tests {
         let fixture = decode_krb_safe(&hex::decode(KRB_SAFE)?)?;
         let key = reply_key()?;
         let krb_safe = build_krb_safe(fixture.body, &key)?;
-        let wrong_etype_key = EncryptionKey {
-            etype: 17,
-            value: vec![0; 16],
-        };
+        let wrong_etype_key = EncryptionKey::new(17, vec![0; 16]);
 
         let error = verify_krb_safe_checksum(&krb_safe, &wrong_etype_key)
             .err()
@@ -210,9 +207,6 @@ mod tests {
 
     /// Returns the AES256 reply key of the gokrb5 fixtures.
     fn reply_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 18,
-            value: hex::decode(REPLY_KEY)?,
-        })
+        Ok(EncryptionKey::new(18, hex::decode(REPLY_KEY)?))
     }
 }

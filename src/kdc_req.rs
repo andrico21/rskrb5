@@ -403,12 +403,12 @@ fn ticket_error(error: TicketError) -> Error {
     ),
     expect(
         clippy::error_impl_error,
-        clippy::exhaustive_enums,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
 /// KDC request helper error.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]

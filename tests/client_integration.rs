@@ -201,12 +201,16 @@ fn build_login_request(
             .subsec_micros()
             .wrapping_add(2)
             .wrapping_rem(1_000_000),
+
+        _ => return Err("unexpected non-exhaustive protocol variant".into()),
     };
     let nonce = u32::try_from(elapsed.as_nanos() & 0x0fff_ffff)?
         | match protocol {
             KdcProtocol::Udp => 0x1000_0000,
             KdcProtocol::Tcp => 0x2000_0000,
             KdcProtocol::Auto => 0x3000_0000,
+
+            _ => return Err("unexpected non-exhaustive protocol variant".into()),
         };
     let padata = pa_enc_timestamp_with_confounder(
         &key,
@@ -335,11 +339,21 @@ fn assert_login_session(session: AsRepSession) {
 ///
 /// Byte 0 tags the protocol, bytes 1..9 hold the seconds and bytes 9..13 the
 /// nanoseconds of `elapsed`; the rest stay zero.
+/// # Panics
+/// Panics when a future protocol variant has no fixture tag.
 fn confounder(protocol: KdcProtocol, elapsed: Duration) -> [u8; 16] {
     let tag: u8 = match protocol {
         KdcProtocol::Udp => 1,
         KdcProtocol::Tcp => 2,
         KdcProtocol::Auto => 3,
+
+        _ => {
+            assert!(
+                matches!(protocol, KdcProtocol::Udp),
+                "unexpected non-exhaustive protocol variant"
+            );
+            0
+        }
     };
     let bytes = iter::once(tag)
         .chain(elapsed.as_secs().to_be_bytes())
@@ -380,6 +394,14 @@ mod tests {
             KdcProtocol::Udp => "Udp",
             KdcProtocol::Tcp => "Tcp",
             KdcProtocol::Auto => "Auto",
+
+            _ => {
+                assert!(
+                    matches!(protocol, KdcProtocol::Udp),
+                    "unexpected non-exhaustive protocol variant"
+                );
+                "unknown"
+            }
         }
     }
 
@@ -572,7 +594,7 @@ mod tests {
                 assert_eq!(session.session_key.etype, DES3_ETYPE);
                 assert_eq!(
                     session.session_key.value.len(),
-                    Des3CbcSha1KdEtype.key_len()
+                    Des3CbcSha1KdEtype::new().key_len()
                 );
                 assert!(
                     !session.ticket.is_empty(),
@@ -1251,7 +1273,10 @@ mod tests {
                 assert_eq!(ticket.client, Principal::user(REALM, USER));
                 assert_eq!(ticket.service, service);
                 assert_eq!(ticket.session_key.etype, DES3_ETYPE);
-                assert_eq!(ticket.session_key.value.len(), Des3CbcSha1KdEtype.key_len());
+                assert_eq!(
+                    ticket.session_key.value.len(),
+                    Des3CbcSha1KdEtype::new().key_len()
+                );
                 assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
                 assert!(ticket.end_time > ticket.start_time);
             }
@@ -1737,11 +1762,7 @@ mod tests {
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
-                    ServicePrincipal {
-                        realm: REALM.to_owned(),
-                        name_type: 1,
-                        components: vec![USER.to_owned()],
-                    }
+                    ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
                 assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
 
@@ -1950,11 +1971,7 @@ mod tests {
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
-                    ServicePrincipal {
-                        realm: REALM.to_owned(),
-                        name_type: 1,
-                        components: vec![USER.to_owned()],
-                    }
+                    ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
                 assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
                 assert_eq!(accepted.ap_req.session_key.etype, RC4_HMAC_ETYPE);
@@ -2029,11 +2046,7 @@ mod tests {
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
-                    ServicePrincipal {
-                        realm: REALM.to_owned(),
-                        name_type: 1,
-                        components: vec![USER.to_owned()],
-                    }
+                    ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
                 assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
                 assert_eq!(accepted.ap_req.session_key.etype, DES3_ETYPE);
@@ -2070,6 +2083,8 @@ mod tests {
                 KdcProtocol::Udp => 0x1000_0000,
                 KdcProtocol::Tcp => 0x2000_0000,
                 KdcProtocol::Auto => 0x3000_0000,
+
+                _ => return Err("unexpected non-exhaustive protocol variant".into()),
             };
         Ok(AsReqOptions::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
@@ -2094,6 +2109,8 @@ mod tests {
                 KdcProtocol::Udp => 0x1000_0000,
                 KdcProtocol::Tcp => 0x2000_0000,
                 KdcProtocol::Auto => 0x3000_0000,
+
+                _ => return Err("unexpected non-exhaustive protocol variant".into()),
             };
         Ok(TgsReqOptions::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
@@ -2373,10 +2390,10 @@ mod tests {
     /// Derives the AES256 reply key of the test user from its password.
     fn testuser_reply_key() -> Result<EncryptionKey, Box<dyn Error>> {
         let etype = AesSha1Etype::Aes256;
-        Ok(EncryptionKey {
-            etype: etype.etype_id(),
-            value: etype.string_to_key(PASSWORD, TESTUSER1_SALT, etype.default_s2kparams())?,
-        })
+        Ok(EncryptionKey::new(
+            etype.etype_id(),
+            etype.string_to_key(PASSWORD, TESTUSER1_SALT, etype.default_s2kparams())?,
+        ))
     }
 
     /// Builds an AES256 keytab of the test user.
@@ -2400,25 +2417,19 @@ mod tests {
 
     /// Builds the password-derived keytab entry of the test user for `etype`.
     fn testuser_keytab_entry(etype: i32) -> Result<KeytabEntry, Box<dyn Error>> {
-        Ok(KeytabEntry {
-            principal: KeytabPrincipal {
-                realm: REALM.to_owned(),
-                components: vec![USER.to_owned()],
-                name_type: 1,
-            },
-            timestamp: 1_893_553_440,
-            kvno8: u8::try_from(TESTUSER1_KVNO)?,
-            key: derive_password_reply_key(
+        Ok(KeytabEntry::new(
+            KeytabPrincipal::new(REALM, 1, vec![USER.to_owned()]),
+            1_893_553_440,
+            u8::try_from(TESTUSER1_KVNO)?,
+            derive_password_reply_key(
                 &Principal::user(REALM, USER),
                 PASSWORD,
-                &PreauthKeyInfo {
-                    etype,
-                    salt: Some(String::from_utf8(TESTUSER1_SALT.to_vec())?),
-                    s2kparams: testuser_s2kparams(etype),
-                },
+                &PreauthKeyInfo::new(etype)
+                    .with_salt(Some(String::from_utf8(TESTUSER1_SALT.to_vec())?))
+                    .with_s2kparams(testuser_s2kparams(etype)),
             )?,
-            kvno: TESTUSER1_KVNO,
-        })
+            TESTUSER1_KVNO,
+        ))
     }
 
     /// Returns the string-to-key parameters the KDC uses for the test user and `etype`.
@@ -2437,6 +2448,14 @@ mod tests {
             KdcProtocol::Udp => 1,
             KdcProtocol::Tcp => 2,
             KdcProtocol::Auto => 3,
+
+            _ => {
+                assert!(
+                    matches!(protocol, KdcProtocol::Udp),
+                    "unexpected non-exhaustive protocol variant"
+                );
+                0
+            }
         };
         short_confounder(tag, elapsed)
     }
@@ -2448,6 +2467,14 @@ mod tests {
             KdcProtocol::Udp => 3,
             KdcProtocol::Tcp => 4,
             KdcProtocol::Auto => 5,
+
+            _ => {
+                assert!(
+                    matches!(protocol, KdcProtocol::Udp),
+                    "unexpected non-exhaustive protocol variant"
+                );
+                0
+            }
         };
         short_confounder(tag, elapsed)
     }

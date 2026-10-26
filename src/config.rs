@@ -58,171 +58,10 @@ pub const MAX_INCLUDE_FILES: usize = 64;
 /// [`Error::IncludeTooLarge`] (1 MiB).
 pub const MAX_INCLUDE_BYTES: usize = 1024 * 1024;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::exhaustive_structs,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Parsed Kerberos configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[non_exhaustive]
 pub struct Config {
     /// `[libdefaults]` values.
     pub libdefaults: LibDefaults,
@@ -1296,7 +1135,6 @@ where
         )
     ),
     expect(
-        clippy::exhaustive_structs,
         clippy::struct_excessive_bools,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
@@ -1304,6 +1142,7 @@ where
 /// `[libdefaults]` configuration values.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[non_exhaustive]
 pub struct LibDefaults {
     /// Whether weak crypto names are retained before supported enctype
     /// filtering.
@@ -1393,6 +1232,252 @@ pub struct LibDefaults {
 }
 
 impl LibDefaults {
+    /// Sets `allow_weak_crypto`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_allow_weak_crypto(mut self, value: bool) -> Self {
+        self.allow_weak_crypto = value;
+        self
+    }
+    /// Sets `canonicalize`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_canonicalize(mut self, value: bool) -> Self {
+        self.canonicalize = value;
+        self
+    }
+    /// Sets `ccache_type`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_ccache_type(mut self, value: i32) -> Self {
+        self.ccache_type = value;
+        self
+    }
+    /// Sets `clockskew`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_clockskew(mut self, value: Duration) -> Self {
+        self.clockskew = value;
+        self
+    }
+    /// Sets `default_ccache_name`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_ccache_name(mut self, value: String) -> Self {
+        self.default_ccache_name = value;
+        self
+    }
+    /// Sets `default_client_keytab_name`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_client_keytab_name(mut self, value: String) -> Self {
+        self.default_client_keytab_name = value;
+        self
+    }
+    /// Sets `default_keytab_name`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_keytab_name(mut self, value: String) -> Self {
+        self.default_keytab_name = value;
+        self
+    }
+    /// Sets `default_realm`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_realm(mut self, value: String) -> Self {
+        self.default_realm = value;
+        self
+    }
+    /// Sets `default_tgs_enctypes`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_tgs_enctypes(mut self, value: Vec<String>) -> Self {
+        self.default_tgs_enctypes = value;
+        self
+    }
+    /// Sets `default_tkt_enctypes`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_tkt_enctypes(mut self, value: Vec<String>) -> Self {
+        self.default_tkt_enctypes = value;
+        self
+    }
+    /// Sets `default_tgs_enctype_ids`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_tgs_enctype_ids(mut self, value: Vec<i32>) -> Self {
+        self.default_tgs_enctype_ids = value;
+        self
+    }
+    /// Sets `default_tkt_enctype_ids`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_default_tkt_enctype_ids(mut self, value: Vec<i32>) -> Self {
+        self.default_tkt_enctype_ids = value;
+        self
+    }
+    /// Sets `dns_canonicalize_hostname`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_dns_canonicalize_hostname(mut self, value: bool) -> Self {
+        self.dns_canonicalize_hostname = value;
+        self
+    }
+    /// Sets `dns_lookup_kdc`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_dns_lookup_kdc(mut self, value: bool) -> Self {
+        self.dns_lookup_kdc = value;
+        self
+    }
+    /// Sets `dns_lookup_realm`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_dns_lookup_realm(mut self, value: bool) -> Self {
+        self.dns_lookup_realm = value;
+        self
+    }
+    /// Sets `extra_addresses`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_extra_addresses(mut self, value: Vec<IpAddr>) -> Self {
+        self.extra_addresses = value;
+        self
+    }
+    /// Sets `forwardable`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_forwardable(mut self, value: bool) -> Self {
+        self.forwardable = value;
+        self
+    }
+    /// Sets `ignore_acceptor_hostname`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_ignore_acceptor_hostname(mut self, value: bool) -> Self {
+        self.ignore_acceptor_hostname = value;
+        self
+    }
+    /// Sets `k5login_authoritative`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_k5login_authoritative(mut self, value: bool) -> Self {
+        self.k5login_authoritative = value;
+        self
+    }
+    /// Sets `k5login_directory`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_k5login_directory(mut self, value: String) -> Self {
+        self.k5login_directory = value;
+        self
+    }
+    /// Sets `kdc_default_options`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_kdc_default_options(mut self, value: u32) -> Self {
+        self.kdc_default_options = value;
+        self
+    }
+    /// Sets `kdc_time_sync`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_kdc_time_sync(mut self, value: i32) -> Self {
+        self.kdc_time_sync = value;
+        self
+    }
+    /// Sets `no_addresses`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_no_addresses(mut self, value: bool) -> Self {
+        self.no_addresses = value;
+        self
+    }
+    /// Sets `permitted_enctypes`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_permitted_enctypes(mut self, value: Vec<String>) -> Self {
+        self.permitted_enctypes = value;
+        self
+    }
+    /// Sets `permitted_enctype_ids`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_permitted_enctype_ids(mut self, value: Vec<i32>) -> Self {
+        self.permitted_enctype_ids = value;
+        self
+    }
+    /// Sets `permitted_enctypes_explicit`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_permitted_enctypes_explicit(mut self, value: bool) -> Self {
+        self.permitted_enctypes_explicit = value;
+        self
+    }
+    /// Sets `preferred_preauth_types`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub fn with_preferred_preauth_types(mut self, value: Vec<i32>) -> Self {
+        self.preferred_preauth_types = value;
+        self
+    }
+    /// Sets `proxiable`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_proxiable(mut self, value: bool) -> Self {
+        self.proxiable = value;
+        self
+    }
+    /// Sets `rdns`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_rdns(mut self, value: bool) -> Self {
+        self.rdns = value;
+        self
+    }
+    /// Sets `realm_try_domains`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_realm_try_domains(mut self, value: i32) -> Self {
+        self.realm_try_domains = value;
+        self
+    }
+    /// Sets `renew_lifetime`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_renew_lifetime(mut self, value: Duration) -> Self {
+        self.renew_lifetime = value;
+        self
+    }
+    /// Sets `safe_checksum_type`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_safe_checksum_type(mut self, value: i32) -> Self {
+        self.safe_checksum_type = value;
+        self
+    }
+    /// Sets `ticket_lifetime`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_ticket_lifetime(mut self, value: Duration) -> Self {
+        self.ticket_lifetime = value;
+        self
+    }
+    /// Sets `udp_preference_limit`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_udp_preference_limit(mut self, value: i32) -> Self {
+        self.udp_preference_limit = value;
+        self
+    }
+    /// Sets `verify_ap_req_nofail`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_verify_ap_req_nofail(mut self, value: bool) -> Self {
+        self.verify_ap_req_nofail = value;
+        self
+    }
+
     /// The `UID` the client-keytab default path falls back to when the
     /// variable is unset. Named so the environment-reading constructor and the
     /// environment-free one cannot drift apart.
@@ -1960,7 +2045,6 @@ impl Default for LibDefaults {
         )
     ),
     expect(
-        clippy::exhaustive_structs,
         clippy::struct_field_names,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
@@ -1968,6 +2052,7 @@ impl Default for LibDefaults {
 /// One `[realms]` entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[non_exhaustive]
 pub struct Realm {
     /// Realm name.
     pub realm: String,
@@ -2374,12 +2459,12 @@ impl Realm {
     ),
     expect(
         clippy::error_impl_error,
-        clippy::exhaustive_enums,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
 /// Configuration parsing error.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// File loading failed.
     #[error("configuration file could not be read: {0}")]

@@ -148,10 +148,7 @@ mod tests {
         let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
         let confounder = vec![0x55; etype.confounder_len()];
         let ap_rep = build_ap_rep_with_confounder(&enc_part, &key, None, &confounder)?;
-        let wrong_key = EncryptionKey {
-            etype: 17,
-            value: vec![0; 16],
-        };
+        let wrong_key = EncryptionKey::new(17, vec![0; 16]);
 
         let error = decrypt_ap_rep_enc_part(&ap_rep, &wrong_key)
             .err()
@@ -178,9 +175,6 @@ mod tests {
 
     /// Returns the AES256 reply key.
     fn reply_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 18,
-            value: hex::decode(REPLY_KEY)?,
-        })
+        Ok(EncryptionKey::new(18, hex::decode(REPLY_KEY)?))
     }
 }

@@ -671,10 +671,7 @@ mod tests {
 
     /// Returns an all-zero AES256 reply key; the stub replies are never decrypted with it.
     fn reply_key() -> EncryptionKey {
-        EncryptionKey {
-            etype: 18,
-            value: vec![0; 32],
-        }
+        EncryptionKey::new(18, vec![0; 32])
     }
 
     /// Frames `body` as a kpasswd reply with the given AP-REP length.

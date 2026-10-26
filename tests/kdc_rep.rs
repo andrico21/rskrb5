@@ -259,10 +259,7 @@ mod tests {
         let key = reply_key()?;
         let mut as_rep = decode_as_rep(&hex::decode(MARSHALLED_AS_REP)?)?;
         as_rep.0.enc_part = encrypt_as_rep_enc_part(&enc_part, &key, None)?;
-        let wrong_key = EncryptionKey {
-            etype: 17,
-            value: vec![0; 16],
-        };
+        let wrong_key = EncryptionKey::new(17, vec![0; 16]);
 
         let error = decrypt_as_rep_enc_part(&as_rep, &wrong_key)
             .err()
@@ -349,10 +346,7 @@ mod tests {
 
     /// Returns the AES256 reply key.
     fn reply_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 18,
-            value: hex::decode(REPLY_KEY)?,
-        })
+        Ok(EncryptionKey::new(18, hex::decode(REPLY_KEY)?))
     }
 
     /// Returns the name components of a principal name as byte slices.

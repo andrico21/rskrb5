@@ -1066,12 +1066,12 @@ fn validate_integer(field: &'static str, actual: &Integer, expected: i32) -> Res
     ),
     expect(
         clippy::error_impl_error,
-        clippy::exhaustive_enums,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
 /// Ticket helper error.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]

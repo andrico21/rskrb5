@@ -333,10 +333,7 @@ mod tests {
     /// Pins that the `Debug` output of a key shows its length, not its bytes.
     #[test]
     fn encryption_key_debug_redacts_value() -> Result<(), TestError> {
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![1, 2, 3, 4],
-        };
+        let key = EncryptionKey::new(18, vec![1, 2, 3, 4]);
         let mut debug = String::new();
         debug.write_fmt(format_args!("{key:?}"))?;
 
@@ -478,20 +475,13 @@ mod tests {
     /// Builds a `TEST.GOKRB5` entry for `component` whose key bytes repeat the low kvno byte.
     fn synthetic_entry(component: &str, kvno: u32, etype: i32, timestamp: u32) -> Entry {
         let [.., kvno8] = kvno.to_be_bytes();
-        Entry {
-            principal: Principal {
-                realm: "TEST.GOKRB5".to_owned(),
-                components: vec![component.to_owned()],
-                name_type: 1,
-            },
+        Entry::new(
+            Principal::new("TEST.GOKRB5", 1, vec![component.to_owned()]),
             timestamp,
             kvno8,
-            key: EncryptionKey {
-                etype,
-                value: vec![kvno8; 4],
-            },
+            EncryptionKey::new(etype, vec![kvno8; 4]),
             kvno,
-        }
+        )
     }
 
     /// Returns a unique path in the temporary directory for the test `name`.

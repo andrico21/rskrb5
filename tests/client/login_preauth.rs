@@ -31,11 +31,11 @@ mod tests {
         assert_eq!(error.method_data.len(), 1);
         assert_eq!(
             error.preauth_key_info,
-            vec![PreauthKeyInfo {
-                etype: 18,
-                salt: Some(TESTUSER_SALT.to_owned()),
-                s2kparams: Some(vec![0, 0, 16, 0]),
-            }]
+            vec![
+                PreauthKeyInfo::new(18)
+                    .with_salt(Some(TESTUSER_SALT.to_owned()))
+                    .with_s2kparams(Some(vec![0, 0, 16, 0]))
+            ]
         );
 
         let selected = select_preauth_key_info(&error, &[17_i32, 18_i32])
@@ -52,23 +52,23 @@ mod tests {
     #[test]
     fn selects_and_derives_rc4_hmac_preauth_key_info() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let error = KdcError {
-            ctime: None,
-            cusec: None,
-            stime: timestamp(1_893_553_440)?,
-            susec: 0,
-            error_code: KDC_ERR_PREAUTH_REQUIRED,
-            text: None,
-            client: Some(client.clone()),
-            service: Principal::tgt_service("TEST.GOKRB5"),
-            e_data: None,
-            method_data: Vec::new(),
-            preauth_key_info: vec![PreauthKeyInfo {
-                etype: 23,
-                salt: Some("ignored-by-rc4".to_owned()),
-                s2kparams: None,
-            }],
-        };
+        let error = KdcError::new(
+            timestamp(1_893_553_440)?,
+            0,
+            KDC_ERR_PREAUTH_REQUIRED,
+            Principal::tgt_service("TEST.GOKRB5"),
+        )
+        .with_ctime(None)
+        .with_cusec(None)
+        .with_text(None)
+        .with_client(Some(client.clone()))
+        .with_e_data(None)
+        .with_method_data(Vec::new())
+        .with_preauth_key_info(vec![
+            PreauthKeyInfo::new(23)
+                .with_salt(Some("ignored-by-rc4".to_owned()))
+                .with_s2kparams(None),
+        ]);
 
         let selected =
             select_preauth_key_info(&error, &[18_i32, 23_i32]).context("RC4 hint is selected")?;
@@ -161,11 +161,7 @@ mod tests {
         let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
-        let key_info = PreauthKeyInfo {
-            etype: 18,
-            salt: None,
-            s2kparams: None,
-        };
+        let key_info = PreauthKeyInfo::new(18).with_salt(None).with_s2kparams(None);
         let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
             .context("password key derives")?;
         let mut transport = AssumedPreauthTransport::new(reply_key, None);
@@ -269,11 +265,7 @@ mod tests {
         let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
-        let aes128_key_info = PreauthKeyInfo {
-            etype: 17,
-            salt: None,
-            s2kparams: None,
-        };
+        let aes128_key_info = PreauthKeyInfo::new(17).with_salt(None).with_s2kparams(None);
         let aes128_reply_key =
             derive_password_reply_key(&client, TESTUSER_PASSWORD, &aes128_key_info)?;
         let mut transport = AssumedPreauthTransport::new(aes128_reply_key, None);
@@ -296,24 +288,16 @@ mod tests {
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
         let mut keytab = keytab_with_reply_key(4)?;
-        let aes128_key_info = PreauthKeyInfo {
-            etype: 17,
-            salt: None,
-            s2kparams: None,
-        };
+        let aes128_key_info = PreauthKeyInfo::new(17).with_salt(None).with_s2kparams(None);
         let aes128_reply_key =
             derive_password_reply_key(&client, TESTUSER_PASSWORD, &aes128_key_info)?;
-        keytab.entries_mut().push(KeytabEntry {
-            principal: KeytabPrincipal {
-                realm: "TEST.GOKRB5".to_owned(),
-                components: vec!["testuser1".to_owned()],
-                name_type: 1,
-            },
-            timestamp: 1_893_553_440,
-            kvno8: 4,
-            key: aes128_reply_key.clone(),
-            kvno: 4,
-        });
+        keytab.entries_mut().push(KeytabEntry::new(
+            KeytabPrincipal::new("TEST.GOKRB5", 1, vec!["testuser1".to_owned()]),
+            1_893_553_440,
+            4,
+            aes128_reply_key.clone(),
+            4,
+        ));
         let mut transport = AssumedPreauthTransport::new(aes128_reply_key, Some(4));
 
         let Err(error) = login_tgt_with_keytab(&mut transport, client, &keytab, options) else {
