@@ -1,10 +1,10 @@
 //! AES tests: SHA-1 and SHA-2 AES etypes against the gokrb5 and RFC 3962 vectors.
 
-/// Returns the 5-byte key-derivation constant: the big-endian `usage` followed by `suffix`.
 #[expect(
     clippy::missing_const_for_fn,
     reason = "lint-migration: upstream baseline at ee9cb04"
 )]
+/// Returns the 5-byte key-derivation constant: the big-endian `usage` followed by `suffix`.
 fn usage_constant(usage: u32, suffix: u8) -> [u8; 5] {
     let [byte0, byte1, byte2, byte3] = usage.to_be_bytes();
     [byte0, byte1, byte2, byte3, suffix]
