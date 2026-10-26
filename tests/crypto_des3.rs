@@ -42,39 +42,37 @@ mod tests {
     /// Pins the Triple-DES etype metadata and its dispatch through `KerberosEtype`.
     #[test]
     fn reports_des3_metadata_and_dispatch() {
-        let etype = Des3CbcSha1KdEtype;
-
         assert_eq!(
             Des3CbcSha1KdEtype::from_etype_id(16),
-            Some(Des3CbcSha1KdEtype)
+            Some(Des3CbcSha1KdEtype::new())
         );
         assert_eq!(Des3CbcSha1KdEtype::from_etype_id(7), None);
         assert_eq!(
             Des3CbcSha1KdEtype::from_checksum_type_id(12),
-            Some(Des3CbcSha1KdEtype)
+            Some(Des3CbcSha1KdEtype::new())
         );
 
-        assert_eq!(etype.etype_id(), 16_i32);
-        assert_eq!(etype.checksum_type_id(), 12_i32);
-        assert_eq!(etype.key_len(), 24);
-        assert_eq!(etype.confounder_len(), 8);
-        assert_eq!(etype.hmac_len(), 20);
-        assert_eq!(etype.default_s2kparams(), "");
+        assert_eq!(Des3CbcSha1KdEtype::new().etype_id(), 16_i32);
+        assert_eq!(Des3CbcSha1KdEtype::new().checksum_type_id(), 12_i32);
+        assert_eq!(Des3CbcSha1KdEtype::new().key_len(), 24);
+        assert_eq!(Des3CbcSha1KdEtype::new().confounder_len(), 8);
+        assert_eq!(Des3CbcSha1KdEtype::new().hmac_len(), 20);
+        assert_eq!(Des3CbcSha1KdEtype::new().default_s2kparams(), "");
 
         assert_eq!(
             KerberosEtype::from_etype_id(16),
-            Some(KerberosEtype::Des3CbcSha1Kd(Des3CbcSha1KdEtype))
+            Some(KerberosEtype::Des3CbcSha1Kd(Des3CbcSha1KdEtype::new()))
         );
         assert_eq!(
             KerberosEtype::from_checksum_type_id(12),
-            Some(KerberosEtype::Des3CbcSha1Kd(Des3CbcSha1KdEtype))
+            Some(KerberosEtype::Des3CbcSha1Kd(Des3CbcSha1KdEtype::new()))
         );
     }
 
     /// Pins Triple-DES derive-random and derive-key against the gokrb5 vectors.
     #[test]
     fn des3_derive_random_and_key_match_gokrb5_vectors() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype;
+        let etype = Des3CbcSha1KdEtype::new();
         let tests = [
             Des3DeriveVector {
                 key: "dce06b1f64c857a11c3db57c51899b2cc1791008ce973b92",
@@ -145,7 +143,7 @@ mod tests {
     /// Pins Triple-DES string-to-key against the gokrb5 vectors.
     #[test]
     fn des3_string_to_key_matches_gokrb5_vectors() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype;
+        let etype = Des3CbcSha1KdEtype::new();
         let tests = [
             Des3StringToKeyVector {
                 salt: b"ATHENA.MIT.EDUraeburn".as_slice(),
@@ -184,7 +182,7 @@ mod tests {
     /// Pins the Triple-DES checksum and message encryption against the gokrb5 vectors.
     #[test]
     fn des3_checksum_and_message_encryption_match_gokrb5_vectors() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype;
+        let etype = Des3CbcSha1KdEtype::new();
         let key = hex::decode("850bb51358548cd05e86768c313e3bfef7511937dcf72c3e")?;
         let checksum = etype.checksum(&key, b"kerberos des3 checksum", 2)?;
         assert_eq!(
@@ -219,7 +217,7 @@ mod tests {
             "6b65726265726f732064657333206d657373616765000000"
         );
 
-        let dispatcher = KerberosEtype::Des3CbcSha1Kd(Des3CbcSha1KdEtype);
+        let dispatcher = KerberosEtype::Des3CbcSha1Kd(Des3CbcSha1KdEtype::new());
         assert_eq!(dispatcher.decrypt_message(&key, &encrypted, 2)?, decrypted);
         Ok(())
     }
@@ -227,7 +225,7 @@ mod tests {
     /// Pins that Triple-DES rejects bad parameters, seed, key, plaintext, ciphertext and confounder inputs and tampering.
     #[test]
     fn des3_rejects_invalid_inputs_and_tampering() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype;
+        let etype = Des3CbcSha1KdEtype::new();
         let key = hex::decode("850bb51358548cd05e86768c313e3bfef7511937dcf72c3e")?;
         let confounder = hex::decode("0001020304050607")?;
 

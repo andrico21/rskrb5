@@ -47,6 +47,12 @@
 
 extern crate alloc;
 
+#[cfg(doctest)]
+#[doc = include_str!("../docs/migration-from-rskrb5-patched.md")]
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct MigrationGuideDoctests;
+
 use core::result;
 
 #[cfg(feature = "evaluation")]
@@ -401,12 +407,12 @@ pub type Result<T> = result::Result<T, Error>;
     ),
     expect(
         clippy::error_impl_error,
-        clippy::exhaustive_enums,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
 /// Crate-level error type.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Hex fixture data failed to decode.
     #[cfg(feature = "evaluation")]

@@ -366,10 +366,7 @@ mod tests {
             );
 
             let claims = metadata.claims_set().context("claims set parses")?;
-            let info = ClaimsInfo {
-                metadata,
-                claims_set: claims,
-            };
+            let info = ClaimsInfo::new(metadata, claims);
             assert_eq!(info.claims_set.claims_array_count, 1);
             assert_eq!(info.claims_set.claims_arrays.len(), 1);
             let array = info
@@ -518,10 +515,7 @@ mod tests {
     fn decrypts_credentials_info_and_parses_ntlm_supplemental_credential() -> Result<(), TestError>
     {
         let etype = KerberosEtype::Sha1(AesSha1Etype::Aes256);
-        let key = EncryptionKey {
-            etype: etype.etype_id(),
-            value: (0_u8..32).collect(),
-        };
+        let key = EncryptionKey::new(etype.etype_id(), (0_u8..32).collect());
         let plaintext = credential_data_bytes()?;
         let encrypted = etype
             .encrypt_message_with_confounder(&key.value, &plaintext, 16, &[0xa5; 16])
@@ -823,10 +817,7 @@ mod tests {
     }
 
     fn group(relative_id: u32, attributes: u32) -> pac::GroupMembership {
-        pac::GroupMembership {
-            relative_id,
-            attributes,
-        }
+        pac::GroupMembership::new(relative_id, attributes)
     }
 
     fn assert_device_info(info: &DeviceInfo) -> Result<(), TestError> {

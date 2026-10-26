@@ -276,6 +276,8 @@ mod tests {
                 )
                 .into());
             }
+
+            _ => return Err("unexpected non-exhaustive support variant".into()),
         }
         Ok(())
     }
@@ -376,6 +378,14 @@ mod tests {
             DerType::EtypeInfo2 => rasn_decode_type::<rasn_kerberos::EtypeInfo2>(bytes),
             DerType::EncryptedData => rasn_decode_type::<messages::EncryptedData>(bytes),
             DerType::ChangePasswdData => rasn_decode_type::<kadmin::ChangePasswdData>(bytes),
+
+            _ => {
+                assert!(
+                    matches!(der_type, DerType::Ticket),
+                    "unexpected non-exhaustive DER variant"
+                );
+                Probe::Fail
+            }
         }
     }
 
@@ -413,6 +423,14 @@ mod tests {
             DerType::EtypeInfo2 => rasn_roundtrip_type::<rasn_kerberos::EtypeInfo2>(bytes),
             DerType::EncryptedData => rasn_roundtrip_type::<messages::EncryptedData>(bytes),
             DerType::ChangePasswdData => rasn_roundtrip_type::<kadmin::ChangePasswdData>(bytes),
+
+            _ => {
+                assert!(
+                    matches!(der_type, DerType::Ticket),
+                    "unexpected non-exhaustive DER variant"
+                );
+                Probe::Fail
+            }
         }
     }
 
@@ -476,6 +494,14 @@ mod tests {
             | DerType::AdKdcIssued
             | DerType::PaForUser
             | DerType::EtypeInfo => Probe::Unsupported,
+
+            _ => {
+                assert!(
+                    matches!(der_type, DerType::Ticket),
+                    "unexpected non-exhaustive DER variant"
+                );
+                Probe::Fail
+            }
         }
     }
 
@@ -517,6 +543,14 @@ mod tests {
             | DerType::AdKdcIssued
             | DerType::PaForUser
             | DerType::EtypeInfo => Probe::Unsupported,
+
+            _ => {
+                assert!(
+                    matches!(der_type, DerType::Ticket),
+                    "unexpected non-exhaustive DER variant"
+                );
+                Probe::Fail
+            }
         }
     }
 

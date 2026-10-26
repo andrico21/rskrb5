@@ -66,22 +66,20 @@ mod tests {
         let token = MicToken::decode(&acceptor_bytes, true).context("acceptor MIC decodes")?;
         assert_eq!(
             token,
-            MicToken {
-                flags: GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
-                snd_seq_num: u64::from_be_bytes(
+            MicToken::default()
+                .with_flags(GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR)
+                .with_snd_seq_num(u64::from_be_bytes(
                     acceptor_bytes
                         .get(8..16)
                         .context("token carries a sequence number")?
                         .try_into()?
-                ),
-                payload: None,
-                checksum: Some(
+                ))
+                .with_checksum(Some(
                     acceptor_bytes
                         .get(16..)
                         .context("MIC carries a checksum")?
                         .to_vec()
-                ),
-            }
+                ))
         );
         assert_eq!(
             hex_encode(&token.encode().context("acceptor MIC encodes")?),
@@ -93,17 +91,15 @@ mod tests {
             MicToken::decode(&initiator_bytes, false).context("initiator MIC decodes")?;
         assert_eq!(
             initiator_token,
-            MicToken {
-                flags: 0,
-                snd_seq_num: 0,
-                payload: None,
-                checksum: Some(
+            MicToken::default()
+                .with_flags(0)
+                .with_snd_seq_num(0)
+                .with_checksum(Some(
                     initiator_bytes
                         .get(16..)
                         .context("MIC carries a checksum")?
                         .to_vec()
-                ),
-            }
+                ))
         );
         assert_eq!(
             hex_encode(&initiator_token.encode().context("initiator MIC encodes")?),
@@ -153,10 +149,7 @@ mod tests {
             Err(Error::GssChecksumMismatch)
         ));
 
-        let wrong_key = EncryptionKey {
-            etype: 17,
-            value: decode_hex("14f9bde6b50ec508201a97f74c4effff")?,
-        };
+        let wrong_key = EncryptionKey::new(17, decode_hex("14f9bde6b50ec508201a97f74c4effff")?);
         assert!(matches!(
             acceptor.verify(&wrong_key, GSSAPI_ACCEPTOR_SIGN_USAGE),
             Err(Error::GssChecksumMismatch)
@@ -167,16 +160,14 @@ mod tests {
         initiator.payload = None;
         assert_eq!(
             initiator,
-            MicToken {
-                flags: 0,
-                snd_seq_num: 0,
-                payload: None,
-                checksum: Some(decode_hex(
+            MicToken::default()
+                .with_flags(0)
+                .with_snd_seq_num(0)
+                .with_checksum(Some(decode_hex(
                     MIC_FROM_INITIATOR
                         .get(32..)
                         .context("MIC carries a checksum")?
-                )?),
-            }
+                )?))
         );
         assert_eq!(
             hex_encode(&initiator.encode().context("initiator MIC encodes")?),
@@ -264,25 +255,24 @@ mod tests {
         let token = WrapToken::decode(&acceptor_bytes, true).context("acceptor wrap decodes")?;
         assert_eq!(
             token,
-            WrapToken {
-                flags: GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR,
-                ec: 12,
-                rrc: 0,
-                snd_seq_num: u64::from_be_bytes(
+            WrapToken::default()
+                .with_flags(GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR)
+                .with_ec(12)
+                .with_rrc(0)
+                .with_snd_seq_num(u64::from_be_bytes(
                     acceptor_bytes
                         .get(8..16)
                         .context("token carries a sequence number")?
                         .try_into()?
-                ),
-                payload: Some(decode_hex(WRAP_PAYLOAD)?),
-                checksum: Some(
+                ))
+                .with_payload(decode_hex(WRAP_PAYLOAD)?)
+                .with_checksum(Some(
                     acceptor_bytes
                         .get(20..)
                         .context("wrap carries a checksum")?
                         .to_vec()
-                ),
-                encrypted_body: None,
-            }
+                ))
+                .with_encrypted_body(None)
         );
         assert_eq!(
             hex_encode(&token.encode().context("acceptor wrap encodes")?),
@@ -294,20 +284,19 @@ mod tests {
             WrapToken::decode(&initiator_bytes, false).context("initiator wrap decodes")?;
         assert_eq!(
             initiator_token,
-            WrapToken {
-                flags: 0,
-                ec: 12,
-                rrc: 0,
-                snd_seq_num: 0,
-                payload: Some(decode_hex(WRAP_PAYLOAD)?),
-                checksum: Some(
+            WrapToken::default()
+                .with_flags(0)
+                .with_ec(12)
+                .with_rrc(0)
+                .with_snd_seq_num(0)
+                .with_payload(decode_hex(WRAP_PAYLOAD)?)
+                .with_checksum(Some(
                     initiator_bytes
                         .get(20..)
                         .context("wrap carries a checksum")?
                         .to_vec()
-                ),
-                encrypted_body: None,
-            }
+                ))
+                .with_encrypted_body(None)
         );
         assert_eq!(
             hex_encode(&initiator_token.encode().context("initiator wrap encodes")?),
@@ -425,10 +414,7 @@ mod tests {
             Err(Error::GssChecksumMismatch)
         ));
 
-        let wrong_key = EncryptionKey {
-            etype: 17,
-            value: decode_hex("14f9bde6b50ec508201a97f74c4effff")?,
-        };
+        let wrong_key = EncryptionKey::new(17, decode_hex("14f9bde6b50ec508201a97f74c4effff")?);
         assert!(matches!(
             acceptor.verify(&wrong_key, GSSAPI_ACCEPTOR_SEAL_USAGE),
             Err(Error::GssChecksumMismatch)
@@ -438,19 +424,18 @@ mod tests {
             .context("initiator wrap builds")?;
         assert_eq!(
             initiator,
-            WrapToken {
-                flags: 0,
-                ec: 12,
-                rrc: 0,
-                snd_seq_num: 0,
-                payload: Some(decode_hex(WRAP_PAYLOAD)?),
-                checksum: Some(decode_hex(
+            WrapToken::default()
+                .with_flags(0)
+                .with_ec(12)
+                .with_rrc(0)
+                .with_snd_seq_num(0)
+                .with_payload(decode_hex(WRAP_PAYLOAD)?)
+                .with_checksum(Some(decode_hex(
                     WRAP_FROM_INITIATOR
                         .get(40..)
                         .context("wrap carries a checksum")?
-                )?),
-                encrypted_body: None,
-            }
+                )?))
+                .with_encrypted_body(None)
         );
         assert_eq!(
             hex_encode(&initiator.encode().context("initiator wrap encodes")?),
@@ -580,24 +565,15 @@ mod tests {
     }
 
     fn session_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 17,
-            value: decode_hex(SESSION_KEY)?,
-        })
+        Ok(EncryptionKey::new(17, decode_hex(SESSION_KEY)?))
     }
 
     fn rc4_session_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 23,
-            value: decode_hex(RC4_SESSION_KEY)?,
-        })
+        Ok(EncryptionKey::new(23, decode_hex(RC4_SESSION_KEY)?))
     }
 
     fn des3_session_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 16,
-            value: decode_hex(DES3_SESSION_KEY)?,
-        })
+        Ok(EncryptionKey::new(16, decode_hex(DES3_SESSION_KEY)?))
     }
 
     /// Decodes a hex fixture.

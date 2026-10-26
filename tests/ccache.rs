@@ -328,10 +328,7 @@ mod tests {
     /// Pins that the `Debug` output of a key shows its length, not its bytes.
     #[test]
     fn encryption_key_debug_redacts_value() -> Result<(), TestError> {
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![1, 2, 3, 4],
-        };
+        let key = EncryptionKey::new(18, vec![1, 2, 3, 4]);
         let mut debug = String::new();
         debug.write_fmt(format_args!("{key:?}"))?;
 

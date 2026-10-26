@@ -142,7 +142,7 @@ mod tests {
         );
         assert_eq!(
             KerberosEtype::from_etype_id(23),
-            Some(KerberosEtype::Rc4Hmac(Rc4HmacEtype))
+            Some(KerberosEtype::Rc4Hmac(Rc4HmacEtype::new()))
         );
 
         assert_eq!(KerberosEtype::Sha1(AesSha1Etype::Aes256).etype_id(), 18_i32);

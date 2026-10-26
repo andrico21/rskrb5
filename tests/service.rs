@@ -138,20 +138,16 @@ mod tests {
 
         assert_eq!(
             validated.client,
-            Principal {
-                realm: "TEST.GOKRB5".to_owned(),
-                name_type: 1,
-                components: vec!["testuser1".to_owned()],
-            }
+            Principal::new("TEST.GOKRB5".to_owned(), 1, vec!["testuser1".to_owned()])
         );
         assert_eq!(validated.client.name(), "testuser1");
         assert_eq!(
             validated.service,
-            Principal {
-                realm: "TEST.GOKRB5".to_owned(),
-                name_type: 1,
-                components: vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()],
-            }
+            Principal::new(
+                "TEST.GOKRB5".to_owned(),
+                1,
+                vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()]
+            )
         );
         assert_eq!(validated.session_key.etype, 18_i32);
         assert_eq!(hex_encode(&validated.session_key.value), VALID_SESSION_KEY);
@@ -717,10 +713,7 @@ mod tests {
         let (service_key, _) = keytab
             .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
             .context("sysHTTP service key exists")?;
-        let session_key = EncryptionKey {
-            etype: 18,
-            value: decode_hex(VALID_SESSION_KEY)?,
-        };
+        let session_key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
         let client = principal(["testuser1"])?;
         let service = principal(["sysHTTP"])?;
         let pac_authorization_data = pac_authorization_data(pac_bytes)?;
@@ -878,14 +871,13 @@ mod tests {
     }
 
     fn ap_rep_options() -> Result<ApRepOptions, TestError> {
-        Ok(ApRepOptions {
-            subkey: Some(EncryptionKey {
-                etype: 18,
-                value: decode_hex(AP_REP_SERVER_SUBKEY)?,
-            }),
-            sequence_number: Some(17),
-            kvno: Some(5),
-        })
+        Ok(ApRepOptions::default()
+            .with_subkey(Some(EncryptionKey::new(
+                18,
+                decode_hex(AP_REP_SERVER_SUBKEY)?,
+            )))
+            .with_sequence_number(Some(17))
+            .with_kvno(Some(5)))
     }
 
     /// Returns the instant `seconds` after the Unix epoch.
@@ -1110,11 +1102,11 @@ mod tests {
         assert_ne!(validated.client.name_type, 5_i32);
         assert_eq!(
             validated.client,
-            Principal {
-                realm: "TEST.GOKRB5".to_owned(),
-                name_type: ticket.cname.r#type,
-                components: vec!["testuser1".to_owned()],
-            }
+            Principal::new(
+                "TEST.GOKRB5".to_owned(),
+                ticket.cname.r#type,
+                vec!["testuser1".to_owned()]
+            )
         );
         Ok(())
     }
@@ -1246,10 +1238,7 @@ mod tests {
         crealm: &str,
         name_type: i32,
     ) -> Result<(), TestError> {
-        let session_key = EncryptionKey {
-            etype: 18,
-            value: decode_hex(VALID_SESSION_KEY)?,
-        };
+        let session_key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
         let authenticator = rasn_kerberos::Authenticator {
             authenticator_vno: 5_i32.into(),
             crealm: realm(crealm)?,

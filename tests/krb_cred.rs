@@ -381,10 +381,7 @@ mod tests {
         with_auth_data
             .first_mut()
             .context("a first credential")?
-            .auth_data = vec![ccache::AuthorizationDataEntry {
-            ad_type: 1,
-            data: vec![2, 3],
-        }];
+            .auth_data = vec![ccache::AuthorizationDataEntry::new(1, vec![2, 3])];
 
         let auth_data_error = ccache_credentials_to_krb_cred_parts(&with_auth_data)
             .err()
@@ -449,10 +446,7 @@ mod tests {
         let enc_part = decode_enc_krb_cred_part(&hex::decode(ENC_KRB_CRED_PART)?)
             .context("EncKrbCredPart decodes")?;
         let krb_cred = encrypted_krb_cred(&enc_part)?;
-        let key = EncryptionKey {
-            etype: 17,
-            value: vec![0; 16],
-        };
+        let key = EncryptionKey::new(17, vec![0; 16]);
 
         let error = decrypt_krb_cred_enc_part(&krb_cred, &key)
             .err()
@@ -496,9 +490,6 @@ mod tests {
 
     /// The AES-256 reply key.
     fn reply_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 18,
-            value: hex::decode(REPLY_KEY)?,
-        })
+        Ok(EncryptionKey::new(18, hex::decode(REPLY_KEY)?))
     }
 }

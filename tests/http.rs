@@ -1044,21 +1044,18 @@ mod tests {
     fn service_ticket_session_from_valid_ap_req() -> Result<AsRepSession, TestError> {
         let ap_req: rasn_kerberos::ApReq =
             der::decode(&decode_hex(VALID_AP_REQ)?).context("AP-REQ fixture decodes")?;
-        Ok(AsRepSession {
-            client: Principal::user("TEST.GOKRB5", "testuser1"),
-            service: Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
-            session_key: EncryptionKey {
-                etype: 18,
-                value: decode_hex(VALID_SESSION_KEY)?,
-            },
-            ticket: der::encode(&ap_req.ticket).context("ticket encodes")?,
-            ticket_flags: [0; 4],
-            auth_time: timestamp(1_893_553_445)?,
-            start_time: timestamp(1_893_553_445)?,
-            end_time: timestamp(1_893_639_845)?,
-            renew_till: None,
-            key_expiration: None,
-        })
+        Ok(AsRepSession::new(
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
+            EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?),
+            der::encode(&ap_req.ticket).context("ticket encodes")?,
+            [0; 4],
+            timestamp(1_893_553_445)?,
+            timestamp(1_893_639_845)?,
+        )
+        .with_start_time(timestamp(1_893_553_445)?)
+        .with_renew_till(None)
+        .with_key_expiration(None))
     }
 
     /// Returns an empty response that carries `header` as its `WWW-Authenticate` value.

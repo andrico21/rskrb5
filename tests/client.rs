@@ -580,10 +580,7 @@ mod harness {
         let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
-        let reply_key = EncryptionKey {
-            etype: 18,
-            value: vec![0x55; 32],
-        };
+        let reply_key = EncryptionKey::new(18, vec![0x55; 32]);
         let change_data =
             ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
                 .context("ChangePasswdData builds")?;
@@ -757,10 +754,7 @@ mod harness {
         reply_key: &EncryptionKey,
         encrypted_pa_data: Option<Vec<rasn_kerberos::PaData>>,
     ) -> Result<Vec<u8>, TestError> {
-        let session_key = EncryptionKey {
-            etype: 18,
-            value: decode_hex(SESSION_KEY)?,
-        };
+        let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
         let enc_part = rasn_kerberos::EncAsRepPart(rasn_kerberos::EncKdcRepPart {
             key: rasn_encryption_key(&session_key),
             last_req: vec![rasn_kerberos::LastReqValue {
@@ -843,10 +837,7 @@ mod harness {
             let first = checksum.first_mut().context("checksum is not empty")?;
             *first ^= 0xff;
         }
-        let value = PaReqEncPaRep {
-            checksum_type: etype.checksum_type_id(),
-            checksum: checksum.into(),
-        };
+        let value = PaReqEncPaRep::new(etype.checksum_type_id(), checksum.into());
         Ok(rasn_kerberos::PaData {
             r#type: PA_REQ_ENC_PA_REP,
             value: value
@@ -882,10 +873,7 @@ mod harness {
         tgs_session_key: &EncryptionKey,
         reply_service: &Principal,
     ) -> Result<Vec<u8>, TestError> {
-        let session_key = EncryptionKey {
-            etype: 18,
-            value: decode_hex(SERVICE_SESSION_KEY)?,
-        };
+        let session_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
         let enc_part = rasn_kerberos::EncTgsRepPart(rasn_kerberos::EncKdcRepPart {
             key: rasn_encryption_key(&session_key),
             last_req: vec![rasn_kerberos::LastReqValue {
@@ -978,28 +966,22 @@ mod harness {
 
     /// The pre-authentication key info of `testuser1`.
     pub(crate) fn password_key_info() -> PreauthKeyInfo {
-        PreauthKeyInfo {
-            etype: 18,
-            salt: Some(TESTUSER_SALT.to_owned()),
-            s2kparams: Some(vec![0, 0, 16, 0]),
-        }
+        PreauthKeyInfo::new(18)
+            .with_salt(Some(TESTUSER_SALT.to_owned()))
+            .with_s2kparams(Some(vec![0, 0, 16, 0]))
     }
 
     /// A keytab with the reply key of `testuser1` at key version `kvno`.
     pub(crate) fn keytab_with_reply_key(kvno: u32) -> Result<Keytab, TestError> {
         let [_, _, _, kvno8] = kvno.to_be_bytes();
         let mut keytab = Keytab::new();
-        keytab.entries_mut().push(KeytabEntry {
-            principal: KeytabPrincipal {
-                realm: "TEST.GOKRB5".to_owned(),
-                components: vec!["testuser1".to_owned()],
-                name_type: 1,
-            },
-            timestamp: 1_893_553_440,
+        keytab.entries_mut().push(KeytabEntry::new(
+            KeytabPrincipal::new("TEST.GOKRB5", 1, vec!["testuser1".to_owned()]),
+            1_893_553_440,
             kvno8,
-            key: reply_key()?,
+            reply_key()?,
             kvno,
-        });
+        ));
         Ok(keytab)
     }
 
@@ -1063,13 +1045,14 @@ mod harness {
         let body = &message.0.req_body;
         let client = principal_from_parts(&body.realm, body.cname.as_ref().context("cname")?)?;
         let service = principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?;
-        Ok(BuiltAsReq {
-            nonce: body.nonce,
+        let nonce = body.nonce;
+        Ok(BuiltAsReq::new(
             message,
-            der: der.to_vec(),
+            der.to_vec(),
             client,
             service,
-        })
+            nonce,
+        ))
     }
 
     /// Rebuilds the [`BuiltTgsReq`] of a decoded TGS-REQ `message` and its `der`.
@@ -1082,22 +1065,19 @@ mod harness {
         let service = principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?;
         let kdc_realm = kerberos_string_to_string(&body.realm)?;
         let nonce = body.nonce;
-        Ok(BuiltTgsReq {
+        Ok(BuiltTgsReq::new(
             message,
-            der: der.to_vec(),
+            der.to_vec(),
             client,
             service,
             kdc_realm,
             nonce,
-        })
+        ))
     }
 
     /// The AES256 reply key of `testuser1`.
     pub(crate) fn reply_key() -> Result<EncryptionKey, TestError> {
-        Ok(EncryptionKey {
-            etype: 18,
-            value: decode_hex(REPLY_KEY)?,
-        })
+        Ok(EncryptionKey::new(18, decode_hex(REPLY_KEY)?))
     }
 
     /// `key` as a rasn encryption key.
@@ -1509,10 +1489,7 @@ mod harness {
                 kpasswd_reply_frame(0, &kpasswd_result_krb_error(KPASSWD_AUTHERROR, &reason)?)
             }
             Ok(authenticator) => {
-                let response_key = EncryptionKey {
-                    etype: 18,
-                    value: vec![response_key_byte; 32],
-                };
+                let response_key = EncryptionKey::new(18, vec![response_key_byte; 32]);
                 kpasswd_success_reply_with_ap_rep_subkey(
                     &authenticator,
                     session_key,
@@ -1581,25 +1558,22 @@ mod harness {
     /// The MIT `X-CACHECONF:` `fast_avail` entry of `client`.
     #[cfg(feature = "tokio")]
     pub(crate) fn x_cacheconf_credential(client: &ccache::Principal) -> ccache::Credential {
-        ccache::Credential {
-            client: client.clone(),
-            server: ccache::Principal::new(
+        ccache::Credential::new(
+            client.clone(),
+            ccache::Principal::new(
                 "X-CACHECONF:",
                 0,
                 vec!["krb5_ccache_conf_data".to_owned(), "fast_avail".to_owned()],
             ),
-            key: ccache::EncryptionKey {
-                etype: 0,
-                value: Vec::new(),
-            },
-            times: ccache::CredentialTimes::default(),
-            is_skey: false,
-            ticket_flags: [0; 4],
-            addresses: Vec::new(),
-            auth_data: Vec::new(),
-            ticket: b"yes".to_vec(),
-            second_ticket: Vec::new(),
-        }
+            ccache::EncryptionKey::new(0, Vec::new()),
+            ccache::CredentialTimes::default(),
+            [0; 4],
+            b"yes".to_vec(),
+        )
+        .with_is_skey(false)
+        .with_addresses(Vec::new())
+        .with_auth_data(Vec::new())
+        .with_second_ticket(Vec::new())
     }
 
     /// The credentials of `testuser1` in `cache` for `server`.

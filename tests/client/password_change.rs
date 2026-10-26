@@ -72,10 +72,7 @@ TEST.GOKRB5 = {{
             .subkey
             .as_ref()
             .context("AP-REQ reply key included")?;
-        let reply_key = EncryptionKey {
-            etype: subkey.r#type,
-            value: subkey.value.as_ref().to_vec(),
-        };
+        let reply_key = EncryptionKey::new(subkey.r#type, subkey.value.as_ref().to_vec());
         let enc_part = decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
             .context("KRB-PRIV payload decrypts")?;
         let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
@@ -143,10 +140,7 @@ TEST.GOKRB5 = {{
         let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
-        let reply_key = EncryptionKey {
-            etype: 18,
-            value: vec![0x55; 32],
-        };
+        let reply_key = EncryptionKey::new(18, vec![0x55; 32]);
         let change_data =
             ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
                 .context("ChangePasswdData builds")?;
@@ -325,10 +319,7 @@ TEST.GOKRB5 = {{
                 assert_eq!(parsed.ap_req.msg_type, Integer::from(14_i32));
                 assert_eq!(parsed.krb_priv.msg_type, Integer::from(21_i32));
 
-                let session_key = EncryptionKey {
-                    etype: 18,
-                    value: decode_hex(SERVICE_SESSION_KEY)?,
-                };
+                let session_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
                 let response = kpasswd_authenticated_success_reply(&request, &session_key, 0x77)?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
                 Ok::<(), TestError>(())
@@ -382,10 +373,7 @@ TEST.GOKRB5 = {{
                     AP_REQ_AUTHENTICATOR_USAGE,
                 )
                 .context("AP-REQ authenticator decrypts")?;
-                let response_key = EncryptionKey {
-                    etype: 18,
-                    value: vec![0x66; 32],
-                };
+                let response_key = EncryptionKey::new(18, vec![0x66; 32]);
                 let response = kpasswd_success_reply_with_ap_rep_subkey(
                     &authenticator,
                     &changepw_session_key,
@@ -514,10 +502,7 @@ TEST.GOKRB5 = {{
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 drop(KpasswdRequest::parse(&request).context("kpasswd request parses")?);
 
-                let session_key = EncryptionKey {
-                    etype: 18,
-                    value: decode_hex(SERVICE_SESSION_KEY)?,
-                };
+                let session_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
                 let response = kpasswd_authenticated_success_reply(&request, &session_key, 0x77)?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
                 Ok::<(), TestError>(())
@@ -586,10 +571,7 @@ TEST.GOKRB5 = {{
                     target_for_server
                 );
                 assert_eq!(change_data.new_passwd.to_vec(), b"newpassword".to_vec());
-                let response_key = EncryptionKey {
-                    etype: 18,
-                    value: vec![0x77; 32],
-                };
+                let response_key = EncryptionKey::new(18, vec![0x77; 32]);
                 let response = kpasswd_success_reply_with_ap_rep_subkey(
                     &authenticator,
                     &changepw_session_key,
@@ -658,10 +640,7 @@ TEST.GOKRB5 = {{
             let request_len = usize::try_from(u32::from_be_bytes(header))?;
             let mut request = vec![0; request_len];
             socket.read_exact(&mut request).context("read request")?;
-            let session_key = EncryptionKey {
-                etype: 18,
-                value: decode_hex(SERVICE_SESSION_KEY)?,
-            };
+            let session_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
             let response = kpasswd_authenticated_success_reply(&request, &session_key, 0x77)?;
             socket
                 .write_all(&u32::try_from(response.len())?.to_be_bytes())
@@ -703,10 +682,7 @@ TEST.GOKRB5 = {{
             let old_reply_key =
                 derive_password_reply_key(&self_client, old_password, &password_key_info())
                     .context("old reply key derives")?;
-            let service_key = EncryptionKey {
-                etype: 18,
-                value: decode_hex(SESSION_KEY)?,
-            };
+            let service_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
 
             let (kdc_listener, kpasswd_listener, config) = local_kdc_and_kpasswd().await?;
             let mut client = TokioClient::with_password(
@@ -748,10 +724,7 @@ TEST.GOKRB5 = {{
                         assert_eq!(target, self_client.clone());
                         assert_eq!(change_data.new_passwd, old_password.to_vec());
                     }
-                    let session_key = EncryptionKey {
-                        etype: 18,
-                        value: decode_hex(SESSION_KEY)?,
-                    };
+                    let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
                     let response =
                         kpasswd_authenticated_success_reply(&request, &session_key, 0x77)?;
                     write_tcp_kdc_response(&mut socket, &response).await?;
@@ -824,10 +797,7 @@ TEST.GOKRB5 = {{
             let kpasswd_task = tokio::spawn(async move {
                 for _ in 0_i32..2_i32 {
                     let (request, mut socket) = read_tcp_kdc_request(&kpasswd_listener).await?;
-                    let session_key = EncryptionKey {
-                        etype: 18,
-                        value: decode_hex(SESSION_KEY)?,
-                    };
+                    let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
                     let response =
                         kpasswd_authenticated_success_reply(&request, &session_key, 0x77)?;
                     write_tcp_kdc_response(&mut socket, &response).await?;

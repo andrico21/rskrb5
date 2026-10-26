@@ -85,11 +85,9 @@ mod tests {
     /// Pins that AS-REQ options from libdefaults carry `canonicalize` and the configured KDC options.
     #[test]
     fn as_req_options_from_libdefaults_sets_canonicalize_flag() -> Result<(), TestError> {
-        let defaults = LibDefaults {
-            canonicalize: true,
-            kdc_default_options: 0x0000_0010,
-            ..Default::default()
-        };
+        let defaults = LibDefaults::default()
+            .with_canonicalize(true)
+            .with_kdc_default_options(0x0000_0010);
         let client = Principal::user("TEST.GOKRB5", "testuser1");
         let options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
@@ -183,10 +181,7 @@ mod tests {
     #[test]
     fn builds_pa_for_user_padata_with_s4u_checksum() -> Result<(), TestError> {
         let user = Principal::new("ATHENA.MIT.EDU", 1, ["hftsai", "extra"]);
-        let tgt_session_key = EncryptionKey {
-            etype: 18,
-            value: decode_hex(SESSION_KEY)?,
-        };
+        let tgt_session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
 
         let padata = pa_for_user_padata(&user, &tgt_session_key).context("PA-FOR-USER builds")?;
 
@@ -407,12 +402,10 @@ mod tests {
     /// Pins that an explicit `permitted_enctypes` line narrows the AS-REQ etype list.
     #[test]
     fn as_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
-        let defaults = LibDefaults {
-            default_tkt_enctype_ids: vec![18_i32, 17_i32, 23_i32],
-            permitted_enctype_ids: vec![18_i32],
-            permitted_enctypes_explicit: true,
-            ..Default::default()
-        };
+        let defaults = LibDefaults::default()
+            .with_default_tkt_enctype_ids(vec![18_i32, 17_i32, 23_i32])
+            .with_permitted_enctype_ids(vec![18_i32])
+            .with_permitted_enctypes_explicit(true);
         let options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
@@ -425,12 +418,10 @@ mod tests {
     /// Pins that a request list disjoint from the permitted set fails closed.
     #[test]
     fn as_req_with_disjoint_permitted_enctypes_fails_closed() -> Result<(), TestError> {
-        let defaults = LibDefaults {
-            default_tkt_enctype_ids: vec![18_i32],
-            permitted_enctype_ids: vec![17_i32],
-            permitted_enctypes_explicit: true,
-            ..Default::default()
-        };
+        let defaults = LibDefaults::default()
+            .with_default_tkt_enctype_ids(vec![18_i32])
+            .with_permitted_enctype_ids(vec![17_i32])
+            .with_permitted_enctypes_explicit(true);
         let options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         assert!(
@@ -450,11 +441,9 @@ mod tests {
     /// Pins that SHA2 request etypes survive when `permitted_enctypes` is implicit.
     #[test]
     fn sha2_request_list_survives_the_implicit_permitted_set() -> Result<(), TestError> {
-        let defaults = LibDefaults {
-            default_tkt_enctype_ids: vec![19_i32, 20_i32],
-            permitted_enctype_ids: vec![18_i32, 17_i32, 23_i32],
-            ..Default::default()
-        };
+        let defaults = LibDefaults::default()
+            .with_default_tkt_enctype_ids(vec![19_i32, 20_i32])
+            .with_permitted_enctype_ids(vec![18_i32, 17_i32, 23_i32]);
         let options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
 

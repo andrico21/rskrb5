@@ -129,10 +129,7 @@ mod tests {
     /// Pins that a KRB-PRIV built with an explicit confounder decrypts back to its user data and addresses.
     #[test]
     fn builds_and_decrypts_krb_priv_with_explicit_confounder() -> Result<(), TestError> {
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![0x11; 32],
-        };
+        let key = EncryptionKey::new(18, vec![0x11; 32]);
         let sender_address = ipv4_host_address([127, 0, 0, 1]);
         let recipient_address = ipv6_host_address([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         let options = EncKrbPrivPartOptions::new(sender_address.clone())
@@ -161,10 +158,7 @@ mod tests {
     /// Pins that a KRB-PRIV built with a random confounder decrypts back to its user data.
     #[test]
     fn builds_and_decrypts_krb_priv_with_random_confounder() -> Result<(), TestError> {
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![0x11; 32],
-        };
+        let key = EncryptionKey::new(18, vec![0x11; 32]);
         let options = EncKrbPrivPartOptions::new(ipv4_host_address([127, 0, 0, 1]));
 
         let krb_priv = build_krb_priv(b"krb5data", options, &key, None)?;

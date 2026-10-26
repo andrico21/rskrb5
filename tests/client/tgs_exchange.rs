@@ -118,11 +118,9 @@ mod tests {
     /// Pins that TGS-REQ options from libdefaults carry `canonicalize` and the configured KDC options.
     #[test]
     fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() -> Result<(), TestError> {
-        let defaults = LibDefaults {
-            canonicalize: true,
-            kdc_default_options: 0x0000_0010,
-            ..Default::default()
-        };
+        let defaults = LibDefaults::default()
+            .with_canonicalize(true)
+            .with_kdc_default_options(0x0000_0010);
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
         let options =
@@ -354,10 +352,7 @@ mod tests {
         let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
-        let subkey = EncryptionKey {
-            etype: 18,
-            value: vec![0x44; 32],
-        };
+        let subkey = EncryptionKey::new(18, vec![0x44; 32]);
         let options = ApReqOptions::new()
             .with_ap_option_bits(0x2000_0000)
             .with_subkey(Some(subkey.clone()))
@@ -1009,12 +1004,10 @@ mod tests {
     /// Pins that an explicit `permitted_enctypes` line narrows the TGS-REQ etype list.
     #[test]
     fn tgs_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
-        let defaults = LibDefaults {
-            default_tgs_enctype_ids: vec![18_i32, 17_i32, 23_i32],
-            permitted_enctype_ids: vec![18_i32],
-            permitted_enctypes_explicit: true,
-            ..Default::default()
-        };
+        let defaults = LibDefaults::default()
+            .with_default_tgs_enctype_ids(vec![18_i32, 17_i32, 23_i32])
+            .with_permitted_enctype_ids(vec![18_i32])
+            .with_permitted_enctypes_explicit(true);
         let options =
             TgsReqOptions::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
         let request = build_tgs_req_with_confounder(
@@ -1050,10 +1043,7 @@ mod tests {
             .with_ticket_lifetime(Duration::from_hours(2))
             .with_etypes(vec![18_i32]);
 
-        let subkey = EncryptionKey {
-            etype: 18,
-            value: vec![0x42; 32],
-        };
+        let subkey = EncryptionKey::new(18, vec![0x42; 32]);
         let parts = build_tgs_req_for_realm_with_confounder_and_subkey(
             &tgt,
             "TEST.GOKRB5",
@@ -1102,10 +1092,7 @@ mod tests {
         let options = TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788)
             .with_ticket_lifetime(Duration::from_hours(2))
             .with_etypes(vec![18_i32]);
-        let subkey = EncryptionKey {
-            etype: 18,
-            value: vec![0x24; 32],
-        };
+        let subkey = EncryptionKey::new(18, vec![0x24; 32]);
 
         let parts = build_tgs_req_for_realm_with_confounder_and_subkey(
             &tgt,
@@ -1184,10 +1171,7 @@ mod tests {
                 subkey,
             )
         };
-        let other_etype = EncryptionKey {
-            etype: 17,
-            value: vec![0x42; 16],
-        };
+        let other_etype = EncryptionKey::new(17, vec![0x42; 16]);
         let Err(error) = build(&other_etype) else {
             return Err("a subkey in another enctype must be refused".into());
         };
@@ -1198,10 +1182,7 @@ mod tests {
                 encrypted_data_etype: _,
             }
         ));
-        let short = EncryptionKey {
-            etype: tgt.session_key.etype,
-            value: vec![0x42; 16],
-        };
+        let short = EncryptionKey::new(tgt.session_key.etype, vec![0x42; 16]);
         assert!(matches!(build(&short), Err(Error::Crypto(_))));
         Ok(())
     }
@@ -1312,13 +1293,11 @@ mod tests {
     /// enctype ID fail both request builders closed.
     #[test]
     fn programmatic_explicit_empty_permitted_ids_fail_closed() -> Result<(), TestError> {
-        let defaults = LibDefaults {
-            default_tkt_enctype_ids: vec![18_i32, 17_i32],
-            default_tgs_enctype_ids: vec![18_i32, 17_i32],
-            permitted_enctype_ids: Vec::new(),
-            permitted_enctypes_explicit: true,
-            ..Default::default()
-        };
+        let defaults = LibDefaults::default()
+            .with_default_tkt_enctype_ids(vec![18_i32, 17_i32])
+            .with_default_tgs_enctype_ids(vec![18_i32, 17_i32])
+            .with_permitted_enctype_ids(Vec::new())
+            .with_permitted_enctypes_explicit(true);
 
         let as_options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);

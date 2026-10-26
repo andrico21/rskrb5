@@ -218,10 +218,7 @@ mod tests {
         let data = ChangePasswdData::new(b"newpassword")
             .encode_der()
             .context("ChangePasswdData encodes")?;
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![0x11; 32],
-        };
+        let key = EncryptionKey::new(18, vec![0x11; 32]);
         let sender_address = ipv4_host_address([127, 0, 0, 1]);
         let recipient_address = ipv6_host_address([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         let options = EncKrbPrivPartOptions::new(sender_address.clone())
@@ -257,10 +254,7 @@ mod tests {
         let data = ChangePasswdData::new(b"newpassword")
             .encode_der()
             .context("ChangePasswdData encodes")?;
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![0x11; 32],
-        };
+        let key = EncryptionKey::new(18, vec![0x11; 32]);
         let sender_address = ipv4_host_address([127, 0, 0, 1]);
         let options = EncKrbPrivPartOptions::new(sender_address.clone()).with_sequence_number(8);
 
@@ -320,10 +314,7 @@ mod tests {
             "TEST.GOKRB5",
         )
         .context("targeted ChangePasswdData builds")?;
-        let reply_key = EncryptionKey {
-            etype: 18,
-            value: vec![0x44; 32],
-        };
+        let reply_key = EncryptionKey::new(18, vec![0x44; 32]);
         let sender_address = ipv4_host_address([127, 0, 0, 1]);
         let recipient_address = ipv6_host_address([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         let options = EncKrbPrivPartOptions::new(sender_address.clone())
@@ -365,10 +356,7 @@ mod tests {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("fixture request parses")?;
         let change_data = ChangePasswdData::new(b"replacement-password");
-        let reply_key = EncryptionKey {
-            etype: 18,
-            value: vec![0x66; 32],
-        };
+        let reply_key = EncryptionKey::new(18, vec![0x66; 32]);
         let sender_address = ipv4_host_address([127, 0, 0, 1]);
         let options = EncKrbPrivPartOptions::new(sender_address.clone()).with_sequence_number(101);
 
@@ -402,14 +390,10 @@ mod tests {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("kpasswd request parses")?;
         let service_ticket = fixture_request.ap_req.ticket.clone();
-        let service_session_key = EncryptionKey {
-            etype: fixture_request.ap_req.authenticator.etype,
-            value: vec![0x11; 32],
-        };
-        let reply_key = EncryptionKey {
-            etype: fixture_request.ap_req.authenticator.etype,
-            value: vec![0x55; 32],
-        };
+        let service_session_key =
+            EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x11; 32]);
+        let reply_key =
+            EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x55; 32]);
         let options = ChangePasswdMessageOptions::new(
             kerberos_time(1_893_553_452)?,
             456_789,
@@ -474,10 +458,8 @@ mod tests {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("kpasswd request parses")?;
         let service_ticket = fixture_request.ap_req.ticket;
-        let service_session_key = EncryptionKey {
-            etype: fixture_request.ap_req.authenticator.etype,
-            value: vec![0x22; 32],
-        };
+        let service_session_key =
+            EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x22; 32]);
         let options = ChangePasswdMessageOptions::new(
             kerberos_time(1_893_553_453)?,
             654_321,
@@ -515,10 +497,8 @@ mod tests {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("kpasswd request parses")?;
         let service_ticket = fixture_request.ap_req.ticket;
-        let service_session_key = EncryptionKey {
-            etype: fixture_request.ap_req.authenticator.etype,
-            value: vec![0x44; 32],
-        };
+        let service_session_key =
+            EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x44; 32]);
         let change_data = ChangePasswdData::for_target(
             b"default-style-password",
             1,
@@ -562,14 +542,10 @@ mod tests {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("kpasswd request parses")?;
         let service_ticket = fixture_request.ap_req.ticket;
-        let service_session_key = EncryptionKey {
-            etype: fixture_request.ap_req.authenticator.etype,
-            value: vec![0x33; 32],
-        };
-        let reply_key = EncryptionKey {
-            etype: fixture_request.ap_req.authenticator.etype,
-            value: vec![0x44; 32],
-        };
+        let service_session_key =
+            EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x33; 32]);
+        let reply_key =
+            EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x44; 32]);
         let options = ChangePasswdMessageOptions::new(
             kerberos_time(1_893_553_454)?,
             321_654,
@@ -617,10 +593,8 @@ mod tests {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("kpasswd request parses")?;
         let service_ticket = fixture_request.ap_req.ticket;
-        let service_session_key = EncryptionKey {
-            etype: fixture_request.ap_req.authenticator.etype,
-            value: vec![0x77; 32],
-        };
+        let service_session_key =
+            EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x77; 32]);
         let options = ChangePasswdMessageOptions::new(
             kerberos_time(1_893_553_455)?,
             147_258,
@@ -717,15 +691,8 @@ mod tests {
     fn kpasswd_reply_decrypt_result_returns_parsed_error_result() -> Result<(), TestError> {
         let bytes = kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)?)?;
         let reply = Reply::parse(&bytes).map_err(|cause| format!("reply parses: {cause}"))?;
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![0; 32],
-        };
-        let expected = ChangePasswordResult {
-            code: u16::from_be_bytes(*b"kr"),
-            text: "b5data".to_owned(),
-            text_raw: b"b5data".to_vec(),
-        };
+        let key = EncryptionKey::new(18, vec![0; 32]);
+        let expected = ChangePasswordResult::parse(b"krb5data")?;
 
         assert!(reply.result.is_some());
         assert_eq!(
@@ -803,11 +770,7 @@ mod tests {
         assert!(reply.krb_error.is_some());
         assert_eq!(
             reply.result,
-            Some(ChangePasswordResult {
-                code: u16::from_be_bytes(*b"kr"),
-                text: "b5data".to_owned(),
-                text_raw: b"b5data".to_vec(),
-            })
+            Some(ChangePasswordResult::parse(b"krb5data")?)
         );
         Ok(())
     }
@@ -817,20 +780,13 @@ mod tests {
     fn kpasswd_reply_decrypt_result_returns_krb_error_result() -> Result<(), TestError> {
         let reply = Reply::parse(&kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)?)?)
             .map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![0; 32],
-        };
+        let key = EncryptionKey::new(18, vec![0; 32]);
 
         assert_eq!(
             reply
                 .decrypt_result(&key)
                 .map_err(|cause| format!("KRB-ERROR result needs no decrypt: {cause}"))?,
-            ChangePasswordResult {
-                code: u16::from_be_bytes(*b"kr"),
-                text: "b5data".to_owned(),
-                text_raw: b"b5data".to_vec(),
-            }
+            ChangePasswordResult::parse(b"krb5data")?
         );
         Ok(())
     }
@@ -848,12 +804,8 @@ mod tests {
 
     /// Pins that `ensure_success` reports a failure code with its text.
     #[test]
-    fn kpasswd_result_success_helper_reports_failure_code() {
-        let result = ChangePasswordResult {
-            code: KPASSWD_AUTHERROR,
-            text: "authentication failed".to_owned(),
-            text_raw: b"authentication failed".to_vec(),
-        };
+    fn kpasswd_result_success_helper_reports_failure_code() -> Result<(), TestError> {
+        let result = ChangePasswordResult::parse(b"\x00\x03authentication failed")?;
 
         assert!(!result.is_success());
         assert!(matches!(
@@ -861,6 +813,7 @@ mod tests {
             Err(KadminError::PasswordChangeFailed { code, text, text_raw: _ })
                 if code == KPASSWD_AUTHERROR && text == "authentication failed"
         ));
+        Ok(())
     }
 
     /// Pins that a key whose etype differs from the KRB-PRIV's is rejected.
@@ -868,10 +821,7 @@ mod tests {
     fn kpasswd_reply_decrypt_result_rejects_wrong_key_etype() -> Result<(), TestError> {
         let reply =
             Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)?).context("kpasswd reply parses")?;
-        let key = EncryptionKey {
-            etype: 17,
-            value: vec![0; 16],
-        };
+        let key = EncryptionKey::new(17, vec![0; 16]);
 
         assert!(matches!(
             reply.decrypt_result(&key),
@@ -1005,10 +955,7 @@ mod tests {
         let encoded = der::encode(&error).map_err(|cause| format!("KRB-ERROR encodes: {cause}"))?;
         let reply = Reply::parse(&kpasswd_reply_frame(0, &encoded)?)
             .map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
-        let key = EncryptionKey {
-            etype: 18,
-            value: vec![0; 32],
-        };
+        let key = EncryptionKey::new(18, vec![0; 32]);
 
         assert!(matches!(
             reply

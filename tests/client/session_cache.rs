@@ -269,11 +269,10 @@ mod tests {
 
         assert_eq!(
             pruned,
-            PrunedSessions {
-                primary_tgt: false,
-                tgt_sessions: 1,
-                service_tickets: 1,
-            }
+            PrunedSessions::default()
+                .with_primary_tgt(false)
+                .with_tgt_sessions(1)
+                .with_service_tickets(1)
         );
         assert!(!pruned.is_empty(), "pruning reports the removed sessions");
         assert_eq!(client.tgt_session_count(), 1);
@@ -305,11 +304,10 @@ mod tests {
 
         assert_eq!(
             pruned,
-            PrunedSessions {
-                primary_tgt: true,
-                tgt_sessions: 1,
-                service_tickets: 0,
-            }
+            PrunedSessions::default()
+                .with_primary_tgt(true)
+                .with_tgt_sessions(1)
+                .with_service_tickets(0)
         );
         assert!(client.tgt_session().is_none());
         assert_eq!(client.tgt_session_count(), 0);
@@ -1221,10 +1219,7 @@ mod tests {
                 let mut service_built =
                     built_tgs_request_from_der(service_decoded, &service_request)?;
                 service_built.client = expected_client;
-                let renewed_referral_key = EncryptionKey {
-                    etype: 18,
-                    value: decode_hex(SERVICE_SESSION_KEY)?,
-                };
+                let renewed_referral_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
                 let service_response =
                     synthetic_tgs_rep(&service_built, service_built.nonce, &renewed_referral_key)?;
                 write_tcp_kdc_response(&mut service_socket, &service_response).await?;
@@ -2532,10 +2527,7 @@ mod tests {
     ) -> Result<Vec<u8>, TestError> {
         let built = built_tgs_request_from_der(request, der)?;
         let now = unix_seconds(SystemTime::now())?;
-        let session_key = EncryptionKey {
-            etype: 18,
-            value: decode_hex(SESSION_KEY)?,
-        };
+        let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
         let enc_part = rasn_kerberos::EncTgsRepPart(rasn_kerberos::EncKdcRepPart {
             key: rasn_encryption_key(&session_key),
             last_req: vec![rasn_kerberos::LastReqValue {
@@ -2717,10 +2709,7 @@ mod tests {
         runtime()?.block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
-            let tgt_session_key = EncryptionKey {
-                etype: 18,
-                value: decode_hex(SESSION_KEY)?,
-            };
+            let tgt_session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
             let (kdc, as_requests, tgs_requests) = spawn_counting_kdc_with_tgs_reply(
                 listener,
                 Principal::user("TEST.GOKRB5", "testuser1"),
