@@ -84,9 +84,9 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that AS-REQ options from libdefaults carry `canonicalize` and the configured KDC options.
+    /// Unarmored AS requests preserve other options but suppress canonicalization.
     #[test]
-    fn as_req_options_from_libdefaults_sets_canonicalize_flag() -> Result<(), TestError> {
+    fn as_req_options_from_libdefaults_suppresses_canonicalize_flag() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
             .with_canonicalize(true.into())
             .with_kdc_default_options(0x0000_0010);
@@ -99,9 +99,7 @@ mod tests {
 
         assert_eq!(
             body.kdc_options.0.as_raw_slice(),
-            (KDC_OPTION_CANONICALIZE | 0x0000_0010)
-                .to_be_bytes()
-                .as_slice()
+            0x0000_0010_u32.to_be_bytes().as_slice()
         );
         Ok(())
     }

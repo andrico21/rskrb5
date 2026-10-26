@@ -2430,7 +2430,10 @@ pub fn build_as_req(
         .map(|duration| options.now.checked_add(duration).ok_or(Error::TimeOverflow))
         .transpose()?;
     let padata = (!options.padata.is_empty()).then_some(options.padata);
-    let kdc_option_bits = request_kdc_option_bits(options.kdc_option_bits, options.renew_lifetime);
+    let kdc_option_bits = request_kdc_option_bits(
+        options.kdc_option_bits & !KDC_OPTION_CANONICALIZE,
+        options.renew_lifetime,
+    );
     let req_body = rasn_kerberos::KdcReqBody {
         kdc_options: kdc_options_from_bits(kdc_option_bits),
         cname: Some(principal_to_rasn(&client)?),

@@ -21,7 +21,8 @@ pub struct AsReq {
     pub nonce: u32,
     /// Requested response encryption types in preference order.
     pub etypes: Vec<i32>,
-    /// KDC option bit string as stored in krb5.conf.
+    /// KDC option bits. Unarmored AS builders suppress `canonicalize`: changed
+    /// reply identities require authenticated exchange protection not provided here.
     pub kdc_option_bits: u32,
     /// Optional preauthentication data.
     pub padata: Vec<rasn_kerberos::PaData>,
