@@ -2646,146 +2646,6 @@ impl fmt::Debug for TokioClient {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::multiple_inherent_impl,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 #[cfg(feature = "tokio")]
 impl TokioClient {
     #[cfg_attr(
@@ -7965,6 +7825,211 @@ impl TokioClient {
                 Vec::new()
             }
         }
+    }
+
+    /// Change this client's password using generated timestamp and sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply's
+    /// AP-REP fails verification (including [`Error::MissingKpasswdApRep`] for a
+    /// success result without one), when the result cannot be decrypted, or
+    /// when the server reports a non-success result code.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
+    #[inline]
+    pub async fn change_password<P>(
+        &mut self,
+        new_password: P,
+        sender_address: rasn_kerberos::HostAddress,
+    ) -> Result<kadmin::ChangePasswordResult, Error>
+    where
+        P: AsRef<[u8]>,
+    {
+        let (timestamp, cusec) = current_preauth_time()?;
+        let sequence_number = random_nonce()?;
+        self.change_password_for_with_options(
+            self.client.clone(),
+            new_password,
+            KpasswdRequestOptions::new(timestamp, cusec, sequence_number, sender_address),
+        )
+        .await
+    }
+
+    /// Change the given target principal's password using generated timestamp and
+    /// sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply's
+    /// AP-REP fails verification (including [`Error::MissingKpasswdApRep`] for a
+    /// success result without one), when the result cannot be decrypted, or
+    /// when the server reports a non-success result code.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
+    #[inline]
+    pub async fn change_password_for<P>(
+        &mut self,
+        target: Principal,
+        new_password: P,
+        sender_address: rasn_kerberos::HostAddress,
+    ) -> Result<kadmin::ChangePasswordResult, Error>
+    where
+        P: AsRef<[u8]>,
+    {
+        let (timestamp, cusec) = current_preauth_time()?;
+        let sequence_number = random_nonce()?;
+        self.change_password_for_with_options(
+            target,
+            new_password,
+            KpasswdRequestOptions::new(timestamp, cusec, sequence_number, sender_address),
+        )
+        .await
+    }
+
+    /// Change this client's password using explicit kpasswd request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply's AP-REP fails verification (including
+    /// [`Error::MissingKpasswdApRep`] for a success result without one), when
+    /// the result cannot be decrypted, or when the server reports a
+    /// non-success result code.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
+    #[inline]
+    pub async fn change_password_with_options<P>(
+        &mut self,
+        new_password: P,
+        options: KpasswdRequestOptions,
+    ) -> Result<kadmin::ChangePasswordResult, Error>
+    where
+        P: AsRef<[u8]>,
+    {
+        self.change_password_for_with_options(self.client.clone(), new_password, options)
+            .await
+    }
+
+    /// Change the given target principal's password using explicit request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply's AP-REP fails verification (including
+    /// [`Error::MissingKpasswdApRep`] for a success result without one), when
+    /// the result cannot be decrypted, or when the server reports a
+    /// non-success result code.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
+    /// after the kpasswd request is sent does not roll the server back, so the
+    /// password may or may not have changed; treat the outcome as unknown and
+    /// verify it (for example with a fresh login) before retrying.
+    #[inline]
+    pub async fn change_password_for_with_options<P>(
+        &mut self,
+        target: Principal,
+        new_password: P,
+        options: KpasswdRequestOptions,
+    ) -> Result<kadmin::ChangePasswordResult, Error>
+    where
+        P: AsRef<[u8]>,
+    {
+        let new_password_bytes = new_password.as_ref().to_vec();
+        let client = self.client.clone();
+        let service = Principal::new(
+            target.realm.clone(),
+            KRB_NT_PRINCIPAL,
+            ["kadmin".to_owned(), "changepw".to_owned()],
+        );
+        let update_password_credential = target == self.client
+            && matches!(self.credentials, Some(TokioClientCredentials::Password(_)));
+        let ticket = match self.credentials.clone() {
+            Some(TokioClientCredentials::Password(password)) => {
+                self.transport
+                    .login_as_service_with_password_config(
+                        &self.config,
+                        self.protocol,
+                        client,
+                        service,
+                        &password,
+                        self.as_req_options()?,
+                    )
+                    .await?
+            }
+            Some(TokioClientCredentials::Keytab(keytab)) => {
+                self.transport
+                    .login_as_service_with_keytab_config(
+                        &self.config,
+                        self.protocol,
+                        client,
+                        service,
+                        &keytab,
+                        self.as_req_options()?,
+                    )
+                    .await?
+            }
+            None => self.get_service_ticket(service).await?,
+        };
+        let change_data = kadmin::ChangePasswdData::for_target(
+            &new_password_bytes,
+            target.name_type,
+            target.components.iter().map(String::as_str),
+            &target.realm,
+        )?;
+        let request = build_kpasswd_request(&ticket, &change_data, options)?;
+        let reply = self
+            .transport
+            .exchange_kpasswd_request_with_config(
+                &self.config,
+                self.protocol,
+                &target.realm,
+                &request.request,
+            )
+            .await?;
+        let verified = verify_kpasswd_ap_rep(&reply, &request)?;
+        let result_key = verified
+            .as_ref()
+            .and_then(|metadata| metadata.subkey.as_ref())
+            .unwrap_or(&request.reply_key);
+        let result = reply.decrypt_result(result_key)?;
+        if result.is_success() && verified.is_none() {
+            // A success result needs an authenticated AP-REP; a KRB-ERROR
+            // carries none, so its text must not flip the stored credential.
+            return Err(Error::MissingKpasswdApRep);
+        }
+        result.ensure_success()?;
+
+        if update_password_credential {
+            self.credentials = Some(TokioClientCredentials::Password(Zeroizing::new(
+                new_password_bytes,
+            )));
+        }
+
+        Ok(result)
     }
 }
 
