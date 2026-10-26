@@ -26,6 +26,11 @@ Every `#[expect]`/`#![expect]` in the Rust tree, including one nested in
 
 `#[deny(lint, reason = "...")]` opt-ins of excluded lints are not exceptions and
 pass. `#[allow]` is the allow gate's business.
+
+Whitespace between `#`, `!` and `[` does not hide an attribute. A spelling the
+lexer cannot see through (a macro metavariable in or as an attribute, an
+`expect(..)` token tree handed to a macro, `include!` or `#[path]` of a file the
+gates do not scan) is reported: fail closed.
 """
 
 from __future__ import annotations
@@ -158,6 +163,8 @@ def scan(file: str, source: str) -> list[str]:
                 f"{file}:{line}: expect({', '.join(call.lints)}, "
                 f"reason = {call.reason!r}) [{call.predicate}]: {problem}"
             )
+    for offset, why in common.unscannable(source, stripped):
+        hits.append(f"{file}:{common.line_of(source, offset)}: {why}")
     return hits
 
 
@@ -245,6 +252,44 @@ REJECTED: Final = (
 )
 
 
+EVASIONS: Final = (
+    (
+        "spaced '# [expect]'",
+        "src/der.rs",
+        '#[rustfmt::skip]\n# [expect(dead_code, reason = "x")]\nfn f() {}\n',
+    ),
+    ("spaced inner", "src/der.rs", '# ! [expect(dead_code, reason = "x")]\n'),
+    (
+        "raw identifier",
+        "src/der.rs",
+        '#[r#expect(dead_code, reason = "x")]\nfn f() {}\n',
+    ),
+    (
+        "meta fragment",
+        "src/der.rs",
+        "macro_rules! m { ($a:meta) => { #[$a] fn f() {} } }\n"
+        'm!(expect(dead_code, reason = "x"));\n',
+    ),
+    (
+        "tt fragment",
+        "src/der.rs",
+        "macro_rules! m { ($t:tt) => { #$t fn f() {} } }\n",
+    ),
+    (
+        "foreign macro argument",
+        "src/der.rs",
+        'other_crate::with_attr!(expect(dead_code, reason = "x"), fn f() {});\n',
+    ),
+    ("include! of a .txt", "src/der.rs", 'include!("d.txt");\n'),
+    ("path to a .txt", "src/der.rs", '#[path = "d.txt"]\nmod d;\n'),
+    (
+        "sanctioned reason, spaced, on the wrong item",
+        "src/der.rs",
+        '# [expect(missing_copy_implementations, reason = "secret material must not be implicitly copied")]\nfn f() {}\n',
+    ),
+)
+
+
 WHY: Final = {
     "invariant:": "transition reason form 'invariant'",
     "lint-migration:": "transition reason form 'lint-migration'",
@@ -288,6 +333,11 @@ def self_test() -> int:
         ),
     ):
         assert len(scan(file, source)) == 1, (file, source, scan(file, source))
+    # Lexical evasions from the Wave 4 review compile clean and must be hits.
+    for label, file, source in EVASIONS:
+        assert len(scan(file, source)) >= 1, (label, scan(file, source))
+    # Spacing alone neither hides nor breaks a sanctioned form.
+    assert scan("src/crypto.rs", ACCEPTED[2][1].replace("#[expect", "# [expect")) == []
     # A test pair on a mod nested in a cfg(test) mod is under cfg(test).
     nested = (
         "#[cfg(test)]\nmod tests {\n"
@@ -304,7 +354,8 @@ def self_test() -> int:
         assert main(["--enforce", "--root", str(root)]) == 0
     print(
         "exception_gate self-test: ok (six sanctioned forms and a deny opt-in "
-        "accepted; five rejected forms and seven near misses rejected)"
+        "accepted; five rejected forms, seven near misses and "
+        f"{len(EVASIONS)} lexical evasions rejected)"
     )
     return 0
 
@@ -319,7 +370,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_test:
         return self_test()
     hits = report(args.root)
-    print("\n".join(hits + [f"exception_gate: {len(hits)} unsanctioned expect(s)"]))
+    print(
+        "\n".join(
+            hits
+            + [
+                f"exception_gate: {len(hits)} unsanctioned expect(s) "
+                "or unscannable construct(s)"
+            ]
+        )
+    )
     return int(args.enforce and bool(hits))
 
 

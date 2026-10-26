@@ -12,7 +12,7 @@ import re
 import sys
 import tomllib
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Final, Iterator
 
 
 def strip_comments_and_strings(src: str, *, keep_literals: bool = False) -> str:
@@ -83,16 +83,77 @@ def split_top_level(text: str) -> list[tuple[int, int]]:
     return spans + [(start, len(text))]
 
 
+# `#`, `!` and `[` are separate tokens: whitespace (and so a blanked comment)
+# may sit between them, as in `# ! [allow(x)]` under `rustfmt::skip`.
+ATTRIBUTE_START: Final = re.compile(r"#\s*(!)?\s*\[")
+# An attribute path, optionally raw (`r#allow`) or `::`-qualified.
+META_PATH: Final = r"(?:::\s*)?(?:r#)?[A-Za-z_]\w*(?:\s*::\s*(?:r#)?\w+)*"
+
+
 def iter_attributes(src: str) -> Iterator[tuple[int, int, bool, str]]:
     pos = 0
-    while match := re.search(r"#!?\[", src[pos:]):
-        start = pos + match.start()
-        bracket = pos + match.end() - 1
+    while match := ATTRIBUTE_START.search(src, pos):
+        start = match.start()
+        bracket = match.end() - 1
         close = match_bracket(src, bracket)
         if close is None:
             return
-        yield start, close + 1, src[start : start + 2] == "#!", src[bracket + 1 : close]
+        yield start, close + 1, match[1] is not None, src[bracket + 1 : close]
         pos = close + 1
+
+
+def opaque_constructs(stripped: str) -> list[tuple[int, str]]:
+    """Report spellings whose expansion the lexer cannot read, so gates fail closed.
+
+    A suppression can hide behind a macro: `#[$m]` with `$m:meta`, `#$t` with a
+    bracketed `$t:tt`, `cfg_attr(p, $($t)*)`, or an `allow(..)`/`expect(..)`
+    token tree handed to any macro (local or foreign) that emits `#[..]` from it.
+    Every attribute must also start with a plain path, as all lint and
+    `cfg_attr` attributes do; anything else is reported, never guessed.
+    """
+    found: list[tuple[int, str]] = []
+    spans = []
+    for match in re.finditer(r"#\s*!?\s*\$", stripped):
+        found.append((match.start(), "attribute spliced from a macro metavariable"))
+    for start, end, inner, body in iter_attributes(stripped):
+        spans.append((start, end))
+        if "$" in body:
+            found.append((start, "attribute body uses a macro metavariable"))
+            continue
+
+        def visit(part: str) -> None:
+            head = re.match(r"\s*(" + META_PATH + r")\s*(?:([(\[{])|=|$)", part, re.S)
+            if head is None:
+                found.append((start, "attribute is not a plain path"))
+                return
+            if re.sub(r"\s+|r#", "", head[1]).lstrip(":") == "cfg_attr" and head[2]:
+                opening = head.end() - 1
+                closing = match_bracket(part, opening)
+                if closing is None:
+                    found.append((start, "cfg_attr without a closing bracket"))
+                    return
+                args = part[opening + 1 : closing]
+                for a, b in split_top_level(args)[1:]:
+                    if args[a:b].strip():
+                        visit(args[a:b])
+
+        visit(body)
+    for match in re.finditer(
+        r"(?<![\w.:#$])(?:r#)?(allow|expect)\s*[(\[{]", stripped
+    ):
+        if any(a <= match.start() < b for a, b in spans):
+            continue
+        before = stripped[: match.start()].rstrip()
+        if before.endswith((".", "::")) or re.search(r"\bfn\Z", before[-3:]):
+            continue
+        found.append(
+            (
+                match.start(),
+                f"`{match[1]}(..)` token tree outside an attribute "
+                "(a macro argument can expand to a lint attribute)",
+            )
+        )
+    return sorted(found)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +176,7 @@ def attribute_calls(original: str, stripped: str | None = None) -> list[Attribut
     for start, end, inner, body in iter_attributes(clean):
 
         def visit(part: str, offset: int, predicates: tuple[str, ...]) -> None:
-            match = re.match(r"\s*(\w+)\s*\(", part)
+            match = re.match(r"\s*(?:r#)?(\w+)\s*[(\[{]", part)
             if match is None:
                 return
             opening = match.end() - 1
@@ -170,7 +231,8 @@ def attribute_calls(original: str, stripped: str | None = None) -> list[Attribut
                     )
                 )
 
-        visit(body, start + (3 if inner else 2), ())
+        # The body ends just before the closing `]`, whatever the spacing after `#`.
+        visit(body, end - 1 - len(body), ())
     return calls
 
 

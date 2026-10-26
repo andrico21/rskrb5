@@ -4,14 +4,22 @@
 # dependencies = []
 # ///
 # How to run: python3 scripts/lint-gates/allow_gate.py --self-test
-"""Forbid Rust allow attributes; ported from rmcp-server-kit (MIT/Apache-2.0)."""
+"""Forbid Rust allow attributes; ported from rmcp-server-kit (MIT/Apache-2.0).
+
+Spelling that the lexer cannot see through (a macro metavariable in or as an
+attribute, an `allow(..)` token tree handed to a macro, `include!` or
+`#[path]` of a file the gates do not scan) is reported too: fail closed.
+"""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Final
 
 import common
 
@@ -25,7 +33,38 @@ def scan(files: list[Path]) -> list[str]:
                 hits.append(
                     f"{path}:{common.line_of(original, call.kw_start)}: allow({', '.join(call.lints)}) [{call.predicate}]"
                 )
+        for offset, why in common.unscannable(original, stripped):
+            hits.append(f"{path}:{common.line_of(original, offset)}: {why}")
     return hits
+
+
+# Lexical evasions from the Wave 4 review: each compiles clean under
+# `clippy -D warnings`, so each must be a hit here.
+EVASIONS: Final = (
+    ("spaced outer", "#[rustfmt::skip]\n# [allow(dead_code)]\nfn f() {}\n"),
+    ("spaced inner", "#![cfg_attr(rustfmt, rustfmt::skip)]\n# ! [allow(dead_code)]\n"),
+    ("comment between", "#/* c */[allow(dead_code)]\nfn f() {}\n"),
+    ("raw identifier", "#[r#allow(dead_code)]\nfn f() {}\n"),
+    (
+        "meta fragment",
+        "macro_rules! m { ($a:meta) => { #[$a] fn f() {} } }\nm!(allow(dead_code));\n",
+    ),
+    (
+        "tt fragment",
+        "macro_rules! m { ($t:tt) => { #$t fn f() {} } }\nm!([allow(dead_code)]);\n",
+    ),
+    (
+        "cfg_attr fragment",
+        "macro_rules! m { ($($t:tt)*) => { #[cfg_attr(all(), $($t)*)] fn f() {} } }\n",
+    ),
+    ("foreign macro argument", "other_crate::with_attr!(allow(dead_code), fn f() {});\n"),
+    ("include! of a .txt", 'include!("d.txt");\n'),
+    ("include! of a computed path", 'include!(concat!(env!("OUT_DIR"), "/d.rs"));\n'),
+    ("include! outside the tree", 'include!("../../d.rs");\n'),
+    ("path to a .txt", '#[path = "d.txt"]\nmod d;\n'),
+    ("path in cfg_attr", '#[cfg_attr(all(), path = "d.txt")]\nmod d;\n'),
+    ("non-path attribute", "#[[<al low>](dead_code)]\nfn f() {}\n"),
+)
 
 
 def self_test() -> int:
@@ -48,7 +87,17 @@ def self_test() -> int:
             '//! docs\n#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "lint-migration: upstream baseline at abc1234"))]\npub fn f() {}\n'
         )
         assert scan([path]) == []
-    print("allow_gate self-test: ok")
+        for label, source in EVASIONS:
+            path.write_text(source)
+            assert len(scan([path])) >= 1, (label, source)
+            with redirect_stdout(StringIO()):
+                assert main(["--enforce", "--files", str(path)]) == 1, label
+        path.write_text(
+            '#[path = "support/env.rs"]\nmod env;\nconst S: &str = include_str!("d.txt");\n'
+            'fn f() { x.expect("y"); Option::expect(o, "y"); }\nfn expect() {}\n'
+        )
+        assert scan([path]) == [], scan([path])
+    print(f"allow_gate self-test: ok ({len(EVASIONS)} lexical evasions rejected)")
     return 0
 
 
@@ -68,7 +117,12 @@ def main(argv: list[str] | None = None) -> int:
         else list(common.iter_rust_files(args.root))
     )
     hits = scan(files)
-    print("\n".join(hits + [f"allow_gate: {len(hits)} allow attribute(s)"]))
+    print(
+        "\n".join(
+            hits
+            + [f"allow_gate: {len(hits)} allow attribute(s) or unscannable construct(s)"]
+        )
+    )
     return int(args.enforce and bool(hits))
 
 

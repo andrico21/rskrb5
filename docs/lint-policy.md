@@ -68,6 +68,7 @@ in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
 | `<script> --self-test`, for every script | each gate still detects what it claims to, on inline fixtures |
 | `allow_gate.py --enforce` | no `allow` attribute anywhere, including nested `cfg_attr` lists and inner attributes |
 | `exception_gate.py --enforce` | every `expect` is one of the six sanctioned forms above on a matching item; `lint-migration:`, `invariant:` and any other reason fail |
+| (both gates) | fail closed on spelling the lexer cannot see through: `#`, `!` and `[` are read as separate tokens, so `# [allow(..)]` is still an attribute; a macro metavariable in or as an attribute (`#[$m]`, `#$t`), an `allow(..)`/`expect(..)` token tree passed to a macro, an attribute that does not start with a path, and `include!` or `#[path]` of anything but a relative `.rs` path without `..` are all reported |
 | `profile_eq.py --clippy-toml` | `[lints]` equals the vendored core profile; `clippy.toml` equals the core sample apart from the two append-only keys |
 | `completeness_check.py` | the profile is complete for the current stable: the rustc and `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions |
 | `facade_gate.py --enforce` | no `pub use` (or `pub(..) use`) outside the crate-root scope of `src/lib.rs`, cfg-disabled code included |
