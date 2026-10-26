@@ -1,300 +1,6 @@
 use super::*;
 
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn parses_kdc_preauth_required_error_and_selects_etype_info2() {
-    let error_bytes = synthetic_preauth_required_error();
-
-    let error = process_kdc_error(&error_bytes).expect("KRB-ERROR decodes");
-
-    assert_eq!(error.error_code, KDC_ERR_PREAUTH_REQUIRED);
-    assert_eq!(error.ctime, None);
-    assert_eq!(error.cusec, None);
-    assert_eq!(error.stime, timestamp(1_893_553_440));
-    assert_eq!(error.susec, 0);
-    assert_eq!(
-        error.client,
-        Some(Principal::user("TEST.GOKRB5", "testuser1"))
-    );
-    assert_eq!(error.service, Principal::tgt_service("TEST.GOKRB5"));
-    assert_eq!(error.method_data.len(), 1);
-    assert_eq!(
-        error.preauth_key_info,
-        vec![PreauthKeyInfo {
-            etype: 18,
-            salt: Some(TESTUSER_SALT.to_owned()),
-            s2kparams: Some(vec![0, 0, 16, 0]),
-        }]
-    );
-
-    let selected = select_preauth_key_info(&error, &[17, 18]).expect("supported hint is selected");
-    assert_eq!(selected.etype, 18);
-    assert_eq!(
-        default_password_salt(&Principal::user("TEST.GOKRB5", "testuser1")),
-        TESTUSER_SALT
-    );
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn selects_and_derives_rc4_hmac_preauth_key_info() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let error = KdcError {
-        ctime: None,
-        cusec: None,
-        stime: timestamp(1_893_553_440),
-        susec: 0,
-        error_code: KDC_ERR_PREAUTH_REQUIRED,
-        text: None,
-        client: Some(client.clone()),
-        service: Principal::tgt_service("TEST.GOKRB5"),
-        e_data: None,
-        method_data: Vec::new(),
-        preauth_key_info: vec![PreauthKeyInfo {
-            etype: 23,
-            salt: Some("ignored-by-rc4".to_owned()),
-            s2kparams: None,
-        }],
-    };
-
-    let selected = select_preauth_key_info(&error, &[18, 23]).expect("RC4 hint is selected");
-    assert_eq!(selected.etype, 23);
-
-    let reply_key =
-        derive_password_reply_key(&client, b"foo", &selected).expect("RC4 reply key derives");
-    assert_eq!(reply_key.etype, 23);
-    assert_eq!(
-        reply_key.value,
-        decode_hex("ac8e657f83df82beea5d43bdaf7800cc")
-    );
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_tgt_with_password_retries_after_preauth_required() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18]);
-    let key_info = password_key_info();
-    let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
-        .expect("password key derives");
-    let mut transport = PreauthTransport::new(reply_key, None);
-
-    let session =
-        login_tgt_with_password(&mut transport, client.clone(), TESTUSER_PASSWORD, options)
-            .expect("password login succeeds");
-
-    assert_eq!(transport.calls, 2);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_tgt_with_password_can_disable_fast_negotiation_marker() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
-        .with_etypes(vec![18])
-        .with_fast_negotiation(false);
-    let key_info = password_key_info();
-    let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
-        .expect("password key derives");
-    let mut transport = PreauthTransport::new(reply_key, None).with_fast_negotiation(false);
-
-    let session =
-        login_tgt_with_password(&mut transport, client.clone(), TESTUSER_PASSWORD, options)
-            .expect("password login succeeds");
-
-    assert_eq!(transport.calls, 2);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_as_service_with_password_retries_for_explicit_service() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let service = change_password_principal();
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18]);
-    let key_info = password_key_info();
-    let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
-        .expect("password key derives");
-    let mut transport = PreauthTransport::new(reply_key, None);
-
-    let session = login_as_service_with_password(
-        &mut transport,
-        client.clone(),
-        service.clone(),
-        TESTUSER_PASSWORD,
-        options,
-    )
-    .expect("password login succeeds");
-
-    assert_eq!(transport.calls, 2);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, service);
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_tgt_with_password_can_assume_preauthentication() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
-        .with_etypes(vec![18])
-        .with_assume_preauthentication(true);
-    let key_info = PreauthKeyInfo {
-        etype: 18,
-        salt: None,
-        s2kparams: None,
-    };
-    let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
-        .expect("password key derives");
-    let mut transport = AssumedPreauthTransport::new(reply_key, None);
-
-    let session =
-        login_tgt_with_password(&mut transport, client.clone(), TESTUSER_PASSWORD, options)
-            .expect("password login succeeds");
-
-    assert_eq!(transport.calls, 1);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_tgt_with_keytab_retries_with_selected_keytab_kvno() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18]);
-    let keytab = keytab_with_reply_key(7);
-    let mut transport = PreauthTransport::new(reply_key(), Some(7));
-
-    let session = login_tgt_with_keytab(&mut transport, client.clone(), &keytab, options)
-        .expect("keytab login succeeds");
-
-    assert_eq!(transport.calls, 2);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_tgt_with_keytab_can_disable_fast_negotiation_marker() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
-        .with_etypes(vec![18])
-        .with_fast_negotiation(false);
-    let keytab = keytab_with_reply_key(7);
-    let mut transport = PreauthTransport::new(reply_key(), Some(7)).with_fast_negotiation(false);
-
-    let session = login_tgt_with_keytab(&mut transport, client.clone(), &keytab, options)
-        .expect("keytab login succeeds");
-
-    assert_eq!(transport.calls, 2);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_as_service_with_keytab_retries_for_explicit_service() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let service = change_password_principal();
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344).with_etypes(vec![18]);
-    let keytab = keytab_with_reply_key(7);
-    let mut transport = PreauthTransport::new(reply_key(), Some(7));
-
-    let session = login_as_service_with_keytab(
-        &mut transport,
-        client.clone(),
-        service.clone(),
-        &keytab,
-        options,
-    )
-    .expect("keytab login succeeds");
-
-    assert_eq!(transport.calls, 2);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, service);
-}
-
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn login_tgt_with_keytab_can_assume_preauthentication() {
-    let client = Principal::user("TEST.GOKRB5", "testuser1");
-    let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
-        .with_etypes(vec![20, 18])
-        .with_assume_preauthentication(true);
-    let keytab = keytab_with_reply_key(3);
-    let mut transport = AssumedPreauthTransport::new(reply_key(), Some(3));
-
-    let session = login_tgt_with_keytab(&mut transport, client.clone(), &keytab, options)
-        .expect("keytab login succeeds");
-
-    assert_eq!(transport.calls, 1);
-    assert_eq!(session.client, client);
-    assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-}
-
-/// Fork-authored login tests: AS-REP session keys outside the requested enctypes.
+/// Login tests: password and keytab pre-authentication and AS-REP session keys.
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
@@ -302,14 +8,265 @@ fn login_tgt_with_keytab_can_assume_preauthentication() {
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod fork_tests {
+mod tests {
     use super::*;
+
+    /// Pins that a `PREAUTH_REQUIRED` error is parsed and its ETYPE-INFO2 entry selected.
+    #[test]
+    fn parses_kdc_preauth_required_error_and_selects_etype_info2() -> Result<(), TestError> {
+        let error_bytes = synthetic_preauth_required_error()?;
+
+        let error = process_kdc_error(&error_bytes).context("KRB-ERROR decodes")?;
+
+        assert_eq!(error.error_code, KDC_ERR_PREAUTH_REQUIRED);
+        assert_eq!(error.ctime, None);
+        assert_eq!(error.cusec, None);
+        assert_eq!(error.stime, timestamp(1_893_553_440)?);
+        assert_eq!(error.susec, 0);
+        assert_eq!(
+            error.client,
+            Some(Principal::user("TEST.GOKRB5", "testuser1"))
+        );
+        assert_eq!(error.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(error.method_data.len(), 1);
+        assert_eq!(
+            error.preauth_key_info,
+            vec![PreauthKeyInfo {
+                etype: 18,
+                salt: Some(TESTUSER_SALT.to_owned()),
+                s2kparams: Some(vec![0, 0, 16, 0]),
+            }]
+        );
+
+        let selected = select_preauth_key_info(&error, &[17_i32, 18_i32])
+            .context("supported hint is selected")?;
+        assert_eq!(selected.etype, 18_i32);
+        assert_eq!(
+            default_password_salt(&Principal::user("TEST.GOKRB5", "testuser1")),
+            TESTUSER_SALT
+        );
+        Ok(())
+    }
+
+    /// Pins the selection and key derivation of an RC4-HMAC pre-authentication entry.
+    #[test]
+    fn selects_and_derives_rc4_hmac_preauth_key_info() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let error = KdcError {
+            ctime: None,
+            cusec: None,
+            stime: timestamp(1_893_553_440)?,
+            susec: 0,
+            error_code: KDC_ERR_PREAUTH_REQUIRED,
+            text: None,
+            client: Some(client.clone()),
+            service: Principal::tgt_service("TEST.GOKRB5"),
+            e_data: None,
+            method_data: Vec::new(),
+            preauth_key_info: vec![PreauthKeyInfo {
+                etype: 23,
+                salt: Some("ignored-by-rc4".to_owned()),
+                s2kparams: None,
+            }],
+        };
+
+        let selected =
+            select_preauth_key_info(&error, &[18_i32, 23_i32]).context("RC4 hint is selected")?;
+        assert_eq!(selected.etype, 23_i32);
+
+        let reply_key = derive_password_reply_key(&client, b"foo", &selected)
+            .context("RC4 reply key derives")?;
+        assert_eq!(reply_key.etype, 23_i32);
+        assert_eq!(
+            reply_key.value,
+            decode_hex("ac8e657f83df82beea5d43bdaf7800cc")?
+        );
+        Ok(())
+    }
+
+    /// Pins that a password login retries with PA-ENC-TIMESTAMP after `PREAUTH_REQUIRED`.
+    #[test]
+    fn login_tgt_with_password_retries_after_preauth_required() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options =
+            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let key_info = password_key_info();
+        let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
+            .context("password key derives")?;
+        let mut transport = PreauthTransport::new(reply_key, None);
+
+        let session =
+            login_tgt_with_password(&mut transport, client.clone(), TESTUSER_PASSWORD, options)
+                .context("password login succeeds")?;
+
+        assert_eq!(transport.calls, 2);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        Ok(())
+    }
+
+    /// Pins that a password login can omit the FAST negotiation marker.
+    #[test]
+    fn login_tgt_with_password_can_disable_fast_negotiation_marker() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+            .with_etypes(vec![18_i32])
+            .with_fast_negotiation(false);
+        let key_info = password_key_info();
+        let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
+            .context("password key derives")?;
+        let mut transport = PreauthTransport::new(reply_key, None).with_fast_negotiation(false);
+
+        let session =
+            login_tgt_with_password(&mut transport, client.clone(), TESTUSER_PASSWORD, options)
+                .context("password login succeeds")?;
+
+        assert_eq!(transport.calls, 2);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        Ok(())
+    }
+
+    /// Pins that a password login for an explicit service retries after `PREAUTH_REQUIRED`.
+    #[test]
+    fn login_as_service_with_password_retries_for_explicit_service() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let service = change_password_principal();
+        let options =
+            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let key_info = password_key_info();
+        let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
+            .context("password key derives")?;
+        let mut transport = PreauthTransport::new(reply_key, None);
+
+        let session = login_as_service_with_password(
+            &mut transport,
+            client.clone(),
+            service.clone(),
+            TESTUSER_PASSWORD,
+            options,
+        )
+        .context("password login succeeds")?;
+
+        assert_eq!(transport.calls, 2);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, service);
+        Ok(())
+    }
+
+    /// Pins that a password login can send PA-ENC-TIMESTAMP up front, in one KDC call.
+    #[test]
+    fn login_tgt_with_password_can_assume_preauthentication() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+            .with_etypes(vec![18_i32])
+            .with_assume_preauthentication(true);
+        let key_info = PreauthKeyInfo {
+            etype: 18,
+            salt: None,
+            s2kparams: None,
+        };
+        let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
+            .context("password key derives")?;
+        let mut transport = AssumedPreauthTransport::new(reply_key, None);
+
+        let session =
+            login_tgt_with_password(&mut transport, client.clone(), TESTUSER_PASSWORD, options)
+                .context("password login succeeds")?;
+
+        assert_eq!(transport.calls, 1);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        Ok(())
+    }
+
+    /// Pins that a keytab login retries with the key version of the selected keytab entry.
+    #[test]
+    fn login_tgt_with_keytab_retries_with_selected_keytab_kvno() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options =
+            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let keytab = keytab_with_reply_key(7)?;
+        let mut transport = PreauthTransport::new(reply_key()?, Some(7));
+
+        let session = login_tgt_with_keytab(&mut transport, client.clone(), &keytab, options)
+            .context("keytab login succeeds")?;
+
+        assert_eq!(transport.calls, 2);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        Ok(())
+    }
+
+    /// Pins that a keytab login can omit the FAST negotiation marker.
+    #[test]
+    fn login_tgt_with_keytab_can_disable_fast_negotiation_marker() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+            .with_etypes(vec![18_i32])
+            .with_fast_negotiation(false);
+        let keytab = keytab_with_reply_key(7)?;
+        let mut transport =
+            PreauthTransport::new(reply_key()?, Some(7)).with_fast_negotiation(false);
+
+        let session = login_tgt_with_keytab(&mut transport, client.clone(), &keytab, options)
+            .context("keytab login succeeds")?;
+
+        assert_eq!(transport.calls, 2);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        Ok(())
+    }
+
+    /// Pins that a keytab login for an explicit service retries after `PREAUTH_REQUIRED`.
+    #[test]
+    fn login_as_service_with_keytab_retries_for_explicit_service() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let service = change_password_principal();
+        let options =
+            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let keytab = keytab_with_reply_key(7)?;
+        let mut transport = PreauthTransport::new(reply_key()?, Some(7));
+
+        let session = login_as_service_with_keytab(
+            &mut transport,
+            client.clone(),
+            service.clone(),
+            &keytab,
+            options,
+        )
+        .context("keytab login succeeds")?;
+
+        assert_eq!(transport.calls, 2);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, service);
+        Ok(())
+    }
+
+    /// Pins that a keytab login can send PA-ENC-TIMESTAMP up front, in one KDC call.
+    #[test]
+    fn login_tgt_with_keytab_can_assume_preauthentication() -> Result<(), TestError> {
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+            .with_etypes(vec![20_i32, 18_i32])
+            .with_assume_preauthentication(true);
+        let keytab = keytab_with_reply_key(3)?;
+        let mut transport = AssumedPreauthTransport::new(reply_key()?, Some(3));
+
+        let session = login_tgt_with_keytab(&mut transport, client.clone(), &keytab, options)
+            .context("keytab login succeeds")?;
+
+        assert_eq!(transport.calls, 1);
+        assert_eq!(session.client, client);
+        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        Ok(())
+    }
 
     /// Pins that a password login rejects an assumed-preauth AS-REP keyed outside the requested etypes.
     #[test]
     fn initial_as_rep_outside_requested_enctypes_is_rejected() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
+        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
         let aes128_key_info = PreauthKeyInfo {
@@ -335,10 +292,10 @@ mod fork_tests {
     #[test]
     fn keytab_initial_as_rep_outside_requested_enctypes_is_rejected() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447), 0x1122_3344)
+        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
-        let mut keytab = keytab_with_reply_key(4);
+        let mut keytab = keytab_with_reply_key(4)?;
         let aes128_key_info = PreauthKeyInfo {
             etype: 17,
             salt: None,

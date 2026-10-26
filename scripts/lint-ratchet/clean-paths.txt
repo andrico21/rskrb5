@@ -28,3 +28,6 @@ src/service.rs
 src/spnego.rs
 src/spnego/**
 src/ticket.rs
+tests/client.rs
+tests/client/**
+tests/client_principal.rs
