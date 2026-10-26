@@ -136,11 +136,6 @@ fn ad_gate_error(message: String) -> Box<dyn Error> {
     io::Error::other(message).into()
 }
 
-/// Parses the keytab `bytes` loaded for fixture `label` from `source`.
-///
-/// # Errors
-///
-/// Returns an error naming `label` and `source` if the bytes are not a keytab.
 #[cfg_attr(
     any(
         all(
@@ -215,6 +210,11 @@ fn ad_gate_error(message: String) -> Box<dyn Error> {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
+/// Parses the keytab `bytes` loaded for fixture `label` from `source`.
+///
+/// # Errors
+///
+/// Returns an error naming `label` and `source` if the bytes are not a keytab.
 fn parse_keytab_bytes(label: &str, source: String, bytes: &[u8]) -> Result<Keytab, Box<dyn Error>> {
     Keytab::parse(bytes).map_err(|error| {
         ad_gate_error(format!(
