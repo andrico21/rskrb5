@@ -497,20 +497,19 @@ impl AesSha2Etype {
         Ok(self.kdf_hmac_sha2(protocol_key, label, &[], self.derive_key_len(label)))
     }
 
-    /// RFC8009 PRF derivation.
+    /// RFC8009 PRF derivation over an application octet-string context.
+    ///
+    /// The context may be empty (RFC8009 sections 3 and 5); unlike an RFC3961
+    /// derivation constant, it is not constrained by the cipher block size.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long.
     #[inline]
-    pub fn derive_random(self, protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
+    pub fn derive_random(self, protocol_key: &[u8], context: &[u8]) -> Result<Vec<u8>, Error> {
         self.validate_protocol_key(protocol_key)?;
-        if usage.is_empty() {
-            return Err(Error::EmptyUsage);
-        }
 
-        Ok(self.kdf_hmac_sha2(protocol_key, b"prf", usage, self.hash_len()))
+        Ok(self.kdf_hmac_sha2(protocol_key, b"prf", context, self.hash_len()))
     }
 
     /// Calculate the keyed checksum for message bytes and a Kerberos key usage.

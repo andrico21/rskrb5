@@ -12,10 +12,68 @@ mod tests {
 
     use hmac::{Hmac, KeyInit as _, Mac as _};
     use md5::{Digest as _, Md5};
-    use rskrb5_ng::{crypto::Rc4HmacEtype, error::Crypto};
+    use rskrb5_ng::{
+        crypto::{AesSha2Etype, Rc4HmacEtype},
+        error::Crypto,
+    };
+    use sha2::{Sha256, Sha384};
 
     /// Regression test error.
     type TestError = Box<dyn Error>;
+
+    /// The SHA-256 PRF accepts empty context as defined by RFC 8009 sections 3 and 5.
+    #[test]
+    fn sha256_prf_accepts_empty_context() -> Result<(), TestError> {
+        // Given the Appendix A key and independent empty-context HMAC framing.
+        let key = hex::decode("3705d96080c17728a0e800eab6e0d23c")?;
+        let mut oracle = Hmac::<Sha256>::new_from_slice(&key)?;
+        oracle.update(b"\x00\x00\x00\x01prf\x00\x00\x00\x01\x00");
+        let expected = oracle.finalize().into_bytes();
+        // When the public PRF processes an empty context.
+        let actual = AesSha2Etype::Aes128.derive_random(&key, b"")?;
+        // Then all output bytes match the independent oracle.
+        assert_eq!(actual.as_slice(), expected.as_slice());
+        Ok(())
+    }
+
+    /// The SHA-384 PRF accepts empty context as defined by RFC 8009 sections 3 and 5.
+    #[test]
+    fn sha384_prf_accepts_empty_context() -> Result<(), TestError> {
+        // Given the Appendix A key and independent empty-context HMAC framing.
+        let key = hex::decode("6d404d37faf79f9df0d33568d320669800eb4836472ea8a026d16b7182460c52")?;
+        let mut oracle = Hmac::<Sha384>::new_from_slice(&key)?;
+        oracle.update(b"\x00\x00\x00\x01prf\x00\x00\x00\x01\x80");
+        let expected = oracle.finalize().into_bytes();
+        // When the public PRF processes an empty context.
+        let actual = AesSha2Etype::Aes256.derive_random(&key, b"")?;
+        // Then all output bytes match the independent oracle.
+        assert_eq!(actual.as_slice(), expected.as_slice());
+        Ok(())
+    }
+
+    /// Published RFC 8009 Appendix A PRFs retain their nonempty-context outputs.
+    #[test]
+    fn sha2_prf_matches_published_nonempty_vectors() -> Result<(), TestError> {
+        // Given published keys and outputs for context "test".
+        for (etype, key, expected) in [
+            (
+                AesSha2Etype::Aes128,
+                "3705d96080c17728a0e800eab6e0d23c",
+                "9d188616f63852fe86915bb840b4a886ff3e6bb0f819b49b893393d393854295",
+            ),
+            (
+                AesSha2Etype::Aes256,
+                "6d404d37faf79f9df0d33568d320669800eb4836472ea8a026d16b7182460c52",
+                "9801f69a368c2bf675e59521e177d9a07f67efe1cfde8d3c8d6f6a0256e3b17db3c1b62ad1b8553360d17367eb1514d2",
+            ),
+        ] {
+            // When the public PRF processes the published context.
+            let actual = etype.derive_random(&hex::decode(key)?, b"test")?;
+            // Then it matches the RFC output exactly.
+            assert_eq!(actual, hex::decode(expected)?);
+        }
+        Ok(())
+    }
 
     /// High usage values use the RFC 4757 four-byte little-endian encoding.
     #[test]
