@@ -10,6 +10,7 @@ use super::*;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use super::*;
+    use rasn::der;
 
     /// A fresh explicit AS login replaces an older but longer-lived TGT.
     #[tokio::test]
@@ -21,7 +22,7 @@ mod tests {
             let size = stream.read_u32().await?;
             let mut bytes = vec![0; usize::try_from(size)?];
             let _read = stream.read_exact(&mut bytes).await?;
-            let built = built_request_from_der(rasn::der::decode(&bytes)?, &bytes)?;
+            let built = built_request_from_der(der::decode(&bytes)?, &bytes)?;
             let reply = synthetic_as_rep_with_reply_key(
                 &built,
                 built.nonce,

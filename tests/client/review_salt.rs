@@ -52,7 +52,7 @@ mod tests {
             &mut SaltKdc,
             client.clone(),
             TESTUSER_PASSWORD,
-            AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18]),
+            AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18_i32]),
         )?;
         assert_eq!(session.client, client);
         Ok(())

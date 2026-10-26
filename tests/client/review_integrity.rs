@@ -11,6 +11,7 @@ use super::*;
 mod tests {
     use super::*;
     use rasn::der;
+    use rskrb5_ng::kdc_rep::decrypt_tgs_rep_enc_part;
 
     /// A negotiated TGS request rejects a missing encrypted request checksum.
     #[test]
@@ -20,7 +21,7 @@ mod tests {
             &tgt,
             sample_service_principal(),
             TgsReq::new(timestamp(1_893_553_450)?, 42)
-                .with_etypes(vec![18])
+                .with_etypes(vec![18_i32])
                 .with_padata(vec![rasn_kerberos::PaData {
                     r#type: PA_REQ_ENC_PA_REP,
                     value: Vec::new().into(),
@@ -45,7 +46,7 @@ mod tests {
             &tgt,
             sample_service_principal(),
             TgsReq::new(timestamp(1_893_553_450)?, 42)
-                .with_etypes(vec![18])
+                .with_etypes(vec![18_i32])
                 .with_padata(vec![rasn_kerberos::PaData {
                     r#type: PA_REQ_ENC_PA_REP,
                     value: Vec::new().into(),
@@ -59,7 +60,7 @@ mod tests {
             request.nonce,
             &tgt.session_key,
         )?)?;
-        let mut part = rskrb5_ng::kdc_rep::decrypt_tgs_rep_enc_part(&response, &tgt.session_key)?;
+        let mut part = decrypt_tgs_rep_enc_part(&response, &tgt.session_key)?;
         let etype = KerberosEtype::from_etype_id(tgt.session_key.etype).context("etype")?;
         part.encrypted_pa_data = Some(vec![rasn_kerberos::PaData {
             r#type: PA_REQ_ENC_PA_REP,

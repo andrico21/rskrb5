@@ -14,3 +14,18 @@ runs, acceptance output and failure QA are in the task-33 evidence log.
 | RSK-E48DA39B | fixed | `cached_service_rejects_invalid_flag`; commit with this ID | INVALID tickets are neither usable nor renewed as a substitute for validation; flags are never locally cleared (RFC 4120 §2.2). | — |
 | RSK-1922A31B | fixed | `service_cache_preserves_component_boundaries`; commit with this ID | Service cache keys preserve realm/component boundaries; name type stays advisory (RFC 4120 §6.2). | — |
 | RSK-45397760 | fixed | `as_request_does_not_advertise_unprotected_canonicalization`, `as_req_options_from_libdefaults_suppresses_canonicalize_flag`; commit with this ID | Unarmored AS builders suppress canonicalize rather than advertise unsupported identity changes. Strict reply identities remain enforced: a usage-56 checksum authenticates the request, not cleartext reply names; FAST advertisement is not armor (RFC 6806 §§3,6). TGS referral behavior is unchanged. | — |
+| `src/client.rs:s4u-delegation:delegated-client-unbound-to-ticket-payload` | fixed | `s4u_reply_fails_closed_without_service_key`, `s4u_self_rejects_ticket_client_mismatch`, `s4u_proxy_rejects_relabelled_evidence`, existing sync/TCP S4U success tests; commit with this lead | S4U2Self decrypts the frontend ticket and binds its client to PA-FOR-USER. S4U2Proxy decrypts additional-ticket evidence, binds its client to the request and reply, and rejects relabelled evidence. Missing keys fail closed with `DelegationKeyRequired`; mismatches use `DelegationPrincipalMismatch`. | — |
+
+## Delegation limits and CHANGELOG notes
+
+Supply frontend service keys with `TgsReq::with_delegation_keytab`; high-level
+keytab-backed clients supply them automatically. Keyless sync, Tokio transport,
+and high-level paths cannot authenticate a delegated ticket and reject it rather
+than return a credential. This does not withdraw keytab-backed S4U support.
+
+The frontend cannot decrypt a backend-targeted S4U2Proxy ticket. Its reply client
+is checked against the frontend-decrypted evidence and expected request identity,
+as required by the approved scope. This does not claim cryptographic authentication
+of the backend ticket's client by the frontend. RFC 4120 §5.4.2 places `cname` and
+`crealm` outside `EncKDCRepPart`; MS-SFU §3.1.5.2 describes S4U2Proxy using the
+additional ticket. Whole-exchange protection remains distinct (RFC 6806 §§3,11).

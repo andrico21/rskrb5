@@ -615,7 +615,9 @@ mod tests {
             &mut transport,
             &service_tgt,
             user.clone(),
-            TgsReq::new(timestamp(1_893_553_450)?, 0x6677_8899).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x6677_8899)
+                .with_etypes(vec![18_i32])
+                .with_delegation_keytab(delegation_keytab()?),
         )
         .context("S4U2Self exchange succeeds")?;
 
@@ -646,7 +648,9 @@ mod tests {
             &service_tgt,
             &evidence_ticket,
             target_service.clone(),
-            TgsReq::new(timestamp(1_893_553_450)?, 0x6655_4433).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x6655_4433)
+                .with_etypes(vec![18_i32])
+                .with_delegation_keytab(delegation_keytab()?),
         )
         .context("S4U2Proxy exchange succeeds")?;
 
@@ -682,7 +686,9 @@ mod tests {
                     addr,
                     &service_tgt,
                     user.clone(),
-                    TgsReq::new(timestamp(1_893_553_450)?, 0x6677_8899).with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x6677_8899)
+                        .with_etypes(vec![18_i32])
+                        .with_delegation_keytab(delegation_keytab()?),
                 )
                 .await
                 .context("Tokio transport S4U2Self succeeds")?;
@@ -724,7 +730,9 @@ mod tests {
             let session = client
                 .s4u2self_with_options(
                     user.clone(),
-                    TgsReq::new(timestamp(1_893_553_450)?, 0x7766_5544).with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x7766_5544)
+                        .with_etypes(vec![18_i32])
+                        .with_delegation_keytab(delegation_keytab()?),
                 )
                 .await
                 .context("Tokio client S4U2Self succeeds")?;
@@ -768,7 +776,9 @@ mod tests {
                     &service_tgt,
                     &evidence_ticket,
                     target_service.clone(),
-                    TgsReq::new(timestamp(1_893_553_450)?, 0x2233_4455).with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x2233_4455)
+                        .with_etypes(vec![18_i32])
+                        .with_delegation_keytab(delegation_keytab()?),
                 )
                 .await
                 .context("Tokio transport S4U2Proxy succeeds")?;
@@ -814,7 +824,9 @@ mod tests {
                 .s4u2proxy_with_options(
                     &evidence_ticket,
                     target_service.clone(),
-                    TgsReq::new(timestamp(1_893_553_450)?, 0x3344_5566).with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x3344_5566)
+                        .with_etypes(vec![18_i32])
+                        .with_delegation_keytab(delegation_keytab()?),
                 )
                 .await
                 .context("Tokio client S4U2Proxy succeeds")?;

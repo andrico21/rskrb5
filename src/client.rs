@@ -181,6 +181,8 @@ impl BuiltAsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
+    /// Frontend keys for validating S4U tickets; never encoded on the wire.
+    pub delegation_keytab: Option<Keytab>,
     /// ASN.1 TGS-REQ message.
     pub message: rasn_kerberos::TgsReq,
     /// DER-encoded TGS-REQ bytes suitable for KDC transport.
@@ -216,6 +218,7 @@ impl BuiltTgsReq {
             service,
             kdc_realm,
             nonce,
+            delegation_keytab: None,
         }
     }
 }
@@ -1769,8 +1772,13 @@ impl Tokio {
     pub async fn s4u2self_with_options(
         &mut self,
         user: Principal,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        if options.delegation_keytab.is_none()
+            && let Some(TokioClientCredentials::Keytab(keytab)) = &self.credentials
+        {
+            options.delegation_keytab = Some(keytab.clone());
+        }
         let service_tgt = self.ensure_tgt().await?;
         self.transport
             .s4u2self_with_config(&self.config, self.protocol, &service_tgt, user, options)
@@ -1811,8 +1819,13 @@ impl Tokio {
         &mut self,
         evidence_ticket: &TgsRepSession,
         target_service: Principal,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        if options.delegation_keytab.is_none()
+            && let Some(TokioClientCredentials::Keytab(keytab)) = &self.credentials
+        {
+            options.delegation_keytab = Some(keytab.clone());
+        }
         let service_tgt = self.ensure_tgt().await?;
         self.transport
             .s4u2proxy_with_config(
@@ -3159,6 +3172,7 @@ fn build_tgs_req_for_realm_inner(
             kdc_realm: kdc_realm_name,
             service,
             nonce: options.nonce,
+            delegation_keytab: options.delegation_keytab,
         },
         ap_req_der,
     ))
@@ -3700,6 +3714,39 @@ fn process_tgs_rep_inner(
     let tgs_rep = kdc_rep::decode_tgs_rep(bytes).map_err(kdc_rep_error)?;
     let kdc_rep = &tgs_rep.0;
 
+    if request
+        .message
+        .0
+        .padata
+        .as_deref()
+        .is_some_and(|data| padata_contains(data, PA_FOR_USER))
+    {
+        let keys = request
+            .delegation_keytab
+            .as_ref()
+            .ok_or(Error::DelegationKeyRequired)?;
+        validate_delegated_ticket(&kdc_rep.ticket, &request.client, keys)?;
+    }
+    if u32::from_be_bytes(ticket_flags_to_bytes(&rasn_kerberos::TicketFlags(
+        request.message.0.req_body.kdc_options.0.clone(),
+    ))) & KDC_OPTION_CNAME_IN_ADDL_TKT
+        != 0
+    {
+        let keys = request
+            .delegation_keytab
+            .as_ref()
+            .ok_or(Error::DelegationKeyRequired)?;
+        let evidence = request
+            .message
+            .0
+            .req_body
+            .additional_tickets
+            .as_ref()
+            .and_then(|tickets| tickets.first())
+            .ok_or(Error::DelegationPrincipalMismatch)?;
+        validate_delegated_ticket(evidence, &request.client, keys)?;
+    }
+
     let client = principal_from_parts(&kdc_rep.crealm, &kdc_rep.cname)?;
     if !principal_matches(&client, &request.client) {
         return Err(Error::PrincipalMismatch {
@@ -3766,6 +3813,36 @@ fn process_tgs_rep_inner(
             .map(system_time_from_kerberos_time)
             .transpose()?,
     })
+}
+
+/// Bind a delegated user to a frontend-decryptable ticket, not KDC-REP cleartext.
+///
+/// # Errors
+/// Returns key lookup/decryption errors, or `DelegationPrincipalMismatch` when
+/// the protected ticket client differs from the requested/evidence identity.
+fn validate_delegated_ticket(
+    ticket: &rasn_kerberos::Ticket,
+    expected: &Principal,
+    keys: &Keytab,
+) -> Result<(), Error> {
+    let service = principal_from_parts(&ticket.realm, &ticket.sname)?;
+    let names = service
+        .components
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let (key, _) = keys.find_key(
+        &names,
+        &service.realm,
+        ticket.enc_part.kvno.unwrap_or_default(),
+        ticket.enc_part.etype,
+    )?;
+    let part = ticket::decrypt_ticket_enc_part(ticket, key).map_err(ticket_error)?;
+    let client = principal_from_parts(&part.crealm, &part.cname)?;
+    if !principal_matches(&client, expected) {
+        return Err(Error::DelegationPrincipalMismatch);
+    }
+    Ok(())
 }
 
 /// Decode a KRB-ERROR and any METHOD-DATA preauthentication hints.
@@ -4172,7 +4249,7 @@ fn password_initial_as_rep_session(
             etype,
             salt: padata
                 .iter()
-                .find(|pa| pa.r#type == 3)
+                .find(|pa| pa.r#type == 3_i32)
                 .map(|pa| str::from_utf8(pa.value.as_ref()).map(str::to_owned))
                 .transpose()?,
             s2kparams: None,

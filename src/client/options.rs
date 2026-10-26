@@ -5,7 +5,10 @@ use super::{
     DEFAULT_TGS_ENCTYPES, DEFAULT_TICKET_LIFETIME, DEFAULT_TKT_ENCTYPES, KDC_OPTION_CANONICALIZE,
     renewal_kdc_option_bits,
 };
-use crate::{config::LibDefaults, keytab::EncryptionKey};
+use crate::{
+    config::LibDefaults,
+    keytab::{EncryptionKey, Keytab},
+};
 
 /// Options for constructing an AS-REQ.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -150,6 +153,8 @@ impl AsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct TgsReq {
+    /// Frontend service keys used to authenticate delegated ticket identities.
+    pub delegation_keytab: Option<Keytab>,
     /// Client clock used for request time fields.
     pub now: SystemTime,
     /// Requested service-ticket lifetime.
@@ -169,6 +174,13 @@ pub struct TgsReq {
 }
 
 impl TgsReq {
+    /// Supply frontend keys for S4U ticket/evidence validation.
+    #[must_use]
+    #[inline]
+    pub fn with_delegation_keytab(mut self, keytab: Keytab) -> Self {
+        self.delegation_keytab = Some(keytab);
+        self
+    }
     #[must_use]
     /// Construct options with gokrb5-compatible AES defaults.
     #[inline]
@@ -182,6 +194,7 @@ impl TgsReq {
             kdc_option_bits: 0,
             padata: Vec::new(),
             additional_tickets: Vec::new(),
+            delegation_keytab: None,
         }
     }
 

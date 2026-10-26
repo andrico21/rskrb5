@@ -22,7 +22,7 @@ mod tests {
             &tgt,
             "DEST.EXAMPLE",
             Principal::new("DEST.EXAMPLE", 2, ["HTTP", "host"]),
-            TgsReq::new(timestamp(1_893_553_450)?, 42).with_etypes(vec![18]),
+            TgsReq::new(timestamp(1_893_553_450)?, 42).with_etypes(vec![18_i32]),
             timestamp(1_893_553_451)?,
             0,
             &decode_hex(TGS_REQ_CONFOUNDER)?,

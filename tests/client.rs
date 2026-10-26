@@ -103,6 +103,8 @@ mod review_canonical;
 mod review_cookie;
 #[path = "client/review_integrity.rs"]
 mod review_integrity;
+#[path = "client/review_s4u.rs"]
+mod review_s4u;
 #[path = "client/review_salt.rs"]
 mod review_salt;
 #[cfg(feature = "tokio")]
@@ -137,6 +139,7 @@ mod harness {
     use rasn::{der, types::Integer};
     #[cfg(feature = "tokio")]
     use rskrb5_ng::ap_rep::encode_build_ap_rep_with_confounder;
+    use rskrb5_ng::ticket::build_ticket_with_confounder;
     use rskrb5_ng::{
         client::{AsRepSession, TgsRepSession, kpasswd::BuiltKpasswdRequest},
         messages::PaForUser,
@@ -724,6 +727,53 @@ mod harness {
         Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"])
     }
 
+    /// Frontend keys for synthetic delegated tickets.
+    pub(crate) fn delegation_keytab() -> Result<Keytab, TestError> {
+        let service = sample_service_principal();
+        let mut keys = Keytab::new();
+        keys.entries_mut().push(KeytabEntry::new(
+            KeytabPrincipal::new(service.realm, service.name_type, service.components),
+            1_893_553_440,
+            4,
+            reply_key()?,
+            4,
+        ));
+        Ok(keys)
+    }
+
+    /// A real encrypted frontend ticket binding its protected client identity.
+    pub(crate) fn delegated_ticket(
+        client: &Principal,
+        service: &Principal,
+    ) -> Result<rasn_kerberos::Ticket, TestError> {
+        let part = rasn_kerberos::EncTicketPart {
+            flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(
+                TICKET_FLAGS,
+            )),
+            key: rasn_encryption_key(&EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?)),
+            crealm: realm(&client.realm)?,
+            cname: rasn_principal(client)?,
+            transited: rasn_kerberos::TransitedEncoding {
+                r#type: 1,
+                contents: Vec::new().into(),
+            },
+            auth_time: kerberos_time(1_893_553_445)?,
+            start_time: Some(kerberos_time(1_893_553_446)?),
+            end_time: kerberos_time(1_893_560_646)?,
+            renew_till: None,
+            caddr: None,
+            authorization_data: None,
+        };
+        Ok(build_ticket_with_confounder(
+            realm(&service.realm)?,
+            rasn_principal(service)?,
+            &part,
+            &reply_key()?,
+            Some(4),
+            &decode_hex(TGS_REP_CONFOUNDER)?,
+        )?)
+    }
+
     /// The kpasswd service principal `kadmin/changepw`.
     pub(crate) fn change_password_principal() -> Principal {
         Principal::new("TEST.GOKRB5", 1, ["kadmin", "changepw"])
@@ -930,7 +980,7 @@ mod harness {
             TGS_REP_ENCPART_SESSION_KEY_USAGE,
             TGS_REP_CONFOUNDER,
         )?;
-        let tgs_rep = rasn_kerberos::TgsRep(rasn_kerberos::KdcRep {
+        let mut tgs_rep = rasn_kerberos::TgsRep(rasn_kerberos::KdcRep {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(13_i32),
             padata: None,
@@ -952,6 +1002,7 @@ mod harness {
                 cipher: encrypted.into(),
             },
         });
+        tgs_rep.0.ticket = delegated_ticket(&request.client, reply_service)?;
         der::encode(&tgs_rep).context("TGS-REP encodes")
     }
 

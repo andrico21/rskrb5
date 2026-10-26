@@ -11,6 +11,7 @@ use super::*;
 mod tests {
     use super::*;
     use rasn::der;
+    use rskrb5_ng::client::PA_FX_COOKIE;
     struct CookieKdc {
         calls: usize,
         key: EncryptionKey,
@@ -25,7 +26,6 @@ mod tests {
 
     impl CookieKdc {
         fn reply(&mut self, request: &[u8]) -> Result<Vec<u8>, TestError> {
-            use rskrb5_ng::client::PA_FX_COOKIE;
             let decoded: rasn_kerberos::AsReq = der::decode(request)?;
             self.calls = self.calls.checked_add(1).context("call count")?;
             if self.calls == 1 {
@@ -71,9 +71,9 @@ mod tests {
             )?,
         };
         let options = AsReq::new(timestamp(1_893_553_447)?, 42)
-            .with_etypes(vec![18])
+            .with_etypes(vec![18_i32])
             .with_padata(vec![rasn_kerberos::PaData {
-                r#type: rskrb5_ng::client::PA_FX_COOKIE,
+                r#type: PA_FX_COOKIE,
                 value: b"stale".to_vec().into(),
             }]);
         let session =
@@ -94,7 +94,7 @@ mod tests {
             &mut kdc,
             request.client.clone(),
             &keytab_with_reply_key(3)?,
-            AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18]),
+            AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18_i32]),
         )?;
         assert_eq!(session.client, request.client);
         Ok(())
