@@ -1,2141 +1,7 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! kpasswd (`ChangePasswdData`, KRB-PRIV, request and reply frame) tests.
 #![cfg(feature = "messages")]
 
-use core::error;
-
-use pretty_assertions::assert_eq;
-use rasn::types::Integer;
-use rskrb5_ng::{
-    ap_req,
-    crypto::KerberosEtype,
-    kadmin::{
-        ChangePasswdData, ChangePasswdMessageOptions, ChangePasswordResult, EncKrbPrivPartOptions,
-        Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO,
-        Reply, Request, build_change_password_message,
-        build_change_password_message_with_confounders, build_change_password_request,
-        build_change_password_request_with_confounder, build_krb_priv,
-        build_krb_priv_with_confounder, decode_enc_krb_priv_part, decode_krb_priv,
-        decrypt_krb_priv_enc_part, encode_krb_priv, ipv4_host_address, ipv6_host_address,
-    },
-    keytab::EncryptionKey,
-};
-
-/// Error type of the `Result`-returning tests.
-type TestError = Box<dyn error::Error>;
-
-const CHG_PASSWD_MSG_AP_REQ_CONFOUNDER: &str = "00112233445566778899aabbccddeeff";
-const CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER: &str = "0a0b0c0d0e0f10111213141516171819";
-
-const MARSHALLED_CHANGE_PASSWD_DATA: &str = "3036a00d040b6e657770617373776f7264a1163014a003020101a10d300b1b09746573747573657231a20d1b0b544553542e474f4b524235";
-const MARSHALLED_KPASSWD_REQ: &str = include_str!("fixtures/kpasswd-request.hex");
-const MARSHALLED_KPASSWD_REP: &str = "00ec0001008c6f8189308186a003020105a10302010fa27a3078a003020112a271046f57cb442fd321312aff0b2dcda70fe436812f9805611adf3403ab6cd7708604e86e77f765a8486864f0dbf8d5d065a63790370bc110ed1e3c7eae9890e02407e8a8b349703fed1e7f165e1261a822c5b3e6823c282884f59afeb9f84f2a9845994135dd307eb2f544874393c1c455d475583056a003020105a103020115a34a3048a003020112a241043fdd3edaf0b6cbcab5b663189bafc0a19e6cc03b3c59d989c403735748ebc36088bad852add0f62581eed515fc1f297324df4fa12cb94b7ad5db257165369db5";
-const KRB_ERROR_WITH_EDATA: &str = "7E81BA3081B7A003020105A10302011EA211180F31393934303631303036303331375AA305020301E240A411180F31393934303631303036303331375AA505020301E240A60302013CA7101B0E415448454E412E4D49542E454455A81A3018A003020101A111300F1B066866747361691B056578747261A9101B0E415448454E412E4D49542E454455AA1A3018A003020101A111300F1B066866747361691B056578747261AB0A1B086B72623564617461AC0A04086B72623564617461";
-const MARSHALLED_KRB_PRIV: &str = concat!(
-    "75333031A003020105A103020115A3253023A003020100A103020105A217",
-    "04156B726241534E2E312074657374206D657373616765",
-);
-const MARSHALLED_ENC_KRB_PRIV_PART: &str = concat!(
-    "7C4F304DA00A04086B72623564617461A111180F31393934303631303036",
-    "303331375AA205020301E240A303020111A40F300DA003020102A10604",
-    "0412D00023A50F300DA003020102A106040412D00023",
-);
-const MARSHALLED_ENC_KRB_PRIV_PART_OPTIONALS_NULL: &str = concat!(
-    "7C1F301DA00A04086B72623564617461A40F300DA003020102A10604",
-    "0412D00023",
-);
-const TEST_TIME_SECONDS: i64 = 771_228_197;
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn change_passwd_data_matches_gokrb5_fixture() {
-    let value = ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
-        .expect("targeted ChangePasswdData builds");
-    let expected = decode_hex(MARSHALLED_CHANGE_PASSWD_DATA);
-
-    let encoded = value.encode_der().expect("ChangePasswdData encodes");
-    assert_eq!(encoded, expected);
-
-    let decoded = ChangePasswdData::decode_der(&expected).expect("ChangePasswdData decodes");
-    assert_eq!(decoded, value);
-    assert_eq!(
-        decoded.encode_der().expect("ChangePasswdData re-encodes"),
-        expected
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn change_passwd_data_builds_password_only_payload() {
-    let value = ChangePasswdData::new(b"newpassword");
-    let encoded = value.encode_der().expect("ChangePasswdData encodes");
-    let decoded = ChangePasswdData::decode_der(&encoded).expect("ChangePasswdData decodes");
-
-    assert_eq!(decoded, value);
-    assert_eq!(decoded.new_passwd.as_ref(), b"newpassword");
-    assert!(decoded.targ_name.is_none());
-    assert!(decoded.targ_realm.is_none());
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn change_passwd_data_decodes_and_encodes_target_payload() {
-    let value = ChangePasswdData::decode_der(&decode_hex(MARSHALLED_CHANGE_PASSWD_DATA))
-        .expect("targeted ChangePasswdData decodes");
-    let expected = ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
-        .expect("targeted ChangePasswdData builds");
-
-    assert_eq!(value, expected);
-    assert_eq!(
-        value.encode_der().expect("ChangePasswdData encodes"),
-        decode_hex(MARSHALLED_CHANGE_PASSWD_DATA)
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn krb_priv_decodes_and_roundtrips_gokrb5_fixture() {
-    let bytes = decode_hex(MARSHALLED_KRB_PRIV);
-
-    let krb_priv = decode_krb_priv(&bytes).expect("KRB-PRIV decodes");
-
-    assert_eq!(krb_priv.pvno, Integer::from(KRB_PRIV_PVNO));
-    assert_eq!(krb_priv.msg_type, Integer::from(KRB_PRIV_MSG_TYPE));
-    assert_eq!(krb_priv.enc_part.etype, 0);
-    assert_eq!(krb_priv.enc_part.kvno, Some(5));
-    assert_eq!(krb_priv.enc_part.cipher.as_ref(), b"krbASN.1 test message");
-    assert_eq!(encode_krb_priv(&krb_priv).expect("KRB-PRIV encodes"), bytes);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn enc_krb_priv_part_decodes_gokrb5_fixture() {
-    let enc_part = decode_enc_krb_priv_part(&decode_hex(MARSHALLED_ENC_KRB_PRIV_PART))
-        .expect("EncKrbPrivPart decodes");
-
-    assert_eq!(enc_part.user_data.as_ref(), b"krb5data");
-    assert_eq!(
-        enc_part
-            .timestamp
-            .as_ref()
-            .expect("timestamp")
-            .0
-            .timestamp(),
-        TEST_TIME_SECONDS
-    );
-    assert_eq!(enc_part.usec, Some(Integer::from(123_456)));
-    assert_eq!(enc_part.seq_number, Some(17));
-    assert_eq!(enc_part.sender_address.addr_type, 2);
-    assert_eq!(
-        enc_part.sender_address.address.as_ref(),
-        decode_hex("12d00023")
-    );
-    assert_eq!(
-        enc_part
-            .recipient_address
-            .as_ref()
-            .expect("recipient address")
-            .address
-            .as_ref(),
-        decode_hex("12d00023")
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn enc_krb_priv_part_decodes_gokrb5_optionals_null_fixture() {
-    let enc_part =
-        decode_enc_krb_priv_part(&decode_hex(MARSHALLED_ENC_KRB_PRIV_PART_OPTIONALS_NULL))
-            .expect("EncKrbPrivPart decodes");
-
-    assert_eq!(enc_part.user_data.as_ref(), b"krb5data");
-    assert!(enc_part.timestamp.is_none());
-    assert!(enc_part.usec.is_none());
-    assert!(enc_part.seq_number.is_none());
-    assert_eq!(enc_part.sender_address.addr_type, 2);
-    assert_eq!(
-        enc_part.sender_address.address.as_ref(),
-        decode_hex("12d00023")
-    );
-    assert!(enc_part.recipient_address.is_none());
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn krb_priv_builder_encrypts_change_password_payload() {
-    let data = ChangePasswdData::new(b"newpassword")
-        .encode_der()
-        .expect("ChangePasswdData encodes");
-    let key = EncryptionKey {
-        etype: 18,
-        value: vec![0x11; 32],
-    };
-    let sender_address = ipv4_host_address([127, 0, 0, 1]);
-    let recipient_address = ipv6_host_address([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-    let options = EncKrbPrivPartOptions::new(sender_address.clone())
-        .with_sequence_number(7)
-        .with_recipient_address(recipient_address.clone());
-    let etype = KerberosEtype::from_etype_id(key.etype).expect("AES256 etype");
-    let confounder = vec![0x22; etype.confounder_len()];
-
-    let krb_priv =
-        build_krb_priv_with_confounder(&data, options, &key, &confounder).expect("KRB-PRIV builds");
-
-    assert_eq!(krb_priv.pvno, Integer::from(KRB_PRIV_PVNO));
-    assert_eq!(krb_priv.msg_type, Integer::from(KRB_PRIV_MSG_TYPE));
-    assert_eq!(krb_priv.enc_part.etype, key.etype);
-    assert!(krb_priv.enc_part.kvno.is_none());
-
-    let enc_part =
-        decrypt_krb_priv_enc_part(&krb_priv, &key).expect("KRB-PRIV decrypts and decodes");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-
-    assert_eq!(decoded_data, ChangePasswdData::new(b"newpassword"));
-    assert_eq!(enc_part.sender_address, sender_address);
-    assert_eq!(enc_part.recipient_address, Some(recipient_address));
-    assert_eq!(enc_part.seq_number, Some(7));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn krb_priv_builder_generates_confounder_for_change_password_payload() {
-    let data = ChangePasswdData::new(b"newpassword")
-        .encode_der()
-        .expect("ChangePasswdData encodes");
-    let key = EncryptionKey {
-        etype: 18,
-        value: vec![0x11; 32],
-    };
-    let sender_address = ipv4_host_address([127, 0, 0, 1]);
-    let options = EncKrbPrivPartOptions::new(sender_address.clone()).with_sequence_number(8);
-
-    let krb_priv = build_krb_priv(&data, options, &key).expect("KRB-PRIV builds");
-
-    assert_eq!(krb_priv.enc_part.etype, key.etype);
-
-    let enc_part =
-        decrypt_krb_priv_enc_part(&krb_priv, &key).expect("KRB-PRIV decrypts and decodes");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-
-    assert_eq!(decoded_data, ChangePasswdData::new(b"newpassword"));
-    assert_eq!(enc_part.sender_address, sender_address);
-    assert_eq!(enc_part.seq_number, Some(8));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::as_conversions,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_roundtrips_gokrb5_fixture() {
-    let bytes = decode_hex(MARSHALLED_KPASSWD_REQ);
-    let request = Request::parse(&bytes).expect("kpasswd request parses");
-
-    assert_eq!(read_u16(&bytes, 0) as usize, bytes.len());
-    assert_eq!(read_u16(&bytes, 2), 0xff80);
-    assert_eq!(read_u16(&bytes, 4), 705);
-    assert_eq!(request.ap_req.pvno, Integer::from(5));
-    assert_eq!(request.ap_req.msg_type, Integer::from(14));
-    assert_eq!(request.ap_req.authenticator.etype, 18);
-    assert_eq!(request.krb_priv.pvno, Integer::from(5));
-    assert_eq!(request.krb_priv.msg_type, Integer::from(21));
-    assert_eq!(request.krb_priv.enc_part.etype, 18);
-    assert_eq!(request.encode().expect("request encodes"), bytes);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_parse_and_encode_roundtrip() {
-    let bytes = decode_hex(MARSHALLED_KPASSWD_REQ);
-    let request = Request::parse(&bytes).expect("request parses");
-
-    assert_eq!(request.encode().expect("request encodes"), bytes);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_builder_encrypts_payload_and_frames_request() {
-    let fixture_request =
-        Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)).expect("fixture request parses");
-    let change_data =
-        ChangePasswdData::for_target(b"replacement-password", 1, ["target-user"], "TEST.GOKRB5")
-            .expect("targeted ChangePasswdData builds");
-    let reply_key = EncryptionKey {
-        etype: 18,
-        value: vec![0x44; 32],
-    };
-    let sender_address = ipv4_host_address([127, 0, 0, 1]);
-    let recipient_address = ipv6_host_address([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-    let options = EncKrbPrivPartOptions::new(sender_address.clone())
-        .with_sequence_number(99)
-        .with_recipient_address(recipient_address.clone());
-    let etype = KerberosEtype::from_etype_id(reply_key.etype).expect("AES256 etype");
-    let confounder = vec![0x55; etype.confounder_len()];
-
-    let built = build_change_password_request_with_confounder(
-        fixture_request.ap_req.clone(),
-        &change_data,
-        reply_key.clone(),
-        options,
-        &confounder,
-    )
-    .expect("kpasswd request builds");
-
-    assert_eq!(built.reply_key, reply_key);
-    assert_eq!(built.request.ap_req, fixture_request.ap_req);
-
-    let parsed = Request::parse(&built.der).expect("built request parses");
-    assert_eq!(parsed.ap_req, fixture_request.ap_req);
-
-    let enc_part =
-        decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).expect("payload decrypts");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-
-    assert_eq!(decoded_data, change_data);
-    assert_eq!(enc_part.sender_address, sender_address);
-    assert_eq!(enc_part.recipient_address, Some(recipient_address));
-    assert_eq!(enc_part.seq_number, Some(99));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_builder_generates_krb_priv_confounder() {
-    let fixture_request =
-        Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)).expect("fixture request parses");
-    let change_data = ChangePasswdData::new(b"replacement-password");
-    let reply_key = EncryptionKey {
-        etype: 18,
-        value: vec![0x66; 32],
-    };
-    let sender_address = ipv4_host_address([127, 0, 0, 1]);
-    let options = EncKrbPrivPartOptions::new(sender_address.clone()).with_sequence_number(101);
-
-    let built = build_change_password_request(
-        fixture_request.ap_req.clone(),
-        &change_data,
-        reply_key.clone(),
-        options,
-    )
-    .expect("kpasswd request builds");
-
-    assert_eq!(built.reply_key, reply_key);
-
-    let parsed = Request::parse(&built.der).expect("built request parses");
-    assert_eq!(parsed.ap_req, fixture_request.ap_req);
-
-    let enc_part =
-        decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).expect("payload decrypts");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-
-    assert_eq!(decoded_data, change_data);
-    assert_eq!(enc_part.sender_address, sender_address);
-    assert_eq!(enc_part.seq_number, Some(101));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_builds_full_message_with_explicit_context() {
-    let fixture_request =
-        Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)).expect("kpasswd request parses");
-    let service_ticket = fixture_request.ap_req.ticket.clone();
-    let service_session_key = EncryptionKey {
-        etype: fixture_request.ap_req.authenticator.etype,
-        value: vec![0x11; 32],
-    };
-    let reply_key = EncryptionKey {
-        etype: fixture_request.ap_req.authenticator.etype,
-        value: vec![0x55; 32],
-    };
-    let options = ChangePasswdMessageOptions::new(
-        kerberos_time(1_893_553_452),
-        456_789,
-        42,
-        ipv4_host_address([127, 0, 0, 1]),
-    )
-    .with_recipient_address(ipv4_host_address([127, 0, 0, 2]));
-    let change_data = ChangePasswdData::new(b"newpassword");
-
-    let built = build_change_password_message_with_confounders(
-        rasn_principal_name(1, ["testuser1"]),
-        "TEST.GOKRB5",
-        &change_data,
-        service_ticket,
-        &service_session_key,
-        options,
-        reply_key.clone(),
-        &decode_hex(CHG_PASSWD_MSG_AP_REQ_CONFOUNDER),
-        &decode_hex(CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER),
-    )
-    .expect("kpasswd message builds");
-
-    let parsed = Request::parse(&built.der).expect("built message parses");
-    let authenticator_usage = ap_req::authenticator_usage_for_ticket(&parsed.ap_req.ticket);
-    let authenticator = ap_req::decrypt_ap_req_authenticator(
-        &parsed.ap_req,
-        &service_session_key,
-        authenticator_usage,
-    )
-    .expect("AP-REQ authenticator decrypts");
-
-    assert_eq!(authenticator.cname, rasn_principal_name(1, ["testuser1"]));
-    assert_eq!(authenticator.crealm, kerberos_string("TEST.GOKRB5"));
-    assert_eq!(authenticator.cusec, Integer::from(456_789));
-    assert_eq!(authenticator.seq_number, Some(42));
-    assert_eq!(authenticator.subkey, Some(rasn_encryption_key(&reply_key)));
-
-    let enc_part =
-        decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).expect("KRB-PRIV decrypts");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-    assert_eq!(decoded_data, change_data);
-    assert_eq!(enc_part.seq_number, Some(42));
-    assert_eq!(enc_part.sender_address, ipv4_host_address([127, 0, 0, 1]));
-    assert_eq!(
-        enc_part
-            .recipient_address
-            .as_ref()
-            .expect("recipient address"),
-        &ipv4_host_address([127, 0, 0, 2])
-    );
-    assert_eq!(enc_part.timestamp, Some(kerberos_time(1_893_553_452)));
-    assert_eq!(enc_part.usec, Some(Integer::from(456_789)));
-    assert_eq!(built.request, parsed);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_build_change_password_message_builds_and_decrypts_payload() {
-    let fixture_request =
-        Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)).expect("kpasswd request parses");
-    let service_ticket = fixture_request.ap_req.ticket;
-    let service_session_key = EncryptionKey {
-        etype: fixture_request.ap_req.authenticator.etype,
-        value: vec![0x22; 32],
-    };
-    let options = ChangePasswdMessageOptions::new(
-        kerberos_time(1_893_553_453),
-        654_321,
-        7,
-        ipv4_host_address([127, 0, 0, 1]),
-    );
-    let change_data =
-        ChangePasswdData::for_target(b"updated-password", 1, ["target-user"], "TEST.GOKRB5")
-            .expect("targeted ChangePasswdData builds");
-
-    let built = build_change_password_message(
-        rasn_principal_name(1, ["testuser1"]),
-        "TEST.GOKRB5",
-        &change_data,
-        service_ticket,
-        &service_session_key,
-        options,
-    )
-    .expect("change-password message builds");
-
-    let parsed = Request::parse(&built.der).expect("change-password message parses");
-    let enc_part =
-        decrypt_krb_priv_enc_part(&parsed.krb_priv, &built.reply_key).expect("KRB-PRIV decrypts");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-
-    assert_eq!(decoded_data, change_data);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_build_change_password_message_supports_self_target_payload() {
-    let fixture_request =
-        Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)).expect("kpasswd request parses");
-    let service_ticket = fixture_request.ap_req.ticket;
-    let service_session_key = EncryptionKey {
-        etype: fixture_request.ap_req.authenticator.etype,
-        value: vec![0x44; 32],
-    };
-    let change_data =
-        ChangePasswdData::for_target(b"default-style-password", 1, ["testuser1"], "TEST.GOKRB5")
-            .expect("targeted ChangePasswdData builds");
-    let options = ChangePasswdMessageOptions::new(
-        kerberos_time(1_893_553_456),
-        123_987,
-        23,
-        ipv4_host_address([127, 0, 0, 1]),
-    );
-
-    let built = build_change_password_message(
-        rasn_principal_name(1, ["testuser1"]),
-        "TEST.GOKRB5",
-        &change_data,
-        service_ticket,
-        &service_session_key,
-        options,
-    )
-    .expect("change-password message builds");
-
-    let parsed = Request::parse(&built.der).expect("change-password message parses");
-    let enc_part =
-        decrypt_krb_priv_enc_part(&parsed.krb_priv, &built.reply_key).expect("KRB-PRIV decrypts");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-
-    assert_eq!(decoded_data, change_data);
-    assert_eq!(enc_part.sender_address, ipv4_host_address([127, 0, 0, 1]));
-    assert_eq!(parsed, built.request);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_build_change_password_message_with_confounders_decrypts_payload() {
-    let fixture_request =
-        Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)).expect("kpasswd request parses");
-    let service_ticket = fixture_request.ap_req.ticket;
-    let service_session_key = EncryptionKey {
-        etype: fixture_request.ap_req.authenticator.etype,
-        value: vec![0x33; 32],
-    };
-    let reply_key = EncryptionKey {
-        etype: fixture_request.ap_req.authenticator.etype,
-        value: vec![0x44; 32],
-    };
-    let options = ChangePasswdMessageOptions::new(
-        kerberos_time(1_893_553_454),
-        321_654,
-        9,
-        ipv4_host_address([127, 0, 0, 1]),
-    )
-    .with_recipient_address(ipv4_host_address([127, 0, 0, 2]));
-    let change_data =
-        ChangePasswdData::for_target(b"alias-with-confounders", 1, ["target-user"], "TEST.GOKRB5")
-            .expect("targeted ChangePasswdData builds");
-    let ap_req_confounder = vec![0x9a; 16];
-    let krb_priv_confounder = vec![0x9b; 16];
-
-    let built = build_change_password_message_with_confounders(
-        rasn_principal_name(1, ["testuser1"]),
-        "TEST.GOKRB5",
-        &change_data,
-        service_ticket,
-        &service_session_key,
-        options,
-        reply_key.clone(),
-        &ap_req_confounder,
-        &krb_priv_confounder,
-    )
-    .expect("change-password message with confounders builds");
-
-    let parsed = Request::parse(&built.der).expect("change-password message parses");
-    let enc_part =
-        decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).expect("KRB-PRIV decrypts");
-    let decoded_data =
-        ChangePasswdData::decode_der(enc_part.user_data.as_ref()).expect("payload decodes");
-
-    assert_eq!(decoded_data, change_data);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_build_change_password_message_generates_keys_and_keeps_context() {
-    let fixture_request =
-        Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)).expect("kpasswd request parses");
-    let service_ticket = fixture_request.ap_req.ticket;
-    let service_session_key = EncryptionKey {
-        etype: fixture_request.ap_req.authenticator.etype,
-        value: vec![0x77; 32],
-    };
-    let options = ChangePasswdMessageOptions::new(
-        kerberos_time(1_893_553_455),
-        147_258,
-        13,
-        ipv4_host_address([127, 0, 0, 1]),
-    );
-    let change_data = ChangePasswdData::new(b"randomized-reply-key");
-
-    let built = build_change_password_message(
-        rasn_principal_name(1, ["testuser1"]),
-        "TEST.GOKRB5",
-        &change_data,
-        service_ticket,
-        &service_session_key,
-        options,
-    )
-    .expect("gokrb5-compatible message builder");
-
-    let parsed = Request::parse(&built.der).expect("message parses");
-    let encoded = ChangePasswdData::decode_der(
-        decrypt_krb_priv_enc_part(&parsed.krb_priv, &built.reply_key)
-            .expect("KRB-PRIV decrypts")
-            .user_data
-            .as_ref(),
-    )
-    .expect("payload decodes");
-
-    assert_eq!(encoded, change_data);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_request_rejects_malformed_frames() {
-    assert!(matches!(
-        Request::parse(&[0, 6, 0, 1, 0, 0]),
-        Err(KadminError::InvalidRequestVersion(1))
-    ));
-
-    assert!(matches!(
-        Request::parse(&[0, 7, 0xff, 0x80, 0, 0, 0]),
-        Err(KadminError::InvalidApReqLength {
-            ap_req_length: 0,
-            body_length: 1
-        })
-    ));
-
-    assert!(matches!(
-        Request::parse(&[0, 7, 0xff, 0x80, 0, 1, 0]),
-        Err(KadminError::InvalidApReqLength {
-            ap_req_length: 1,
-            body_length: 1
-        })
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_matches_gokrb5_fixture() {
-    let bytes = decode_hex(MARSHALLED_KPASSWD_REP);
-    let reply = Reply::parse(&bytes).expect("kpasswd reply parses");
-
-    assert_eq!(reply.message_length, 236);
-    assert_eq!(reply.version, 1);
-    assert_eq!(reply.ap_rep_length, 140);
-    assert!(!reply.is_krb_error());
-    assert!(reply.krb_error.is_none());
-    assert!(reply.result.is_none());
-
-    let ap_rep = reply.ap_rep.expect("AP-REP parsed");
-    assert_eq!(ap_rep.pvno, Integer::from(5));
-    assert_eq!(ap_rep.msg_type, Integer::from(15));
-    assert_eq!(ap_rep.enc_part.etype, 18);
-
-    let krb_priv = reply.krb_priv.expect("KRB-PRIV parsed");
-    assert_eq!(krb_priv.pvno, Integer::from(5));
-    assert_eq!(krb_priv.msg_type, Integer::from(21));
-    assert_eq!(krb_priv.enc_part.etype, 18);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_roundtrips_success_reply() {
-    let bytes = decode_hex(MARSHALLED_KPASSWD_REP);
-    let reply = Reply::parse(&bytes).expect("kpasswd reply parses");
-
-    assert_eq!(reply.encode().expect("reply encodes"), bytes);
-}
-
-/// Result of a KRB-ERROR kpasswd reply through `decrypt_result`.
+/// kpasswd (`ChangePasswdData`, KRB-PRIV, request and reply frame) tests.
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
@@ -2143,15 +9,713 @@ fn kpasswd_reply_roundtrips_success_reply() {
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod parsed_error_result {
-    use pretty_assertions::assert_eq;
+mod tests {
+    use core::{error, fmt::Display};
 
-    use super::*;
+    use chrono::{DateTime, FixedOffset, Utc};
+    use pretty_assertions::assert_eq;
+    use rasn::{der, types::Integer};
+    use rasn_kerberos::{KerberosString, KerberosTime, KrbError, PrincipalName};
+    use rskrb5_ng::{
+        ap_req,
+        crypto::KerberosEtype,
+        kadmin::{
+            ChangePasswdData, ChangePasswdMessageOptions, ChangePasswordResult,
+            EncKrbPrivPartOptions, Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS,
+            KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO, Reply, Request, build_change_password_message,
+            build_change_password_message_with_confounders, build_change_password_request,
+            build_change_password_request_with_confounder, build_krb_priv,
+            build_krb_priv_with_confounder, decode_enc_krb_priv_part, decode_krb_priv,
+            decrypt_krb_priv_enc_part, encode_krb_priv, ipv4_host_address, ipv6_host_address,
+        },
+        keytab::EncryptionKey,
+    };
+
+    /// Error type of the `Result`-returning tests.
+    type TestError = Box<dyn error::Error>;
+
+    /// Attaches a description to a failure, as `expect` would, but as an error
+    /// that `?` propagates.
+    trait Context<T> {
+        /// Returns the value, or an error that names `what`.
+        fn context(self, what: &str) -> Result<T, TestError>;
+    }
+
+    impl<T, E: Display> Context<T> for Result<T, E> {
+        fn context(self, what: &str) -> Result<T, TestError> {
+            self.map_err(|cause| format!("{what}: {cause}").into())
+        }
+    }
+
+    impl<T> Context<T> for Option<T> {
+        fn context(self, what: &str) -> Result<T, TestError> {
+            self.ok_or_else(|| what.into())
+        }
+    }
+
+    /// The fixed AP-REQ authenticator confounder.
+    const CHG_PASSWD_MSG_AP_REQ_CONFOUNDER: &str = "00112233445566778899aabbccddeeff";
+    /// The fixed KRB-PRIV confounder.
+    const CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER: &str = "0a0b0c0d0e0f10111213141516171819";
+
+    /// The gokrb5 targeted `ChangePasswdData` fixture.
+    const MARSHALLED_CHANGE_PASSWD_DATA: &str = "3036a00d040b6e657770617373776f7264a1163014a003020101a10d300b1b09746573747573657231a20d1b0b544553542e474f4b524235";
+    /// The gokrb5 kpasswd request fixture.
+    const MARSHALLED_KPASSWD_REQ: &str = include_str!("fixtures/kpasswd-request.hex");
+    /// The gokrb5 kpasswd success reply fixture.
+    const MARSHALLED_KPASSWD_REP: &str = "00ec0001008c6f8189308186a003020105a10302010fa27a3078a003020112a271046f57cb442fd321312aff0b2dcda70fe436812f9805611adf3403ab6cd7708604e86e77f765a8486864f0dbf8d5d065a63790370bc110ed1e3c7eae9890e02407e8a8b349703fed1e7f165e1261a822c5b3e6823c282884f59afeb9f84f2a9845994135dd307eb2f544874393c1c455d475583056a003020105a103020115a34a3048a003020112a241043fdd3edaf0b6cbcab5b663189bafc0a19e6cc03b3c59d989c403735748ebc36088bad852add0f62581eed515fc1f297324df4fa12cb94b7ad5db257165369db5";
+    /// A KRB-ERROR whose e-data is the result `kr` / `b5data`.
+    const KRB_ERROR_WITH_EDATA: &str = "7E81BA3081B7A003020105A10302011EA211180F31393934303631303036303331375AA305020301E240A411180F31393934303631303036303331375AA505020301E240A60302013CA7101B0E415448454E412E4D49542E454455A81A3018A003020101A111300F1B066866747361691B056578747261A9101B0E415448454E412E4D49542E454455AA1A3018A003020101A111300F1B066866747361691B056578747261AB0A1B086B72623564617461AC0A04086B72623564617461";
+    /// The gokrb5 KRB-PRIV fixture.
+    const MARSHALLED_KRB_PRIV: &str = concat!(
+        "75333031A003020105A103020115A3253023A003020100A103020105A217",
+        "04156B726241534E2E312074657374206D657373616765",
+    );
+    /// The gokrb5 `EncKrbPrivPart` fixture.
+    const MARSHALLED_ENC_KRB_PRIV_PART: &str = concat!(
+        "7C4F304DA00A04086B72623564617461A111180F31393934303631303036",
+        "303331375AA205020301E240A303020111A40F300DA003020102A10604",
+        "0412D00023A50F300DA003020102A106040412D00023",
+    );
+    /// The gokrb5 `EncKrbPrivPart` fixture without optional fields.
+    const MARSHALLED_ENC_KRB_PRIV_PART_OPTIONALS_NULL: &str = concat!(
+        "7C1F301DA00A04086B72623564617461A40F300DA003020102A10604",
+        "0412D00023",
+    );
+    /// The gokrb5 fixture time, 1994-06-10 06:03:17 UTC, in Unix seconds.
+    const TEST_TIME_SECONDS: i64 = 771_228_197;
+
+    /// Pins that a targeted `ChangePasswdData` encodes to and decodes from the gokrb5 fixture.
+    #[test]
+    fn change_passwd_data_matches_gokrb5_fixture() -> Result<(), TestError> {
+        let value = ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
+            .context("targeted ChangePasswdData builds")?;
+        let expected = decode_hex(MARSHALLED_CHANGE_PASSWD_DATA)?;
+
+        let encoded = value.encode_der().context("ChangePasswdData encodes")?;
+        assert_eq!(encoded, expected);
+
+        let decoded =
+            ChangePasswdData::decode_der(&expected).context("ChangePasswdData decodes")?;
+        assert_eq!(decoded, value);
+        assert_eq!(
+            decoded
+                .encode_der()
+                .context("ChangePasswdData re-encodes")?,
+            expected
+        );
+        Ok(())
+    }
+
+    /// Pins that a password-only `ChangePasswdData` round-trips without a target.
+    #[test]
+    fn change_passwd_data_builds_password_only_payload() -> Result<(), TestError> {
+        let value = ChangePasswdData::new(b"newpassword");
+        let encoded = value.encode_der().context("ChangePasswdData encodes")?;
+        let decoded = ChangePasswdData::decode_der(&encoded).context("ChangePasswdData decodes")?;
+
+        assert_eq!(decoded, value);
+        assert_eq!(decoded.new_passwd.as_ref(), b"newpassword");
+        assert!(decoded.targ_name.is_none());
+        assert!(decoded.targ_realm.is_none());
+        Ok(())
+    }
+
+    /// Pins that the targeted gokrb5 fixture decodes to the built value and re-encodes unchanged.
+    #[test]
+    fn change_passwd_data_decodes_and_encodes_target_payload() -> Result<(), TestError> {
+        let value = ChangePasswdData::decode_der(&decode_hex(MARSHALLED_CHANGE_PASSWD_DATA)?)
+            .context("targeted ChangePasswdData decodes")?;
+        let expected =
+            ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
+                .context("targeted ChangePasswdData builds")?;
+
+        assert_eq!(value, expected);
+        assert_eq!(
+            value.encode_der().context("ChangePasswdData encodes")?,
+            decode_hex(MARSHALLED_CHANGE_PASSWD_DATA)?
+        );
+        Ok(())
+    }
+
+    /// Pins the fields of the gokrb5 KRB-PRIV fixture and its byte-exact re-encoding.
+    #[test]
+    fn krb_priv_decodes_and_roundtrips_gokrb5_fixture() -> Result<(), TestError> {
+        let bytes = decode_hex(MARSHALLED_KRB_PRIV)?;
+
+        let krb_priv = decode_krb_priv(&bytes).context("KRB-PRIV decodes")?;
+
+        assert_eq!(krb_priv.pvno, Integer::from(KRB_PRIV_PVNO));
+        assert_eq!(krb_priv.msg_type, Integer::from(KRB_PRIV_MSG_TYPE));
+        assert_eq!(krb_priv.enc_part.etype, 0_i32);
+        assert_eq!(krb_priv.enc_part.kvno, Some(5));
+        assert_eq!(krb_priv.enc_part.cipher.as_ref(), b"krbASN.1 test message");
+        assert_eq!(
+            encode_krb_priv(&krb_priv).context("KRB-PRIV encodes")?,
+            bytes
+        );
+        Ok(())
+    }
+
+    /// Pins the fields of the gokrb5 `EncKrbPrivPart` fixture.
+    #[test]
+    fn enc_krb_priv_part_decodes_gokrb5_fixture() -> Result<(), TestError> {
+        let enc_part = decode_enc_krb_priv_part(&decode_hex(MARSHALLED_ENC_KRB_PRIV_PART)?)
+            .context("EncKrbPrivPart decodes")?;
+
+        assert_eq!(enc_part.user_data.as_ref(), b"krb5data");
+        assert_eq!(
+            enc_part
+                .timestamp
+                .as_ref()
+                .context("timestamp")?
+                .0
+                .timestamp(),
+            TEST_TIME_SECONDS
+        );
+        assert_eq!(enc_part.usec, Some(Integer::from(123_456_i32)));
+        assert_eq!(enc_part.seq_number, Some(17));
+        assert_eq!(enc_part.sender_address.addr_type, 2_i32);
+        assert_eq!(
+            enc_part.sender_address.address.as_ref(),
+            decode_hex("12d00023")?
+        );
+        assert_eq!(
+            enc_part
+                .recipient_address
+                .as_ref()
+                .context("recipient address")?
+                .address
+                .as_ref(),
+            decode_hex("12d00023")?
+        );
+        Ok(())
+    }
+
+    /// Pins the gokrb5 `EncKrbPrivPart` fixture without its optional fields.
+    #[test]
+    fn enc_krb_priv_part_decodes_gokrb5_optionals_null_fixture() -> Result<(), TestError> {
+        let enc_part =
+            decode_enc_krb_priv_part(&decode_hex(MARSHALLED_ENC_KRB_PRIV_PART_OPTIONALS_NULL)?)
+                .context("EncKrbPrivPart decodes")?;
+
+        assert_eq!(enc_part.user_data.as_ref(), b"krb5data");
+        assert!(enc_part.timestamp.is_none());
+        assert!(enc_part.usec.is_none());
+        assert!(enc_part.seq_number.is_none());
+        assert_eq!(enc_part.sender_address.addr_type, 2_i32);
+        assert_eq!(
+            enc_part.sender_address.address.as_ref(),
+            decode_hex("12d00023")?
+        );
+        assert!(enc_part.recipient_address.is_none());
+        Ok(())
+    }
+
+    /// Pins that a KRB-PRIV built with a fixed confounder decrypts to its payload, addresses and sequence number.
+    #[test]
+    fn krb_priv_builder_encrypts_change_password_payload() -> Result<(), TestError> {
+        let data = ChangePasswdData::new(b"newpassword")
+            .encode_der()
+            .context("ChangePasswdData encodes")?;
+        let key = EncryptionKey {
+            etype: 18,
+            value: vec![0x11; 32],
+        };
+        let sender_address = ipv4_host_address([127, 0, 0, 1]);
+        let recipient_address = ipv6_host_address([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        let options = EncKrbPrivPartOptions::new(sender_address.clone())
+            .with_sequence_number(7)
+            .with_recipient_address(recipient_address.clone());
+        let etype = KerberosEtype::from_etype_id(key.etype).context("AES256 etype")?;
+        let confounder = vec![0x22; etype.confounder_len()];
+
+        let krb_priv = build_krb_priv_with_confounder(&data, options, &key, &confounder)
+            .context("KRB-PRIV builds")?;
+
+        assert_eq!(krb_priv.pvno, Integer::from(KRB_PRIV_PVNO));
+        assert_eq!(krb_priv.msg_type, Integer::from(KRB_PRIV_MSG_TYPE));
+        assert_eq!(krb_priv.enc_part.etype, key.etype);
+        assert!(krb_priv.enc_part.kvno.is_none());
+
+        let enc_part =
+            decrypt_krb_priv_enc_part(&krb_priv, &key).context("KRB-PRIV decrypts and decodes")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+
+        assert_eq!(decoded_data, ChangePasswdData::new(b"newpassword"));
+        assert_eq!(enc_part.sender_address, sender_address);
+        assert_eq!(enc_part.recipient_address, Some(recipient_address));
+        assert_eq!(enc_part.seq_number, Some(7));
+        Ok(())
+    }
+
+    /// Pins that a KRB-PRIV built with a random confounder decrypts to its payload.
+    #[test]
+    fn krb_priv_builder_generates_confounder_for_change_password_payload() -> Result<(), TestError>
+    {
+        let data = ChangePasswdData::new(b"newpassword")
+            .encode_der()
+            .context("ChangePasswdData encodes")?;
+        let key = EncryptionKey {
+            etype: 18,
+            value: vec![0x11; 32],
+        };
+        let sender_address = ipv4_host_address([127, 0, 0, 1]);
+        let options = EncKrbPrivPartOptions::new(sender_address.clone()).with_sequence_number(8);
+
+        let krb_priv = build_krb_priv(&data, options, &key).context("KRB-PRIV builds")?;
+
+        assert_eq!(krb_priv.enc_part.etype, key.etype);
+
+        let enc_part =
+            decrypt_krb_priv_enc_part(&krb_priv, &key).context("KRB-PRIV decrypts and decodes")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+
+        assert_eq!(decoded_data, ChangePasswdData::new(b"newpassword"));
+        assert_eq!(enc_part.sender_address, sender_address);
+        assert_eq!(enc_part.seq_number, Some(8));
+        Ok(())
+    }
+
+    /// Pins the frame header and messages of the gokrb5 kpasswd request and its re-encoding.
+    #[test]
+    fn kpasswd_request_roundtrips_gokrb5_fixture() -> Result<(), TestError> {
+        let bytes = decode_hex(MARSHALLED_KPASSWD_REQ)?;
+        let request = Request::parse(&bytes).context("kpasswd request parses")?;
+
+        assert_eq!(usize::from(read_u16(&bytes, 0)?), bytes.len());
+        assert_eq!(read_u16(&bytes, 2)?, 0xff80);
+        assert_eq!(read_u16(&bytes, 4)?, 705);
+        assert_eq!(request.ap_req.pvno, Integer::from(5_i32));
+        assert_eq!(request.ap_req.msg_type, Integer::from(14_i32));
+        assert_eq!(request.ap_req.authenticator.etype, 18_i32);
+        assert_eq!(request.krb_priv.pvno, Integer::from(5_i32));
+        assert_eq!(request.krb_priv.msg_type, Integer::from(21_i32));
+        assert_eq!(request.krb_priv.enc_part.etype, 18_i32);
+        assert_eq!(request.encode().context("request encodes")?, bytes);
+        Ok(())
+    }
+
+    /// Pins that the gokrb5 kpasswd request re-encodes byte for byte.
+    #[test]
+    fn kpasswd_request_parse_and_encode_roundtrip() -> Result<(), TestError> {
+        let bytes = decode_hex(MARSHALLED_KPASSWD_REQ)?;
+        let request = Request::parse(&bytes).context("request parses")?;
+
+        assert_eq!(request.encode().context("request encodes")?, bytes);
+        Ok(())
+    }
+
+    /// Pins that a request built with a fixed confounder keeps the AP-REQ and decrypts to its payload.
+    #[test]
+    fn kpasswd_request_builder_encrypts_payload_and_frames_request() -> Result<(), TestError> {
+        let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
+            .context("fixture request parses")?;
+        let change_data = ChangePasswdData::for_target(
+            b"replacement-password",
+            1,
+            ["target-user"],
+            "TEST.GOKRB5",
+        )
+        .context("targeted ChangePasswdData builds")?;
+        let reply_key = EncryptionKey {
+            etype: 18,
+            value: vec![0x44; 32],
+        };
+        let sender_address = ipv4_host_address([127, 0, 0, 1]);
+        let recipient_address = ipv6_host_address([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        let options = EncKrbPrivPartOptions::new(sender_address.clone())
+            .with_sequence_number(99)
+            .with_recipient_address(recipient_address.clone());
+        let etype = KerberosEtype::from_etype_id(reply_key.etype).context("AES256 etype")?;
+        let confounder = vec![0x55; etype.confounder_len()];
+
+        let built = build_change_password_request_with_confounder(
+            fixture_request.ap_req.clone(),
+            &change_data,
+            reply_key.clone(),
+            options,
+            &confounder,
+        )
+        .context("kpasswd request builds")?;
+
+        assert_eq!(built.reply_key, reply_key);
+        assert_eq!(built.request.ap_req, fixture_request.ap_req);
+
+        let parsed = Request::parse(&built.der).context("built request parses")?;
+        assert_eq!(parsed.ap_req, fixture_request.ap_req);
+
+        let enc_part =
+            decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).context("payload decrypts")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+
+        assert_eq!(decoded_data, change_data);
+        assert_eq!(enc_part.sender_address, sender_address);
+        assert_eq!(enc_part.recipient_address, Some(recipient_address));
+        assert_eq!(enc_part.seq_number, Some(99));
+        Ok(())
+    }
+
+    /// Pins that a request built with a random confounder keeps the AP-REQ and decrypts to its payload.
+    #[test]
+    fn kpasswd_request_builder_generates_krb_priv_confounder() -> Result<(), TestError> {
+        let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
+            .context("fixture request parses")?;
+        let change_data = ChangePasswdData::new(b"replacement-password");
+        let reply_key = EncryptionKey {
+            etype: 18,
+            value: vec![0x66; 32],
+        };
+        let sender_address = ipv4_host_address([127, 0, 0, 1]);
+        let options = EncKrbPrivPartOptions::new(sender_address.clone()).with_sequence_number(101);
+
+        let built = build_change_password_request(
+            fixture_request.ap_req.clone(),
+            &change_data,
+            reply_key.clone(),
+            options,
+        )
+        .context("kpasswd request builds")?;
+
+        assert_eq!(built.reply_key, reply_key);
+
+        let parsed = Request::parse(&built.der).context("built request parses")?;
+        assert_eq!(parsed.ap_req, fixture_request.ap_req);
+
+        let enc_part =
+            decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).context("payload decrypts")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+
+        assert_eq!(decoded_data, change_data);
+        assert_eq!(enc_part.sender_address, sender_address);
+        assert_eq!(enc_part.seq_number, Some(101));
+        Ok(())
+    }
+
+    /// Pins the authenticator and KRB-PRIV of a full change-password message built with explicit confounders.
+    #[test]
+    fn kpasswd_request_builds_full_message_with_explicit_context() -> Result<(), TestError> {
+        let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
+            .context("kpasswd request parses")?;
+        let service_ticket = fixture_request.ap_req.ticket.clone();
+        let service_session_key = EncryptionKey {
+            etype: fixture_request.ap_req.authenticator.etype,
+            value: vec![0x11; 32],
+        };
+        let reply_key = EncryptionKey {
+            etype: fixture_request.ap_req.authenticator.etype,
+            value: vec![0x55; 32],
+        };
+        let options = ChangePasswdMessageOptions::new(
+            kerberos_time(1_893_553_452)?,
+            456_789,
+            42,
+            ipv4_host_address([127, 0, 0, 1]),
+        )
+        .with_recipient_address(ipv4_host_address([127, 0, 0, 2]));
+        let change_data = ChangePasswdData::new(b"newpassword");
+
+        let built = build_change_password_message_with_confounders(
+            rasn_principal_name(1, ["testuser1"])?,
+            "TEST.GOKRB5",
+            &change_data,
+            service_ticket,
+            &service_session_key,
+            options,
+            reply_key.clone(),
+            &decode_hex(CHG_PASSWD_MSG_AP_REQ_CONFOUNDER)?,
+            &decode_hex(CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER)?,
+        )
+        .context("kpasswd message builds")?;
+
+        let parsed = Request::parse(&built.der).context("built message parses")?;
+        let authenticator_usage = ap_req::authenticator_usage_for_ticket(&parsed.ap_req.ticket);
+        let authenticator = ap_req::decrypt_ap_req_authenticator(
+            &parsed.ap_req,
+            &service_session_key,
+            authenticator_usage,
+        )
+        .context("AP-REQ authenticator decrypts")?;
+
+        assert_eq!(authenticator.cname, rasn_principal_name(1, ["testuser1"])?);
+        assert_eq!(authenticator.crealm, kerberos_string("TEST.GOKRB5")?);
+        assert_eq!(authenticator.cusec, Integer::from(456_789_i32));
+        assert_eq!(authenticator.seq_number, Some(42));
+        assert_eq!(authenticator.subkey, Some(rasn_encryption_key(&reply_key)));
+
+        let enc_part =
+            decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).context("KRB-PRIV decrypts")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+        assert_eq!(decoded_data, change_data);
+        assert_eq!(enc_part.seq_number, Some(42));
+        assert_eq!(enc_part.sender_address, ipv4_host_address([127, 0, 0, 1]));
+        assert_eq!(
+            enc_part
+                .recipient_address
+                .as_ref()
+                .context("recipient address")?,
+            &ipv4_host_address([127, 0, 0, 2])
+        );
+        assert_eq!(enc_part.timestamp, Some(kerberos_time(1_893_553_452)?));
+        assert_eq!(enc_part.usec, Some(Integer::from(456_789_i32)));
+        assert_eq!(built.request, parsed);
+        Ok(())
+    }
+
+    /// Pins that a built change-password message decrypts to its targeted payload.
+    #[test]
+    fn kpasswd_request_build_change_password_message_builds_and_decrypts_payload()
+    -> Result<(), TestError> {
+        let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
+            .context("kpasswd request parses")?;
+        let service_ticket = fixture_request.ap_req.ticket;
+        let service_session_key = EncryptionKey {
+            etype: fixture_request.ap_req.authenticator.etype,
+            value: vec![0x22; 32],
+        };
+        let options = ChangePasswdMessageOptions::new(
+            kerberos_time(1_893_553_453)?,
+            654_321,
+            7,
+            ipv4_host_address([127, 0, 0, 1]),
+        );
+        let change_data =
+            ChangePasswdData::for_target(b"updated-password", 1, ["target-user"], "TEST.GOKRB5")
+                .context("targeted ChangePasswdData builds")?;
+
+        let built = build_change_password_message(
+            rasn_principal_name(1, ["testuser1"])?,
+            "TEST.GOKRB5",
+            &change_data,
+            service_ticket,
+            &service_session_key,
+            options,
+        )
+        .context("change-password message builds")?;
+
+        let parsed = Request::parse(&built.der).context("change-password message parses")?;
+        let enc_part = decrypt_krb_priv_enc_part(&parsed.krb_priv, &built.reply_key)
+            .context("KRB-PRIV decrypts")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+
+        assert_eq!(decoded_data, change_data);
+        Ok(())
+    }
+
+    /// Pins that a change-password message for the client itself decrypts to its payload.
+    #[test]
+    fn kpasswd_request_build_change_password_message_supports_self_target_payload()
+    -> Result<(), TestError> {
+        let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
+            .context("kpasswd request parses")?;
+        let service_ticket = fixture_request.ap_req.ticket;
+        let service_session_key = EncryptionKey {
+            etype: fixture_request.ap_req.authenticator.etype,
+            value: vec![0x44; 32],
+        };
+        let change_data = ChangePasswdData::for_target(
+            b"default-style-password",
+            1,
+            ["testuser1"],
+            "TEST.GOKRB5",
+        )
+        .context("targeted ChangePasswdData builds")?;
+        let options = ChangePasswdMessageOptions::new(
+            kerberos_time(1_893_553_456)?,
+            123_987,
+            23,
+            ipv4_host_address([127, 0, 0, 1]),
+        );
+
+        let built = build_change_password_message(
+            rasn_principal_name(1, ["testuser1"])?,
+            "TEST.GOKRB5",
+            &change_data,
+            service_ticket,
+            &service_session_key,
+            options,
+        )
+        .context("change-password message builds")?;
+
+        let parsed = Request::parse(&built.der).context("change-password message parses")?;
+        let enc_part = decrypt_krb_priv_enc_part(&parsed.krb_priv, &built.reply_key)
+            .context("KRB-PRIV decrypts")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+
+        assert_eq!(decoded_data, change_data);
+        assert_eq!(enc_part.sender_address, ipv4_host_address([127, 0, 0, 1]));
+        assert_eq!(parsed, built.request);
+        Ok(())
+    }
+
+    /// Pins that a message built with explicit confounders decrypts under the given reply key.
+    #[test]
+    fn kpasswd_request_build_change_password_message_with_confounders_decrypts_payload()
+    -> Result<(), TestError> {
+        let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
+            .context("kpasswd request parses")?;
+        let service_ticket = fixture_request.ap_req.ticket;
+        let service_session_key = EncryptionKey {
+            etype: fixture_request.ap_req.authenticator.etype,
+            value: vec![0x33; 32],
+        };
+        let reply_key = EncryptionKey {
+            etype: fixture_request.ap_req.authenticator.etype,
+            value: vec![0x44; 32],
+        };
+        let options = ChangePasswdMessageOptions::new(
+            kerberos_time(1_893_553_454)?,
+            321_654,
+            9,
+            ipv4_host_address([127, 0, 0, 1]),
+        )
+        .with_recipient_address(ipv4_host_address([127, 0, 0, 2]));
+        let change_data = ChangePasswdData::for_target(
+            b"alias-with-confounders",
+            1,
+            ["target-user"],
+            "TEST.GOKRB5",
+        )
+        .context("targeted ChangePasswdData builds")?;
+        let ap_req_confounder = vec![0x9a; 16];
+        let krb_priv_confounder = vec![0x9b; 16];
+
+        let built = build_change_password_message_with_confounders(
+            rasn_principal_name(1, ["testuser1"])?,
+            "TEST.GOKRB5",
+            &change_data,
+            service_ticket,
+            &service_session_key,
+            options,
+            reply_key.clone(),
+            &ap_req_confounder,
+            &krb_priv_confounder,
+        )
+        .context("change-password message with confounders builds")?;
+
+        let parsed = Request::parse(&built.der).context("change-password message parses")?;
+        let enc_part =
+            decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key).context("KRB-PRIV decrypts")?;
+        let decoded_data =
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
+
+        assert_eq!(decoded_data, change_data);
+        Ok(())
+    }
+
+    /// Pins that a message built with a generated reply key decrypts under the returned key.
+    #[test]
+    fn kpasswd_request_build_change_password_message_generates_keys_and_keeps_context()
+    -> Result<(), TestError> {
+        let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
+            .context("kpasswd request parses")?;
+        let service_ticket = fixture_request.ap_req.ticket;
+        let service_session_key = EncryptionKey {
+            etype: fixture_request.ap_req.authenticator.etype,
+            value: vec![0x77; 32],
+        };
+        let options = ChangePasswdMessageOptions::new(
+            kerberos_time(1_893_553_455)?,
+            147_258,
+            13,
+            ipv4_host_address([127, 0, 0, 1]),
+        );
+        let change_data = ChangePasswdData::new(b"randomized-reply-key");
+
+        let built = build_change_password_message(
+            rasn_principal_name(1, ["testuser1"])?,
+            "TEST.GOKRB5",
+            &change_data,
+            service_ticket,
+            &service_session_key,
+            options,
+        )
+        .context("gokrb5-compatible message builder")?;
+
+        let parsed = Request::parse(&built.der).context("message parses")?;
+        let encoded = ChangePasswdData::decode_der(
+            decrypt_krb_priv_enc_part(&parsed.krb_priv, &built.reply_key)
+                .context("KRB-PRIV decrypts")?
+                .user_data
+                .as_ref(),
+        )
+        .context("payload decodes")?;
+
+        assert_eq!(encoded, change_data);
+        Ok(())
+    }
+
+    /// Pins the errors for a wrong request version and inconsistent AP-REQ lengths.
+    #[test]
+    fn kpasswd_request_rejects_malformed_frames() {
+        assert!(matches!(
+            Request::parse(&[0, 6, 0, 1, 0, 0]),
+            Err(KadminError::InvalidRequestVersion(1))
+        ));
+
+        assert!(matches!(
+            Request::parse(&[0, 7, 0xff, 0x80, 0, 0, 0]),
+            Err(KadminError::InvalidApReqLength {
+                ap_req_length: 0,
+                body_length: 1
+            })
+        ));
+
+        assert!(matches!(
+            Request::parse(&[0, 7, 0xff, 0x80, 0, 1, 0]),
+            Err(KadminError::InvalidApReqLength {
+                ap_req_length: 1,
+                body_length: 1
+            })
+        ));
+    }
+
+    /// Pins the frame header, AP-REP and KRB-PRIV of the gokrb5 kpasswd reply.
+    #[test]
+    fn kpasswd_reply_matches_gokrb5_fixture() -> Result<(), TestError> {
+        let bytes = decode_hex(MARSHALLED_KPASSWD_REP)?;
+        let reply = Reply::parse(&bytes).context("kpasswd reply parses")?;
+
+        assert_eq!(reply.message_length, 236);
+        assert_eq!(reply.version, 1);
+        assert_eq!(reply.ap_rep_length, 140);
+        assert!(!reply.is_krb_error());
+        assert!(reply.krb_error.is_none());
+        assert!(reply.result.is_none());
+
+        let ap_rep = reply.ap_rep.context("AP-REP parsed")?;
+        assert_eq!(ap_rep.pvno, Integer::from(5_i32));
+        assert_eq!(ap_rep.msg_type, Integer::from(15_i32));
+        assert_eq!(ap_rep.enc_part.etype, 18_i32);
+
+        let krb_priv = reply.krb_priv.context("KRB-PRIV parsed")?;
+        assert_eq!(krb_priv.pvno, Integer::from(5_i32));
+        assert_eq!(krb_priv.msg_type, Integer::from(21_i32));
+        assert_eq!(krb_priv.enc_part.etype, 18_i32);
+        Ok(())
+    }
+
+    /// Pins that the gokrb5 success reply re-encodes byte for byte.
+    #[test]
+    fn kpasswd_reply_roundtrips_success_reply() -> Result<(), TestError> {
+        let bytes = decode_hex(MARSHALLED_KPASSWD_REP)?;
+        let reply = Reply::parse(&bytes).context("kpasswd reply parses")?;
+
+        assert_eq!(reply.encode().context("reply encodes")?, bytes);
+        Ok(())
+    }
 
     /// Pins that `decrypt_result` returns the result parsed from a KRB-ERROR e-data.
     #[test]
     fn kpasswd_reply_decrypt_result_returns_parsed_error_result() -> Result<(), TestError> {
-        let bytes = kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA));
+        let bytes = kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)?)?;
         let reply = Reply::parse(&bytes).map_err(|cause| format!("reply parses: {cause}"))?;
         let key = EncryptionKey {
             etype: 18,
@@ -2172,448 +736,65 @@ mod parsed_error_result {
         );
         Ok(())
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_roundtrips_error_reply() {
-    let bytes = kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA));
-    let reply = Reply::parse(&bytes).expect("KRB-ERROR reply parses");
+    /// Pins that a KRB-ERROR reply re-encodes byte for byte.
+    #[test]
+    fn kpasswd_reply_roundtrips_error_reply() -> Result<(), TestError> {
+        let bytes = kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)?)?;
+        let reply = Reply::parse(&bytes).context("KRB-ERROR reply parses")?;
 
-    assert_eq!(reply.encode().expect("reply encodes"), bytes);
-}
+        assert_eq!(reply.encode().context("reply encodes")?, bytes);
+        Ok(())
+    }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_rejects_mixed_error_payloads() {
-    let mut reply = Reply::parse(&kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)))
-        .expect("KRB-ERROR reply parses");
-    let success = Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)).expect("KRB-REP reply parses");
-    reply.ap_rep = success.ap_rep;
-    reply.krb_priv = success.krb_priv;
+    /// Pins that a KRB-ERROR reply with an AP-REP and KRB-PRIV cannot be encoded.
+    #[test]
+    fn kpasswd_reply_rejects_mixed_error_payloads() -> Result<(), TestError> {
+        let mut reply = Reply::parse(&kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)?)?)
+            .context("KRB-ERROR reply parses")?;
+        let success =
+            Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)?).context("KRB-REP reply parses")?;
+        reply.ap_rep = success.ap_rep;
+        reply.krb_priv = success.krb_priv;
 
-    assert!(matches!(
-        reply.encode(),
-        Err(KadminError::InvalidErrorReplyPayload)
-    ));
-}
+        assert!(matches!(
+            reply.encode(),
+            Err(KadminError::InvalidErrorReplyPayload)
+        ));
+        Ok(())
+    }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_rejects_success_payloads_without_krb_priv() {
-    let mut reply =
-        Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)).expect("KRB-REP reply parses");
-    reply.krb_priv = None;
+    /// Pins that a success reply without a KRB-PRIV cannot be encoded.
+    #[test]
+    fn kpasswd_reply_rejects_success_payloads_without_krb_priv() -> Result<(), TestError> {
+        let mut reply =
+            Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)?).context("KRB-REP reply parses")?;
+        reply.krb_priv = None;
 
-    assert!(matches!(reply.encode(), Err(KadminError::MissingKrbPriv)));
-}
+        assert!(matches!(reply.encode(), Err(KadminError::MissingKrbPriv)));
+        Ok(())
+    }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_rejects_success_payloads_without_ap_rep() {
-    let mut reply =
-        Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)).expect("KRB-REP reply parses");
-    reply.ap_rep = None;
+    /// Pins that a success reply without an AP-REP cannot be encoded.
+    #[test]
+    fn kpasswd_reply_rejects_success_payloads_without_ap_rep() -> Result<(), TestError> {
+        let mut reply =
+            Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)?).context("KRB-REP reply parses")?;
+        reply.ap_rep = None;
 
-    assert!(matches!(reply.encode(), Err(KadminError::MissingApRep)));
-}
+        assert!(matches!(reply.encode(), Err(KadminError::MissingApRep)));
+        Ok(())
+    }
 
-/// KRB-ERROR kpasswd reply parsing.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod krb_error_response_data {
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::as_conversions,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Pins the frame fields and the result parsed from a KRB-ERROR kpasswd reply.
     #[test]
     fn kpasswd_reply_parses_krb_error_response_data() -> Result<(), TestError> {
-        let error = decode_hex(KRB_ERROR_WITH_EDATA);
-        let frame = kpasswd_reply_frame(0, &error);
+        let error = decode_hex(KRB_ERROR_WITH_EDATA)?;
+        let frame = kpasswd_reply_frame(0, &error)?;
         let reply =
             Reply::parse(&frame).map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
 
-        assert_eq!(reply.message_length as usize, frame.len());
+        assert_eq!(usize::from(reply.message_length), frame.len());
         assert_eq!(reply.version, 1);
         assert_eq!(reply.ap_rep_length, 0);
         assert!(reply.is_krb_error());
@@ -2630,23 +811,11 @@ mod krb_error_response_data {
         );
         Ok(())
     }
-}
-
-/// KRB-ERROR result through `decrypt_result`.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-mod krb_error_result {
-    use pretty_assertions::assert_eq;
-
-    use super::*;
 
     /// Pins that a KRB-ERROR result needs no decryption key.
     #[test]
     fn kpasswd_reply_decrypt_result_returns_krb_error_result() -> Result<(), TestError> {
-        let reply = Reply::parse(&kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)))
+        let reply = Reply::parse(&kpasswd_reply_frame(0, &decode_hex(KRB_ERROR_WITH_EDATA)?)?)
             .map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
         let key = EncryptionKey {
             etype: 18,
@@ -2665,928 +834,152 @@ mod krb_error_result {
         );
         Ok(())
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_result_success_helper_accepts_zero_code() {
-    let result = ChangePasswordResult::parse(&[0, 0]).expect("success result parses");
+    /// Pins that result code 0 is a success.
+    #[test]
+    fn kpasswd_result_success_helper_accepts_zero_code() -> Result<(), TestError> {
+        let result = ChangePasswordResult::parse(&[0, 0]).context("success result parses")?;
 
-    assert_eq!(result.code, KPASSWD_SUCCESS);
-    assert!(result.is_success());
-    assert_eq!(result.ensure_success(), Ok(()));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Pins that `ensure_success` reports a failure code with its text.
-#[test]
-fn kpasswd_result_success_helper_reports_failure_code() {
-    let result = ChangePasswordResult {
-        code: KPASSWD_AUTHERROR,
-        text: "authentication failed".to_owned(),
-        text_raw: b"authentication failed".to_vec(),
-    };
-
-    assert!(!result.is_success());
-    assert!(matches!(
-        result.ensure_success(),
-        Err(KadminError::PasswordChangeFailed { code, text, text_raw: _ })
-            if code == KPASSWD_AUTHERROR && text == "authentication failed"
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_decrypt_result_rejects_wrong_key_etype() {
-    let reply = Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)).expect("kpasswd reply parses");
-    let key = EncryptionKey {
-        etype: 17,
-        value: vec![0; 16],
-    };
-
-    assert!(matches!(
-        reply.decrypt_result(&key),
-        Err(KadminError::KeyEtypeMismatch {
-            key_etype: 17,
-            encrypted_data_etype: 18,
-        })
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn kpasswd_reply_rejects_malformed_frames() {
-    assert!(matches!(
-        Reply::parse(&[0, 1]),
-        Err(KadminError::FrameTooShort { actual: 2 })
-    ));
-
-    assert!(matches!(
-        Reply::parse(&[0, 7, 0, 1, 0, 0]),
-        Err(KadminError::TruncatedFrame {
-            expected: 7,
-            actual: 6
-        })
-    ));
-
-    assert!(matches!(
-        Reply::parse(&[0, 6, 0, 2, 0, 0]),
-        Err(KadminError::InvalidReplyVersion(2))
-    ));
-
-    assert!(matches!(
-        Reply::parse(&[0, 7, 0, 1, 0, 1, 0]),
-        Err(KadminError::InvalidApRepLength {
-            ap_rep_length: 1,
-            body_length: 1
-        })
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::integer_division_remainder_used,
-        clippy::shadow_reuse,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn decode_hex(input: &str) -> Vec<u8> {
-    let input = input.trim();
-    assert_eq!(input.len() % 2, 0, "hex input has even length");
-    input
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| {
-            let hi = hex_nibble(pair[0]);
-            let lo = hex_nibble(pair[1]);
-            (hi << 4) | lo
-        })
-        .collect()
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::as_conversions,
-        clippy::assertions_on_result_states,
-        clippy::cast_possible_truncation,
-        clippy::missing_assert_message,
-        clippy::missing_panics_doc,
-        clippy::unseparated_literal_suffix,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn kpasswd_reply_frame(ap_rep_length: u16, body: &[u8]) -> Vec<u8> {
-    let message_length = HEADER_LEN + body.len();
-    assert!(u16::try_from(message_length).is_ok());
-
-    let mut frame = Vec::with_capacity(message_length);
-    frame.extend_from_slice(&(message_length as u16).to_be_bytes());
-    frame.extend_from_slice(&1u16.to_be_bytes());
-    frame.extend_from_slice(&ap_rep_length.to_be_bytes());
-    frame.extend_from_slice(body);
-    frame
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::indexing_slicing,
-        clippy::missing_const_for_fn,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn read_u16(bytes: &[u8], offset: usize) -> u16 {
-    u16::from_be_bytes([bytes[offset], bytes[offset + 1]])
-}
-
-const HEADER_LEN: usize = 6;
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn hex_nibble(value: u8) -> u8 {
-    match value {
-        b'0'..=b'9' => value - b'0',
-        b'a'..=b'f' => value - b'a' + 10,
-        b'A'..=b'F' => value - b'A' + 10,
-        _ => panic!("invalid hex digit: {value}"),
+        assert_eq!(result.code, KPASSWD_SUCCESS);
+        assert!(result.is_success());
+        assert_eq!(result.ensure_success(), Ok(()));
+        Ok(())
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn kerberos_time(seconds: i64) -> rasn_kerberos::KerberosTime {
-    let utc = chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0).expect("valid time");
-    let offset = chrono::FixedOffset::east_opt(0).expect("UTC offset exists");
-    rasn_kerberos::KerberosTime(utc.with_timezone(&offset))
-}
+    /// Pins that `ensure_success` reports a failure code with its text.
+    #[test]
+    fn kpasswd_result_success_helper_reports_failure_code() {
+        let result = ChangePasswordResult {
+            code: KPASSWD_AUTHERROR,
+            text: "authentication failed".to_owned(),
+            text_raw: b"authentication failed".to_vec(),
+        };
 
-fn rasn_principal_name<I, S>(name_type: i32, components: I) -> rasn_kerberos::PrincipalName
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    rasn_kerberos::PrincipalName {
-        r#type: name_type,
-        string: components
-            .into_iter()
-            .map(|component| kerberos_string(component.as_ref()))
-            .collect(),
+        assert!(!result.is_success());
+        assert!(matches!(
+            result.ensure_success(),
+            Err(KadminError::PasswordChangeFailed { code, text, text_raw: _ })
+                if code == KPASSWD_AUTHERROR && text == "authentication failed"
+        ));
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn kerberos_string(value: &str) -> rasn_kerberos::KerberosString {
-    rasn_kerberos::KerberosString::try_from(value).expect("valid KerberosString")
-}
+    /// Pins that a key whose etype differs from the KRB-PRIV's is rejected.
+    #[test]
+    fn kpasswd_reply_decrypt_result_rejects_wrong_key_etype() -> Result<(), TestError> {
+        let reply =
+            Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)?).context("kpasswd reply parses")?;
+        let key = EncryptionKey {
+            etype: 17,
+            value: vec![0; 16],
+        };
 
-fn rasn_encryption_key(key: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
-    rasn_kerberos::EncryptionKey {
-        r#type: key.etype,
-        value: key.value.clone().into(),
+        assert!(matches!(
+            reply.decrypt_result(&key),
+            Err(KadminError::KeyEtypeMismatch {
+                key_etype: 17_i32,
+                encrypted_data_etype: 18_i32,
+            })
+        ));
+        Ok(())
     }
-}
 
-/// Fork-authored kpasswd reply tests: unsigned success results and non-UTF-8 result text.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod fork_tests {
-    use pretty_assertions::assert_eq;
-    use rasn::der;
+    /// Pins the errors for short, truncated, misversioned and inconsistent reply frames.
+    #[test]
+    fn kpasswd_reply_rejects_malformed_frames() {
+        assert!(matches!(
+            Reply::parse(&[0, 1]),
+            Err(KadminError::FrameTooShort { actual: 2 })
+        ));
 
-    use super::*;
+        assert!(matches!(
+            Reply::parse(&[0, 7, 0, 1, 0, 0]),
+            Err(KadminError::TruncatedFrame {
+                expected: 7,
+                actual: 6
+            })
+        ));
+
+        assert!(matches!(
+            Reply::parse(&[0, 6, 0, 2, 0, 0]),
+            Err(KadminError::InvalidReplyVersion(2))
+        ));
+
+        assert!(matches!(
+            Reply::parse(&[0, 7, 0, 1, 0, 1, 0]),
+            Err(KadminError::InvalidApRepLength {
+                ap_rep_length: 1,
+                body_length: 1
+            })
+        ));
+    }
+
+    /// Decodes a hex fixture, ignoring surrounding whitespace.
+    fn decode_hex(input: &str) -> Result<Vec<u8>, TestError> {
+        Ok(hex::decode(input.trim())?)
+    }
+
+    /// Frames `body` as a kpasswd reply with the given AP-REP length.
+    fn kpasswd_reply_frame(ap_rep_length: u16, body: &[u8]) -> Result<Vec<u8>, TestError> {
+        let message_length = HEADER_LEN
+            .checked_add(body.len())
+            .context("the frame length fits usize")?;
+        let length_field = u16::try_from(message_length).context("the frame length fits u16")?;
+
+        let mut frame = Vec::with_capacity(message_length);
+        frame.extend_from_slice(&length_field.to_be_bytes());
+        frame.extend_from_slice(&1_u16.to_be_bytes());
+        frame.extend_from_slice(&ap_rep_length.to_be_bytes());
+        frame.extend_from_slice(body);
+        Ok(frame)
+    }
+
+    /// Reads the big-endian `u16` at `offset`.
+    fn read_u16(bytes: &[u8], offset: usize) -> Result<u16, TestError> {
+        let end = offset.checked_add(2).context("the field end fits usize")?;
+        let field: [u8; 2] = bytes
+            .get(offset..end)
+            .context("the field is in bounds")?
+            .try_into()?;
+        Ok(u16::from_be_bytes(field))
+    }
+
+    /// Length of the kpasswd reply frame header.
+    const HEADER_LEN: usize = 6;
+
+    /// The UTC Kerberos time `seconds` after the Unix epoch.
+    fn kerberos_time(seconds: i64) -> Result<KerberosTime, TestError> {
+        let utc = DateTime::<Utc>::from_timestamp(seconds, 0).context("valid time")?;
+        let offset = FixedOffset::east_opt(0).context("UTC offset exists")?;
+        Ok(KerberosTime(utc.with_timezone(&offset)))
+    }
+
+    /// A principal name of `name_type` with `components`.
+    fn rasn_principal_name<I, S>(name_type: i32, components: I) -> Result<PrincipalName, TestError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        Ok(PrincipalName {
+            r#type: name_type,
+            string: components
+                .into_iter()
+                .map(|component| kerberos_string(component.as_ref()))
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    /// `value` as a `KerberosString`.
+    fn kerberos_string(value: &str) -> Result<KerberosString, TestError> {
+        KerberosString::try_from(value).context("valid KerberosString")
+    }
+
+    /// `key` as a `rasn_kerberos` encryption key.
+    fn rasn_encryption_key(key: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
+        rasn_kerberos::EncryptionKey {
+            r#type: key.etype,
+            value: key.value.clone().into(),
+        }
+    }
 
     /// Pins that a KRB-ERROR reply carrying a success result code is rejected as unauthenticated.
     #[test]
@@ -3594,23 +987,23 @@ mod fork_tests {
         let mut result = Vec::new();
         result.extend_from_slice(&KPASSWD_SUCCESS.to_be_bytes());
         result.extend_from_slice(b"password changed");
-        let error = rasn_kerberos::KrbError {
+        let error = KrbError {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(30_i32),
             ctime: None,
             cusec: None,
-            stime: kerberos_time(1_893_553_440),
+            stime: kerberos_time(1_893_553_440)?,
             susec: Integer::from(0_i32),
             error_code: 52,
-            crealm: Some(kerberos_string("TEST.GOKRB5")),
-            cname: Some(rasn_principal_name(1, ["testuser1"])),
-            realm: kerberos_string("TEST.GOKRB5"),
-            sname: rasn_principal_name(1, ["kadmin", "changepw"]),
+            crealm: Some(kerberos_string("TEST.GOKRB5")?),
+            cname: Some(rasn_principal_name(1, ["testuser1"])?),
+            realm: kerberos_string("TEST.GOKRB5")?,
+            sname: rasn_principal_name(1, ["kadmin", "changepw"])?,
             e_text: None,
             e_data: Some(result.into()),
         };
         let encoded = der::encode(&error).map_err(|cause| format!("KRB-ERROR encodes: {cause}"))?;
-        let reply = Reply::parse(&kpasswd_reply_frame(0, &encoded))
+        let reply = Reply::parse(&kpasswd_reply_frame(0, &encoded)?)
             .map_err(|cause| format!("KRB-ERROR reply parses: {cause}"))?;
         let key = EncryptionKey {
             etype: 18,

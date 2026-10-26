@@ -1,0 +1,5 @@
+tests/ccache.rs
+tests/config.rs
+tests/kadmin.rs
+tests/keytab.rs
+tests/krb_cred.rs
