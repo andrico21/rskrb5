@@ -93,6 +93,8 @@ mod password_change;
 mod review;
 #[path = "client/review_cookie.rs"]
 mod review_cookie;
+#[path = "client/review_salt.rs"]
+mod review_salt;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;

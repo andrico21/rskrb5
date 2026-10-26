@@ -4161,10 +4161,20 @@ fn password_initial_as_rep_session(
         return Ok(None);
     };
     enforce_requested_enctypes(&request.message.0.req_body.etype, etype)?;
-    let key_info = PreauthKeyInfo {
-        etype,
-        salt: None,
-        s2kparams: None,
+    let reply = kdc_rep::decode_as_rep(response).map_err(kdc_rep_error)?;
+    let padata = reply.0.padata.as_deref().unwrap_or_default();
+    let infos = preauth_key_info_from_method_data(padata)?;
+    let key_info = match infos.into_iter().find(|info| info.etype == etype) {
+        Some(info) => info,
+        None => PreauthKeyInfo {
+            etype,
+            salt: padata
+                .iter()
+                .find(|pa| pa.r#type == 3)
+                .map(|pa| str::from_utf8(pa.value.as_ref()).map(str::to_owned))
+                .transpose()?,
+            s2kparams: None,
+        },
     };
     let reply_key = derive_password_reply_key(client, password, &key_info)?;
     process_as_rep(request, response, &reply_key).map(Some)
