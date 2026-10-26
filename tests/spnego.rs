@@ -302,7 +302,7 @@ mod tests {
         let ap_rep_header = accepted
             .ap_rep_response_header_with_confounder(
                 &decode_hex(AP_REP_CONFOUNDER)?,
-                ApRepOptions::default(),
+                &ApRepOptions::default(),
             )
             .context("AP-REP response header encodes")?;
         assert_eq!(ap_rep_header, AP_REP_RESPONSE_HEADER);
@@ -400,7 +400,7 @@ mod tests {
         let response_header = accepted
             .ap_rep_response_header_with_confounder(
                 &decode_hex(AP_REP_CONFOUNDER)?,
-                ApRepOptions::default(),
+                &ApRepOptions::default(),
             )
             .context("AP-REP response header builds")?;
 

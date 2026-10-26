@@ -72,168 +72,7 @@ pub struct Config {
 }
 
 impl Config {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    #[must_use]
     /// Create a config with MIT/gokrb5-style defaults and no parsed sections.
     #[inline]
     pub fn new() -> Self {
@@ -260,168 +99,6 @@ impl Config {
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::impl_trait_in_params,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Load and parse a `krb5.conf` file.
     ///
     /// The file's canonical path is on the open chain before its own directives
@@ -434,7 +111,10 @@ impl Config {
     /// Returns [`Error::Io`] when the file cannot be resolved or read, and the
     /// [`Config::parse`] errors for its contents.
     #[inline]
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub fn load<P>(path: P) -> Result<Self, Error>
+    where
+        P: AsRef<Path>,
+    {
         use std::fs;
 
         let file = path.as_ref();
@@ -719,172 +399,11 @@ impl Config {
         serde_json::to_string_pretty(&ConfigJson::from(self))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    #[must_use]
     /// Return the configured realm with this name.
     #[inline]
     pub fn realm(&self, realm: &str) -> Option<&Realm> {
-        self.realms.iter().find(|entry| entry.realm == realm)
+        self.realms.iter().find(|entry| entry.name == realm)
     }
 
     /// Resolve a DNS name to a Kerberos realm using `[domain_realm]`.
@@ -977,168 +496,52 @@ where
         .collect()
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::struct_excessive_bools,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Whether a configuration option is enabled; serialized as its original boolean.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(from = "bool", into = "bool"))]
+pub enum Toggle {
+    /// The option is disabled.
+    #[default]
+    Disabled,
+    /// The option is enabled.
+    Enabled,
+}
+
+impl Toggle {
+    /// Converts a configuration boolean into its option state.
+    #[must_use]
+    #[inline]
+    pub const fn from_bool(value: bool) -> Self {
+        if value { Self::Enabled } else { Self::Disabled }
+    }
+
+    /// Returns whether the option is enabled.
+    #[must_use]
+    #[inline]
+    pub const fn is_enabled(self) -> bool {
+        match self {
+            Self::Disabled => false,
+            Self::Enabled => true,
+        }
+    }
+}
+
+impl From<bool> for Toggle {
+    #[inline]
+    fn from(value: bool) -> Self {
+        Self::from_bool(value)
+    }
+}
+
+impl From<Toggle> for bool {
+    #[inline]
+    fn from(value: Toggle) -> Self {
+        value.is_enabled()
+    }
+}
+
 /// `[libdefaults]` configuration values.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -1146,9 +549,9 @@ where
 pub struct LibDefaults {
     /// Whether weak crypto names are retained before supported enctype
     /// filtering.
-    pub allow_weak_crypto: bool,
+    pub allow_weak_crypto: Toggle,
     /// Whether clients should request canonicalization.
-    pub canonicalize: bool,
+    pub canonicalize: Toggle,
     /// Credential cache type.
     pub ccache_type: i32,
     /// Accepted clock skew.
@@ -1170,19 +573,19 @@ pub struct LibDefaults {
     /// Preferred ticket enctype IDs implemented by gokrb5-compatible crypto.
     pub default_tkt_enctype_ids: Vec<i32>,
     /// Whether hostnames should be DNS-canonicalized.
-    pub dns_canonicalize_hostname: bool,
+    pub dns_canonicalize_hostname: Toggle,
     /// Whether KDC DNS lookup is enabled.
-    pub dns_lookup_kdc: bool,
+    pub dns_lookup_kdc: Toggle,
     /// Whether realm DNS lookup is enabled.
-    pub dns_lookup_realm: bool,
+    pub dns_lookup_realm: Toggle,
     /// Extra local addresses.
     pub extra_addresses: Vec<IpAddr>,
     /// Whether tickets should be forwardable.
-    pub forwardable: bool,
+    pub forwardable: Toggle,
     /// Whether acceptor hostname mismatches are ignored.
-    pub ignore_acceptor_hostname: bool,
+    pub ignore_acceptor_hostname: Toggle,
     /// Whether `.k5login` is authoritative.
-    pub k5login_authoritative: bool,
+    pub k5login_authoritative: Toggle,
     /// `.k5login` directory.
     pub k5login_directory: String,
     /// KDC default options bit string as a 32-bit integer.
@@ -1190,7 +593,7 @@ pub struct LibDefaults {
     /// KDC time sync setting.
     pub kdc_time_sync: i32,
     /// Whether addresses should be omitted from tickets.
-    pub no_addresses: bool,
+    pub no_addresses: Toggle,
     /// Permitted enctype names.
     pub permitted_enctypes: Vec<String>,
     /// Permitted enctype IDs implemented by gokrb5-compatible crypto.
@@ -1210,13 +613,13 @@ pub struct LibDefaults {
     /// `true` together with `permitted_enctypes` / `permitted_enctype_ids`.
     /// With the flag set, an empty `permitted_enctype_ids` permits no enctype.
     #[cfg_attr(feature = "serde", serde(default))]
-    pub permitted_enctypes_explicit: bool,
+    pub permitted_enctypes_explicit: Toggle,
     /// Preferred preauthentication type IDs.
     pub preferred_preauth_types: Vec<i32>,
     /// Whether tickets should be proxiable.
-    pub proxiable: bool,
+    pub proxiable: Toggle,
     /// Whether reverse DNS is enabled.
-    pub rdns: bool,
+    pub rdns: Toggle,
     /// Realm suffix search setting.
     pub realm_try_domains: i32,
     /// Renewable ticket lifetime.
@@ -1228,21 +631,21 @@ pub struct LibDefaults {
     /// UDP preference limit.
     pub udp_preference_limit: i32,
     /// Whether AP-REQ verification failure should be fatal.
-    pub verify_ap_req_nofail: bool,
+    pub verify_ap_req_nofail: Toggle,
 }
 
 impl LibDefaults {
     /// Sets `allow_weak_crypto`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_allow_weak_crypto(mut self, value: bool) -> Self {
+    pub const fn with_allow_weak_crypto(mut self, value: Toggle) -> Self {
         self.allow_weak_crypto = value;
         self
     }
     /// Sets `canonicalize`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_canonicalize(mut self, value: bool) -> Self {
+    pub const fn with_canonicalize(mut self, value: Toggle) -> Self {
         self.canonicalize = value;
         self
     }
@@ -1319,21 +722,21 @@ impl LibDefaults {
     /// Sets `dns_canonicalize_hostname`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_dns_canonicalize_hostname(mut self, value: bool) -> Self {
+    pub const fn with_dns_canonicalize_hostname(mut self, value: Toggle) -> Self {
         self.dns_canonicalize_hostname = value;
         self
     }
     /// Sets `dns_lookup_kdc`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_dns_lookup_kdc(mut self, value: bool) -> Self {
+    pub const fn with_dns_lookup_kdc(mut self, value: Toggle) -> Self {
         self.dns_lookup_kdc = value;
         self
     }
     /// Sets `dns_lookup_realm`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_dns_lookup_realm(mut self, value: bool) -> Self {
+    pub const fn with_dns_lookup_realm(mut self, value: Toggle) -> Self {
         self.dns_lookup_realm = value;
         self
     }
@@ -1347,21 +750,21 @@ impl LibDefaults {
     /// Sets `forwardable`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_forwardable(mut self, value: bool) -> Self {
+    pub const fn with_forwardable(mut self, value: Toggle) -> Self {
         self.forwardable = value;
         self
     }
     /// Sets `ignore_acceptor_hostname`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_ignore_acceptor_hostname(mut self, value: bool) -> Self {
+    pub const fn with_ignore_acceptor_hostname(mut self, value: Toggle) -> Self {
         self.ignore_acceptor_hostname = value;
         self
     }
     /// Sets `k5login_authoritative`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_k5login_authoritative(mut self, value: bool) -> Self {
+    pub const fn with_k5login_authoritative(mut self, value: Toggle) -> Self {
         self.k5login_authoritative = value;
         self
     }
@@ -1389,7 +792,7 @@ impl LibDefaults {
     /// Sets `no_addresses`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_no_addresses(mut self, value: bool) -> Self {
+    pub const fn with_no_addresses(mut self, value: Toggle) -> Self {
         self.no_addresses = value;
         self
     }
@@ -1410,7 +813,7 @@ impl LibDefaults {
     /// Sets `permitted_enctypes_explicit`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_permitted_enctypes_explicit(mut self, value: bool) -> Self {
+    pub const fn with_permitted_enctypes_explicit(mut self, value: Toggle) -> Self {
         self.permitted_enctypes_explicit = value;
         self
     }
@@ -1424,14 +827,14 @@ impl LibDefaults {
     /// Sets `proxiable`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_proxiable(mut self, value: bool) -> Self {
+    pub const fn with_proxiable(mut self, value: Toggle) -> Self {
         self.proxiable = value;
         self
     }
     /// Sets `rdns`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_rdns(mut self, value: bool) -> Self {
+    pub const fn with_rdns(mut self, value: Toggle) -> Self {
         self.rdns = value;
         self
     }
@@ -1473,7 +876,7 @@ impl LibDefaults {
     /// Sets `verify_ap_req_nofail`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_verify_ap_req_nofail(mut self, value: bool) -> Self {
+    pub const fn with_verify_ap_req_nofail(mut self, value: Toggle) -> Self {
         self.verify_ap_req_nofail = value;
         self
     }
@@ -1483,168 +886,7 @@ impl LibDefaults {
     /// environment-free one cannot drift apart.
     const FALLBACK_UID: &'static str = "0";
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    #[must_use]
     /// Create default libdefaults.
     #[inline]
     pub fn new() -> Self {
@@ -1682,8 +924,8 @@ impl LibDefaults {
             uid.unwrap_or_else(|| Self::FALLBACK_UID.to_owned())
         );
         let mut defaults = Self {
-            allow_weak_crypto: false,
-            canonicalize: false,
+            allow_weak_crypto: Toggle::Disabled,
+            canonicalize: Toggle::Disabled,
             ccache_type: 4,
             clockskew: Duration::from_secs(300),
             default_ccache_name: String::new(),
@@ -1694,29 +936,29 @@ impl LibDefaults {
             default_tkt_enctypes: default_enctypes.clone(),
             default_tgs_enctype_ids: Vec::new(),
             default_tkt_enctype_ids: Vec::new(),
-            dns_canonicalize_hostname: true,
-            dns_lookup_kdc: false,
-            dns_lookup_realm: false,
+            dns_canonicalize_hostname: Toggle::Enabled,
+            dns_lookup_kdc: Toggle::Disabled,
+            dns_lookup_realm: Toggle::Disabled,
             extra_addresses: Vec::new(),
-            forwardable: false,
-            ignore_acceptor_hostname: false,
-            k5login_authoritative: false,
+            forwardable: Toggle::Disabled,
+            ignore_acceptor_hostname: Toggle::Disabled,
+            k5login_authoritative: Toggle::Disabled,
             k5login_directory: home.unwrap_or_default(),
             kdc_default_options: 0x0000_0010,
             kdc_time_sync: 1,
-            no_addresses: true,
+            no_addresses: Toggle::Enabled,
             permitted_enctypes: default_enctypes,
             permitted_enctype_ids: Vec::new(),
-            permitted_enctypes_explicit: false,
+            permitted_enctypes_explicit: Toggle::Disabled,
             preferred_preauth_types: DEFAULT_PREAUTH_TYPES.to_vec(),
-            proxiable: false,
-            rdns: true,
+            proxiable: Toggle::Disabled,
+            rdns: Toggle::Enabled,
             realm_try_domains: -1,
             renew_lifetime: Duration::ZERO,
             safe_checksum_type: 8,
             ticket_lifetime: Duration::from_hours(24),
             udp_preference_limit: 1465,
-            verify_ap_req_nofail: false,
+            verify_ap_req_nofail: Toggle::Disabled,
         };
         defaults.refresh_enctype_ids();
         defaults
@@ -1746,8 +988,10 @@ impl LibDefaults {
             }
 
             match key {
-                "allow_weak_crypto" => self.allow_weak_crypto = parse_boolean(value)?,
-                "canonicalize" => self.canonicalize = parse_boolean(value)?,
+                "allow_weak_crypto" => {
+                    self.allow_weak_crypto = Toggle::from_bool(parse_boolean(value)?);
+                }
+                "canonicalize" => self.canonicalize = Toggle::from_bool(parse_boolean(value)?),
                 "ccache_type" => self.ccache_type = parse_i32(value, line, key)?,
                 "clockskew" => self.clockskew = parse_duration(value)?,
                 "default_ccache_name" => value.clone_into(&mut self.default_ccache_name),
@@ -1765,33 +1009,37 @@ impl LibDefaults {
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
-                    self.dns_canonicalize_hostname = parse_boolean(value)?;
+                    self.dns_canonicalize_hostname = Toggle::from_bool(parse_boolean(value)?);
                 }
-                "dns_lookup_kdc" => self.dns_lookup_kdc = parse_boolean(value)?,
-                "dns_lookup_realm" => self.dns_lookup_realm = parse_boolean(value)?,
+                "dns_lookup_kdc" => self.dns_lookup_kdc = Toggle::from_bool(parse_boolean(value)?),
+                "dns_lookup_realm" => {
+                    self.dns_lookup_realm = Toggle::from_bool(parse_boolean(value)?);
+                }
                 "extra_addresses" => self.extra_addresses = parse_ip_addresses(value),
-                "forwardable" => self.forwardable = parse_boolean(value)?,
+                "forwardable" => self.forwardable = Toggle::from_bool(parse_boolean(value)?),
                 "ignore_acceptor_hostname" => {
-                    self.ignore_acceptor_hostname = parse_boolean(value)?;
+                    self.ignore_acceptor_hostname = Toggle::from_bool(parse_boolean(value)?);
                 }
                 "k5login_authoritative" => {
-                    self.k5login_authoritative = parse_boolean(value)?;
+                    self.k5login_authoritative = Toggle::from_bool(parse_boolean(value)?);
                 }
                 "k5login_directory" => value.clone_into(&mut self.k5login_directory),
                 "kdc_default_options" => {
                     self.kdc_default_options = parse_hex_u32(value, line, key)?;
                 }
                 "kdc_timesync" => self.kdc_time_sync = parse_i32(value, line, key)?,
-                "noaddresses" | "no_addresses" => self.no_addresses = parse_boolean(value)?,
+                "noaddresses" | "no_addresses" => {
+                    self.no_addresses = Toggle::from_bool(parse_boolean(value)?);
+                }
                 "permitted_enctypes" => {
                     self.permitted_enctypes = parse_words(value);
-                    self.permitted_enctypes_explicit = true;
+                    self.permitted_enctypes_explicit = Toggle::Enabled;
                 }
                 "preferred_preauth_types" => {
                     self.preferred_preauth_types = parse_i32_list(value, line, key)?;
                 }
-                "proxiable" => self.proxiable = parse_boolean(value)?,
-                "rdns" => self.rdns = parse_boolean(value)?,
+                "proxiable" => self.proxiable = Toggle::from_bool(parse_boolean(value)?),
+                "rdns" => self.rdns = Toggle::from_bool(parse_boolean(value)?),
                 "realm_try_domains" => self.realm_try_domains = parse_i32(value, line, key)?,
                 "renew_lifetime" => self.renew_lifetime = parse_duration(value)?,
                 "safe_checksum_type" => self.safe_checksum_type = parse_i32(value, line, key)?,
@@ -1800,7 +1048,7 @@ impl LibDefaults {
                     self.udp_preference_limit = parse_i32(value, line, key)?;
                 }
                 "verify_ap_req_nofail" => {
-                    self.verify_ap_req_nofail = parse_boolean(value)?;
+                    self.verify_ap_req_nofail = Toggle::from_bool(parse_boolean(value)?);
                 }
                 _ => {}
             }
@@ -1828,7 +1076,7 @@ impl LibDefaults {
     /// naming the first explicit request list and enctype outside the
     /// allowlist.
     fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
-        if !self.permitted_enctypes_explicit {
+        if !self.permitted_enctypes_explicit.is_enabled() {
             return Ok(());
         }
         if self.permitted_enctype_ids.is_empty() {
@@ -1871,12 +1119,18 @@ impl LibDefaults {
     /// Recompute the three enctype ID lists from their name lists, honouring
     /// `allow_weak_crypto`.
     fn refresh_enctype_ids(&mut self) {
-        self.default_tgs_enctype_ids =
-            parse_supported_enctype_ids(&self.default_tgs_enctypes, self.allow_weak_crypto);
-        self.default_tkt_enctype_ids =
-            parse_supported_enctype_ids(&self.default_tkt_enctypes, self.allow_weak_crypto);
-        self.permitted_enctype_ids =
-            parse_supported_enctype_ids(&self.permitted_enctypes, self.allow_weak_crypto);
+        self.default_tgs_enctype_ids = parse_supported_enctype_ids(
+            &self.default_tgs_enctypes,
+            self.allow_weak_crypto.is_enabled(),
+        );
+        self.default_tkt_enctype_ids = parse_supported_enctype_ids(
+            &self.default_tkt_enctypes,
+            self.allow_weak_crypto.is_enabled(),
+        );
+        self.permitted_enctype_ids = parse_supported_enctype_ids(
+            &self.permitted_enctypes,
+            self.allow_weak_crypto.is_enabled(),
+        );
     }
 }
 
@@ -1887,175 +1141,14 @@ impl Default for LibDefaults {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::struct_field_names,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// One `[realms]` entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct Realm {
     /// Realm name.
-    pub realm: String,
+    #[cfg_attr(feature = "serde", serde(rename = "realm"))]
+    pub name: String,
     /// Administrative server hosts.
     pub admin_server: Vec<String>,
     /// Default DNS domain.
@@ -2069,172 +1162,10 @@ pub struct Realm {
 }
 
 impl Realm {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                not(feature = "messages"),
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                not(feature = "tokio"),
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// An entry for `realm` with every list empty.
-    fn new(realm: String) -> Self {
+    const fn new(realm: String) -> Self {
         Self {
-            realm,
+            name: realm,
             admin_server: Vec::new(),
             default_domain: String::new(),
             kdc: Vec::new(),
@@ -2853,168 +1784,7 @@ pub fn parse_boolean(value: &str) -> Result<bool, Error> {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::must_use_candidate,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+#[must_use]
 /// Parse enctype names to the subset of IDs implemented by gokrb5-compatible
 /// crypto.
 #[inline]
@@ -3052,134 +1822,16 @@ impl<'config> From<&'config Config> for ConfigJson<'config> {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::struct_excessive_bools,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// The gokrb5 JSON snapshot of a [`LibDefaults`], borrowing from it.
 #[cfg(feature = "serde")]
 #[derive(serde::Serialize)]
 struct LibDefaultsJson<'config> {
     /// [`LibDefaults::allow_weak_crypto`], as gokrb5's `AllowWeakCrypto`.
     #[serde(rename = "AllowWeakCrypto")]
-    allow_weak_crypto: bool,
+    allow_weak_crypto: Toggle,
     /// [`LibDefaults::canonicalize`], as gokrb5's `Canonicalize`.
     #[serde(rename = "Canonicalize")]
-    canonicalize: bool,
+    canonicalize: Toggle,
     /// [`LibDefaults::ccache_type`], as gokrb5's `CCacheType`.
     #[serde(rename = "CCacheType")]
     ccache_type: i32,
@@ -3212,25 +1864,25 @@ struct LibDefaultsJson<'config> {
     default_tkt_enctype_ids: &'config [i32],
     /// [`LibDefaults::dns_canonicalize_hostname`], as gokrb5's `DNSCanonicalizeHostname`.
     #[serde(rename = "DNSCanonicalizeHostname")]
-    dns_canonicalize_hostname: bool,
+    dns_canonicalize_hostname: Toggle,
     /// [`LibDefaults::dns_lookup_kdc`], as gokrb5's `DNSLookupKDC`.
     #[serde(rename = "DNSLookupKDC")]
-    dns_lookup_kdc: bool,
+    dns_lookup_kdc: Toggle,
     /// [`LibDefaults::dns_lookup_realm`], as gokrb5's `DNSLookupRealm`.
     #[serde(rename = "DNSLookupRealm")]
-    dns_lookup_realm: bool,
+    dns_lookup_realm: Toggle,
     /// [`LibDefaults::extra_addresses`] as strings, or `None` when empty, as gokrb5's `ExtraAddresses`.
     #[serde(rename = "ExtraAddresses")]
     extra_addresses: Option<Vec<String>>,
     /// [`LibDefaults::forwardable`], as gokrb5's `Forwardable`.
     #[serde(rename = "Forwardable")]
-    forwardable: bool,
+    forwardable: Toggle,
     /// [`LibDefaults::ignore_acceptor_hostname`], as gokrb5's `IgnoreAcceptorHostname`.
     #[serde(rename = "IgnoreAcceptorHostname")]
-    ignore_acceptor_hostname: bool,
+    ignore_acceptor_hostname: Toggle,
     /// [`LibDefaults::k5login_authoritative`], as gokrb5's `K5LoginAuthoritative`.
     #[serde(rename = "K5LoginAuthoritative")]
-    k5login_authoritative: bool,
+    k5login_authoritative: Toggle,
     /// [`LibDefaults::k5login_directory`], as gokrb5's `K5LoginDirectory`.
     #[serde(rename = "K5LoginDirectory")]
     k5login_directory: &'config str,
@@ -3242,7 +1894,7 @@ struct LibDefaultsJson<'config> {
     kdc_time_sync: i32,
     /// [`LibDefaults::no_addresses`], as gokrb5's `NoAddresses`.
     #[serde(rename = "NoAddresses")]
-    no_addresses: bool,
+    no_addresses: Toggle,
     /// [`LibDefaults::permitted_enctypes`], as gokrb5's `PermittedEnctypes`.
     #[serde(rename = "PermittedEnctypes")]
     permitted_enctypes: &'config [String],
@@ -3254,10 +1906,10 @@ struct LibDefaultsJson<'config> {
     preferred_preauth_types: &'config [i32],
     /// [`LibDefaults::proxiable`], as gokrb5's `Proxiable`.
     #[serde(rename = "Proxiable")]
-    proxiable: bool,
+    proxiable: Toggle,
     /// [`LibDefaults::rdns`], as gokrb5's `RDNS`.
     #[serde(rename = "RDNS")]
-    rdns: bool,
+    rdns: Toggle,
     /// [`LibDefaults::realm_try_domains`], as gokrb5's `RealmTryDomains`.
     #[serde(rename = "RealmTryDomains")]
     realm_try_domains: i32,
@@ -3275,7 +1927,7 @@ struct LibDefaultsJson<'config> {
     udp_preference_limit: i32,
     /// [`LibDefaults::verify_ap_req_nofail`], as gokrb5's `VerifyAPReqNofail`.
     #[serde(rename = "VerifyAPReqNofail")]
-    verify_ap_req_nofail: bool,
+    verify_ap_req_nofail: Toggle,
 }
 
 #[cfg(feature = "serde")]
@@ -3348,7 +2000,7 @@ struct RealmJson<'config> {
 impl<'config> From<&'config Realm> for RealmJson<'config> {
     fn from(realm: &'config Realm) -> Self {
         Self {
-            realm: &realm.realm,
+            realm: &realm.name,
             admin_server: optional_slice(&realm.admin_server),
             default_domain: &realm.default_domain,
             kdc: optional_slice(&realm.kdc),
@@ -3383,128 +2035,10 @@ impl KerberosBitStringJson {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_const_for_fn,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// `values`, or `None` when it is empty (gokrb5 renders an empty list as
 /// `null`).
 #[cfg(feature = "serde")]
-fn optional_slice<T>(values: &[T]) -> Option<&[T]> {
+const fn optional_slice<T>(values: &[T]) -> Option<&[T]> {
     if values.is_empty() {
         None
     } else {
@@ -3522,127 +2056,9 @@ fn optional_ip_addresses(values: &[IpAddr]) -> Option<Vec<String>> {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_const_for_fn,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// `duration` in nanoseconds, as Go's `time.Duration` serializes.
 #[cfg(feature = "serde")]
-fn duration_nanos(duration: Duration) -> u128 {
+const fn duration_nanos(duration: Duration) -> u128 {
     duration.as_nanos()
 }
 

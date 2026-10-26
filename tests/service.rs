@@ -386,7 +386,7 @@ mod tests {
         let options = ap_rep_options()?;
 
         let ap_rep = validated
-            .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, options.clone())
+            .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, &options)
             .context("AP-REP builds")?;
         assert_eq!(hex_encode(&ap_rep), AP_REP_WITH_SUBKEY);
         let verified = validated
@@ -406,7 +406,7 @@ mod tests {
     fn rejects_ap_rep_timestamp_mismatch() -> Result<(), TestError> {
         let validated = valid_ap_req()?;
         let ap_rep = validated
-            .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, ApRepOptions::default())
+            .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, &ApRepOptions::default())
             .context("AP-REP builds")?;
         let mut wrong_request = validated;
         wrong_request.authenticator_cusec += 1;
@@ -430,7 +430,7 @@ mod tests {
     fn rejects_tampered_ap_rep() -> Result<(), TestError> {
         let validated = valid_ap_req()?;
         let mut ap_rep = validated
-            .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, ApRepOptions::default())
+            .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, &ApRepOptions::default())
             .context("AP-REP builds")?;
         let last = ap_rep.last_mut().context("AP-REP is non-empty")?;
         *last ^= 0x01;

@@ -52,12 +52,12 @@ mod tests {
             Some(Des3CbcSha1KdEtype::new())
         );
 
-        assert_eq!(Des3CbcSha1KdEtype::new().etype_id(), 16_i32);
-        assert_eq!(Des3CbcSha1KdEtype::new().checksum_type_id(), 12_i32);
-        assert_eq!(Des3CbcSha1KdEtype::new().key_len(), 24);
-        assert_eq!(Des3CbcSha1KdEtype::new().confounder_len(), 8);
-        assert_eq!(Des3CbcSha1KdEtype::new().hmac_len(), 20);
-        assert_eq!(Des3CbcSha1KdEtype::new().default_s2kparams(), "");
+        assert_eq!(Des3CbcSha1KdEtype::etype_id(), 16_i32);
+        assert_eq!(Des3CbcSha1KdEtype::checksum_type_id(), 12_i32);
+        assert_eq!(Des3CbcSha1KdEtype::key_len(), 24);
+        assert_eq!(Des3CbcSha1KdEtype::confounder_len(), 8);
+        assert_eq!(Des3CbcSha1KdEtype::hmac_len(), 20);
+        assert_eq!(Des3CbcSha1KdEtype::default_s2kparams(), "");
 
         assert_eq!(
             KerberosEtype::from_etype_id(16),
@@ -72,7 +72,7 @@ mod tests {
     /// Pins Triple-DES derive-random and derive-key against the gokrb5 vectors.
     #[test]
     fn des3_derive_random_and_key_match_gokrb5_vectors() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype::new();
+        let _etype = Des3CbcSha1KdEtype::new();
         let tests = [
             Des3DeriveVector {
                 key: "dce06b1f64c857a11c3db57c51899b2cc1791008ce973b92",
@@ -134,8 +134,14 @@ mod tests {
             let key = hex::decode(vector.key)?;
             let usage = hex::decode(vector.usage)?;
 
-            assert_eq!(hex::encode(etype.derive_random(&key, &usage)?), vector.dr);
-            assert_eq!(hex::encode(etype.derive_key(&key, &usage)?), vector.dk);
+            assert_eq!(
+                hex::encode(Des3CbcSha1KdEtype::derive_random(&key, &usage)?),
+                vector.dr
+            );
+            assert_eq!(
+                hex::encode(Des3CbcSha1KdEtype::derive_key(&key, &usage)?),
+                vector.dk
+            );
         }
         Ok(())
     }
@@ -143,7 +149,7 @@ mod tests {
     /// Pins Triple-DES string-to-key against the gokrb5 vectors.
     #[test]
     fn des3_string_to_key_matches_gokrb5_vectors() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype::new();
+        let _etype = Des3CbcSha1KdEtype::new();
         let tests = [
             Des3StringToKeyVector {
                 salt: b"ATHENA.MIT.EDUraeburn".as_slice(),
@@ -173,7 +179,7 @@ mod tests {
         ];
 
         for vector in tests {
-            let key = etype.string_to_key(vector.secret, vector.salt, "")?;
+            let key = Des3CbcSha1KdEtype::string_to_key(vector.secret, vector.salt, "")?;
             assert_eq!(hex::encode(&key), vector.key);
         }
         Ok(())
@@ -182,19 +188,19 @@ mod tests {
     /// Pins the Triple-DES checksum and message encryption against the gokrb5 vectors.
     #[test]
     fn des3_checksum_and_message_encryption_match_gokrb5_vectors() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype::new();
+        let _etype = Des3CbcSha1KdEtype::new();
         let key = hex::decode("850bb51358548cd05e86768c313e3bfef7511937dcf72c3e")?;
-        let checksum = etype.checksum(&key, b"kerberos des3 checksum", 2)?;
+        let checksum = Des3CbcSha1KdEtype::checksum(&key, b"kerberos des3 checksum", 2)?;
         assert_eq!(
             hex::encode(&checksum),
             "f2d2ab0b54bd97a62daaedbb6d671ea2573ea961"
         );
         assert!(
-            etype.verify_checksum(&key, b"kerberos des3 checksum", &checksum, 2),
+            Des3CbcSha1KdEtype::verify_checksum(&key, b"kerberos des3 checksum", &checksum, 2),
             "checksum verifies"
         );
         assert!(
-            !etype.verify_checksum(&key, b"kerberos des3 tampered", &checksum, 2),
+            !Des3CbcSha1KdEtype::verify_checksum(&key, b"kerberos des3 tampered", &checksum, 2),
             "checksum of tampered data does not verify"
         );
 
@@ -203,7 +209,7 @@ mod tests {
             "c18690ba486875c8df4e638ba41ec6ece9c3364e0ec411a8be30bb4b075ab1b6\
              c54450d1ea719792e1df15cdc2d74c7899cef236",
         )?;
-        let encrypted = etype.encrypt_message_with_confounder(
+        let encrypted = Des3CbcSha1KdEtype::encrypt_message_with_confounder(
             &key,
             b"kerberos des3 message",
             2,
@@ -211,7 +217,7 @@ mod tests {
         )?;
         assert_eq!(encrypted, expected);
 
-        let decrypted = etype.decrypt_message(&key, &encrypted, 2)?;
+        let decrypted = Des3CbcSha1KdEtype::decrypt_message(&key, &encrypted, 2)?;
         assert_eq!(
             hex::encode(&decrypted),
             "6b65726265726f732064657333206d657373616765000000"
@@ -225,17 +231,17 @@ mod tests {
     /// Pins that Triple-DES rejects bad parameters, seed, key, plaintext, ciphertext and confounder inputs and tampering.
     #[test]
     fn des3_rejects_invalid_inputs_and_tampering() -> Result<(), TestError> {
-        let etype = Des3CbcSha1KdEtype::new();
+        let _etype = Des3CbcSha1KdEtype::new();
         let key = hex::decode("850bb51358548cd05e86768c313e3bfef7511937dcf72c3e")?;
         let confounder = hex::decode("0001020304050607")?;
 
         assert_eq!(
-            etype.string_to_key(b"password", b"salt", "00001000"),
+            Des3CbcSha1KdEtype::string_to_key(b"password", b"salt", "00001000"),
             Err(Error::NonEmptyDes3S2kParams)
         );
         assert!(
             matches!(
-                etype.random_to_key(&[0_u8; 20]),
+                Des3CbcSha1KdEtype::random_to_key(&[0_u8; 20]),
                 Err(Error::InvalidSeedLength {
                     expected: 21,
                     actual: 20
@@ -245,7 +251,10 @@ mod tests {
         );
         assert!(
             matches!(
-                etype.encrypt_data(key.get(..23).ok_or("23-byte key prefix")?, b"data"),
+                Des3CbcSha1KdEtype::encrypt_data(
+                    key.get(..23).ok_or("23-byte key prefix")?,
+                    b"data"
+                ),
                 Err(Error::InvalidKeyLength {
                     expected: 24,
                     actual: 23
@@ -253,10 +262,13 @@ mod tests {
             ),
             "short key is rejected"
         );
-        assert_eq!(etype.encrypt_data(&key, b""), Err(Error::EmptyPlaintext));
+        assert_eq!(
+            Des3CbcSha1KdEtype::encrypt_data(&key, b""),
+            Err(Error::EmptyPlaintext)
+        );
         assert!(
             matches!(
-                etype.decrypt_data(&key, &[0_u8; 7]),
+                Des3CbcSha1KdEtype::decrypt_data(&key, &[0_u8; 7]),
                 Err(Error::CiphertextTooShort {
                     minimum: 8,
                     actual: 7
@@ -266,7 +278,7 @@ mod tests {
         );
         assert!(
             matches!(
-                etype.decrypt_data(&key, &[0_u8; 9]),
+                Des3CbcSha1KdEtype::decrypt_data(&key, &[0_u8; 9]),
                 Err(Error::InvalidCiphertextBlockSize {
                     block_size: 8,
                     actual: 9
@@ -276,7 +288,7 @@ mod tests {
         );
         assert!(
             matches!(
-                etype.encrypt_message_with_confounder(
+                Des3CbcSha1KdEtype::encrypt_message_with_confounder(
                     &key,
                     b"data",
                     2,
@@ -290,7 +302,7 @@ mod tests {
             "short confounder is rejected"
         );
 
-        let mut encrypted = etype.encrypt_message_with_confounder(
+        let mut encrypted = Des3CbcSha1KdEtype::encrypt_message_with_confounder(
             &key,
             b"kerberos des3 message",
             2,
@@ -298,7 +310,7 @@ mod tests {
         )?;
         *encrypted.first_mut().ok_or("ciphertext is not empty")? ^= 1;
         assert_eq!(
-            etype.decrypt_message(&key, &encrypted, 2),
+            Des3CbcSha1KdEtype::decrypt_message(&key, &encrypted, 2),
             Err(Error::IntegrityCheckFailed)
         );
         Ok(())

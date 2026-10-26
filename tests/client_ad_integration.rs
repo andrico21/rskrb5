@@ -136,86 +136,12 @@ fn ad_gate_error(message: String) -> Box<dyn Error> {
     io::Error::other(message).into()
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::needless_pass_by_value,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Parses the keytab `bytes` loaded for fixture `label` from `source`.
 ///
 /// # Errors
 ///
 /// Returns an error naming `label` and `source` if the bytes are not a keytab.
-fn parse_keytab_bytes(label: &str, source: String, bytes: &[u8]) -> Result<Keytab, Box<dyn Error>> {
+fn parse_keytab_bytes(label: &str, source: &str, bytes: &[u8]) -> Result<Keytab, Box<dyn Error>> {
     Keytab::parse(bytes).map_err(|error| {
         ad_gate_error(format!(
             "failed to parse AD keytab {label} from {source}: {error}"
@@ -581,14 +507,14 @@ mod tests {
                 .admin_server,
             ["192.0.2.11:10464".to_owned()]
         );
-        assert!(!config.libdefaults.allow_weak_crypto);
-        assert!(!config.libdefaults.canonicalize);
+        assert!(!config.libdefaults.allow_weak_crypto.is_enabled());
+        assert!(!config.libdefaults.canonicalize.is_enabled());
         assert_eq!(config.libdefaults.default_tkt_enctype_ids, [AES256_ETYPE]);
         assert_eq!(config.libdefaults.default_tgs_enctype_ids, [AES256_ETYPE]);
 
         let rc4_config = ad_config(true)?;
-        assert!(rc4_config.libdefaults.allow_weak_crypto);
-        assert!(rc4_config.libdefaults.canonicalize);
+        assert!(rc4_config.libdefaults.allow_weak_crypto.is_enabled());
+        assert!(rc4_config.libdefaults.canonicalize.is_enabled());
         assert_eq!(
             rc4_config.libdefaults.default_tkt_enctype_ids,
             [RC4_HMAC_ETYPE]
@@ -1005,7 +931,7 @@ mod tests {
             })?;
             return parse_keytab_bytes(
                 fixture.label,
-                format!("{}={}", fixture.path_env, path.display()),
+                &format!("{}={}", fixture.path_env, path.display()),
                 &bytes,
             );
         }
@@ -1017,7 +943,7 @@ mod tests {
                     fixture.label, fixture.hex_env
                 ))
             })?;
-            return parse_keytab_bytes(fixture.label, fixture.hex_env.to_owned(), &bytes);
+            return parse_keytab_bytes(fixture.label, fixture.hex_env, &bytes);
         }
 
         if let Some(base64) = env_string_optional(fixture.base64_env) {
@@ -1027,7 +953,7 @@ mod tests {
                     fixture.label, fixture.base64_env
                 ))
             })?;
-            return parse_keytab_bytes(fixture.label, fixture.base64_env.to_owned(), &bytes);
+            return parse_keytab_bytes(fixture.label, fixture.base64_env, &bytes);
         }
 
         keytab(fixture.default_hex)

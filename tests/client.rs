@@ -589,7 +589,7 @@ mod harness {
             &service_ticket,
             &change_data,
             reply_key,
-            KpasswdRequestOptions::new(
+            &KpasswdRequestOptions::new(
                 timestamp(1_893_553_452)?,
                 456_789,
                 42,

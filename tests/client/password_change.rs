@@ -149,7 +149,7 @@ TEST.GOKRB5 = {{
             &service_ticket,
             &change_data,
             reply_key.clone(),
-            KpasswdRequestOptions::new(
+            &KpasswdRequestOptions::new(
                 timestamp(1_893_553_452)?,
                 456_789,
                 42,
@@ -228,7 +228,7 @@ TEST.GOKRB5 = {{
         let built = build_kpasswd_request(
             &service_ticket,
             &change_data,
-            KpasswdRequestOptions::new(
+            &KpasswdRequestOptions::new(
                 timestamp(1_893_553_452)?,
                 456_789,
                 42,

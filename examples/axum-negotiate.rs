@@ -91,7 +91,7 @@ async fn negotiate(
     };
 
     let ap_rep_header = accepted
-        .ap_rep_response_header(ApRepOptions::default())
+        .ap_rep_response_header(&ApRepOptions::default())
         .ok();
     let mut response = next.run(request).await;
     if let Some(header) = ap_rep_header

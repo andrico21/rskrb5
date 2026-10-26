@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn tgs_req_options_from_libdefaults_sets_canonicalize_flag() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
-            .with_canonicalize(true)
+            .with_canonicalize(true.into())
             .with_kdc_default_options(0x0000_0010);
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
@@ -1007,7 +1007,7 @@ mod tests {
         let defaults = LibDefaults::default()
             .with_default_tgs_enctype_ids(vec![18_i32, 17_i32, 23_i32])
             .with_permitted_enctype_ids(vec![18_i32])
-            .with_permitted_enctypes_explicit(true);
+            .with_permitted_enctypes_explicit(true.into());
         let options =
             TgsReqOptions::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
         let request = build_tgs_req_with_confounder(
@@ -1048,11 +1048,12 @@ mod tests {
             &tgt,
             "TEST.GOKRB5",
             service,
-            options,
-            timestamp(1_893_553_451)?,
-            654_321,
-            &decode_hex(TGS_REQ_CONFOUNDER)?,
-            &subkey,
+            rskrb5_ng::client::TgsRequestParts::new(
+                options,
+                &decode_hex(TGS_REQ_CONFOUNDER)?,
+                &subkey,
+            )
+            .with_timestamp(timestamp(1_893_553_451)?, 654_321),
         )?;
         let decoded: rasn_kerberos::TgsReq = der::decode(&parts.request.der)?;
         let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
@@ -1098,11 +1099,12 @@ mod tests {
             &tgt,
             "TEST.GOKRB5",
             service,
-            options,
-            timestamp(1_893_553_451)?,
-            654_321,
-            &decode_hex(TGS_REQ_CONFOUNDER)?,
-            &subkey,
+            rskrb5_ng::client::TgsRequestParts::new(
+                options,
+                &decode_hex(TGS_REQ_CONFOUNDER)?,
+                &subkey,
+            )
+            .with_timestamp(timestamp(1_893_553_451)?, 654_321),
         )?;
         let decoded: rasn_kerberos::TgsReq = der::decode(&parts.request.der)?;
         let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
@@ -1164,11 +1166,12 @@ mod tests {
                 &tgt,
                 "TEST.GOKRB5",
                 sample_service_principal(),
-                TgsReqOptions::new(request_time, 0x5566_7788).with_etypes(vec![18_i32]),
-                authenticator_time,
-                654_321,
-                &confounder,
-                subkey,
+                rskrb5_ng::client::TgsRequestParts::new(
+                    TgsReqOptions::new(request_time, 0x5566_7788).with_etypes(vec![18_i32]),
+                    &confounder,
+                    subkey,
+                )
+                .with_timestamp(authenticator_time, 654_321),
             )
         };
         let other_etype = EncryptionKey::new(17, vec![0x42; 16]);
@@ -1297,7 +1300,7 @@ mod tests {
             .with_default_tkt_enctype_ids(vec![18_i32, 17_i32])
             .with_default_tgs_enctype_ids(vec![18_i32, 17_i32])
             .with_permitted_enctype_ids(Vec::new())
-            .with_permitted_enctypes_explicit(true);
+            .with_permitted_enctypes_explicit(true.into());
 
         let as_options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
