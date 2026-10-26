@@ -16,7 +16,12 @@ use super::{
     KRB_NT_PRINCIPAL, Principal, TokioClient, TokioClientCredentials, current_preauth_time,
     random_nonce,
 };
-use crate::{crypto::KerberosEtype, kadmin, keytab::EncryptionKey};
+use crate::{
+    ap_rep::{decrypt_ap_rep_enc_part, validate_ap_rep},
+    crypto::KerberosEtype,
+    kadmin,
+    keytab::EncryptionKey,
+};
 
 #[cfg_attr(
     any(
@@ -311,11 +316,11 @@ impl KpasswdRequestOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Construct options with the required timestamp, sequence number, and sender address.
+    #[inline]
     pub fn new(
         timestamp: SystemTime,
         cusec: u32,
@@ -467,12 +472,12 @@ impl KpasswdRequestOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Set the optional recipient address.
+    #[inline]
     pub fn with_recipient_address(mut self, recipient_address: rasn_kerberos::HostAddress) -> Self {
         self.recipient_address = Some(recipient_address);
         self
@@ -924,13 +929,20 @@ pub struct VerifiedKpasswdApRep {
         )
     ),
     expect(
-        clippy::missing_errors_doc,
-        clippy::missing_inline_in_public_items,
         clippy::needless_pass_by_value,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
 /// Build a complete kpasswd request with explicit confounders.
+///
+/// # Errors
+///
+/// Returns an error when the AP-REQ cannot be built from the service ticket
+/// (for example an unsupported session-key encryption type or a confounder of
+/// the wrong length), when the request timestamp is outside the Kerberos time
+/// range, or when the KRB-PRIV change-password payload cannot be encrypted or
+/// encoded.
+#[inline]
 pub fn build_kpasswd_request_with_confounders(
     service_ticket: &TgsRepSession,
     change_data: &kadmin::ChangePasswdData,
@@ -1098,13 +1110,19 @@ pub fn build_kpasswd_request_with_confounders(
         )
     ),
     expect(
-        clippy::missing_errors_doc,
-        clippy::missing_inline_in_public_items,
         clippy::needless_pass_by_value,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
 /// Build a complete kpasswd request with generated reply key and confounders.
+///
+/// # Errors
+///
+/// Returns [`Error::UnsupportedEtype`] when the service-ticket session key uses
+/// an unsupported encryption type, an error when the operating system random
+/// source fails, and the errors of [`build_kpasswd_request_with_confounders`]
+/// for building, encrypting or encoding the request.
+#[inline]
 pub fn build_kpasswd_request(
     service_ticket: &TgsRepSession,
     change_data: &kadmin::ChangePasswdData,
@@ -1142,220 +1160,13 @@ pub fn build_kpasswd_request(
     })
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Build the kpasswd AP-REQ that carries `reply_key` as its subkey and the
+/// request sequence number.
+///
+/// # Errors
+///
+/// Returns an error when the AP-REQ authenticator cannot be built, encrypted
+/// or encoded from the service ticket and options.
 fn build_kpasswd_ap_req_with_confounder(
     service_ticket: &TgsRepSession,
     reply_key: &EncryptionKey,
@@ -1373,220 +1184,12 @@ fn build_kpasswd_ap_req_with_confounder(
     )
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Translate kpasswd request options into KRB-PRIV encrypted-part options.
+///
+/// # Errors
+///
+/// Returns an error when the request timestamp is outside the Kerberos time
+/// range.
 fn kpasswd_krb_priv_options(
     options: &KpasswdRequestOptions,
 ) -> Result<kadmin::EncKrbPrivPartOptions, Error> {
@@ -1602,153 +1205,20 @@ fn kpasswd_krb_priv_options(
     Ok(krb_priv_options)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::missing_errors_doc,
-        clippy::missing_inline_in_public_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Verify the AP-REP section of a successful kpasswd reply.
 ///
 /// KRB-ERROR replies do not carry AP-REP and return `Ok(None)`. Successful
 /// replies must echo the AP-REQ authenticator timestamp and are encrypted with
 /// the kpasswd service-ticket session key.
+///
+/// # Errors
+///
+/// Returns [`Error::MissingKpasswdApRep`] when a non-error reply carries no
+/// AP-REP, an AP-REP validation or decryption error, a time conversion error
+/// (including [`Error::TimeOverflow`]) when the reply timestamp is out of
+/// range, and [`Error::KpasswdApRepTimestampMismatch`] when the reply does not
+/// echo the request authenticator timestamp.
+#[inline]
 pub fn verify_kpasswd_ap_rep(
     reply: &kadmin::Reply,
     request: &BuiltKpasswdRequest,
@@ -1758,9 +1228,9 @@ pub fn verify_kpasswd_ap_rep(
     }
 
     let ap_rep = reply.ap_rep.as_ref().ok_or(Error::MissingKpasswdApRep)?;
-    crate::ap_rep::validate_ap_rep(ap_rep).map_err(ap_rep_error)?;
-    let enc_part = crate::ap_rep::decrypt_ap_rep_enc_part(ap_rep, &request.ap_req.session_key)
-        .map_err(ap_rep_error)?;
+    validate_ap_rep(ap_rep).map_err(ap_rep_error)?;
+    let enc_part =
+        decrypt_ap_rep_enc_part(ap_rep, &request.ap_req.session_key).map_err(ap_rep_error)?;
     let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
     let cusec = integer_to_u32("ap-rep.cusec", &enc_part.cusec)?;
     let authenticator_time = ctime
@@ -1922,12 +1392,19 @@ impl TokioClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change this client's password using generated timestamp and sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply's
+    /// AP-REP fails verification (including [`Error::MissingKpasswdApRep`] for a
+    /// success result without one), when the result cannot be decrypted, or
+    /// when the server reports a non-success result code.
     ///
     /// # Cancel safety
     ///
@@ -1935,6 +1412,7 @@ impl TokioClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password(
         &mut self,
         new_password: impl AsRef<[u8]>,
@@ -2087,13 +1565,20 @@ impl TokioClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change the given target principal's password using generated timestamp and
     /// sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply's
+    /// AP-REP fails verification (including [`Error::MissingKpasswdApRep`] for a
+    /// success result without one), when the result cannot be decrypted, or
+    /// when the server reports a non-success result code.
     ///
     /// # Cancel safety
     ///
@@ -2101,6 +1586,7 @@ impl TokioClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password_for(
         &mut self,
         target: Principal,
@@ -2254,12 +1740,19 @@ impl TokioClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change this client's password using explicit kpasswd request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply's AP-REP fails verification (including
+    /// [`Error::MissingKpasswdApRep`] for a success result without one), when
+    /// the result cannot be decrypted, or when the server reports a
+    /// non-success result code.
     ///
     /// # Cancel safety
     ///
@@ -2267,6 +1760,7 @@ impl TokioClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password_with_options(
         &mut self,
         new_password: impl AsRef<[u8]>,
@@ -2413,13 +1907,19 @@ impl TokioClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            clippy::shadow_reuse,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change the given target principal's password using explicit request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply's AP-REP fails verification (including
+    /// [`Error::MissingKpasswdApRep`] for a success result without one), when
+    /// the result cannot be decrypted, or when the server reports a
+    /// non-success result code.
     ///
     /// # Cancel safety
     ///
@@ -2427,13 +1927,14 @@ impl TokioClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,
         new_password: impl AsRef<[u8]>,
         options: KpasswdRequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
-        let new_password = new_password.as_ref().to_vec();
+        let new_password_bytes = new_password.as_ref().to_vec();
         let client = self.client.clone();
         let service = Principal::new(
             target.realm.clone(),
@@ -2470,7 +1971,7 @@ impl TokioClient {
             None => self.get_service_ticket(service).await?,
         };
         let change_data = kadmin::ChangePasswdData::for_target(
-            &new_password,
+            &new_password_bytes,
             target.name_type,
             target.components.iter().map(String::as_str),
             &target.realm,
@@ -2500,7 +2001,7 @@ impl TokioClient {
 
         if update_password_credential {
             self.credentials = Some(TokioClientCredentials::Password(Zeroizing::new(
-                new_password,
+                new_password_bytes,
             )));
         }
 

@@ -1,71 +1,15 @@
 use alloc::fmt;
 
-use super::{Error, KdcProtocol, KpasswdRequestOptions, Principal, TokioClient};
-use crate::{config::Config, keytab::Keytab};
+use tokio::runtime::{Builder, Runtime};
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+use super::{Error, KdcProtocol, KpasswdRequestOptions, Principal, TokioClient};
+use crate::{
+    config::Config,
+    kadmin::ChangePasswordResult,
+    keytab::Keytab,
+    spnego::{InitiatorContext, InitiatorContextOptions},
+};
+
 /// Small client API for HTTP Negotiate/SPNEGO initiator headers.
 ///
 /// This wrapper keeps the stable HTTP-Negotiate surface narrow while reusing
@@ -73,6 +17,7 @@ use crate::{config::Config, keytab::Keytab};
 /// construction. Advanced Kerberos flows remain available on `TokioClient`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NegotiateClient {
+    /// High-level client that acquires tickets and builds tokens.
     inner: TokioClient,
 }
 
@@ -192,12 +137,12 @@ impl NegotiateClient {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Wrap an existing high-level Tokio client.
+    #[inline]
     pub fn from_tokio_client(client: TokioClient) -> Self {
         Self { inner: client }
     }
@@ -317,11 +262,11 @@ impl NegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a password-backed Negotiate client using automatic UDP/TCP KDC transport.
+    #[inline]
     pub fn with_password(config: Config, client: Principal, password: impl Into<Vec<u8>>) -> Self {
         Self::from_tokio_client(TokioClient::with_password(
             config,
@@ -445,12 +390,12 @@ impl NegotiateClient {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a keytab-backed Negotiate client using automatic UDP/TCP KDC transport.
+    #[inline]
     pub fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Self {
         Self::from_tokio_client(TokioClient::with_keytab(
             config,
@@ -575,12 +520,16 @@ impl NegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a keytab-backed Negotiate client by loading a file-backed keytab name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the keytab name selects an unsupported keytab store
+    /// or the keytab file cannot be read or parsed.
+    #[inline]
     pub fn with_keytab_name(
         config: Config,
         client: Principal,
@@ -709,12 +658,16 @@ impl NegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a cache-only Negotiate client by loading a ccache name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cache name selects an unsupported credential
+    /// cache store or the cache cannot be read or parsed.
+    #[inline]
     pub fn from_ccache_name(config: Config, cache_name: impl AsRef<str>) -> Result<Self, Error> {
         Ok(Self::from_tokio_client(TokioClient::from_ccache_name(
             config,
@@ -723,129 +676,17 @@ impl NegotiateClient {
         )?))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a cache-only Negotiate client from the default credential cache.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `KRB5CCNAME` is set but not valid Unicode, when no
+    /// default cache name is configured, or when the selected cache cannot be
+    /// read or parsed.
+    #[inline]
     pub fn from_default_ccache(config: Config) -> Result<Self, Error> {
         Ok(Self::from_tokio_client(TokioClient::from_default_ccache(
             config,
@@ -853,126 +694,13 @@ impl NegotiateClient {
         )?))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a cache-only Negotiate client by loading the cache named by `KRB5CCNAME`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `KRB5CCNAME` is unset or not valid Unicode, or when
+    /// the cache it names cannot be read or parsed.
+    #[inline]
     pub fn from_ccache_env(config: Config) -> Result<Self, Error> {
         Ok(Self::from_tokio_client(TokioClient::from_ccache_env(
             config,
@@ -1095,12 +823,12 @@ impl NegotiateClient {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Borrow the wrapped `TokioClient`.
+    #[inline]
     pub fn inner(&self) -> &TokioClient {
         &self.inner
     }
@@ -1220,11 +948,11 @@ impl NegotiateClient {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Mutably borrow the wrapped `TokioClient`.
+    #[inline]
     pub fn inner_mut(&mut self) -> &mut TokioClient {
         &mut self.inner
     }
@@ -1343,136 +1071,30 @@ impl NegotiateClient {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Consume this wrapper and return the wrapped `TokioClient`.
+    #[inline]
     pub fn into_inner(self) -> TokioClient {
         self.inner
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Build an HTTP `Authorization` header for a Kerberos service principal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a TGT or service ticket for `service` cannot be
+    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
+    /// cannot be built.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
     pub async fn authorization_header(&mut self, service: Principal) -> Result<String, Error> {
         Ok(self.authorization_context(service).await?.header)
     }
@@ -1592,8 +1214,6 @@ impl NegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
@@ -1601,6 +1221,19 @@ impl NegotiateClient {
     ///
     /// The service realm is left empty so `TokioClient` can resolve it from
     /// `[domain_realm]` or fall back to the client realm.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
+    /// empty, and otherwise the errors of obtaining a service ticket for the
+    /// host-based principal or building its token.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
     pub async fn authorization_header_for_host(
         &mut self,
         service: impl AsRef<str>,
@@ -1612,260 +1245,46 @@ impl NegotiateClient {
             .header)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Build a SPNEGO initiator context for a Kerberos service principal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a TGT or service ticket for `service` cannot be
+    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
+    /// cannot be built.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
     pub async fn authorization_context(
         &mut self,
         service: Principal,
-    ) -> Result<crate::spnego::InitiatorContext, Error> {
+    ) -> Result<InitiatorContext, Error> {
         self.inner.spnego_context(service).await
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Build a SPNEGO initiator context with explicit initiator options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a TGT or service ticket for `service` cannot be
+    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
+    /// cannot be built.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
     pub async fn authorization_context_with_options(
         &mut self,
         service: Principal,
-        options: crate::spnego::InitiatorContextOptions,
-    ) -> Result<crate::spnego::InitiatorContext, Error> {
+        options: InitiatorContextOptions,
+    ) -> Result<InitiatorContext, Error> {
         self.inner
             .spnego_context_with_options(service, options)
             .await
@@ -1985,10 +1404,7 @@ impl NegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
@@ -1996,11 +1412,24 @@ impl NegotiateClient {
     ///
     /// The service realm is left empty so `TokioClient` can resolve it from
     /// `[domain_realm]` or fall back to the client realm.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
+    /// empty, and otherwise the errors of obtaining a service ticket for the
+    /// host-based principal or building its token.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
     pub async fn authorization_context_for_host(
         &mut self,
         service: impl AsRef<str>,
         host: impl AsRef<str>,
-    ) -> Result<crate::spnego::InitiatorContext, Error> {
+    ) -> Result<InitiatorContext, Error> {
         self.authorization_context(Principal::host_based_service(service, host)?)
             .await
     }
@@ -2119,14 +1548,19 @@ impl NegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change this client's password using generated timestamp and sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply fails
+    /// verification or decryption, or when the server reports a non-success
+    /// result code.
     ///
     /// # Cancel safety
     ///
@@ -2134,11 +1568,12 @@ impl NegotiateClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password(
         &mut self,
         new_password: impl AsRef<[u8]>,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password(new_password, sender_address)
             .await
@@ -2258,15 +1693,20 @@ impl NegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change the given target principal's password using generated timestamp and
     /// sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply fails
+    /// verification or decryption, or when the server reports a non-success
+    /// result code.
     ///
     /// # Cancel safety
     ///
@@ -2274,12 +1714,13 @@ impl NegotiateClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password_for(
         &mut self,
         target: Principal,
         new_password: impl AsRef<[u8]>,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_for(target, new_password, sender_address)
             .await
@@ -2399,14 +1840,18 @@ impl NegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change this client's password using explicit kpasswd request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply fails verification or decryption, or when the
+    /// server reports a non-success result code.
     ///
     /// # Cancel safety
     ///
@@ -2414,11 +1859,12 @@ impl NegotiateClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password_with_options(
         &mut self,
         new_password: impl AsRef<[u8]>,
         options: KpasswdRequestOptions,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_with_options(new_password, options)
             .await
@@ -2538,15 +1984,19 @@ impl NegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change the given target principal's password using explicit kpasswd
     /// request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply fails verification or decryption, or when the
+    /// server reports a non-success result code.
     ///
     /// # Cancel safety
     ///
@@ -2554,328 +2004,33 @@ impl NegotiateClient {
     /// after the kpasswd request is sent does not roll the server back, so the
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
+    #[inline]
     pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,
         new_password: impl AsRef<[u8]>,
         options: KpasswdRequestOptions,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_for_with_options(target, new_password, options)
             .await
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Blocking wrapper for synchronous CLI consumers of HTTP Negotiate.
 ///
 /// Async applications should use [`NegotiateClient`] directly. This type owns a
 /// small current-thread Tokio runtime so callers can generate headers without
 /// managing a runtime.
 pub struct BlockingNegotiateClient {
-    runtime: tokio::runtime::Runtime,
+    /// Current-thread runtime that drives the async client.
+    runtime: Runtime,
+    /// Async client whose futures `runtime` blocks on.
     client: NegotiateClient,
 }
 
 impl fmt::Debug for BlockingNegotiateClient {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BlockingNegotiateClient")
             .field("client", &self.client)
@@ -2884,126 +2039,12 @@ impl fmt::Debug for BlockingNegotiateClient {
 }
 
 impl BlockingNegotiateClient {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Wrap an existing Negotiate client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when the blocking runtime cannot be created.
+    #[inline]
     pub fn new(client: NegotiateClient) -> Result<Self, Error> {
         Ok(Self {
             runtime: blocking_runtime()?,
@@ -3126,12 +2167,15 @@ impl BlockingNegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a password-backed blocking Negotiate client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when the blocking runtime cannot be created.
+    #[inline]
     pub fn with_password(
         config: Config,
         client: Principal,
@@ -3140,126 +2184,12 @@ impl BlockingNegotiateClient {
         Self::new(NegotiateClient::with_password(config, client, password))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a keytab-backed blocking Negotiate client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when the blocking runtime cannot be created.
+    #[inline]
     pub fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Result<Self, Error> {
         Self::new(NegotiateClient::with_keytab(config, client, keytab))
     }
@@ -3379,12 +2309,17 @@ impl BlockingNegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a keytab-backed blocking Negotiate client by loading a file-backed keytab name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the keytab name selects an unsupported keytab store
+    /// or the keytab file cannot be read or parsed.
+    /// Returns an I/O error when the blocking runtime cannot be created.
+    #[inline]
     pub fn with_keytab_name(
         config: Config,
         client: Principal,
@@ -3512,260 +2447,42 @@ impl BlockingNegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a cache-only blocking Negotiate client by loading a ccache name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cache name selects an unsupported credential
+    /// cache store or the cache cannot be read or parsed.
+    /// Returns an I/O error when the blocking runtime cannot be created.
+    #[inline]
     pub fn from_ccache_name(config: Config, cache_name: impl AsRef<str>) -> Result<Self, Error> {
         Self::new(NegotiateClient::from_ccache_name(config, cache_name)?)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a cache-only blocking Negotiate client from the default credential cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `KRB5CCNAME` is set but not valid Unicode, when no
+    /// default cache name is configured, or when the selected cache cannot be
+    /// read or parsed.
+    /// Returns an I/O error when the blocking runtime cannot be created.
+    #[inline]
     pub fn from_default_ccache(config: Config) -> Result<Self, Error> {
         Self::new(NegotiateClient::from_default_ccache(config)?)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a cache-only blocking Negotiate client by loading the cache named by `KRB5CCNAME`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `KRB5CCNAME` is unset or not valid Unicode, or when
+    /// the cache it names cannot be read or parsed.
+    /// Returns an I/O error when the blocking runtime cannot be created.
+    #[inline]
     pub fn from_ccache_env(config: Config) -> Result<Self, Error> {
         Self::new(NegotiateClient::from_ccache_env(config)?)
     }
@@ -3885,11 +2602,11 @@ impl BlockingNegotiateClient {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Borrow the wrapped async client.
+    #[inline]
     pub fn client(&self) -> &NegotiateClient {
         &self.client
     }
@@ -4009,135 +2726,23 @@ impl BlockingNegotiateClient {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Mutably borrow the wrapped async client.
+    #[inline]
     pub fn client_mut(&mut self) -> &mut NegotiateClient {
         &mut self.client
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Build an HTTP `Authorization` header for a Kerberos service principal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a TGT or service ticket for `service` cannot be
+    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
+    /// cannot be built.
+    #[inline]
     pub fn authorization_header(&mut self, service: Principal) -> Result<String, Error> {
         Ok(self.authorization_context(service)?.header)
     }
@@ -4257,12 +2862,17 @@ impl BlockingNegotiateClient {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Build an HTTP `Authorization` header for a host-based service.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
+    /// empty, and otherwise the errors of obtaining a service ticket for the
+    /// host-based principal or building its token.
+    #[inline]
     pub fn authorization_header_for_host(
         &mut self,
         service: impl AsRef<str>,
@@ -4271,261 +2881,32 @@ impl BlockingNegotiateClient {
         Ok(self.authorization_context_for_host(service, host)?.header)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Build a SPNEGO initiator context for a Kerberos service principal.
-    pub fn authorization_context(
-        &mut self,
-        service: Principal,
-    ) -> Result<crate::spnego::InitiatorContext, Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a TGT or service ticket for `service` cannot be
+    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
+    /// cannot be built.
+    #[inline]
+    pub fn authorization_context(&mut self, service: Principal) -> Result<InitiatorContext, Error> {
         self.runtime
             .block_on(self.client.authorization_context(service))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Build a SPNEGO initiator context with explicit initiator options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a TGT or service ticket for `service` cannot be
+    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
+    /// cannot be built.
+    #[inline]
     pub fn authorization_context_with_options(
         &mut self,
         service: Principal,
-        options: crate::spnego::InitiatorContextOptions,
-    ) -> Result<crate::spnego::InitiatorContext, Error> {
+        options: InitiatorContextOptions,
+    ) -> Result<InitiatorContext, Error> {
         self.runtime.block_on(
             self.client
                 .authorization_context_with_options(service, options),
@@ -4646,19 +3027,23 @@ impl BlockingNegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Build a SPNEGO initiator context for a host-based service.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
+    /// empty, and otherwise the errors of obtaining a service ticket for the
+    /// host-based principal or building its token.
+    #[inline]
     pub fn authorization_context_for_host(
         &mut self,
         service: impl AsRef<str>,
         host: impl AsRef<str>,
-    ) -> Result<crate::spnego::InitiatorContext, Error> {
+    ) -> Result<InitiatorContext, Error> {
         self.runtime
             .block_on(self.client.authorization_context_for_host(service, host))
     }
@@ -4777,19 +3162,25 @@ impl BlockingNegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change this client's password using generated timestamp and sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply fails
+    /// verification or decryption, or when the server reports a non-success
+    /// result code.
+    #[inline]
     pub fn change_password(
         &mut self,
         new_password: impl AsRef<[u8]>,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime
             .block_on(self.client.change_password(new_password, sender_address))
     }
@@ -4908,21 +3299,27 @@ impl BlockingNegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change the given target principal's password using generated timestamp and
     /// sequence metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when reading the clock or the random source fails, when
+    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
+    /// cannot be built or exchanged with a kpasswd server, when the reply fails
+    /// verification or decryption, or when the server reports a non-success
+    /// result code.
+    #[inline]
     pub fn change_password_for(
         &mut self,
         target: Principal,
         new_password: impl AsRef<[u8]>,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime.block_on(
             self.client
                 .change_password_for(target, new_password, sender_address),
@@ -5043,19 +3440,24 @@ impl BlockingNegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change this client's password using explicit kpasswd request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply fails verification or decryption, or when the
+    /// server reports a non-success result code.
+    #[inline]
     pub fn change_password_with_options(
         &mut self,
         new_password: impl AsRef<[u8]>,
         options: KpasswdRequestOptions,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime.block_on(
             self.client
                 .change_password_with_options(new_password, options),
@@ -5176,21 +3578,26 @@ impl BlockingNegotiateClient {
             )
         ),
         expect(
-            clippy::absolute_paths,
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Change the given target principal's password using explicit kpasswd
     /// request metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the `kadmin/changepw` service ticket cannot be
+    /// obtained, when the request cannot be built or exchanged with a kpasswd
+    /// server, when the reply fails verification or decryption, or when the
+    /// server reports a non-success result code.
+    #[inline]
     pub fn change_password_for_with_options(
         &mut self,
         target: Principal,
         new_password: impl AsRef<[u8]>,
         options: KpasswdRequestOptions,
-    ) -> Result<crate::kadmin::ChangePasswordResult, Error> {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime
             .block_on(
                 self.client
@@ -5199,190 +3606,14 @@ impl BlockingNegotiateClient {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn blocking_runtime() -> Result<tokio::runtime::Runtime, Error> {
-    Ok(tokio::runtime::Builder::new_current_thread()
+/// Build the current-thread runtime that drives a [`BlockingNegotiateClient`].
+///
+/// # Errors
+///
+/// Returns an I/O error when the runtime's I/O or timer driver cannot be
+/// created.
+fn blocking_runtime() -> Result<Runtime, Error> {
+    Ok(Builder::new_current_thread()
         .enable_io()
         .enable_time()
         .build()?)

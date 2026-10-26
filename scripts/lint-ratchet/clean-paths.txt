@@ -1,1 +1,2 @@
 src/client.rs
+src/client/**

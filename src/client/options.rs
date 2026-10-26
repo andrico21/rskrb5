@@ -307,12 +307,12 @@ impl AsReqOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Construct options with gokrb5-compatible AES defaults.
+    #[inline]
     pub fn new(now: SystemTime, nonce: u32) -> Self {
         Self {
             now,
@@ -463,7 +463,6 @@ impl AsReqOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -477,6 +476,7 @@ impl AsReqOptions {
     /// operator requested. A programmatically built `LibDefaults` whose lists
     /// are disjoint, or whose `permitted_enctype_ids` is empty, yields an
     /// empty list, which the request builders reject.
+    #[inline]
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
         options.ticket_lifetime = defaults.ticket_lifetime;
@@ -636,13 +636,13 @@ impl AsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override the requested ticket lifetime.
+    #[inline]
     pub fn with_ticket_lifetime(mut self, ticket_lifetime: Duration) -> Self {
         self.ticket_lifetime = ticket_lifetime;
         self
@@ -785,13 +785,13 @@ impl AsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override the renewable lifetime.
+    #[inline]
     pub fn with_renew_lifetime(mut self, renew_lifetime: Option<Duration>) -> Self {
         self.renew_lifetime = renew_lifetime;
         self
@@ -934,12 +934,12 @@ impl AsReqOptions {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override requested response encryption types.
+    #[inline]
     pub fn with_etypes(mut self, etypes: impl Into<Vec<i32>>) -> Self {
         self.etypes = etypes.into();
         self
@@ -1082,13 +1082,13 @@ impl AsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override KDC options using the raw krb5.conf bit representation.
+    #[inline]
     pub fn with_kdc_option_bits(mut self, kdc_option_bits: u32) -> Self {
         self.kdc_option_bits = kdc_option_bits;
         self
@@ -1231,12 +1231,12 @@ impl AsReqOptions {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Add preauthentication data.
+    #[inline]
     pub fn with_padata(mut self, padata: impl Into<Vec<rasn_kerberos::PaData>>) -> Self {
         self.padata = padata.into();
         self
@@ -1379,13 +1379,13 @@ impl AsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Send PA-ENC-TIMESTAMP in the first AS-REQ.
+    #[inline]
     pub fn with_assume_preauthentication(mut self, assume_preauthentication: bool) -> Self {
         self.assume_preauthentication = assume_preauthentication;
         self
@@ -1528,13 +1528,13 @@ impl AsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Configure whether high-level AS login advertises PA-REQ-ENC-PA-REP.
+    #[inline]
     pub fn with_fast_negotiation(mut self, fast_negotiation: bool) -> Self {
         self.fast_negotiation = fast_negotiation;
         self
@@ -1839,12 +1839,12 @@ impl TgsReqOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Construct options with gokrb5-compatible AES defaults.
+    #[inline]
     pub fn new(now: SystemTime, nonce: u32) -> Self {
         Self {
             now,
@@ -1994,7 +1994,6 @@ impl TgsReqOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -2008,6 +2007,7 @@ impl TgsReqOptions {
     /// operator requested. A programmatically built `LibDefaults` whose lists
     /// are disjoint, or whose `permitted_enctype_ids` is empty, yields an
     /// empty list, which the request builders reject.
+    #[inline]
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
         options.ticket_lifetime = defaults.ticket_lifetime;
@@ -2167,13 +2167,13 @@ impl TgsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override the requested service-ticket lifetime.
+    #[inline]
     pub fn with_ticket_lifetime(mut self, ticket_lifetime: Duration) -> Self {
         self.ticket_lifetime = ticket_lifetime;
         self
@@ -2316,13 +2316,13 @@ impl TgsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override the renewable lifetime.
+    #[inline]
     pub fn with_renew_lifetime(mut self, renew_lifetime: Option<Duration>) -> Self {
         self.renew_lifetime = renew_lifetime;
         self
@@ -2465,12 +2465,12 @@ impl TgsReqOptions {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override requested response encryption types.
+    #[inline]
     pub fn with_etypes(mut self, etypes: impl Into<Vec<i32>>) -> Self {
         self.etypes = etypes.into();
         self
@@ -2613,13 +2613,13 @@ impl TgsReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override KDC options using the raw krb5.conf bit representation.
+    #[inline]
     pub fn with_kdc_option_bits(mut self, kdc_option_bits: u32) -> Self {
         self.kdc_option_bits = kdc_option_bits;
         self
@@ -2762,12 +2762,12 @@ impl TgsReqOptions {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Add additional TGS padata.
+    #[inline]
     pub fn with_padata(mut self, padata: impl Into<Vec<rasn_kerberos::PaData>>) -> Self {
         self.padata = padata.into();
         self
@@ -2910,12 +2910,12 @@ impl TgsReqOptions {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Add additional tickets to the TGS request body.
+    #[inline]
     pub fn with_additional_tickets(
         mut self,
         additional_tickets: impl Into<Vec<rasn_kerberos::Ticket>>,
@@ -3060,13 +3060,13 @@ impl TgsReqOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Add the TGS renewal flags used for renewing an existing ticket.
+    #[inline]
     pub fn with_renewal(mut self) -> Self {
         self.kdc_option_bits = renewal_kdc_option_bits(self.kdc_option_bits);
         self
@@ -3364,12 +3364,12 @@ impl ApReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Construct AP-REQ options with no flags or optional authenticator fields.
+    #[inline]
     pub fn new() -> Self {
         Self {
             ap_option_bits: 0,
@@ -3516,12 +3516,12 @@ impl ApReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Override AP-REQ option bits.
+    #[inline]
     pub fn with_ap_option_bits(mut self, ap_option_bits: u32) -> Self {
         self.ap_option_bits = ap_option_bits;
         self
@@ -3663,12 +3663,12 @@ impl ApReqOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Set or clear the authenticator checksum.
+    #[inline]
     pub fn with_checksum(mut self, checksum: Option<rasn_kerberos::Checksum>) -> Self {
         self.checksum = checksum;
         self
@@ -3810,12 +3810,12 @@ impl ApReqOptions {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Set or clear the client-selected subkey.
+    #[inline]
     pub fn with_subkey(mut self, subkey: Option<EncryptionKey>) -> Self {
         self.subkey = subkey;
         self
@@ -3958,12 +3958,12 @@ impl ApReqOptions {
         ),
         expect(
             clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
             clippy::return_self_not_must_use,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Set or clear the client sequence number.
+    #[inline]
     pub fn with_sequence_number(mut self, sequence_number: Option<u32>) -> Self {
         self.sequence_number = sequence_number;
         self
@@ -3971,146 +3971,7 @@ impl ApReqOptions {
 }
 
 impl Default for ApReqOptions {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
