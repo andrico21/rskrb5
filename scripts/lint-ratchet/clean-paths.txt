@@ -1,0 +1,15 @@
+tests/ap_rep.rs
+tests/ap_req.rs
+tests/asn1_fixture_matrix.rs
+tests/compatibility_report.rs
+tests/crypto_aes.rs
+tests/crypto_des3.rs
+tests/crypto_rc4.rs
+tests/gokrb5_parity_manifest.rs
+tests/kdc_rep.rs
+tests/kdc_req.rs
+tests/krb_error.rs
+tests/krb_priv.rs
+tests/krb_safe.rs
+tests/messages.rs
+tests/ticket.rs
