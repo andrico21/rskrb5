@@ -8,7 +8,7 @@
 //! authenticator timestamp.
 
 use alloc::{borrow::Cow, sync::Arc};
-use core::{str::from_utf8, time::Duration};
+use core::{fmt::Debug, str::from_utf8, time::Duration};
 use std::{
     collections::HashMap,
     sync::Mutex,
@@ -446,6 +446,23 @@ impl SharedReplayCache {
     }
 }
 
+/// Caller-owned policy for unchecked cross-realm transit (RFC 4120 section 2.7).
+///
+/// Implementations must validate both endpoint realms and the complete encoded
+/// path. Empty contents mean direct cross-realm transit, not same-realm use.
+/// Unsupported encodings must be rejected unless the implementation understands
+/// their semantics. This policy is called only when the endpoint realms differ
+/// and the KDC has not set TRANSITED-POLICY-CHECKED.
+pub trait TransitValidator: Debug + Send + Sync {
+    /// Return whether this realm path is explicitly trusted by the application.
+    fn accepts(
+        &self,
+        client_realm: &str,
+        service_realm: &str,
+        transited: &rasn_kerberos::TransitedEncoding,
+    ) -> bool;
+}
+
 /// AP-REQ validator backed by a service keytab.
 #[derive(Debug)]
 pub struct Validator<'keytab> {
@@ -465,6 +482,8 @@ pub struct Validator<'keytab> {
     replay_cache: ReplayCache,
     /// A shared replay cache that replaces `replay_cache` when attached.
     shared_replay_cache: Option<SharedReplayCache>,
+    /// Explicit policy for cross-realm tickets not checked by the KDC.
+    transit_policy: Option<Arc<dyn TransitValidator>>,
 }
 
 impl<'keytab> Validator<'keytab> {
@@ -487,6 +506,7 @@ impl<'keytab> Validator<'keytab> {
             require_client_address: false,
             replay_cache: ReplayCache::new(),
             shared_replay_cache: None,
+            transit_policy: None,
         }
     }
 
@@ -537,6 +557,14 @@ impl<'keytab> Validator<'keytab> {
         self
     }
 
+    /// Accept unchecked cross-realm paths only when this policy explicitly trusts them.
+    #[must_use]
+    #[inline]
+    pub fn with_transit_validator(mut self, validator: Arc<dyn TransitValidator>) -> Self {
+        self.transit_policy = Some(validator);
+        self
+    }
+
     /// Share replay detection state with other validators.
     #[must_use]
     #[inline]
@@ -580,7 +608,8 @@ impl<'keytab> Validator<'keytab> {
     /// [`Error::BadClientAddress`], [`Error::RequiredClientAddressMissing`],
     /// [`Error::ClientPrincipalMismatch`], [`Error::ClockSkew`] and
     /// [`Error::Replay`]. A poisoned shared replay cache returns
-    /// [`Error::ReplayCachePoisoned`].
+    /// [`Error::ReplayCachePoisoned`]. Unchecked cross-realm transit without an
+    /// approving caller policy returns [`Error::TransitPolicyRejected`].
     #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
         self.validate_ap_req_with_check(bytes, |_| Ok::<(), Error>(()))
@@ -627,6 +656,7 @@ impl<'keytab> Validator<'keytab> {
             ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key.0).map_err(ticket_error)?;
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
+        self.validate_transit(&ticket_service, &enc_ticket)?;
         let pac = match &enc_ticket.authorization_data {
             Some(authorization_data) => {
                 pac::find_pac_in_authorization_data(authorization_data).map_err(Error::from)?
@@ -720,6 +750,29 @@ impl<'keytab> Validator<'keytab> {
         };
         self.record_replay(replay_key, authenticator_digest, now)?;
         Ok(validated)
+    }
+
+    /// Enforce RFC 4120 section 2.7 before replay admission.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TransitPolicyRejected`] for unchecked cross-realm paths
+    /// without explicit approval, or [`Error::InvalidString`] for invalid realms.
+    fn validate_transit(
+        &self,
+        service: &Principal,
+        ticket: &rasn_kerberos::EncTicketPart,
+    ) -> Result<(), Error> {
+        let client_realm = kerberos_string_to_string(&ticket.crealm)?;
+        if client_realm != service.realm
+            && !ticket.flags.0.get(12).is_some_and(|bit| *bit)
+            && !self.transit_policy.as_ref().is_some_and(|policy| {
+                policy.accepts(&client_realm, &service.realm, &ticket.transited)
+            })
+        {
+            return Err(Error::TransitPolicyRejected);
+        }
+        Ok(())
     }
 
     /// The validation time: the fixed time when one is set, otherwise the

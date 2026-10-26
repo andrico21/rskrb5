@@ -5,7 +5,7 @@
 //! `Authorization: Negotiate ...` headers before forwarding requests.
 
 #[cfg(feature = "tower")]
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, sync::Arc};
 #[cfg(feature = "tower")]
 use core::pin::Pin;
 use core::result::Result as CoreResult;
@@ -35,7 +35,7 @@ use crate::config::Config;
 #[cfg(feature = "tower")]
 use crate::keytab::{self, Keytab};
 #[cfg(feature = "tower")]
-use crate::service::{ApRepOptions, HostAddress, SharedReplayCache};
+use crate::service::{ApRepOptions, HostAddress, SharedReplayCache, TransitValidator};
 use crate::{
     ap_req::ap_options_to_bits,
     service::{Validator, VerifiedApRep},
@@ -976,6 +976,14 @@ impl<'keytab> NegotiateLayer<'keytab> {
         self
     }
 
+    /// Apply this explicit policy to unchecked cross-realm tickets.
+    #[must_use]
+    #[inline]
+    pub fn with_transit_validator(mut self, validator: Arc<dyn TransitValidator>) -> Self {
+        self.validator.transit_validator = Some(validator);
+        self
+    }
+
     /// Share replay detection state with validators built from this layer.
     #[must_use]
     #[inline]
@@ -1355,6 +1363,8 @@ where
 #[derive(Clone, Debug)]
 /// Validator settings a layer applies to every service it builds.
 struct ValidatorOptions {
+    /// Explicit policy for unchecked cross-realm transit.
+    transit_validator: Option<Arc<dyn TransitValidator>>,
     /// The accepted clock skew; `None` keeps the validator default.
     max_clock_skew: Option<Duration>,
     /// A fixed validation time; `None` uses the system clock.
@@ -1373,6 +1383,7 @@ struct ValidatorOptions {
 impl Default for ValidatorOptions {
     fn default() -> Self {
         Self {
+            transit_validator: None,
             max_clock_skew: None,
             now: None,
             keytab_principal: None,
@@ -1388,6 +1399,9 @@ impl ValidatorOptions {
     /// Build a validator over `keytab` with these settings.
     fn build<'keytab>(&self, keytab: Cow<'keytab, Keytab>) -> Validator<'keytab> {
         let mut validator = Validator::from_keytab_cow(keytab);
+        if let Some(policy) = &self.transit_validator {
+            validator = validator.with_transit_validator(Arc::clone(policy));
+        }
         if let Some(now) = self.now {
             validator = validator.with_now(now);
         }

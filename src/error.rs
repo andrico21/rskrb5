@@ -1716,6 +1716,9 @@ pub enum Pac {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Service {
+    /// Cross-realm transit was neither KDC-checked nor explicitly trusted locally.
+    #[error("cross-realm transit policy rejected the ticket")]
+    TransitPolicyRejected,
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]
     Decode {

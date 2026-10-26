@@ -23,6 +23,7 @@ mod tests {
         fs,
         path::PathBuf,
         process,
+        sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -40,7 +41,9 @@ mod tests {
         },
         keytab::{EncryptionKey, Keytab},
         pac,
-        service::{ApRepOptions, Principal, SharedReplayCache, ValidatedApReq, Validator},
+        service::{
+            ApRepOptions, Principal, SharedReplayCache, TransitValidator, ValidatedApReq, Validator,
+        },
         ticket::decrypt_ticket_enc_part,
     };
 
@@ -1376,6 +1379,135 @@ mod tests {
             .into(),
         };
         Ok(())
+    }
+
+    /// Unchecked cross-realm tickets require an explicit transit decision, even for direct paths.
+    #[test]
+    fn transit_rejects_unchecked_cross_realm_paths() -> Result<(), TestError> {
+        for (encoding, contents) in [
+            (1_i32, b"".as_slice()),
+            (1_i32, b"UNTRUSTED"),
+            (99_i32, b"opaque"),
+        ] {
+            let keytab = http_keytab()?;
+            let bytes = transit_ap_req("FOREIGN.DUMMY", encoding, contents, false)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            let error = validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("unchecked transit rejected")?;
+            assert!(matches!(error, Error::TransitPolicyRejected));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// Same-realm tickets and KDC-checked cross-realm paths retain their existing acceptance.
+    #[test]
+    fn transit_preserves_same_realm_and_kdc_checked_paths() -> Result<(), TestError> {
+        for (client_realm, checked) in [("TEST.GOKRB5", false), ("FOREIGN.DUMMY", true)] {
+            let keytab = http_keytab()?;
+            let bytes = transit_ap_req(client_realm, 1, b"UNTRUSTED", checked)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert_eq!(
+                validator.validate_ap_req(&bytes)?.client.realm,
+                client_realm
+            );
+        }
+        Ok(())
+    }
+
+    /// The caller policy receives endpoint realms, empty paths and unknown encoding identifiers.
+    #[test]
+    fn transit_policy_explicitly_accepts_only_matching_paths() -> Result<(), TestError> {
+        for (encoding, contents) in [
+            (1_i32, b"".as_slice()),
+            (1_i32, b"TRUSTED"),
+            (99_i32, b"opaque"),
+        ] {
+            let keytab = http_keytab()?;
+            let bytes = transit_ap_req("FOREIGN.DUMMY", encoding, contents, false)?;
+            let policy = ExactTransit {
+                encoding,
+                contents: contents.to_vec(),
+            };
+            let mut validator = Validator::new(&keytab)
+                .with_now(timestamp(1_893_553_447)?)
+                .with_transit_validator(Arc::new(policy));
+            assert_eq!(
+                validator.validate_ap_req(&bytes)?.client.realm,
+                "FOREIGN.DUMMY"
+            );
+        }
+        Ok(())
+    }
+
+    /// A configured transit policy must reject a different path, not merely be present.
+    #[test]
+    fn transit_policy_rejects_mismatching_paths() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let bytes = transit_ap_req("FOREIGN.DUMMY", 1, b"UNTRUSTED", false)?;
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_transit_validator(Arc::new(ExactTransit {
+                encoding: 1,
+                contents: b"TRUSTED".to_vec(),
+            }));
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("policy rejects path")?,
+            Error::TransitPolicyRejected
+        ));
+        Ok(())
+    }
+
+    /// A fixture policy explicitly understanding one encoding and one complete path.
+    #[derive(Debug)]
+    struct ExactTransit {
+        encoding: i32,
+        contents: Vec<u8>,
+    }
+
+    impl TransitValidator for ExactTransit {
+        fn accepts(
+            &self,
+            client_realm: &str,
+            service_realm: &str,
+            transited: &rasn_kerberos::TransitedEncoding,
+        ) -> bool {
+            client_realm == "FOREIGN.DUMMY"
+                && service_realm == "TEST.GOKRB5"
+                && transited.r#type == self.encoding
+                && transited.contents.as_ref() == self.contents
+        }
+    }
+
+    /// Rebuilds the encrypted fixture with matching client realms and selected transit metadata.
+    fn transit_ap_req(
+        client_realm: &str,
+        encoding: i32,
+        contents: &[u8],
+        checked: bool,
+    ) -> Result<Vec<u8>, TestError> {
+        let keytab = http_keytab()?;
+        let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+        let mut request = valid_ap_req_struct()?;
+        let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+        ticket.crealm = realm(client_realm)?;
+        ticket.transited.r#type = encoding;
+        ticket.transited.contents = contents.to_vec().into();
+        ticket.flags.0.set(12, checked);
+        request.ticket.enc_part.cipher = encrypt_message(
+            key,
+            &der::encode(&ticket)?,
+            KDC_REP_TICKET_USAGE_FOR_TEST,
+            PAC_TICKET_CONFOUNDER,
+        )?
+        .into();
+        reencrypt_authenticator(&mut request, client_realm, 1)?;
+        Ok(der::encode(&request)?)
     }
 
     /// Decodes a hex fixture.

@@ -5,6 +5,18 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Explicit unchecked cross-realm transit policy (RSK-3E3C2278)
+
+The service validator now rejects cross-realm tickets lacking
+TRANSITED-POLICY-CHECKED with `error::Service::TransitPolicyRejected`, unless
+an explicitly configured `service::TransitValidator` approves the complete path.
+Use `Validator::with_transit_validator(Arc<dyn TransitValidator>)` or the matching
+`http::NegotiateLayer` builder. Implementations receive client realm, service
+realm and the raw `TransitedEncoding`; validate all three. Empty contents still
+represent cross-realm transit. Reject unknown encodings unless your implementation
+understands them. The library does not decode or implicitly trust transit paths.
+Same-realm tickets and KDC-checked cross-realm tickets are unaffected.
+
 ### Bounded HTTP Negotiate headers (upstream issue #9)
 
 `spnego::parse_negotiate_header` now rejects header values longer than 65,536
