@@ -1,3 +1,4 @@
+#[cfg(feature = "tokio")]
 use rskrb5_ng::error::Kadmin as KadminError;
 
 use super::*;
@@ -12,9 +13,13 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    #[cfg(all(feature = "tokio", feature = "spnego"))]
     use std::{net::TcpListener as StdTcpListener, thread};
 
-    use rasn::{der, types::Integer};
+    use rasn::der;
+    #[cfg(feature = "tokio")]
+    use rasn::types::Integer;
+    #[cfg(feature = "tokio")]
     use rskrb5_ng::{
         ap_req::decrypt_ap_req_authenticator,
         client::{AsRepSession, TgsRepSession},

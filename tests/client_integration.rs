@@ -10,7 +10,7 @@
 use core::{error::Error, iter, net::Ipv4Addr, time::Duration};
 use std::{
     fs,
-    io::{Read as _, Write as _},
+    io::Write as _,
     net::{TcpStream, ToSocketAddrs as _},
     path::PathBuf,
     process::{Command, Stdio},
@@ -30,7 +30,7 @@ use rskrb5_ng::{
     },
     config::Config,
     crypto::{AesSha1Etype, Des3CbcSha1KdEtype},
-    error::{Client as ClientError, Service as ServiceError},
+    error::Client as ClientError,
     kadmin::{ChangePasswordResult, KPASSWD_SUCCESS},
     keytab::{EncryptionKey, Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
 };
@@ -230,11 +230,14 @@ fn confounder(protocol: KdcProtocol, elapsed: Duration) -> [u8; 16] {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    #[cfg(feature = "spnego")]
+    use std::io::Read as _;
     use std::{env, io, net::TcpListener, process};
 
-    use rskrb5_ng::{error::Spnego as SpnegoError, krb_priv::ipv4_host_address};
+    use rskrb5_ng::krb_priv::ipv4_host_address;
     #[cfg(feature = "spnego")]
     use rskrb5_ng::{
+        error::{Service as ServiceError, Spnego as SpnegoError},
         service::{ApRepOptions, Principal as ServicePrincipal, Validator},
         spnego,
     };

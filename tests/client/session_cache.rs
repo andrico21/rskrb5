@@ -1,3 +1,4 @@
+#[cfg(all(feature = "tokio", feature = "spnego"))]
 use rskrb5_ng::error::Ccache as CcacheError;
 
 use super::*;
@@ -12,12 +13,20 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    #[cfg(feature = "tokio")]
     use alloc::sync::Arc;
+    #[cfg(feature = "tokio")]
     use core::sync::atomic::{AtomicUsize, Ordering};
+    #[cfg(feature = "tokio")]
     use std::{fs, sync::mpsc, thread};
 
+    #[cfg(feature = "tokio")]
     use rasn::{der, types::Integer};
-    use rskrb5_ng::{client::AsRepSession, spnego::parse_negotiate_header};
+    #[cfg(feature = "tokio")]
+    use rskrb5_ng::client::AsRepSession;
+    #[cfg(all(feature = "tokio", feature = "spnego"))]
+    use rskrb5_ng::spnego::parse_negotiate_header;
+    #[cfg(feature = "tokio")]
     use tokio::{
         runtime::Builder as RuntimeBuilder,
         sync::Mutex,
@@ -2135,6 +2144,7 @@ mod tests {
     }
 
     /// A counting KDC: its serving task, then the AS-REQ and TGS-REQ counts.
+    #[cfg(feature = "tokio")]
     type CountingKdc = (
         JoinHandle<Result<(), TestError>>,
         Arc<AtomicUsize>,
