@@ -91,6 +91,8 @@ mod login_preauth;
 mod password_change;
 #[path = "client/review.rs"]
 mod review;
+#[path = "client/review_cookie.rs"]
+mod review_cookie;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;

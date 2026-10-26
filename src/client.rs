@@ -4116,7 +4116,7 @@ fn password_preauth_request(
     }
     let key_info = select_preauth_key_info(&error, &requested.etypes)?;
     let reply_key = derive_password_reply_key(&client, password, &key_info)?;
-    let options = initial_preauth_probe_options(requested);
+    let options = preauth_retry_options(requested, &error.method_data);
     let request = build_preauthenticated_as_req(client, service, options, &reply_key, None)?;
     Ok((request, reply_key))
 }
@@ -4190,7 +4190,7 @@ fn keytab_preauth_request(
     }
     let key_info = select_preauth_key_info(&error, &requested.etypes)?;
     let (reply_key, kvno) = select_keytab_reply_key(keytab, &client, &key_info)?;
-    let options = initial_preauth_probe_options(requested);
+    let options = preauth_retry_options(requested, &error.method_data);
     let request = build_preauthenticated_as_req(client, service, options, &reply_key, Some(kvno))?;
     Ok((request, reply_key))
 }
@@ -4335,6 +4335,18 @@ fn initial_preauth_probe_options(mut options: AsReq) -> AsReq {
         });
     }
     options
+}
+
+/// Replace conversation state with the KDC's exact cookies, never other hints.
+fn preauth_retry_options(mut options: AsReq, method_data: &[rasn_kerberos::PaData]) -> AsReq {
+    options.padata.retain(|entry| entry.r#type != PA_FX_COOKIE);
+    options.padata.extend(
+        method_data
+            .iter()
+            .filter(|entry| entry.r#type == PA_FX_COOKIE)
+            .cloned(),
+    );
+    initial_preauth_probe_options(options)
 }
 
 /// Reject a reply enctype the request did not offer.
