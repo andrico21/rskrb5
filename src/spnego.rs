@@ -666,11 +666,14 @@ impl WrapToken {
 
     /// Encrypt this token's payload as a sealed RFC4121 Wrap token.
     ///
+    /// The requested EC is a minimum: DES3 filler grows to prevent trailing crypto-system residue.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::GssEncryptedBodyAlreadySet`] when the token already carries an encrypted
     /// body, [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
-    /// unknown key encryption type, and [`Error::Crypto`] when encryption fails.
+    /// unknown key encryption type, [`Error::InvalidGssFiller`] if the required filler exceeds
+    /// the 16-bit EC field, and [`Error::Crypto`] when encryption fails.
     #[inline]
     pub fn encrypt_payload_with_confounder(
         &mut self,
@@ -686,6 +689,16 @@ impl WrapToken {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        match etype {
+            KerberosEtype::Des3CbcSha1Kd(_) => {
+                // DES3's 8-byte confounder and the 16-byte header are already block-aligned.
+                let residue = payload.len().wrapping_add(usize::from(self.ec)) & 7;
+                let extra = u16::try_from(residue.wrapping_neg() & 7)
+                    .map_err(|_error| Error::InvalidGssFiller)?;
+                self.ec = self.ec.checked_add(extra).ok_or(Error::InvalidGssFiller)?;
+            }
+            KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => {}
+        }
         let mut plaintext = Vec::with_capacity(
             payload
                 .len()

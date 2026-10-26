@@ -593,6 +593,65 @@ mod tests {
         Ok(())
     }
 
+    /// Pins exact DES3 payload recovery for every block residue, including trailing zeroes.
+    #[test]
+    fn sealed_des3_wrap_roundtrips_all_payload_residues() -> Result<(), TestError> {
+        let key = des3_session_key()?;
+        for len in 0_usize..=17 {
+            // Given a payload whose trailing zeroes must not be stripped.
+            let payload = vec![0; len];
+            // When the convenience constructor seals and serializes it.
+            let token =
+                WrapToken::new_initiator_sealed_with_confounder(payload.clone(), &key, &[0x42; 8])?;
+            let decoded = WrapToken::decode(&token.encode()?, false)?;
+            // Then the embedded header and exact payload survive decryption.
+            assert_eq!(
+                decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)?,
+                payload
+            );
+            assert_eq!(usize::from(decoded.ec), len.wrapping_neg() & 7);
+        }
+        Ok(())
+    }
+
+    /// Pins manual filler preservation and completion before the encrypted header, with rotation.
+    #[test]
+    fn sealed_des3_wrap_completes_manual_filler() -> Result<(), TestError> {
+        let key = des3_session_key()?;
+        for (requested, expected) in [(7, 7), (15, 15), (1, 7), (8, 15)] {
+            // Given an explicit filler request and a nonzero sequence/rotation.
+            let mut token = WrapToken::new(GSS_TOKEN_FLAG_SEALED, 42)
+                .with_payload(vec![0])
+                .with_ec(requested)
+                .with_rrc(9);
+            // When sealing through the shared mutable entry point.
+            token.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[0x42; 8])?;
+            let decoded = WrapToken::decode(&token.encode()?, false)?;
+            // Then filler is sufficient and no application byte is lost.
+            assert_eq!(
+                decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)?,
+                vec![0]
+            );
+            assert_eq!(decoded.ec, expected);
+        }
+        Ok(())
+    }
+
+    /// Pins rejection when DES3 alignment would overflow the wire EC field.
+    #[test]
+    fn sealed_des3_wrap_rejects_filler_overflow() -> Result<(), TestError> {
+        let key = des3_session_key()?;
+        let mut token = WrapToken::new(GSS_TOKEN_FLAG_SEALED, 0)
+            .with_payload(vec![0; 2])
+            .with_ec(u16::MAX);
+        assert!(matches!(
+            token.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[0x42; 8]),
+            Err(Error::InvalidGssFiller)
+        ));
+        assert!(token.encrypted_body.is_none());
+        Ok(())
+    }
+
     fn session_key() -> Result<EncryptionKey, TestError> {
         Ok(EncryptionKey::new(17, decode_hex(SESSION_KEY)?))
     }
