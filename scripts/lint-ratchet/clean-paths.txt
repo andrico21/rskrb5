@@ -1,2 +1,3 @@
 src/client.rs
 src/client/**
+src/crypto.rs
