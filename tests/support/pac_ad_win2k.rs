@@ -1,8 +1,7 @@
-#[expect(
-    unreachable_pub,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-pub const PAC_AD_WIN2K: &str = concat!(
+//! gokrb5 `AD_WIN2K` fixtures: a PAC and the service keytab that verifies it.
+
+/// The gokrb5 `AD_WIN2K` PAC for `testuser1` (hex).
+pub(crate) const PAC_AD_WIN2K: &str = concat!(
     "0500000000000000010000002802000058000000000000000a0000001c00000080020000000000000c00000058000000",
     "a0020000000000000600000010000000f8020000000000000700000014000000080300000000000001100800cccccccc",
     "180200000000000000000200058e4fdd80c6d201ffffffffffffff7fffffffffffffff7fcc27969c39c6d201cce7ffc6",
@@ -22,8 +21,5 @@ pub const PAC_AD_WIN2K: &str = concat!(
     "d552be7df384f55076ffffff340be28b48765d0519ee9346cf53d82200000000",
 );
 
-#[expect(
-    unreachable_pub,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-pub const SYSHTTP_KEYTAB: &str = "0502000000450001000b544553542e474f4b52423500077379734854545000000001590dc5af020012002043763702868978d1b6d91a36704b987e27e517250055bdfc40b8a6b3848d9aae";
+/// The keytab of the `sysHTTP` service that verifies [`PAC_AD_WIN2K`] (hex).
+pub(crate) const SYSHTTP_KEYTAB: &str = "0502000000450001000b544553542e474f4b52423500077379734854545000000001590dc5af020012002043763702868978d1b6d91a36704b987e27e517250055bdfc40b8a6b3848d9aae";

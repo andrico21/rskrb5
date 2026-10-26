@@ -1,0 +1,6 @@
+tests/gssapi.rs
+tests/http.rs
+tests/pac.rs
+tests/service.rs
+tests/spnego.rs
+tests/support/**
