@@ -1899,6 +1899,15 @@ pub enum Spnego {
     /// The mechanism OID is not a supported Kerberos mechanism.
     #[error("unsupported mechanism OID: {0:?}")]
     UnsupportedMechanism(ObjectIdentifier),
+    /// A mechanism switch or continuation needs retained SPNEGO negotiation state.
+    #[error("SPNEGO mechanism switching and continuation require negotiation state")]
+    NegotiationRequiresState,
+    /// A supplied MIC cannot be verified and answered by the one-shot acceptor.
+    #[error("SPNEGO mechListMIC exchange requires retained GSS and negotiation state")]
+    MechListMicRequiresState,
+    /// The optimistic token is not for the first offered mechanism.
+    #[error("SPNEGO optimistic token mechanism differs from the first offer")]
+    OptimisticMechanismMismatch,
     /// KRB5 token ID was unknown.
     #[error("unknown KRB5 token ID: {0:02x?}")]
     UnknownKrb5TokenId([u8; 2]),

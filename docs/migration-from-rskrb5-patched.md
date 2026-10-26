@@ -5,6 +5,22 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Non-exhaustive types and constructors
 
+### SPNEGO acceptor negotiation (RSK-C4BE57A0)
+
+`AcceptedContext::selected_mechanism` records the first offered Kerberos OID;
+AP-REP headers preserve it. Both the standard and Microsoft legacy Kerberos
+OIDs are supported, including raw Kerberos headers.
+
+`NegTokenInit::krb5_ap_req`, `Token::krb5_ap_req` and
+`accept_sec_context_header` now fail closed for negotiation shapes the one-shot
+API cannot complete. Handle the new `error::Spnego` variants
+`NegotiationRequiresState`, `MechListMicRequiresState` and
+`OptimisticMechanismMismatch`. Supplied MICs are rejected, not verified;
+mechanism switches and continuations require a future stateful API retaining
+the original offer, GSS context state and final MIC exchange. Unsupported OIDs
+continue to use `UnsupportedMechanism`. Token codecs still permit inspection
+of these messages; successful decoding does not mean successful negotiation.
+
 Public structs and enums are non-exhaustive. Construct values through their
 constructors or builders instead of struct literals. External enum matches
 must handle every known variant explicitly and include a final fallback for

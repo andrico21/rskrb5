@@ -24,6 +24,7 @@ mod tests {
         ap_req::decode as decode_ap_req,
         client::{AsRepSession, principal::Principal},
         crypto::AesSha1Etype,
+        error::Spnego,
         keytab::{EncryptionKey, Keytab},
         service::{ApRepOptions, Validator},
         spnego::{
@@ -449,6 +450,165 @@ mod tests {
         .with_start_time(timestamp(1_893_553_445)?)
         .with_renew_till(None)
         .with_key_expiration(None))
+    }
+
+    /// The one-shot acceptor must not authenticate a non-first optimistic mechanism.
+    #[test]
+    fn acceptor_rejects_nonfirst_kerberos() -> Result<(), TestError> {
+        for mic in [None, Some(vec![0xde, 0xad])] {
+            let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+            init.mech_types.insert(0, ObjectIdentifier::spnego());
+            init.mech_list_mic = mic;
+            assert!(matches!(
+                accept_token(&Token::Init(init))?,
+                Err(Spnego::NegotiationRequiresState)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Even an optional MIC must not be silently ignored.
+    #[test]
+    fn acceptor_rejects_unverified_mech_list_mic() -> Result<(), TestError> {
+        for mic in [Vec::new(), vec![0xde, 0xad]] {
+            let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+            init.mech_list_mic = Some(mic);
+            assert!(matches!(
+                accept_token(&Token::Init(init))?,
+                Err(Spnego::MechListMicRequiresState)
+            ));
+        }
+        Ok(())
+    }
+
+    /// A continuation cannot prove the original offer to a stateless acceptor.
+    #[test]
+    fn acceptor_rejects_stateless_continuation() -> Result<(), TestError> {
+        let init = acceptor_init(ObjectIdentifier::krb5())?;
+        let mut token = NegTokenResp::accept_completed()
+            .with_response_token(init.mech_token.context("mechanism token")?);
+        for state in [
+            None,
+            Some(NegState::AcceptCompleted),
+            Some(NegState::AcceptIncomplete),
+            Some(NegState::RequestMic),
+            Some(NegState::Reject),
+        ] {
+            token.neg_state = state;
+            assert!(matches!(
+                accept_token(&Token::Resp(token.clone()))?,
+                Err(Spnego::NegotiationRequiresState)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Both supported OIDs must survive selection and the acceptor's reply.
+    #[test]
+    fn acceptor_preserves_selected_kerberos_oid() -> Result<(), TestError> {
+        for oid in [ObjectIdentifier::krb5(), ObjectIdentifier::ms_legacy_krb5()] {
+            let mut init = acceptor_init(oid.clone())?;
+            init.mech_types.push(ObjectIdentifier::spnego());
+            let accepted = accept_token(&Token::Init(init))?.context("accepted Kerberos")?;
+            let header = accepted
+                .ap_rep_response_header_with_confounder(
+                    &decode_hex(AP_REP_CONFOUNDER)?,
+                    &ApRepOptions::default(),
+                )
+                .context("AP-REP response")?;
+            let Token::Resp(response) =
+                spnego::parse_negotiate_header(&header).context("response parses")?
+            else {
+                return Err("expected response".into());
+            };
+            assert_eq!(response.supported_mech, Some(oid.clone()));
+            let krb5 = Krb5MechToken::decode(&response.response_token.context("AP-REP token")?)
+                .context("AP-REP mechanism")?;
+            assert_eq!(krb5.oid, oid);
+        }
+        Ok(())
+    }
+
+    /// Unsupported offers and selections must return the mechanism error, not authenticate.
+    #[test]
+    fn acceptor_rejects_unsupported_mechanisms() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        let unsupported = ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?;
+        init.mech_types = vec![unsupported.clone()];
+        let mut resp = NegTokenResp::accept_completed()
+            .with_response_token(init.mech_token.clone().context("mechanism token")?);
+        resp.supported_mech = Some(unsupported.clone());
+        for token in [Token::Init(init), Token::Resp(resp)] {
+            assert!(
+                matches!(accept_token(&token)?, Err(Spnego::UnsupportedMechanism(oid)) if oid == unsupported)
+            );
+        }
+        Ok(())
+    }
+
+    /// Kerberos aliases remain distinct offered OIDs, not permission to switch silently.
+    #[test]
+    fn acceptor_rejects_optimistic_oid_mismatch() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_types
+            .insert(0, ObjectIdentifier::ms_legacy_krb5());
+        assert!(matches!(
+            accept_token(&Token::Init(init))?,
+            Err(Spnego::OptimisticMechanismMismatch)
+        ));
+        Ok(())
+    }
+
+    /// Raw MS Kerberos headers keep their OID when adapted to the SPNEGO shape.
+    #[test]
+    fn acceptor_accepts_raw_ms_kerberos() -> Result<(), TestError> {
+        let init = acceptor_init(ObjectIdentifier::ms_legacy_krb5())?;
+        let header = format!(
+            "Negotiate {}",
+            base64_encode(&init.mech_token.context("mechanism token")?)
+        );
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("keytab parses")?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
+        assert_eq!(
+            accepted.selected_mechanism,
+            ObjectIdentifier::ms_legacy_krb5()
+        );
+        Ok(())
+    }
+
+    /// Rejected negotiation metadata must not consume a valid AP-REQ in the replay cache.
+    #[test]
+    fn acceptor_rejection_preserves_replay_cache() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_list_mic = Some(vec![0xde, 0xad]);
+        let bad = spnego::negotiate_header(&Token::Init(init.clone()))?;
+        init.mech_list_mic = None;
+        let good = spnego::negotiate_header(&Token::Init(init))?;
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("keytab parses")?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            spnego::accept_sec_context_header(&mut validator, &bad),
+            Err(Spnego::MechListMicRequiresState)
+        ));
+        let accepted = spnego::accept_sec_context_header(&mut validator, &good)?;
+        assert_eq!(accepted.ap_req.client.name(), "testuser1");
+        Ok(())
+    }
+
+    fn acceptor_init(oid: ObjectIdentifier) -> Result<NegTokenInit, TestError> {
+        let mut krb5 = Krb5MechToken::ap_req(decode_hex(VALID_AP_REQ)?);
+        krb5.oid = oid.clone();
+        let mut init = NegTokenInit::krb5(krb5.encode().context("AP-REQ token")?);
+        init.mech_types = vec![oid];
+        Ok(init)
+    }
+
+    fn accept_token(token: &Token) -> Result<Result<spnego::AcceptedContext, Spnego>, TestError> {
+        let header = spnego::negotiate_header(token).context("header encodes")?;
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("keytab parses")?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        Ok(spnego::accept_sec_context_header(&mut validator, &header))
     }
 
     /// Returns the instant `seconds` after the Unix epoch.
