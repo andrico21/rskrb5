@@ -2,10 +2,12 @@ examples/**
 src/ccache.rs
 src/client.rs
 src/client/**
+src/config.rs
 src/crypto.rs
 src/der.rs
 src/file_name.rs
 src/http.rs
+src/kadmin.rs
 src/keytab.rs
 src/pac.rs
 src/pac/**
