@@ -8,98 +8,31 @@
 //! authenticator timestamp.
 
 use alloc::{borrow::Cow, sync::Arc};
-use core::{str::Utf8Error, time::Duration};
+use core::{
+    str::{Utf8Error, from_utf8},
+    time::Duration,
+};
 use std::{
     collections::HashMap,
     sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
+use rasn::types::Integer;
 use sha2::{Digest as _, Sha256};
 
 use crate::{
+    ap_rep, ap_req,
     config::Config,
     crypto,
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, Pac},
+    ticket,
 };
 
 /// Default AP-REQ acceptance window: five minutes, MIT's default `clockskew`.
 const DEFAULT_MAX_CLOCK_SKEW: Duration = Duration::from_mins(5);
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Bit index of the `invalid` ticket flag (RFC 4120 section 5.3).
 const INVALID_TICKET_FLAG: usize = 7;
 
 #[cfg_attr(
@@ -390,12 +323,12 @@ impl Principal {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Principal components joined by `/`.
+    #[inline]
     pub fn name(&self) -> String {
         self.components.join("/")
     }
@@ -687,12 +620,12 @@ impl HostAddress {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Construct an IPv4 host address.
+    #[inline]
     pub fn ipv4(address: [u8; 4]) -> Self {
         Self {
             addr_type: 2,
@@ -1005,9 +938,6 @@ impl ValidatedApReq {
             )
         ),
         expect(
-            clippy::absolute_paths,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             clippy::needless_pass_by_value,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
@@ -1017,6 +947,13 @@ impl ValidatedApReq {
     /// The explicit confounder keeps tests deterministic and lets callers
     /// choose their own randomness policy. The AP-REP encrypted part is
     /// encrypted with the ticket session key using key usage 12.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TimeOverflow`] when the authenticator time is not a
+    /// representable Kerberos time, and an encoding, crypto or key-type error
+    /// when the AP-REP cannot be encrypted or encoded.
+    #[inline]
     pub fn build_ap_rep_with_confounder(
         &self,
         confounder: &[u8],
@@ -1024,171 +961,37 @@ impl ValidatedApReq {
     ) -> Result<Vec<u8>, Error> {
         let enc_part = rasn_kerberos::EncApRepPart {
             ctime: kerberos_time_from_system_time(self.authenticator_ctime)?,
-            cusec: rasn::types::Integer::from(self.authenticator_cusec),
+            cusec: Integer::from(self.authenticator_cusec),
             subkey: options.subkey.as_ref().map(encryption_key_to_rasn),
             seq_number: options.sequence_number,
         };
-        let ap_rep = crate::ap_rep::build_ap_rep_with_confounder(
+        let ap_rep = ap_rep::build_ap_rep_with_confounder(
             &enc_part,
             &self.session_key,
             options.kvno,
             confounder,
         )
         .map_err(ap_rep_error)?;
-        crate::ap_rep::encode_ap_rep(&ap_rep).map_err(ap_rep_error)
+        ap_rep::encode_ap_rep(&ap_rep).map_err(ap_rep_error)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Verify an AP-REP mutual-auth reply against this AP-REQ.
     ///
     /// The reply must use the same client timestamp from the AP-REQ
     /// authenticator. A verified AP-REP may carry a server-selected subkey and
     /// sequence number.
+    ///
+    /// # Errors
+    ///
+    /// Returns a decode, crypto or key-type error when the reply cannot be
+    /// decoded or decrypted with the session key, a time or integer error when
+    /// its timestamp is out of range, and [`Error::ApRepTimestampMismatch`]
+    /// when its timestamp differs from the AP-REQ authenticator's.
+    #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
-        let ap_rep = crate::ap_rep::decode_ap_rep(bytes).map_err(ap_rep_error)?;
-        let enc_part = crate::ap_rep::decrypt_ap_rep_enc_part(&ap_rep, &self.session_key)
-            .map_err(ap_rep_error)?;
+        let ap_rep = ap_rep::decode_ap_rep(bytes).map_err(ap_rep_error)?;
+        let enc_part =
+            ap_rep::decrypt_ap_rep_enc_part(&ap_rep, &self.session_key).map_err(ap_rep_error)?;
         let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
         let cusec = integer_to_u32("ap-rep.cusec", &enc_part.cusec)?;
         let authenticator_time = ctime
@@ -1522,83 +1325,11 @@ pub struct VerifiedApRep {
     pub sequence_number: Option<u32>,
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// In-memory AP-REQ replay cache.
 #[derive(Debug, Default)]
 pub struct ReplayCache {
+    /// RFC 4120 replay keys of the accepted authenticators, each with the
+    /// time it was presented.
     entries: HashMap<ReplayKey, SystemTime>,
     /// SHA-256 digests of the accepted authenticator ciphertexts, each with the
     /// time it was presented, so a re-presented authenticator is a replay
@@ -1743,157 +1474,18 @@ impl ReplayCache {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create an empty replay cache.
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Remove all cached replay entries.
+    #[inline]
     pub fn clear(&mut self) {
         self.entries.clear();
         self.authenticators.clear();
@@ -2035,12 +1627,12 @@ impl ReplayCache {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Number of cached RFC 4120 replay entries, excluding the digest index.
+    #[inline]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -2181,303 +1773,24 @@ impl ReplayCache {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Whether the RFC 4120 replay entries are empty, excluding the digest index.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Remove entries presented more than `max_age` ago.
+    #[inline]
     pub fn clear_older_than(&mut self, max_age: Duration) -> usize {
         self.clear_older_than_at(max_age, SystemTime::now())
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::arithmetic_side_effects,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Remove entries presented more than `max_age` before `now`.
+    #[inline]
     pub fn clear_older_than_at(&mut self, max_age: Duration, now: SystemTime) -> usize {
         let before = self.entries.len();
         self.entries.retain(|_, presented_at| {
@@ -2488,7 +1801,8 @@ impl ReplayCache {
             now.duration_since(*presented_at)
                 .map_or(true, |age| age <= max_age)
         });
-        before - self.entries.len()
+        // `retain` only removes entries, so the length cannot have grown.
+        before.saturating_sub(self.entries.len())
     }
 
     /// Record one presentation, or report it as a replay.
@@ -2516,86 +1830,13 @@ impl ReplayCache {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Shareable in-memory AP-REQ replay cache.
 ///
 /// This is useful when a service framework clones middleware or builds several
 /// service instances from the same acceptor state.
 #[derive(Clone, Debug, Default)]
 pub struct SharedReplayCache {
+    /// The cache shared by every clone.
     inner: Arc<Mutex<ReplayCache>>,
 }
 
@@ -2736,12 +1977,12 @@ impl SharedReplayCache {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create an empty shared replay cache.
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
@@ -2882,744 +2123,64 @@ impl SharedReplayCache {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a shared replay cache from an existing in-memory cache.
+    #[inline]
     pub fn from_cache(cache: ReplayCache) -> Self {
         Self {
             inner: Arc::new(Mutex::new(cache)),
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Remove all cached replay entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
+    #[inline]
     pub fn clear(&self) -> Result<(), Error> {
         self.with_cache_mut(ReplayCache::clear)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Number of cached replay entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
+    #[inline]
     pub fn len(&self) -> Result<usize, Error> {
         self.with_cache(ReplayCache::len)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Whether the replay cache is empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
+    #[inline]
     pub fn is_empty(&self) -> Result<bool, Error> {
         self.with_cache(ReplayCache::is_empty)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Remove entries presented more than `max_age` ago.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
+    #[inline]
     pub fn clear_older_than(&self, max_age: Duration) -> Result<usize, Error> {
         self.with_cache_mut(|cache| cache.clear_older_than(max_age))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Remove entries presented more than `max_age` before `now`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
+    #[inline]
     pub fn clear_older_than_at(&self, max_age: Duration, now: SystemTime) -> Result<usize, Error> {
         self.with_cache_mut(|cache| cache.clear_older_than_at(max_age, now))
     }
@@ -3638,446 +2199,30 @@ impl SharedReplayCache {
         self.with_cache_mut(|cache| cache.insert(key, authenticator_digest, presented_at))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::map_err_ignore,
-            clippy::min_ident_chars,
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    fn with_cache<R>(&self, f: impl FnOnce(&ReplayCache) -> R) -> Result<R, Error> {
-        let cache = self.inner.lock().map_err(|_| Error::ReplayCachePoisoned)?;
-        Ok(f(&cache))
+    /// Run `read` on the shared cache under its lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
+    fn with_cache<R>(&self, read: impl FnOnce(&ReplayCache) -> R) -> Result<R, Error> {
+        let cache = self
+            .inner
+            .lock()
+            .map_err(|_poisoned| Error::ReplayCachePoisoned)?;
+        Ok(read(&cache))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::map_err_ignore,
-            clippy::min_ident_chars,
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    fn with_cache_mut<R>(&self, f: impl FnOnce(&mut ReplayCache) -> R) -> Result<R, Error> {
-        let mut cache = self.inner.lock().map_err(|_| Error::ReplayCachePoisoned)?;
-        Ok(f(&mut cache))
+    /// Run `update` on the shared cache under its lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
+    fn with_cache_mut<R>(&self, update: impl FnOnce(&mut ReplayCache) -> R) -> Result<R, Error> {
+        let mut cache = self
+            .inner
+            .lock()
+            .map_err(|_poisoned| Error::ReplayCachePoisoned)?;
+        Ok(update(&mut cache))
     }
 }
 
@@ -4221,455 +2366,38 @@ impl SharedReplayCache {
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// AP-REQ validator backed by a service keytab.
 #[derive(Debug)]
 pub struct ServiceValidator<'keytab> {
+    /// The service keytab, borrowed or owned.
     keytab: Cow<'keytab, Keytab>,
+    /// The accepted clock skew between the authenticator time and now.
     max_clock_skew: Duration,
+    /// A fixed validation time; `None` uses the system clock.
     now: Option<SystemTime>,
+    /// Keytab principal components that override the ticket's server name.
     keytab_principal: Option<Vec<String>>,
+    /// The peer address matched against the ticket's client addresses.
     client_address: Option<HostAddress>,
+    /// Whether a ticket without client addresses is rejected.
     require_client_address: bool,
+    /// This validator's own replay cache.
     replay_cache: ReplayCache,
+    /// A shared replay cache that replaces `replay_cache` when attached.
     shared_replay_cache: Option<SharedReplayCache>,
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::single_char_lifetime_names,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-impl<'a> ServiceValidator<'a> {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+impl<'keytab> ServiceValidator<'keytab> {
     /// Create a validator with gokrb5-compatible defaults.
-    pub fn new(keytab: &'a Keytab) -> Self {
+    #[must_use]
+    #[inline]
+    pub fn new(keytab: &'keytab Keytab) -> Self {
         Self::from_keytab_cow(Cow::Borrowed(keytab))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    pub(crate) fn from_keytab_cow(keytab: Cow<'a, Keytab>) -> Self {
+    /// Create a validator with gokrb5-compatible defaults from a borrowed or
+    /// owned keytab.
+    pub(crate) fn from_keytab_cow(keytab: Cow<'keytab, Keytab>) -> Self {
         Self {
             keytab,
             max_clock_skew: DEFAULT_MAX_CLOCK_SKEW,
@@ -4682,449 +2410,28 @@ impl<'a> ServiceValidator<'a> {
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            clippy::return_self_not_must_use,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Override the validation clock. Useful for deterministic tests.
-    pub fn with_now(mut self, now: SystemTime) -> Self {
+    #[must_use]
+    #[inline]
+    pub const fn with_now(mut self, now: SystemTime) -> Self {
         self.now = Some(now);
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            clippy::return_self_not_must_use,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Override the maximum accepted clock skew.
-    pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
+    #[must_use]
+    #[inline]
+    pub const fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
         self.max_clock_skew = max_clock_skew;
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            clippy::return_self_not_must_use,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Override the principal used for keytab lookup.
     ///
     /// The ticket realm remains the lookup realm, matching gokrb5's
     /// `KeytabPrincipal` behavior.
+    #[must_use]
+    #[inline]
     pub fn with_keytab_principal<I, S>(mut self, components: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -5134,1042 +2441,69 @@ impl<'a> ServiceValidator<'a> {
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            clippy::return_self_not_must_use,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Provide the client address observed by the service.
+    #[must_use]
+    #[inline]
     pub fn with_client_address(mut self, client_address: HostAddress) -> Self {
         self.client_address = Some(client_address);
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            clippy::return_self_not_must_use,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Require the ticket to contain client addresses.
-    pub fn require_client_address(mut self, require_client_address: bool) -> Self {
+    #[must_use]
+    #[inline]
+    pub const fn require_client_address(mut self, require_client_address: bool) -> Self {
         self.require_client_address = require_client_address;
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            clippy::return_self_not_must_use,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Share replay detection state with other validators.
+    #[must_use]
+    #[inline]
     pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Self {
         self.shared_replay_cache = Some(replay_cache);
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            clippy::return_self_not_must_use,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Remove any shared replay cache and use this validator's local cache.
+    #[must_use]
+    #[inline]
     pub fn without_shared_replay_cache(mut self) -> Self {
         self.shared_replay_cache = None;
         self
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Shared replay cache used by this validator, if any.
-    pub fn shared_replay_cache(&self) -> Option<&SharedReplayCache> {
+    #[must_use]
+    #[inline]
+    pub const fn shared_replay_cache(&self) -> Option<&SharedReplayCache> {
         self.shared_replay_cache.as_ref()
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Mutable replay cache for tests and integration with service state.
     ///
     /// If a shared replay cache has been installed, validation uses the shared
     /// cache instead of this local cache.
-    pub fn replay_cache_mut(&mut self) -> &mut ReplayCache {
+    #[inline]
+    pub const fn replay_cache_mut(&mut self) -> &mut ReplayCache {
         &mut self.replay_cache
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            clippy::shadow_reuse,
-            clippy::similar_names,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Decode and validate an AP-REQ.
+    ///
+    /// # Errors
+    ///
+    /// Returns a decode error for a malformed AP-REQ, [`Error::Keytab`] when
+    /// no keytab key matches the ticket, a crypto, key-type or PAC error when
+    /// the ticket, authenticator or PAC fails to decrypt or verify, and the
+    /// policy errors [`Error::TicketNotYetValid`], [`Error::TicketExpired`],
+    /// [`Error::BadClientAddress`], [`Error::RequiredClientAddressMissing`],
+    /// [`Error::ClientPrincipalMismatch`], [`Error::ClockSkew`] and
+    /// [`Error::Replay`]. A poisoned shared replay cache returns
+    /// [`Error::ReplayCachePoisoned`].
+    #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
-        let ap_req = crate::ap_req::decode_ap_req(bytes).map_err(ap_req_error)?;
+        let ap_req = ap_req::decode_ap_req(bytes).map_err(ap_req_error)?;
 
         let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
         let ticket_etype = ap_req.ticket.enc_part.etype;
@@ -6189,22 +2523,22 @@ impl<'a> ServiceValidator<'a> {
             ticket_etype,
         )?;
 
-        let enc_ticket = crate::ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key.0)
-            .map_err(ticket_error)?;
+        let enc_ticket =
+            ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key.0).map_err(ticket_error)?;
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         let pac = match &enc_ticket.authorization_data {
             Some(authorization_data) => pac::find_pac_in_authorization_data(authorization_data)?,
             None => None,
         };
-        if let Some(pac) = &pac {
-            pac.verify(service_key.0)?;
+        if let Some(ticket_pac) = &pac {
+            ticket_pac.verify(service_key.0)?;
         }
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key)?;
-        let authenticator_usage = crate::ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
+        let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
         let authenticator =
-            crate::ap_req::decrypt_ap_req_authenticator(&ap_req, &session_key, authenticator_usage)
+            ap_req::decrypt_ap_req_authenticator(&ap_req, &session_key, authenticator_usage)
                 .map_err(ap_req_error)?;
 
         let ticket_client = principal_from_parts(&enc_ticket.crealm, &enc_ticket.cname)?;
@@ -6228,11 +2562,11 @@ impl<'a> ServiceValidator<'a> {
 
         let cusec = integer_to_u32("authenticator.cusec", &authenticator.cusec)?;
         let authenticator_ctime = system_time_from_kerberos_time(&authenticator.ctime)?;
-        let authenticator_time = authenticator_ctime
+        let authenticator_timestamp = authenticator_ctime
             .checked_add(Duration::from_micros(cusec.into()))
             .ok_or(Error::TimeOverflow)?;
         let now = self.now();
-        if abs_duration(now, authenticator_time) > self.max_clock_skew {
+        if abs_duration(now, authenticator_timestamp) > self.max_clock_skew {
             return Err(Error::ClockSkew {
                 max_clock_skew: self.max_clock_skew,
             });
@@ -6279,87 +2613,15 @@ impl<'a> ServiceValidator<'a> {
             ticket_end: system_time_from_kerberos_time(&enc_ticket.end_time)?,
             authenticator_ctime,
             authenticator_cusec: cusec,
-            authenticator_time,
+            authenticator_time: authenticator_timestamp,
             pac,
         };
         self.record_replay(replay_key, authenticator_digest, now)?;
         Ok(validated)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// The validation time: the fixed time when one is set, otherwise the
+    /// system clock.
     fn now(&self) -> SystemTime {
         self.now.unwrap_or_else(SystemTime::now)
     }
@@ -6387,220 +2649,14 @@ impl<'a> ServiceValidator<'a> {
         if inserted { Ok(()) } else { Err(Error::Replay) }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Check the ticket's start and end times, and its invalid flag, against
+    /// now and the accepted clock skew.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TicketNotYetValid`] for a future or invalid ticket,
+    /// [`Error::TicketExpired`] for an expired one, and
+    /// [`Error::TimeOverflow`] when a ticket time is out of range.
     fn validate_ticket_times(
         &self,
         service: &Principal,
@@ -6627,221 +2683,14 @@ impl<'a> ServiceValidator<'a> {
         Ok(())
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::suspicious_operation_groupings,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            )
-        ),
-        expect(
-            clippy::missing_docs_in_private_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Match the ticket's client addresses against the configured peer
+    /// address.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::RequiredClientAddressMissing`] when addresses are
+    /// required and the ticket has none, and [`Error::BadClientAddress`] when
+    /// the ticket has addresses and none matches the peer address.
     fn validate_client_address(
         &self,
         service: &Principal,
@@ -6865,8 +2714,8 @@ impl<'a> ServiceValidator<'a> {
         };
 
         if ticket_addresses.iter().any(|address| {
-            address.addr_type == client_address.addr_type
-                && address.address.as_ref() == client_address.address.as_slice()
+            let same_type = address.addr_type == client_address.addr_type;
+            same_type && address.address.as_ref() == client_address.address.as_slice()
         }) {
             Ok(())
         } else {
@@ -7015,12 +2864,12 @@ impl ServiceValidator<'static> {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Create a validator from an owned keytab.
+    #[inline]
     pub fn from_keytab(keytab: Keytab) -> Self {
         Self::from_keytab_cow(Cow::Owned(keytab))
     }
@@ -7162,8 +3011,6 @@ impl ServiceValidator<'static> {
         ),
         expect(
             clippy::impl_trait_in_params,
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
@@ -7171,155 +3018,26 @@ impl ServiceValidator<'static> {
     ///
     /// Bare paths, `FILE:path`, and `WRFILE:path` are supported by the keytab
     /// module. Other keytab stores are rejected explicitly.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Keytab`] when the name is not a file keytab or the
+    /// file cannot be read or parsed.
+    #[inline]
     pub fn from_keytab_name(keytab_name: impl AsRef<str>) -> Result<Self, Error> {
         Ok(Self::from_keytab(Keytab::load_name(keytab_name)?))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a validator from `config.libdefaults.default_keytab_name`.
     ///
     /// The configured `[libdefaults] clockskew` becomes the acceptance window;
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Keytab`] when the configured name is not a file keytab
+    /// or the file cannot be read or parsed.
+    #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self, Error> {
         Ok(
             Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
@@ -7327,152 +3045,17 @@ impl ServiceValidator<'static> {
         )
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a validator from the default keytab.
     ///
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_keytab_name`. The configured
     /// `[libdefaults] clockskew` becomes the acceptance window.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Keytab`] when the selected name is not a file keytab
+    /// or the file cannot be read or parsed.
+    #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self, Error> {
         Ok(Self::from_keytab_name(keytab::default_keytab_name(
             &config.libdefaults.default_keytab_name,
@@ -7480,148 +3063,13 @@ impl ServiceValidator<'static> {
         .with_max_clock_skew(config.libdefaults.clockskew))
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                not(feature = "default"),
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                not(feature = "serde"),
-                not(feature = "spnego"),
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_errors_doc,
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a validator by loading the file keytab named by `KRB5_KTNAME`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Keytab`] when the variable is unset, names a
+    /// non-file keytab, or the file cannot be read or parsed.
+    #[inline]
     pub fn from_keytab_env() -> Result<Self, Error> {
         Ok(Self::from_keytab(Keytab::load_from_env()?))
     }
@@ -7940,307 +3388,25 @@ pub enum Error {
     TimeOverflow,
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// RFC 4120 section 3.2.3 replay-cache key of one authenticator.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct ReplayKey {
+    /// The accepting service principal, without its name type.
     service: Principal,
+    /// The authenticator's client principal, without its name type.
     client: Principal,
+    /// The authenticator's `ctime`, in seconds since the Unix epoch.
     ctime_seconds: i64,
+    /// The authenticator's `cusec`.
     cusec: u32,
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn ap_req_error(error: crate::ap_req::Error) -> Error {
+/// Map an AP-REQ message error onto the service error.
+fn ap_req_error(error: ap_req::Error) -> Error {
     match error {
-        crate::ap_req::Error::Decode { target, message } => Error::Decode { target, message },
-        crate::ap_req::Error::Encode { target, message } => Error::Encode { target, message },
-        crate::ap_req::Error::InvalidMessage {
+        ap_req::Error::Decode { target, message } => Error::Decode { target, message },
+        ap_req::Error::Encode { target, message } => Error::Encode { target, message },
+        ap_req::Error::InvalidMessage {
             field,
             expected,
             actual,
@@ -8249,238 +3415,25 @@ fn ap_req_error(error: crate::ap_req::Error) -> Error {
             expected,
             actual,
         },
-        crate::ap_req::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        crate::ap_req::Error::KeyEtypeMismatch {
+        ap_req::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        ap_req::Error::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::ApReqKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        crate::ap_req::Error::Random(source) => Error::Random(source),
-        crate::ap_req::Error::Crypto(source) => Error::Crypto(source),
+        ap_req::Error::Random(source) => Error::Random(source),
+        ap_req::Error::Crypto(source) => Error::Crypto(source),
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn ticket_error(error: crate::ticket::Error) -> Error {
+/// Map a ticket message error onto the service error.
+fn ticket_error(error: ticket::Error) -> Error {
     match error {
-        crate::ticket::Error::Decode { target, message } => Error::Decode { target, message },
-        crate::ticket::Error::Encode { target, message } => Error::Encode { target, message },
-        crate::ticket::Error::InvalidMessage {
+        ticket::Error::Decode { target, message } => Error::Decode { target, message },
+        ticket::Error::Encode { target, message } => Error::Encode { target, message },
+        ticket::Error::InvalidMessage {
             field,
             expected,
             actual,
@@ -8489,238 +3442,25 @@ fn ticket_error(error: crate::ticket::Error) -> Error {
             expected,
             actual,
         },
-        crate::ticket::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        crate::ticket::Error::KeyEtypeMismatch {
+        ticket::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        ticket::Error::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::TicketKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        crate::ticket::Error::Random(source) => Error::Random(source),
-        crate::ticket::Error::Crypto(source) => Error::Crypto(source),
+        ticket::Error::Random(source) => Error::Random(source),
+        ticket::Error::Crypto(source) => Error::Crypto(source),
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn ap_rep_error(error: crate::ap_rep::Error) -> Error {
+/// Map an AP-REP message error onto the service error.
+fn ap_rep_error(error: ap_rep::Error) -> Error {
     match error {
-        crate::ap_rep::Error::Decode { target, message } => Error::Decode { target, message },
-        crate::ap_rep::Error::Encode { target, message } => Error::Encode { target, message },
-        crate::ap_rep::Error::InvalidMessage {
+        ap_rep::Error::Decode { target, message } => Error::Decode { target, message },
+        ap_rep::Error::Encode { target, message } => Error::Encode { target, message },
+        ap_rep::Error::InvalidMessage {
             field,
             expected,
             actual,
@@ -8729,233 +3469,25 @@ fn ap_rep_error(error: crate::ap_rep::Error) -> Error {
             expected,
             actual,
         },
-        crate::ap_rep::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        crate::ap_rep::Error::KeyEtypeMismatch {
+        ap_rep::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        ap_rep::Error::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::ApRepKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        crate::ap_rep::Error::Random(source) => Error::Random(source),
-        crate::ap_rep::Error::Crypto(source) => Error::Crypto(source),
+        ap_rep::Error::Random(source) => Error::Random(source),
+        ap_rep::Error::Crypto(source) => Error::Crypto(source),
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Build a principal from a wire realm and principal name.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidString`] when the realm or a name component is not
+/// UTF-8.
 fn principal_from_parts(
     realm: &rasn_kerberos::Realm,
     name: &rasn_kerberos::PrincipalName,
@@ -8971,224 +3503,13 @@ fn principal_from_parts(
     })
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::missing_errors_doc,
-        clippy::std_instead_of_core,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Convert a wire Kerberos string to a Rust string.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidString`] when the string is not UTF-8.
 fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<String, Error> {
-    Ok(std::str::from_utf8(value.as_bytes())?.to_owned())
+    Ok(from_utf8(value.as_bytes())?.to_owned())
 }
 
 #[cfg_attr(
@@ -9327,85 +3648,15 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
         )
     ),
     expect(
-        clippy::missing_errors_doc,
         clippy::unnecessary_wraps,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
 )]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Convert a wire encryption key to the keytab key type.
+///
+/// # Errors
+///
+/// Never fails today; the `Result` is kept for the callers' `?` chains.
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> Result<EncryptionKey, Error> {
     Ok(EncryptionKey {
         etype: value.r#type,
@@ -9413,80 +3664,7 @@ fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> Result<Encr
     })
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Convert a keytab key to the wire encryption key type.
 fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
         r#type: value.etype,
@@ -9494,220 +3672,11 @@ fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// The ticket's start time, or its auth time when it has none.
+///
+/// # Errors
+///
+/// Returns [`Error::TimeOverflow`] when the time is out of range.
 fn ticket_start_time(enc_ticket: &rasn_kerberos::EncTicketPart) -> Result<SystemTime, Error> {
     system_time_from_kerberos_time(
         enc_ticket
@@ -9717,450 +3686,27 @@ fn ticket_start_time(enc_ticket: &rasn_kerberos::EncTicketPart) -> Result<System
     )
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::as_conversions,
-        clippy::cast_sign_loss,
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Convert a Kerberos time to a `SystemTime`.
+///
+/// # Errors
+///
+/// Returns [`Error::TimeOverflow`] when the time is not representable.
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
     let seconds = time.0.timestamp();
     let nanos = time.0.timestamp_subsec_nanos();
-    if seconds >= 0 {
-        UNIX_EPOCH
-            .checked_add(Duration::new(seconds as u64, nanos))
-            .ok_or(Error::TimeOverflow)
-    } else {
-        UNIX_EPOCH
-            .checked_sub(Duration::new(seconds.unsigned_abs(), nanos))
-            .ok_or(Error::TimeOverflow)
-    }
+    u64::try_from(seconds)
+        .map_or_else(
+            |_before_epoch| UNIX_EPOCH.checked_sub(Duration::new(seconds.unsigned_abs(), nanos)),
+            |after_epoch| UNIX_EPOCH.checked_add(Duration::new(after_epoch, nanos)),
+        )
+        .ok_or(Error::TimeOverflow)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Convert a `SystemTime` to a Kerberos time in UTC.
+///
+/// # Errors
+///
+/// Returns [`Error::TimeOverflow`] when the time is not representable.
 fn kerberos_time_from_system_time(time: SystemTime) -> Result<rasn_kerberos::KerberosTime, Error> {
     let (seconds, nanos) = unix_timestamp_parts(time)?;
     let utc = chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, nanos)
@@ -10169,928 +3715,82 @@ fn kerberos_time_from_system_time(time: SystemTime) -> Result<rasn_kerberos::Ker
     Ok(rasn_kerberos::KerberosTime(utc.with_timezone(&offset)))
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::map_err_ignore,
-        clippy::missing_errors_doc,
-        clippy::shadow_reuse,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Split a `SystemTime` into whole seconds since the Unix epoch (floored)
+/// and the non-negative nanoseconds past them.
+///
+/// # Errors
+///
+/// Returns [`Error::TimeOverflow`] when the seconds do not fit in `i64`.
 fn unix_timestamp_parts(time: SystemTime) -> Result<(i64, u32), Error> {
     match time.duration_since(UNIX_EPOCH) {
         Ok(duration) => Ok((
             duration
                 .as_secs()
                 .try_into()
-                .map_err(|_| Error::TimeOverflow)?,
+                .map_err(|_out_of_range| Error::TimeOverflow)?,
             duration.subsec_nanos(),
         )),
         Err(source) => {
             let duration = source.duration();
-            let seconds: i64 = duration
+            let whole_seconds: i64 = duration
                 .as_secs()
                 .try_into()
-                .map_err(|_| Error::TimeOverflow)?;
+                .map_err(|_out_of_range| Error::TimeOverflow)?;
             if duration.subsec_nanos() == 0 {
-                return Ok((-seconds, 0));
+                return Ok((whole_seconds.checked_neg().ok_or(Error::TimeOverflow)?, 0));
             }
 
-            let seconds = seconds.checked_add(1).ok_or(Error::TimeOverflow)?;
-            Ok((-seconds, 1_000_000_000 - duration.subsec_nanos()))
+            // The seconds are floored: a time 1.25 s before the epoch is
+            // -2 s plus 750 ms. `subsec_nanos` is below one billion.
+            let floored_seconds = whole_seconds.checked_add(1).ok_or(Error::TimeOverflow)?;
+            let nanos = 1_000_000_000_u32
+                .checked_sub(duration.subsec_nanos())
+                .ok_or(Error::TimeOverflow)?;
+            Ok((
+                floored_seconds.checked_neg().ok_or(Error::TimeOverflow)?,
+                nanos,
+            ))
         }
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::map_err_ignore,
-        clippy::missing_errors_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn integer_to_u32(field: &'static str, value: &rasn::types::Integer) -> Result<u32, Error> {
+/// Convert a wire integer to `u32`.
+///
+/// # Errors
+///
+/// Returns [`Error::IntegerOutOfRange`], naming `field`, when the value does
+/// not fit in `u32`.
+fn integer_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
     value
         .to_string()
         .parse::<u32>()
-        .map_err(|_| Error::IntegerOutOfRange {
+        .map_err(|_out_of_range| Error::IntegerOutOfRange {
             field,
             value: value.to_string(),
         })
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Whether the ticket's `invalid` flag is set.
 fn has_invalid_flag(flags: &rasn_kerberos::TicketFlags) -> bool {
     flags.0.get(INVALID_TICKET_FLAG).is_some_and(|bit| *bit)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Whether `start` lies more than `max_clock_skew` after `now`.
 fn starts_after_skew(start: SystemTime, now: SystemTime, max_clock_skew: Duration) -> bool {
     start
         .duration_since(now)
         .is_ok_and(|delta| delta > max_clock_skew)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Whether `end` lies more than `max_clock_skew` before `now`.
 fn expired_after_skew(now: SystemTime, end: SystemTime, max_clock_skew: Duration) -> bool {
     now.duration_since(end)
         .is_ok_and(|delta| delta > max_clock_skew)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// The absolute distance between two times.
 fn abs_duration(left: SystemTime, right: SystemTime) -> Duration {
+    // An error carries how far `right` lies after `left`.
     left.duration_since(right)
-        .or_else(|_| right.duration_since(left))
-        .expect("one SystemTime must be later than the other")
+        .unwrap_or_else(|later| SystemTimeError::duration(&later))
 }
