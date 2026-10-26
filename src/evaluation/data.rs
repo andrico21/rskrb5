@@ -124,12 +124,12 @@ impl Candidate {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Display name used in reports.
+    #[inline]
     pub const fn name(self) -> &'static str {
         match self {
             Self::RasnKerberos => "rasn-kerberos",
@@ -192,24 +192,21 @@ impl Candidate {
             )
         ),
         expect(
-            clippy::match_same_arms,
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// SPDX license expression observed for the candidate's crate.
+    #[inline]
     pub const fn license(self) -> &'static str {
         match self {
-            Self::RasnKerberos => "MIT OR Apache-2.0",
-            Self::PickyKrb => "MIT OR Apache-2.0",
-            Self::SspiRs => "MIT OR Apache-2.0",
-            Self::KerberosParser => "MIT OR Apache-2.0",
+            Self::RasnKerberos | Self::PickyKrb | Self::SspiRs | Self::KerberosParser => {
+                "MIT OR Apache-2.0"
+            }
             Self::Krb5Rs => "Apache-2.0",
             Self::KerbeirosFamily => "AGPL-3.0",
-            Self::Kenobi => "MIT",
+            Self::Kenobi | Self::SystemGssapiWrappers => "MIT",
             Self::HttpNegotiateLayers => "MIT / LGPL-3.0-or-later by crate",
-            Self::SystemGssapiWrappers => "MIT",
         }
     }
 }
@@ -281,58 +278,7 @@ pub enum Support {
 }
 
 impl fmt::Display for Support {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_inline_in_public_items,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Yes => "yes",
@@ -458,7 +404,6 @@ pub struct ContractArea {
         )
     ),
     expect(
-        clippy::doc_markdown,
         clippy::exhaustive_enums,
         reason = "lint-migration: upstream baseline at ee9cb04"
     )
@@ -470,7 +415,7 @@ pub enum DerType {
     Authenticator,
     /// RFC 4120 Ticket.
     Ticket,
-    /// RFC 4120 EncryptionKey.
+    /// RFC 4120 `EncryptionKey`.
     EncryptionKey,
     /// RFC 4120 encrypted ticket part.
     EncTicketPart,
@@ -504,13 +449,13 @@ pub enum DerType {
     EncKrbCredPart,
     /// KRB-ERROR.
     KrbError,
-    /// AuthorizationData sequence.
+    /// `AuthorizationData` sequence.
     AuthorizationData,
     /// AD-KDCIssued.
     AdKdcIssued,
     /// PA-DATA sequence / METHOD-DATA.
     PaDataSequence,
-    /// TypedData sequence.
+    /// `TypedData` sequence.
     TypedData,
     /// PA-ENC-TS-ENC.
     PaEncTsEnc,
@@ -520,9 +465,9 @@ pub enum DerType {
     EtypeInfo,
     /// ETYPE-INFO2.
     EtypeInfo2,
-    /// EncryptedData.
+    /// `EncryptedData`.
     EncryptedData,
-    /// ChangePasswdData.
+    /// `ChangePasswdData`.
     ChangePasswdData,
 }
 
@@ -575,12 +520,12 @@ impl DerType {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Display name used in reports.
+    #[inline]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Authenticator => "Authenticator",
@@ -986,12 +931,12 @@ impl CandidateAssessment {
             )
         ),
         expect(
-            clippy::missing_inline_in_public_items,
             clippy::must_use_candidate,
             reason = "lint-migration: upstream baseline at ee9cb04"
         )
     )]
     /// Return support for a contract area id.
+    #[inline]
     pub fn support_for(self, area_id: &str) -> Support {
         self.support
             .iter()
@@ -1608,36 +1553,7 @@ pub const ASN1_FIXTURES: &[Asn1Fixture] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of `rasn-kerberos`.
 const RASN_KERBEROS_ASSESSMENT: &[SupportByArea] = &[
     SupportByArea {
         area_id: "asn1",
@@ -1681,36 +1597,7 @@ const RASN_KERBEROS_ASSESSMENT: &[SupportByArea] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of `picky-krb`.
 const PICKY_KRB_ASSESSMENT: &[SupportByArea] = &[
     SupportByArea {
         area_id: "asn1",
@@ -1754,36 +1641,7 @@ const PICKY_KRB_ASSESSMENT: &[SupportByArea] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of `sspi-rs`.
 const SSPI_RS_ASSESSMENT: &[SupportByArea] = &[
     SupportByArea {
         area_id: "asn1",
@@ -1827,36 +1685,7 @@ const SSPI_RS_ASSESSMENT: &[SupportByArea] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of the parser-only `kerberos-parser` crate.
 const PARSER_ONLY_ASSESSMENT: &[SupportByArea] = &[
     SupportByArea {
         area_id: "asn1",
@@ -1868,36 +1697,7 @@ const PARSER_ONLY_ASSESSMENT: &[SupportByArea] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of the excluded `kerbeiros/kerberos_*` crate family.
 const EXCLUDED_ASSESSMENT: &[SupportByArea] = &[
     SupportByArea {
         area_id: "asn1",
@@ -1921,36 +1721,7 @@ const EXCLUDED_ASSESSMENT: &[SupportByArea] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of `kenobi`.
 const KENOBI_ASSESSMENT: &[SupportByArea] = &[
     SupportByArea {
         area_id: "client",
@@ -1966,71 +1737,13 @@ const KENOBI_ASSESSMENT: &[SupportByArea] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of the `axum-negotiate-layer`/`axum-negotiate` crates.
 const HTTP_LAYER_ASSESSMENT: &[SupportByArea] = &[SupportByArea {
     area_id: "spnego",
     support: Support::Partial,
 }];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Per-area support of the `cross-krb5`/`libgssapi` system GSSAPI wrappers.
 const SYSTEM_GSSAPI_ASSESSMENT: &[SupportByArea] = &[
     SupportByArea {
         area_id: "client",
@@ -2090,36 +1803,7 @@ pub const ASSESSMENTS: &[CandidateAssessment] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for `rasn-kerberos`.
 const RASN_KERBEROS_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Kerberos ASN.1 data types",
@@ -2153,36 +1837,7 @@ const RASN_KERBEROS_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for `picky-krb`.
 const PICKY_KRB_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Kerberos ASN.1 data types",
@@ -2216,36 +1871,7 @@ const PICKY_KRB_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for `sspi-rs`.
 const SSPI_RS_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Negotiate/Kerberos authentication",
@@ -2274,36 +1900,7 @@ const SSPI_RS_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for `kerberos-parser`.
 const KERBEROS_PARSER_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Kerberos ASN.1 parsing",
@@ -2327,36 +1924,7 @@ const KERBEROS_PARSER_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for `krb5-rs`.
 const KRB5_RS_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Published implementation",
@@ -2375,36 +1943,7 @@ const KRB5_RS_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for the `kerbeiros` crate family.
 const KERBEIROS_FAMILY_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "Keytab / ccache / crypto / ASN.1",
@@ -2418,36 +1957,7 @@ const KERBEIROS_FAMILY_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for `kenobi`.
 const KENOBI_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "HTTP Negotiate client",
@@ -2466,36 +1976,7 @@ const KENOBI_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for the `axum-negotiate-layer`/`axum-negotiate` crates.
 const HTTP_NEGOTIATE_LAYER_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "SPNEGO HTTP middleware",
@@ -2514,36 +1995,7 @@ const HTTP_NEGOTIATE_LAYER_CAPABILITIES: &[Capability] = &[
     },
 ];
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Capability notes for the `cross-krb5`/`libgssapi` system GSSAPI wrappers.
 const SYSTEM_GSSAPI_CAPABILITIES: &[Capability] = &[
     Capability {
         area: "GSSAPI/SPNEGO",
