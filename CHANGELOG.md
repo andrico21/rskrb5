@@ -10,6 +10,11 @@
   `scripts/lint-ratchet/`. The remaining gates live in `scripts/lint-gates/`,
   joined by `exception_gate.py`, which admits only the six sanctioned
   `expect` forms. `docs/lint-policy.md` replaces `docs/lint-baseline.md`.
+- CI runs strict clippy and the tests in every feature closure (a static
+  36-leg `closures` matrix held equal to `feature_closures.py list` by
+  `feature_closures.py check-ci`), clippy on Windows and a build of every fuzz
+  target; the K1-K7 `features-matrix` and the `release/**` trigger are gone.
+  `prek.toml` mirrors the fast jobs plus a three-closure smoke.
 
 ## [0.3.0] - 2026-10-24
 

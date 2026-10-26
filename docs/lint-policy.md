@@ -73,6 +73,7 @@ in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
 | `facade_gate.py --enforce` | no `pub use` (or `pub(..) use`) outside the crate-root scope of `src/lib.rs`, cfg-disabled code included |
 | `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run) |
 | `feature_closures.py run` | every feature closure: `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |
+| `feature_closures.py check-ci .github/workflows/ci.yml` | the `closures` matrix of `ci.yml` lists exactly the computed closures, each once |
 | `fuzz_lint.py --enforce` | the root profile on the nightly fuzz crate, in a disposable copy |
 
 `rg -n 'lint-migration' src tests examples fuzz` must print nothing.
@@ -108,7 +109,8 @@ table (`default` counts as a feature) and the canonical Cargo arguments for
 each: 36 closures today. Each one must pass `cargo clippy --all-targets <args>
 -- -D warnings` and `cargo test <args>`; `feature_closures.py run` runs both
 for all of them. A consumer may therefore enable any feature combination under
-its own strict lints.
+its own strict lints. In CI each closure is one leg of the `closures` matrix,
+written out statically and held equal to the computed list by `check-ci`.
 
 Items used only under some features carry a precise `#[cfg(feature = ..)]`,
 and Unix-only helpers carry `#[cfg(unix)]`, so nothing is dead or unused in any
@@ -117,6 +119,9 @@ closure or on Windows:
 ```bash
 cargo clippy --all-targets --all-features --target x86_64-pc-windows-msvc -- -D warnings
 ```
+
+CI runs the same clippy natively on `windows-latest` (the `clippy-windows`
+job).
 
 ## A new stable toolchain
 

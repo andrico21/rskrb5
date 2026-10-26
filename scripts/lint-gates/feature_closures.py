@@ -83,10 +83,19 @@ def load(root: Path) -> list[Closure]:
 
 
 def check_ci(closures: list[Closure], path: Path) -> None:
-    """Read the dedicated matrix's quoted shell strings without YAML dependencies."""
+    """Read the dedicated matrix's quoted shell strings without YAML dependencies.
+
+    The list is the `closures:` key directly under a `matrix:` key (comment
+    lines may sit between them), so a job whose id is also `closures` is not
+    mistaken for it.
+    """
     import re
 
-    match = re.search(r"(?m)^( +)closures:\s*\n((?:\1 +[^\n]*\n)+)", path.read_text())
+    match = re.search(
+        r"(?m)^ *matrix:[ \t]*\n(?:[ \t]*#[^\n]*\n)*( +)closures:[ \t]*\n"
+        r"((?:\1 +[^\n]*\n)+)",
+        path.read_text(),
+    )
     if match is None:
         raise RuntimeError("CI has no closures matrix")
     values = []
@@ -156,6 +165,25 @@ def self_test() -> int:
                 pass
             else:
                 raise AssertionError("incomplete or duplicate closure matrix accepted")
+        # Given a job whose id is `closures`, the matrix key must still be found,
+        # and a missing entry must still be rejected.
+        job = (
+            "jobs:\n  closures:\n    name: closures\n    strategy:\n"
+            "      matrix:\n        # every closure\n        closures:\n"
+        )
+        entries = [
+            f"          - \"{shlex.join(closure.arguments)}\"\n" for closure in closures
+        ]
+        tail = "    steps:\n      - run: true\n"
+        path.write_text(job + "".join(entries) + tail)
+        check_ci(closures, path)
+        path.write_text(job + "".join(entries[1:]) + tail)
+        try:
+            check_ci(closures, path)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("closure matrix missing an entry accepted")
     print("feature_closures self-test: ok")
     return 0
 
