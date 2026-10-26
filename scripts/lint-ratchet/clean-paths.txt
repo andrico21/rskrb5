@@ -1,6 +1,9 @@
+src/ccache.rs
 src/client.rs
 src/client/**
 src/crypto.rs
 src/der.rs
+src/file_name.rs
+src/keytab.rs
 src/spnego.rs
 src/spnego/**
