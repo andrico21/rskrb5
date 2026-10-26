@@ -117,22 +117,117 @@ toml = "1.1"
 [[test]]
 name = "client"
 path = "tests/client.rs"
-required-features = ["messages", "spnego", "tokio"]
+required-features = ["messages"]
+
+[[test]]
+name = "ap_rep"
+path = "tests/ap_rep.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "ap_req"
+path = "tests/ap_req.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "asn1_fixture_matrix"
+path = "tests/asn1_fixture_matrix.rs"
+required-features = ["evaluation"]
+
+[[test]]
+name = "client_principal"
+path = "tests/client_principal.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "client_transport"
+path = "tests/client_transport.rs"
+required-features = ["tokio"]
+
+[[test]]
+name = "compatibility_report"
+path = "tests/compatibility_report.rs"
+required-features = ["evaluation"]
+
+[[test]]
+name = "gssapi"
+path = "tests/gssapi.rs"
+required-features = ["spnego"]
+
+[[test]]
+name = "kadmin"
+path = "tests/kadmin.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "kdc_rep"
+path = "tests/kdc_rep.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "kdc_req"
+path = "tests/kdc_req.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "krb_cred"
+path = "tests/krb_cred.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "krb_error"
+path = "tests/krb_error.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "krb_priv"
+path = "tests/krb_priv.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "krb_safe"
+path = "tests/krb_safe.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "messages"
+path = "tests/messages.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "pac"
+path = "tests/pac.rs"
+required-features = ["evaluation"]
+
+[[test]]
+name = "service"
+path = "tests/service.rs"
+required-features = ["messages"]
+
+[[test]]
+name = "spnego"
+path = "tests/spnego.rs"
+required-features = ["spnego"]
+
+[[test]]
+name = "ticket"
+path = "tests/ticket.rs"
+required-features = ["messages"]
 
 [[test]]
 name = "client_integration"
 path = "tests/client_integration.rs"
-required-features = ["spnego", "tokio"]
+required-features = ["tokio"]
 
 [[test]]
 name = "client_ad_integration"
 path = "tests/client_ad_integration.rs"
-required-features = ["spnego", "tokio"]
+required-features = ["tokio"]
 
 [[test]]
 name = "http"
 path = "tests/http.rs"
-required-features = ["http", "tokio"]
+required-features = ["http"]
 
 [[example]]
 name = "axum-negotiate"

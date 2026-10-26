@@ -18,10 +18,11 @@ mod env;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    #[cfg(feature = "tokio")]
     use alloc::rc::Rc;
     #[cfg(feature = "tokio")]
     use core::cell::{Cell, RefCell};
-    #[cfg(any(feature = "tokio", feature = "tower"))]
+    #[cfg(feature = "tokio")]
     use core::convert::Infallible;
     #[cfg(feature = "tower")]
     use core::future::Ready;
@@ -57,10 +58,9 @@ mod tests {
     };
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::config::Config;
-    #[cfg(feature = "tokio")]
-    use rskrb5_ng::error::Http as HttpError;
     use rskrb5_ng::{
         client::{AsRepSession, principal::Principal},
+        error::Http as HttpError,
         http as krb_http,
         keytab::{EncryptionKey, Keytab},
         service::{ApRepOptions, Validator},

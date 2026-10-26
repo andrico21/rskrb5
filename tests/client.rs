@@ -2,6 +2,7 @@
 //! change and session caches, run against synthetic KDC replies.
 #![cfg(feature = "messages")]
 
+#[cfg(feature = "tokio")]
 extern crate alloc;
 
 use core::{error, time::Duration};
@@ -17,8 +18,6 @@ use rskrb5_ng::client::{
 use rskrb5_ng::client::{
     negotiate::BlockingClient as BlockingNegotiateClient, negotiate::Client as NegotiateClient,
 };
-#[cfg(feature = "tokio")]
-use rskrb5_ng::config::Config;
 use rskrb5_ng::{
     client::{
         AP_REP_ENCPART_USAGE, AP_REQ_AUTHENTICATOR_USAGE, AS_REP_ENCPART_USAGE,
@@ -47,15 +46,18 @@ use rskrb5_ng::{
         process_as_rep, process_kdc_error, process_tgs_rep, process_tgs_rep_with_referral,
         renew_tgt, renew_ticket, s4u_byte_array, s4u2proxy, s4u2self, select_preauth_key_info,
     },
+    config::Config,
     crypto::{AesSha1Etype, KerberosEtype, kerb_checksum_hmac_md5},
     error::Client as Error,
-    kadmin::{
-        ChangePasswdData, KPASSWD_SUCCESS, Reply as KpasswdReply, Request as KpasswdRequest,
-        build_krb_priv_with_confounder,
-    },
+    kadmin::{ChangePasswdData, Reply as KpasswdReply, Request as KpasswdRequest},
     keytab::{EncryptionKey, Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
-    krb_priv::{EncKrbPrivPartOptions, KRB_PRIV_ENCPART_USAGE, ipv4_host_address},
+    krb_priv::{KRB_PRIV_ENCPART_USAGE, ipv4_host_address},
     messages::PaReqEncPaRep,
+};
+#[cfg(feature = "tokio")]
+use rskrb5_ng::{
+    kadmin::{KPASSWD_SUCCESS, build_krb_priv_with_confounder},
+    krb_priv::EncKrbPrivPartOptions,
 };
 #[cfg(feature = "tokio")]
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -88,6 +90,7 @@ mod login_preauth;
 #[path = "client/password_change.rs"]
 mod password_change;
 #[path = "client/session_cache.rs"]
+#[cfg(feature = "tokio")]
 mod session_cache;
 #[path = "client/tgs_exchange.rs"]
 mod tgs_exchange;
@@ -114,9 +117,9 @@ mod harness {
     use chrono::{DateTime, FixedOffset, Utc};
     use rasn::{der, types::Integer};
     #[cfg(feature = "tokio")]
-    use rskrb5_ng::{ap_rep::encode_build_ap_rep_with_confounder, client::TgsRepSession};
+    use rskrb5_ng::ap_rep::encode_build_ap_rep_with_confounder;
     use rskrb5_ng::{
-        client::{AsRepSession, kpasswd::BuiltKpasswdRequest},
+        client::{AsRepSession, TgsRepSession, kpasswd::BuiltKpasswdRequest},
         messages::PaForUser,
     };
     #[cfg(feature = "tokio")]
@@ -506,6 +509,7 @@ mod harness {
     }
 
     /// The sample TGT session turned into a referral TGT for `realm`.
+    #[cfg(feature = "tokio")]
     pub(crate) fn sample_referral_tgt_session(realm: &str) -> Result<AsRepSession, TestError> {
         let mut tgt = sample_tgt_session()?;
         tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
@@ -707,7 +711,6 @@ mod harness {
     }
 
     /// The service ticket session of the sample TGS exchange with `tgt`.
-    #[cfg(feature = "tokio")]
     pub(crate) fn sample_service_ticket_session(
         tgt: &AsRepSession,
     ) -> Result<TgsRepSession, TestError> {
