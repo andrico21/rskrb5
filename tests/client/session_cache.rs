@@ -1,1806 +1,1462 @@
 use super::*;
 
+/// Session-cache tests: cached tickets, ccache and keytab loading (including the
+/// child-process environment tests), renewal and realm case folding.
+#[cfg(test)]
 #[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    reason = "test code is not rendered API documentation"
 )]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_returns_cached_service_ticket_from_ccache() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_current(&mut tgt_credential, now);
-    let mut service_credential = service_ticket
-        .to_ccache_credential()
-        .expect("service ticket converts");
-    // MIT kvno can store host-based service tickets as NT-PRINCIPAL in ccache.
-    service_credential.server.name_type = 1;
-    make_credential_current(&mut service_credential, now);
-    cache.credentials_mut().push(tgt_credential);
-    cache.credentials_mut().push(service_credential);
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use alloc::sync::Arc;
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    use std::{fs, sync::mpsc, thread};
 
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let returned = runtime()
-        .block_on(client.get_service_ticket(sample_service_principal()))
-        .expect("cached service ticket is returned");
-
-    assert_eq!(
-        client.tgt_session().expect("TGT loaded").service,
-        tgt.service
-    );
-    assert_eq!(client.cached_service_ticket_count(), 1);
-    assert_eq!(returned.client, service_ticket.client);
-    assert_eq!(returned.service, service_ticket.service);
-    assert_eq!(returned.session_key, service_ticket.session_key);
-    assert_eq!(returned.ticket, service_ticket.ticket);
-}
-
-#[expect(
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_exposes_and_removes_cached_service_ticket() {
-    let tgt = sample_tgt_session();
-    let mut service_ticket = sample_service_ticket_session(&tgt);
-    let now = timestamp(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current time is after unix epoch")
-            .as_secs(),
-    );
-    service_ticket.start_time = now
-        .checked_sub(Duration::from_secs(60))
-        .expect("start time");
-    service_ticket.end_time = now
-        .checked_add(Duration::from_secs(60 * 60))
-        .expect("end time");
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
-    client.cache_service_ticket(service_ticket.clone());
-
-    let cached = client
-        .cached_service_ticket(sample_service_principal())
-        .expect("valid cached service ticket is returned");
-    assert_eq!(cached.service, service_ticket.service);
-    assert_eq!(cached.session_key, service_ticket.session_key);
-
-    let removed = client
-        .remove_cached_service_ticket(sample_service_principal())
-        .expect("cached service ticket is removed");
-    assert_eq!(removed.ticket, service_ticket.ticket);
-    assert_eq!(client.cached_service_ticket_count(), 0);
-    assert!(
-        client
-            .cached_service_ticket(sample_service_principal())
-            .is_none()
-    );
-}
-
-#[expect(
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_prefers_freshest_cached_service_ticket() {
-    let tgt = current_tgt_session(5, 180);
-    let service_session = |remaining_minutes: u64, ticket: &[u8]| {
-        let now = SystemTime::now();
-        let mut service_ticket = sample_service_ticket_session(&tgt);
-        service_ticket.ticket = ticket.to_vec();
-        service_ticket.auth_time = now
-            .checked_sub(Duration::from_secs(5 * 60))
-            .expect("auth time");
-        service_ticket.start_time = service_ticket.auth_time;
-        service_ticket.end_time = now
-            .checked_add(Duration::from_secs(remaining_minutes * 60))
-            .expect("end time");
-        service_ticket.renew_till = Some(
-            now.checked_add(Duration::from_secs(24 * 60 * 60))
-                .expect("renew time"),
-        );
-        service_ticket
+    use rasn::{der, types::Integer};
+    use rskrb5_ng::{client::AsRepSession, spnego::parse_negotiate_header};
+    use tokio::{
+        runtime::Builder as RuntimeBuilder,
+        sync::Mutex,
+        task::{JoinHandle, yield_now},
+        time::sleep,
     };
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
 
-    client.cache_service_ticket(service_session(120, b"service-long"));
-    client.cache_service_ticket(service_session(30, b"service-short"));
-    assert_eq!(
-        client
-            .cached_service_ticket(sample_service_principal())
-            .expect("longer service ticket remains")
-            .ticket
-            .as_slice(),
-        b"service-long"
-    );
-
-    client.cache_service_ticket(service_session(180, b"service-longer"));
-    assert_eq!(
-        client
-            .cached_service_ticket(sample_service_principal())
-            .expect("longer service ticket is selected")
-            .ticket
-            .as_slice(),
-        b"service-longer"
-    );
-    assert_eq!(client.cached_service_ticket_count(), 1);
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_clears_service_ticket_cache_without_dropping_tgt() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-    client.cache_service_ticket(service_ticket);
-
-    assert_eq!(client.cached_service_ticket_count(), 1);
-    client.clear_service_ticket_cache();
-
-    assert_eq!(client.cached_service_ticket_count(), 0);
-    assert_eq!(client.tgt_session().expect("TGT remains cached"), &tgt);
-}
-
-#[expect(
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    unused_results,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_cached_service_ticket_resolves_empty_realm_and_ignores_expired_entries() {
-    let tgt = sample_tgt_session();
-    let mut service_ticket = sample_service_ticket_session(&tgt);
-    let now = timestamp(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current time is after unix epoch")
-            .as_secs(),
-    );
-    service_ticket.start_time = now
-        .checked_sub(Duration::from_secs(10 * 60))
-        .expect("start time");
-    service_ticket.end_time = now.checked_sub(Duration::from_secs(60)).expect("end time");
-
-    let mut config = Config::new();
-    config
-        .domain_realm
-        .insert("host.test.gokrb5".to_owned(), "TEST.GOKRB5".to_owned());
-    let mut client = TokioClient::from_tgt_session(config, KdcProtocol::Tcp, tgt);
-    client.cache_service_ticket(service_ticket);
-
-    assert!(
-        client
-            .cached_service_ticket(Principal::new("", 2, ["HTTP", "host.test.gokrb5"]))
-            .is_none()
-    );
-    assert_eq!(client.cached_service_ticket_count(), 1);
-    assert!(
-        client
-            .remove_cached_service_ticket(Principal::new("", 2, ["HTTP", "host.test.gokrb5"]))
-            .is_some()
-    );
-    assert_eq!(client.cached_service_ticket_count(), 0);
-}
-
-#[expect(
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() {
-    let tgt = current_tgt_session(10, 50);
-    let now = SystemTime::now();
-    let expired_start = now
-        .checked_sub(Duration::from_secs(2 * 60 * 60))
-        .expect("expired start time");
-    let expired_end = now
-        .checked_sub(Duration::from_secs(60 * 60))
-        .expect("expired end time");
-    let future_renew_till = now
-        .checked_add(Duration::from_secs(60 * 60))
-        .expect("renew-till time");
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-
-    let mut expired_referral_tgt = sample_referral_tgt_session("EXPIRED.GOKRB5");
-    expired_referral_tgt.auth_time = expired_start;
-    expired_referral_tgt.start_time = expired_start;
-    expired_referral_tgt.end_time = expired_end;
-    expired_referral_tgt.renew_till = None;
-    client
-        .cache_tgt_session(expired_referral_tgt)
-        .expect("expired referral TGT caches");
-
-    let mut expired_service_ticket = sample_service_ticket_session(&tgt);
-    expired_service_ticket.service =
-        Principal::new("TEST.GOKRB5", 2, ["HTTP", "expired.test.gokrb5"]);
-    expired_service_ticket.start_time = expired_start;
-    expired_service_ticket.end_time = expired_end;
-    expired_service_ticket.renew_till = None;
-    client.cache_service_ticket(expired_service_ticket);
-
-    let mut renewable_service_ticket = sample_service_ticket_session(&tgt);
-    renewable_service_ticket.service =
-        Principal::new("TEST.GOKRB5", 2, ["HTTP", "renewable.test.gokrb5"]);
-    renewable_service_ticket.start_time = expired_start;
-    renewable_service_ticket.end_time = expired_end;
-    renewable_service_ticket.renew_till = Some(future_renew_till);
-    client.cache_service_ticket(renewable_service_ticket.clone());
-
-    let pruned = client.prune_unusable_sessions();
-
-    assert_eq!(
-        pruned,
-        PrunedSessions {
-            primary_tgt: false,
-            tgt_sessions: 1,
-            service_tickets: 1,
-        }
-    );
-    assert!(!pruned.is_empty());
-    assert_eq!(client.tgt_session_count(), 1);
-    assert!(client.tgt_session().is_some());
-    assert!(client.tgt_session_for_realm("EXPIRED.GOKRB5").is_none());
-    assert_eq!(client.cached_service_ticket_count(), 1);
-    assert!(
-        client
-            .cached_service_ticket(renewable_service_ticket.service.clone())
-            .is_none()
-    );
-    assert!(
-        client
-            .remove_cached_service_ticket(renewable_service_ticket.service)
-            .is_some()
-    );
-}
-
-#[expect(
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_prunes_expired_nonrenewable_primary_tgt() {
-    let mut tgt = current_tgt_session(70, 0);
-    tgt.renew_till = None;
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
-
-    let pruned = client.prune_unusable_sessions();
-
-    assert_eq!(
-        pruned,
-        PrunedSessions {
-            primary_tgt: true,
-            tgt_sessions: 1,
-            service_tickets: 0,
-        }
-    );
-    assert!(client.tgt_session().is_none());
-    assert_eq!(client.tgt_session_count(), 0);
-    assert!(client.prune_unusable_sessions().is_empty());
-    assert!(PrunedSessions::default().is_empty());
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_destroy_clears_credentials_sessions_and_cache() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt)
-        .with_password_credential(TESTUSER_PASSWORD);
-    client.cache_service_ticket(service_ticket);
-
-    client.destroy();
-
-    assert!(client.tgt_session().is_none());
-    assert_eq!(client.tgt_session_count(), 0);
-    assert_eq!(client.cached_service_ticket_count(), 0);
-    assert!(
-        client
-            .cached_service_ticket(sample_service_principal())
-            .is_none()
-    );
-    let error = runtime()
-        .block_on(client.login())
-        .expect_err("destroyed client has no credentials or TGT");
-    assert!(matches!(error, Error::NoClientCredentials));
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_from_ccache_ignores_other_client_credentials() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let default_client = ccache::Principal::new("TEST.GOKRB5", 1, vec!["testuser1".to_owned()]);
-    let other_client = ccache::Principal::new("OTHER.REALM", 1, vec!["other".to_owned()]);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-    let mut cache = ccache::CCache::new(default_client.clone());
-
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_current(&mut tgt_credential, now);
-    let mut service_credential = service_ticket
-        .to_ccache_credential()
-        .expect("service ticket converts");
-    make_credential_current(&mut service_credential, now);
-
-    let mut other_tgt = tgt_credential.clone();
-    other_tgt.client = other_client.clone();
-    other_tgt.server = ccache::Principal::new(
-        "OTHER.REALM",
-        2,
-        vec!["krbtgt".to_owned(), "OTHER.REALM".to_owned()],
-    );
-    other_tgt.key.value = vec![0xee];
-    other_tgt.times.end_time = now + 2 * 60 * 60;
-    other_tgt.times.renew_till = now + 3 * 60 * 60;
-
-    let mut other_service = service_credential.clone();
-    other_service.client = other_client;
-    other_service.server = ccache::Principal::new(
-        "OTHER.REALM",
-        2,
-        vec!["HTTP".to_owned(), "other.test.gokrb5".to_owned()],
-    );
-    other_service.key.value = vec![0xdd];
-
-    cache.credentials_mut().push(other_tgt);
-    cache
-        .credentials_mut()
-        .push(x_cacheconf_credential(&default_client));
-    cache.credentials_mut().push(tgt_credential);
-    cache.credentials_mut().push(other_service);
-    cache.credentials_mut().push(service_credential);
-
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let returned = runtime()
-        .block_on(client.get_service_ticket(sample_service_principal()))
-        .expect("default client's cached service ticket is returned");
-    let loaded_tgt = client.tgt_session().expect("TGT loaded");
-
-    assert_eq!(client.client_principal(), &tgt.client);
-    assert_eq!(loaded_tgt.client, tgt.client);
-    assert_eq!(loaded_tgt.service, tgt.service);
-    assert_eq!(loaded_tgt.session_key, tgt.session_key);
-    assert_eq!(client.cached_service_ticket_count(), 1);
-    assert_eq!(returned.session_key, service_ticket.session_key);
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_from_ccache_keeps_freshest_duplicate_service_ticket() {
-    let tgt = sample_tgt_session();
-    let mut fresh_service_ticket = sample_service_ticket_session(&tgt);
-    let mut older_service_ticket = fresh_service_ticket.clone();
-    fresh_service_ticket.session_key.value = vec![0xf1];
-    fresh_service_ticket.ticket = b"fresh-service-ticket".to_vec();
-    older_service_ticket.session_key.value = vec![0x0d];
-    older_service_ticket.ticket = b"older-service-ticket".to_vec();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_current(&mut tgt_credential, now);
-    let mut fresh_credential = fresh_service_ticket
-        .to_ccache_credential()
-        .expect("fresh service ticket converts");
-    make_credential_current(&mut fresh_credential, now);
-    fresh_credential.times.end_time = now + 2 * 60 * 60;
-    let mut older_credential = older_service_ticket
-        .to_ccache_credential()
-        .expect("older service ticket converts");
-    make_credential_current(&mut older_credential, now);
-    older_credential.times.end_time = now + 60;
-
-    cache.credentials_mut().push(tgt_credential);
-    cache.credentials_mut().push(fresh_credential);
-    cache.credentials_mut().push(older_credential);
-
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let returned = runtime()
-        .block_on(client.get_service_ticket(sample_service_principal()))
-        .expect("freshest cached service ticket is returned");
-
-    assert_eq!(client.cached_service_ticket_count(), 1);
-    assert_eq!(returned.session_key, fresh_service_ticket.session_key);
-    assert_eq!(returned.ticket, fresh_service_ticket.ticket);
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_from_ccache_prefers_current_tgt_over_future_duplicate() {
-    let mut current_tgt = sample_tgt_session();
-    let mut future_tgt = current_tgt.clone();
-    current_tgt.session_key.value = vec![0xc1];
-    future_tgt.session_key.value = vec![0xf1];
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut current_credential = current_tgt
-        .to_ccache_credential()
-        .expect("current TGT converts");
-    make_credential_current(&mut current_credential, now);
-    current_credential.times.end_time = now + 60 * 60;
-    let mut future_credential = future_tgt
-        .to_ccache_credential()
-        .expect("future TGT converts");
-    future_credential.times.auth_time = now;
-    future_credential.times.start_time = now + 60;
-    future_credential.times.end_time = now + 2 * 60 * 60;
-    future_credential.times.renew_till = now + 3 * 60 * 60;
-
-    cache.credentials_mut().push(current_credential);
-    cache.credentials_mut().push(future_credential);
-
-    let client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let loaded_tgt = client.tgt_session().expect("TGT loaded");
-
-    assert_eq!(loaded_tgt.session_key, current_tgt.session_key);
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_login_returns_current_cache_only_tgt() {
-    let tgt = sample_tgt_session();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_current(&mut tgt_credential, now);
-    cache.credentials_mut().push(tgt_credential);
-
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let session = runtime()
-        .block_on(client.login())
-        .expect("current cache-only TGT is returned");
-
-    assert_eq!(session.client, tgt.client);
-    assert_eq!(session.service, tgt.service);
-    assert_eq!(session.session_key, tgt.session_key);
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_affirm_login_returns_current_cache_only_tgt() {
-    let tgt = sample_tgt_session();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_current(&mut tgt_credential, now);
-    cache.credentials_mut().push(tgt_credential);
-
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let session = runtime()
-        .block_on(client.affirm_login())
-        .expect("current cache-only TGT is returned");
-
-    assert_eq!(session.client, tgt.client);
-    assert_eq!(session.service, tgt.service);
-    assert_eq!(session.session_key, tgt.session_key);
-}
-
-#[expect(
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_affirm_login_reuses_valid_tgt_with_attached_credentials() {
-    let mut tgt = sample_tgt_session();
-    let now = SystemTime::now();
-    tgt.auth_time = now
-        .checked_sub(Duration::from_secs(2 * 60))
-        .expect("auth time");
-    tgt.start_time = now
-        .checked_sub(Duration::from_secs(60))
-        .expect("start time");
-    tgt.end_time = now
-        .checked_add(Duration::from_secs(60 * 60))
-        .expect("end time");
-    tgt.renew_till = Some(
-        now.checked_add(Duration::from_secs(2 * 60 * 60))
-            .expect("renew time"),
-    );
-    let mut client = TokioClient::from_tgt_session(config_without_kdcs(), KdcProtocol::Tcp, tgt)
-        .with_password_credential(TESTUSER_PASSWORD);
-
-    let session = runtime()
-        .block_on(client.affirm_login())
-        .expect("valid TGT is reused without KDC endpoints");
-
-    assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-    assert_eq!(session.session_key.value, decode_hex(SESSION_KEY));
-}
-
-#[expect(
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_exposes_assume_preauthentication_setting() {
-    let client = TokioClient::with_password(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        TESTUSER_PASSWORD,
-    )
-    .with_assume_preauthentication(true);
-
-    assert!(client.assume_preauthentication());
-}
-
-#[expect(
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_exposes_fast_negotiation_setting() {
-    let client = TokioClient::with_password(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        TESTUSER_PASSWORD,
-    )
-    .with_fast_negotiation(false);
-
-    assert!(!client.fast_negotiation());
-}
-
-#[expect(
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_reports_tgt_refresh_due_window() {
-    let missing = TokioClient::with_password(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        TESTUSER_PASSWORD,
-    );
-    assert!(missing.tgt_refresh_due());
-
-    let fresh =
-        TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, current_tgt_session(10, 50));
-    assert!(!fresh.tgt_refresh_due());
-
-    let due =
-        TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, current_tgt_session(55, 5));
-    assert!(due.tgt_refresh_due());
-
-    let expired =
-        TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, current_tgt_session(70, 0));
-    assert!(expired.tgt_refresh_due());
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_refresh_tgt_if_needed_reuses_fresh_cache_only_tgt() {
-    let tgt = current_tgt_session(10, 50);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-
-    let refreshed = runtime()
-        .block_on(client.refresh_tgt_if_needed())
-        .expect("fresh cache-only TGT is reused");
-
-    assert_eq!(refreshed.session_key, tgt.session_key);
-    assert_eq!(refreshed.ticket, tgt.ticket);
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::missing_panics_doc,
-    clippy::std_instead_of_alloc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_auto_renewal_handle_aborts() {
-    runtime().block_on(async {
-        let client = std::sync::Arc::new(tokio::sync::Mutex::new(TokioClient::from_tgt_session(
-            Config::new(),
-            KdcProtocol::Tcp,
-            current_tgt_session(10, 50),
-        )));
-        let renewal = TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(10));
-
-        assert!(!renewal.is_finished());
-        renewal.abort();
-        tokio::task::yield_now().await;
-    });
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_validates_configuration() {
-    let mut dns_config = Config::new();
-    dns_config.libdefaults.dns_lookup_kdc = true;
-    let configured = TokioClient::with_password(
-        dns_config,
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        TESTUSER_PASSWORD,
-    );
-    assert!(configured.is_configured());
-    configured
-        .validate_configuration()
-        .expect("password-backed client with DNS KDC lookup is configured");
-
-    let missing_name = TokioClient::with_password(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", ""),
-        TESTUSER_PASSWORD,
-    );
-    assert!(!missing_name.is_configured());
-    assert!(matches!(
-        missing_name.validate_configuration(),
-        Err(Error::MissingClientName)
-    ));
-
-    let missing_realm = TokioClient::with_password(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("", "testuser1"),
-        TESTUSER_PASSWORD,
-    );
-    assert!(!missing_realm.is_configured());
-    assert!(matches!(
-        missing_realm.validate_configuration(),
-        Err(Error::MissingClientRealm)
-    ));
-
-    let mut missing_credentials =
-        TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session());
-    missing_credentials.destroy();
-    assert!(!missing_credentials.is_configured());
-    assert!(matches!(
-        missing_credentials.validate_configuration(),
-        Err(Error::NoClientCredentials)
-    ));
-
-    let missing_kdc = TokioClient::with_password(
-        config_without_kdcs(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        TESTUSER_PASSWORD,
-    );
-    assert!(!missing_kdc.is_configured());
-    assert!(matches!(
-        missing_kdc.validate_configuration(),
-        Err(Error::NoConfiguredKdc { realm }) if realm == "TEST.GOKRB5"
-    ));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[test]
-fn tokio_client_diagnostics_reports_keytab_and_kdc_state() {
-    let client = TokioClient::with_keytab(
-        config_with_kdc(),
-        KdcProtocol::Auto,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-        keytab_with_reply_key(1),
-    );
-
-    let diagnostics = runtime().block_on(client.diagnostics());
-
-    assert_eq!(diagnostics.client, "testuser1");
-    assert_eq!(diagnostics.realm, "TEST.GOKRB5");
-    assert_eq!(diagnostics.protocol, "Auto");
-    assert_eq!(diagnostics.credential_source, "keytab");
-    assert!(!diagnostics.has_tgt);
-    assert_eq!(diagnostics.tgt_session_count, 0);
-    assert_eq!(diagnostics.service_ticket_cache_count, 0);
-    assert_eq!(diagnostics.default_tkt_enctypes, [18, 17]);
-    assert_eq!(diagnostics.preferred_preauth_types, [18, 17]);
-    assert_eq!(diagnostics.keytab_enctypes, [18]);
-    assert_eq!(diagnostics.udp_kdcs, ["kdc.test.gokrb5:88"]);
-    assert_eq!(diagnostics.tcp_kdcs, ["kdc.test.gokrb5:88"]);
-    assert_eq!(
-        diagnostics.errors,
-        [
-            "default_tkt_enctypes specifies 17 but this enctype is not available in the client's keytab",
-            "preferred_preauth_types specifies 17 but this enctype is not available in the client's keytab",
-        ]
-    );
-    assert!(!diagnostics.is_ok());
-
-    let json = runtime()
-        .block_on(client.diagnostics_json())
-        .expect("diagnostics JSON renders");
-    assert!(json.contains(r#""CredentialSource": "keytab""#));
-    assert!(json.contains(r#""UDPKDCs": ["#));
-    assert!(json.contains(r#""TCPKDCs": ["#));
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_login_rejects_expired_cache_only_tgt() {
-    let tgt = sample_tgt_session();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_expired(&mut tgt_credential, now);
-    cache.credentials_mut().push(tgt_credential);
-
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let error = runtime()
-        .block_on(client.login())
-        .expect_err("expired cache-only TGT is not returned");
-
-    assert!(matches!(error, Error::NoClientCredentials));
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_from_ccache_prefers_current_service_ticket_over_future_duplicate() {
-    let tgt = sample_tgt_session();
-    let mut current_service_ticket = sample_service_ticket_session(&tgt);
-    let mut future_service_ticket = current_service_ticket.clone();
-    current_service_ticket.session_key.value = vec![0xc2];
-    current_service_ticket.ticket = b"current-service-ticket".to_vec();
-    future_service_ticket.session_key.value = vec![0xf2];
-    future_service_ticket.ticket = b"future-service-ticket".to_vec();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_current(&mut tgt_credential, now);
-    let mut current_credential = current_service_ticket
-        .to_ccache_credential()
-        .expect("current service ticket converts");
-    make_credential_current(&mut current_credential, now);
-    current_credential.times.end_time = now + 60 * 60;
-    let mut future_credential = future_service_ticket
-        .to_ccache_credential()
-        .expect("future service ticket converts");
-    future_credential.times.auth_time = now;
-    future_credential.times.start_time = now + 60;
-    future_credential.times.end_time = now + 2 * 60 * 60;
-    future_credential.times.renew_till = now + 3 * 60 * 60;
-
-    cache.credentials_mut().push(tgt_credential);
-    cache.credentials_mut().push(current_credential);
-    cache.credentials_mut().push(future_credential);
-
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let returned = runtime()
-        .block_on(client.get_service_ticket(sample_service_principal()))
-        .expect("current cached service ticket is returned");
-
-    assert_eq!(client.cached_service_ticket_count(), 1);
-    assert_eq!(returned.session_key, current_service_ticket.session_key);
-    assert_eq!(returned.ticket, current_service_ticket.ticket);
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_from_ccache_rejects_expired_tgt_without_live_credentials() {
-    let tgt = sample_tgt_session();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_expired(&mut tgt_credential, now);
-    cache.credentials_mut().push(tgt_credential);
-
-    let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    let error = runtime()
-        .block_on(client.get_service_ticket(sample_service_principal()))
-        .expect_err("expired cache-only TGT cannot acquire a service ticket");
-
-    assert!(matches!(error, Error::NoClientCredentials));
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_from_ccache_rejects_expired_service_ticket() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_secs() as u32;
-
-    let mut cache = ccache::CCache::new(ccache::Principal::new(
-        "TEST.GOKRB5",
-        1,
-        vec!["testuser1".to_owned()],
-    ));
-    let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-    make_credential_current(&mut tgt_credential, now);
-    let mut service_credential = service_ticket
-        .to_ccache_credential()
-        .expect("service ticket converts");
-    make_credential_expired(&mut service_credential, now);
-    cache.credentials_mut().push(tgt_credential);
-    cache.credentials_mut().push(service_credential);
-
-    let mut client = TokioClient::from_ccache(config_without_kdcs(), KdcProtocol::Tcp, &cache);
-    let error = runtime()
-        .block_on(client.get_service_ticket(sample_service_principal()))
-        .expect_err("expired service ticket is not returned from cache");
-
-    assert!(matches!(
-        error,
-        Error::NoKdcEndpoints {
-            realm,
-            protocol: KdcProtocol::Tcp,
-        } if realm == "TEST.GOKRB5"
-    ));
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_renews_expired_renewable_cached_service_ticket() {
-    runtime().block_on(async {
-        let tgt = sample_tgt_session();
-        let mut service_ticket = sample_service_ticket_session(&tgt);
-        service_ticket.session_key.value = vec![0x44; 32];
-        let cached_session_key = service_ticket.session_key.clone();
-        let renewal_reply_key = service_ticket.session_key.clone();
-        let now = SystemTime::now();
+    use super::*;
+
+    /// Pins that a service ticket loaded from a ccache is served from the cache.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_returns_cached_service_ticket_from_ccache() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_current(&mut tgt_credential, now)?;
+        let mut service_credential = service_ticket
+            .to_ccache_credential()
+            .context("service ticket converts")?;
+        // MIT kvno can store host-based service tickets as NT-PRINCIPAL in ccache.
+        service_credential.server.name_type = 1_i32;
+        make_credential_current(&mut service_credential, now)?;
+        cache.credentials_mut().push(tgt_credential);
+        cache.credentials_mut().push(service_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let returned = runtime()?
+            .block_on(client.get_service_ticket(sample_service_principal()))
+            .context("cached service ticket is returned")?;
+
+        assert_eq!(
+            client.tgt_session().context("TGT loaded")?.service,
+            tgt.service
+        );
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        assert_eq!(returned.client, service_ticket.client);
+        assert_eq!(returned.service, service_ticket.service);
+        assert_eq!(returned.session_key, service_ticket.session_key);
+        assert_eq!(returned.ticket, service_ticket.ticket);
+        Ok(())
+    }
+
+    /// Pins that the Tokio client exposes a cached service ticket and removes it on request.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_exposes_and_removes_cached_service_ticket() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let mut service_ticket = sample_service_ticket_session(&tgt)?;
+        let now = timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
         service_ticket.start_time = now
-            .checked_sub(Duration::from_secs(2 * 60 * 60))
-            .expect("expired start time");
+            .checked_sub(Duration::from_mins(1))
+            .context("start time")?;
         service_ticket.end_time = now
-            .checked_sub(Duration::from_secs(60 * 60))
-            .expect("expired end time");
-        service_ticket.renew_till = Some(
-            now.checked_add(Duration::from_secs(60 * 60))
-                .expect("renew-till time"),
-        );
-
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind local KDC listener");
-        let addr = listener.local_addr().expect("local listener address");
-        let mut client = TokioClient::from_tgt_session(
-            config_with_kdc_server(addr.to_string()),
-            KdcProtocol::Tcp,
-            tgt,
-        );
+            .checked_add(Duration::from_hours(1))
+            .context("end time")?;
+        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(service_ticket.clone());
-        assert_eq!(client.cached_service_ticket_count(), 1);
 
-        let task = tokio::spawn(async move {
-            let (request, mut socket) = read_tcp_kdc_request(&listener).await;
-            let decoded: rasn_kerberos::TgsReq =
-                rasn::der::decode(&request).expect("TGS-REQ decodes");
-            let body = &decoded.0.req_body;
-            let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
-            assert_eq!(
-                body.kdc_options.0.as_raw_slice(),
-                expected_options.to_be_bytes().as_slice()
-            );
-            assert_eq!(
-                principal_from_parts(&body.realm, body.sname.as_ref().expect("sname")),
-                sample_service_principal()
-            );
-
-            let built = built_tgs_request_from_der(decoded, &request);
-            let response = synthetic_tgs_rep(&built, built.nonce, &renewal_reply_key);
-            write_tcp_kdc_response(&mut socket, &response).await;
-        });
-
-        let renewed = client
-            .get_service_ticket(sample_service_principal())
-            .await
-            .expect("renewable cached service ticket renews");
-        task.await.expect("KDC task succeeds");
-
-        assert_eq!(renewed.service, sample_service_principal());
-        assert_eq!(hex_encode(&renewed.session_key.value), SERVICE_SESSION_KEY);
-        assert_eq!(client.cached_service_ticket_count(), 1);
         let cached = client
-            .remove_cached_service_ticket(sample_service_principal())
-            .expect("renewed service ticket is cached");
-        assert_eq!(cached.session_key, renewed.session_key);
-        assert_ne!(cached.session_key, cached_session_key);
-    });
-}
+            .cached_service_ticket(sample_service_principal())
+            .context("valid cached service ticket is returned")?;
+        assert_eq!(cached.service, service_ticket.service);
+        assert_eq!(cached.session_key, service_ticket.session_key);
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_renews_ccache_loaded_renewable_service_ticket() {
-    runtime().block_on(async {
-        let tgt = sample_tgt_session();
-        let mut service_ticket = sample_service_ticket_session(&tgt);
-        service_ticket.session_key.value = vec![0x46; 32];
-        let cached_session_key = service_ticket.session_key.clone();
-        let renewal_reply_key = service_ticket.session_key.clone();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current time is after unix epoch")
-            .as_secs() as u32;
+        let removed = client
+            .remove_cached_service_ticket(sample_service_principal())
+            .context("cached service ticket is removed")?;
+        assert_eq!(removed.ticket, service_ticket.ticket);
+        assert_eq!(client.cached_service_ticket_count(), 0);
+        assert!(
+            client
+                .cached_service_ticket(sample_service_principal())
+                .is_none()
+        );
+        Ok(())
+    }
+
+    /// Pins that the service-ticket cache keeps the ticket with the latest end time.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_prefers_freshest_cached_service_ticket() -> Result<(), TestError> {
+        let tgt = current_tgt_session(5, 180)?;
+        let service_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
+            let now = SystemTime::now();
+            let mut service_ticket = sample_service_ticket_session(&tgt)?;
+            service_ticket.ticket = ticket.to_vec();
+            service_ticket.auth_time = now
+                .checked_sub(Duration::from_mins(5))
+                .context("auth time")?;
+            service_ticket.start_time = service_ticket.auth_time;
+            service_ticket.end_time = now
+                .checked_add(Duration::from_mins(remaining_minutes))
+                .context("end time")?;
+            service_ticket.renew_till = Some(
+                now.checked_add(Duration::from_hours(24))
+                    .context("renew time")?,
+            );
+            Ok(service_ticket)
+        };
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+
+        client.cache_service_ticket(service_session(120, b"service-long")?);
+        client.cache_service_ticket(service_session(30, b"service-short")?);
+        assert_eq!(
+            client
+                .cached_service_ticket(sample_service_principal())
+                .context("longer service ticket remains")?
+                .ticket
+                .as_slice(),
+            b"service-long"
+        );
+
+        client.cache_service_ticket(service_session(180, b"service-longer")?);
+        assert_eq!(
+            client
+                .cached_service_ticket(sample_service_principal())
+                .context("longer service ticket is selected")?
+                .ticket
+                .as_slice(),
+            b"service-longer"
+        );
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        Ok(())
+    }
+
+    /// Pins that clearing the service-ticket cache keeps the TGT.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_clears_service_ticket_cache_without_dropping_tgt() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        client.cache_service_ticket(service_ticket);
+
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        client.clear_service_ticket_cache();
+
+        assert_eq!(client.cached_service_ticket_count(), 0);
+        assert_eq!(client.tgt_session().context("TGT remains cached")?, &tgt);
+        Ok(())
+    }
+
+    /// Pins that cached-ticket lookup resolves an empty realm and skips expired tickets.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_cached_service_ticket_resolves_empty_realm_and_ignores_expired_entries()
+    -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let mut service_ticket = sample_service_ticket_session(&tgt)?;
+        let now = timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+        service_ticket.start_time = now
+            .checked_sub(Duration::from_mins(10))
+            .context("start time")?;
+        service_ticket.end_time = now
+            .checked_sub(Duration::from_mins(1))
+            .context("end time")?;
+
+        let mut config = Config::new();
+        drop(
+            config
+                .domain_realm
+                .insert("host.test.gokrb5".to_owned(), "TEST.GOKRB5".to_owned()),
+        );
+        let mut client = TokioClient::from_tgt_session(config, KdcProtocol::Tcp, tgt);
+        client.cache_service_ticket(service_ticket);
+
+        assert!(
+            client
+                .cached_service_ticket(Principal::new("", 2, ["HTTP", "host.test.gokrb5"]))
+                .is_none()
+        );
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        assert!(
+            client
+                .remove_cached_service_ticket(Principal::new("", 2, ["HTTP", "host.test.gokrb5"]))
+                .is_some()
+        );
+        assert_eq!(client.cached_service_ticket_count(), 0);
+        Ok(())
+    }
+
+    /// Pins that pruning drops unusable sessions and keeps renewable ones.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() -> Result<(), TestError>
+    {
+        let tgt = current_tgt_session(10, 50)?;
+        let now = SystemTime::now();
+        let expired_start = now
+            .checked_sub(Duration::from_hours(2))
+            .context("expired start time")?;
+        let expired_end = now
+            .checked_sub(Duration::from_hours(1))
+            .context("expired end time")?;
+        let future_renew_till = now
+            .checked_add(Duration::from_hours(1))
+            .context("renew-till time")?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+
+        let mut expired_referral_tgt = sample_referral_tgt_session("EXPIRED.GOKRB5")?;
+        expired_referral_tgt.auth_time = expired_start;
+        expired_referral_tgt.start_time = expired_start;
+        expired_referral_tgt.end_time = expired_end;
+        expired_referral_tgt.renew_till = None;
+        client
+            .cache_tgt_session(expired_referral_tgt)
+            .context("expired referral TGT caches")?;
+
+        let mut expired_service_ticket = sample_service_ticket_session(&tgt)?;
+        expired_service_ticket.service =
+            Principal::new("TEST.GOKRB5", 2, ["HTTP", "expired.test.gokrb5"]);
+        expired_service_ticket.start_time = expired_start;
+        expired_service_ticket.end_time = expired_end;
+        expired_service_ticket.renew_till = None;
+        client.cache_service_ticket(expired_service_ticket);
+
+        let mut renewable_service_ticket = sample_service_ticket_session(&tgt)?;
+        renewable_service_ticket.service =
+            Principal::new("TEST.GOKRB5", 2, ["HTTP", "renewable.test.gokrb5"]);
+        renewable_service_ticket.start_time = expired_start;
+        renewable_service_ticket.end_time = expired_end;
+        renewable_service_ticket.renew_till = Some(future_renew_till);
+        client.cache_service_ticket(renewable_service_ticket.clone());
+
+        let pruned = client.prune_unusable_sessions();
+
+        assert_eq!(
+            pruned,
+            PrunedSessions {
+                primary_tgt: false,
+                tgt_sessions: 1,
+                service_tickets: 1,
+            }
+        );
+        assert!(!pruned.is_empty(), "pruning reports the removed sessions");
+        assert_eq!(client.tgt_session_count(), 1);
+        assert!(client.tgt_session().is_some());
+        assert!(client.tgt_session_for_realm("EXPIRED.GOKRB5").is_none());
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        assert!(
+            client
+                .cached_service_ticket(renewable_service_ticket.service.clone())
+                .is_none()
+        );
+        assert!(
+            client
+                .remove_cached_service_ticket(renewable_service_ticket.service)
+                .is_some()
+        );
+        Ok(())
+    }
+
+    /// Pins that pruning drops an expired, non-renewable primary TGT.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_prunes_expired_nonrenewable_primary_tgt() -> Result<(), TestError> {
+        let mut tgt = current_tgt_session(70, 0)?;
+        tgt.renew_till = None;
+        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
+
+        let pruned = client.prune_unusable_sessions();
+
+        assert_eq!(
+            pruned,
+            PrunedSessions {
+                primary_tgt: true,
+                tgt_sessions: 1,
+                service_tickets: 0,
+            }
+        );
+        assert!(client.tgt_session().is_none());
+        assert_eq!(client.tgt_session_count(), 0);
+        assert!(
+            client.prune_unusable_sessions().is_empty(),
+            "a second prune removes nothing"
+        );
+        assert!(
+            PrunedSessions::default().is_empty(),
+            "the default prune report is empty"
+        );
+        Ok(())
+    }
+
+    /// Pins that destroying the client clears its credentials, sessions and ticket cache.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_destroy_clears_credentials_sessions_and_cache() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt)
+            .with_password_credential(TESTUSER_PASSWORD);
+        client.cache_service_ticket(service_ticket);
+
+        client.destroy();
+
+        assert!(client.tgt_session().is_none());
+        assert_eq!(client.tgt_session_count(), 0);
+        assert_eq!(client.cached_service_ticket_count(), 0);
+        assert!(
+            client
+                .cached_service_ticket(sample_service_principal())
+                .is_none()
+        );
+        let error = runtime()?
+            .block_on(client.login())
+            .err()
+            .context("destroyed client has no credentials or TGT")?;
+        assert!(matches!(error, Error::NoClientCredentials));
+        Ok(())
+    }
+
+    /// Pins that loading a ccache ignores credentials of other clients.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_from_ccache_ignores_other_client_credentials() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let default_client = ccache::Principal::new("TEST.GOKRB5", 1, vec!["testuser1".to_owned()]);
+        let other_client = ccache::Principal::new("OTHER.REALM", 1, vec!["other".to_owned()]);
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+        let mut cache = ccache::CCache::new(default_client.clone());
+
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_current(&mut tgt_credential, now)?;
+        let mut service_credential = service_ticket
+            .to_ccache_credential()
+            .context("service ticket converts")?;
+        make_credential_current(&mut service_credential, now)?;
+
+        let mut other_tgt = tgt_credential.clone();
+        other_tgt.client = other_client.clone();
+        other_tgt.server = ccache::Principal::new(
+            "OTHER.REALM",
+            2,
+            vec!["krbtgt".to_owned(), "OTHER.REALM".to_owned()],
+        );
+        other_tgt.key.value = vec![0xee];
+        other_tgt.times.end_time = now + 2 * 60 * 60;
+        other_tgt.times.renew_till = now + 3 * 60 * 60;
+
+        let mut other_service = service_credential.clone();
+        other_service.client = other_client;
+        other_service.server = ccache::Principal::new(
+            "OTHER.REALM",
+            2,
+            vec!["HTTP".to_owned(), "other.test.gokrb5".to_owned()],
+        );
+        other_service.key.value = vec![0xdd];
+
+        cache.credentials_mut().push(other_tgt);
+        cache
+            .credentials_mut()
+            .push(x_cacheconf_credential(&default_client));
+        cache.credentials_mut().push(tgt_credential);
+        cache.credentials_mut().push(other_service);
+        cache.credentials_mut().push(service_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let returned = runtime()?
+            .block_on(client.get_service_ticket(sample_service_principal()))
+            .context("default client's cached service ticket is returned")?;
+        let loaded_tgt = client.tgt_session().context("TGT loaded")?;
+
+        assert_eq!(client.client_principal(), &tgt.client);
+        assert_eq!(loaded_tgt.client, tgt.client);
+        assert_eq!(loaded_tgt.service, tgt.service);
+        assert_eq!(loaded_tgt.session_key, tgt.session_key);
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        assert_eq!(returned.session_key, service_ticket.session_key);
+        Ok(())
+    }
+
+    /// Pins that loading a ccache keeps the freshest of duplicate service tickets.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_from_ccache_keeps_freshest_duplicate_service_ticket() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let mut fresh_service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut older_service_ticket = fresh_service_ticket.clone();
+        fresh_service_ticket.session_key.value = vec![0xf1];
+        fresh_service_ticket.ticket = b"fresh-service-ticket".to_vec();
+        older_service_ticket.session_key.value = vec![0x0d];
+        older_service_ticket.ticket = b"older-service-ticket".to_vec();
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
 
         let mut cache = ccache::CCache::new(ccache::Principal::new(
             "TEST.GOKRB5",
             1,
             vec!["testuser1".to_owned()],
         ));
-        let mut tgt_credential = tgt.to_ccache_credential().expect("TGT converts");
-        make_credential_current(&mut tgt_credential, now);
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_current(&mut tgt_credential, now)?;
+        let mut fresh_credential = fresh_service_ticket
+            .to_ccache_credential()
+            .context("fresh service ticket converts")?;
+        make_credential_current(&mut fresh_credential, now)?;
+        fresh_credential.times.end_time = now + 2 * 60 * 60;
+        let mut older_credential = older_service_ticket
+            .to_ccache_credential()
+            .context("older service ticket converts")?;
+        make_credential_current(&mut older_credential, now)?;
+        older_credential.times.end_time = now + 60;
+
+        cache.credentials_mut().push(tgt_credential);
+        cache.credentials_mut().push(fresh_credential);
+        cache.credentials_mut().push(older_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let returned = runtime()?
+            .block_on(client.get_service_ticket(sample_service_principal()))
+            .context("freshest cached service ticket is returned")?;
+
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        assert_eq!(returned.session_key, fresh_service_ticket.session_key);
+        assert_eq!(returned.ticket, fresh_service_ticket.ticket);
+        Ok(())
+    }
+
+    /// Pins that loading a ccache prefers a current TGT over a not-yet-valid duplicate.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_from_ccache_prefers_current_tgt_over_future_duplicate() -> Result<(), TestError>
+    {
+        let mut current_tgt = sample_tgt_session()?;
+        let mut future_tgt = current_tgt.clone();
+        current_tgt.session_key.value = vec![0xc1];
+        future_tgt.session_key.value = vec![0xf1];
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let mut current_credential = current_tgt
+            .to_ccache_credential()
+            .context("current TGT converts")?;
+        make_credential_current(&mut current_credential, now)?;
+        current_credential.times.end_time = now + 60 * 60;
+        let mut future_credential = future_tgt
+            .to_ccache_credential()
+            .context("future TGT converts")?;
+        future_credential.times.auth_time = now;
+        future_credential.times.start_time = now + 60;
+        future_credential.times.end_time = now + 2 * 60 * 60;
+        future_credential.times.renew_till = now + 3 * 60 * 60;
+
+        cache.credentials_mut().push(current_credential);
+        cache.credentials_mut().push(future_credential);
+
+        let client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let loaded_tgt = client.tgt_session().context("TGT loaded")?;
+
+        assert_eq!(loaded_tgt.session_key, current_tgt.session_key);
+        Ok(())
+    }
+
+    /// Pins that login returns a current TGT of a cache-only client without a KDC.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_login_returns_current_cache_only_tgt() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_current(&mut tgt_credential, now)?;
+        cache.credentials_mut().push(tgt_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let session = runtime()?
+            .block_on(client.login())
+            .context("current cache-only TGT is returned")?;
+
+        assert_eq!(session.client, tgt.client);
+        assert_eq!(session.service, tgt.service);
+        assert_eq!(session.session_key, tgt.session_key);
+        Ok(())
+    }
+
+    /// Pins that `affirm_login` returns a current TGT of a cache-only client without a KDC.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_affirm_login_returns_current_cache_only_tgt() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_current(&mut tgt_credential, now)?;
+        cache.credentials_mut().push(tgt_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let session = runtime()?
+            .block_on(client.affirm_login())
+            .context("current cache-only TGT is returned")?;
+
+        assert_eq!(session.client, tgt.client);
+        assert_eq!(session.service, tgt.service);
+        assert_eq!(session.session_key, tgt.session_key);
+        Ok(())
+    }
+
+    /// Pins that `affirm_login` reuses a valid TGT even when credentials are attached.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_affirm_login_reuses_valid_tgt_with_attached_credentials()
+    -> Result<(), TestError> {
+        let mut tgt = sample_tgt_session()?;
+        let now = SystemTime::now();
+        tgt.auth_time = now
+            .checked_sub(Duration::from_mins(2))
+            .context("auth time")?;
+        tgt.start_time = now
+            .checked_sub(Duration::from_mins(1))
+            .context("start time")?;
+        tgt.end_time = now
+            .checked_add(Duration::from_hours(1))
+            .context("end time")?;
+        tgt.renew_till = Some(
+            now.checked_add(Duration::from_hours(2))
+                .context("renew time")?,
+        );
+        let mut client =
+            TokioClient::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt)
+                .with_password_credential(TESTUSER_PASSWORD);
+
+        let session = runtime()?
+            .block_on(client.affirm_login())
+            .context("valid TGT is reused without KDC endpoints")?;
+
+        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.session_key.value, decode_hex(SESSION_KEY)?);
+        Ok(())
+    }
+
+    /// Pins that the Tokio client reports the assume-pre-authentication setting.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_exposes_assume_preauthentication_setting() {
+        assert!(
+            password_client()
+                .with_assume_preauthentication(true)
+                .assume_preauthentication()
+        );
+    }
+
+    /// Pins that the Tokio client reports the FAST negotiation setting.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_exposes_fast_negotiation_setting() {
+        assert!(
+            !password_client()
+                .with_fast_negotiation(false)
+                .fast_negotiation()
+        );
+    }
+
+    /// A Tokio client of `testuser1` with the test password and no KDC.
+    #[cfg(feature = "tokio")]
+    fn password_client() -> TokioClient {
+        TokioClient::with_password(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            TESTUSER_PASSWORD,
+        )
+    }
+
+    /// Pins the window in which the Tokio client reports its TGT refresh as due.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_reports_tgt_refresh_due_window() -> Result<(), TestError> {
+        let missing = TokioClient::with_password(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            TESTUSER_PASSWORD,
+        );
+        assert!(missing.tgt_refresh_due());
+
+        let fresh = TokioClient::from_tgt_session(
+            Config::new(),
+            KdcProtocol::Tcp,
+            current_tgt_session(10, 50)?,
+        );
+        assert!(!fresh.tgt_refresh_due());
+
+        let due = TokioClient::from_tgt_session(
+            Config::new(),
+            KdcProtocol::Tcp,
+            current_tgt_session(55, 5)?,
+        );
+        assert!(due.tgt_refresh_due());
+
+        let expired = TokioClient::from_tgt_session(
+            Config::new(),
+            KdcProtocol::Tcp,
+            current_tgt_session(70, 0)?,
+        );
+        assert!(expired.tgt_refresh_due());
+        Ok(())
+    }
+
+    /// Pins that a refresh reuses a fresh TGT of a cache-only client.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_refresh_tgt_if_needed_reuses_fresh_cache_only_tgt() -> Result<(), TestError> {
+        let tgt = current_tgt_session(10, 50)?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+
+        let refreshed = runtime()?
+            .block_on(client.refresh_tgt_if_needed())
+            .context("fresh cache-only TGT is reused")?;
+
+        assert_eq!(refreshed.session_key, tgt.session_key);
+        assert_eq!(refreshed.ticket, tgt.ticket);
+        Ok(())
+    }
+
+    /// Pins that the auto-renewal handle aborts its task.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_auto_renewal_handle_aborts() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
+                Config::new(),
+                KdcProtocol::Tcp,
+                current_tgt_session(10, 50)?,
+            )));
+            let renewal =
+                TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(10));
+
+            assert!(!renewal.is_finished());
+            renewal.abort();
+            yield_now().await;
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
+
+    /// Pins that configuration validation reports a realm without a configured KDC.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_validates_configuration() -> Result<(), TestError> {
+        let mut dns_config = Config::new();
+        dns_config.libdefaults.dns_lookup_kdc = true;
+        let configured = TokioClient::with_password(
+            dns_config,
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            TESTUSER_PASSWORD,
+        );
+        assert!(configured.is_configured());
+        configured
+            .validate_configuration()
+            .context("password-backed client with DNS KDC lookup is configured")?;
+
+        let missing_name = TokioClient::with_password(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", ""),
+            TESTUSER_PASSWORD,
+        );
+        assert!(!missing_name.is_configured());
+        assert!(matches!(
+            missing_name.validate_configuration(),
+            Err(Error::MissingClientName)
+        ));
+
+        let missing_realm = TokioClient::with_password(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("", "testuser1"),
+            TESTUSER_PASSWORD,
+        );
+        assert!(!missing_realm.is_configured());
+        assert!(matches!(
+            missing_realm.validate_configuration(),
+            Err(Error::MissingClientRealm)
+        ));
+
+        let mut missing_credentials =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session()?);
+        missing_credentials.destroy();
+        assert!(!missing_credentials.is_configured());
+        assert!(matches!(
+            missing_credentials.validate_configuration(),
+            Err(Error::NoClientCredentials)
+        ));
+
+        let missing_kdc = TokioClient::with_password(
+            config_without_kdcs()?,
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            TESTUSER_PASSWORD,
+        );
+        assert!(!missing_kdc.is_configured());
+        assert!(matches!(
+            missing_kdc.validate_configuration(),
+            Err(Error::NoConfiguredKdc { realm }) if realm == "TEST.GOKRB5"
+        ));
+        Ok(())
+    }
+
+    /// Pins that client diagnostics report the keytab and the KDC state.
+    #[cfg(all(feature = "tokio", feature = "serde"))]
+    #[test]
+    fn tokio_client_diagnostics_reports_keytab_and_kdc_state() -> Result<(), TestError> {
+        let client = TokioClient::with_keytab(
+            config_with_kdc()?,
+            KdcProtocol::Auto,
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            keytab_with_reply_key(1)?,
+        );
+
+        let diagnostics = runtime()?.block_on(client.diagnostics());
+
+        assert_eq!(diagnostics.client, "testuser1");
+        assert_eq!(diagnostics.realm, "TEST.GOKRB5");
+        assert_eq!(diagnostics.protocol, "Auto");
+        assert_eq!(diagnostics.credential_source, "keytab");
+        assert!(!diagnostics.has_tgt);
+        assert_eq!(diagnostics.tgt_session_count, 0);
+        assert_eq!(diagnostics.service_ticket_cache_count, 0);
+        assert_eq!(diagnostics.default_tkt_enctypes, [18_i32, 17_i32]);
+        assert_eq!(diagnostics.preferred_preauth_types, [18_i32, 17_i32]);
+        assert_eq!(diagnostics.keytab_enctypes, [18_i32]);
+        assert_eq!(diagnostics.udp_kdcs, ["kdc.test.gokrb5:88"]);
+        assert_eq!(diagnostics.tcp_kdcs, ["kdc.test.gokrb5:88"]);
+        assert_eq!(
+            diagnostics.errors,
+            [
+                "default_tkt_enctypes specifies 17 but this enctype is not available in the client's keytab",
+                "preferred_preauth_types specifies 17 but this enctype is not available in the client's keytab",
+            ]
+        );
+        assert!(!diagnostics.is_ok());
+
+        let json = runtime()?
+            .block_on(client.diagnostics_json())
+            .context("diagnostics JSON renders")?;
+        assert!(json.contains(r#""CredentialSource": "keytab""#));
+        assert!(json.contains(r#""UDPKDCs": ["#));
+        assert!(json.contains(r#""TCPKDCs": ["#));
+        Ok(())
+    }
+
+    /// Pins that login rejects an expired TGT of a cache-only client.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_login_rejects_expired_cache_only_tgt() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_expired(&mut tgt_credential, now)?;
+        cache.credentials_mut().push(tgt_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let error = runtime()?
+            .block_on(client.login())
+            .err()
+            .context("expired cache-only TGT is not returned")?;
+
+        assert!(matches!(error, Error::NoClientCredentials));
+        Ok(())
+    }
+
+    /// Pins that loading a ccache prefers a current service ticket over a not-yet-valid duplicate.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_from_ccache_prefers_current_service_ticket_over_future_duplicate()
+    -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let mut current_service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut future_service_ticket = current_service_ticket.clone();
+        current_service_ticket.session_key.value = vec![0xc2];
+        current_service_ticket.ticket = b"current-service-ticket".to_vec();
+        future_service_ticket.session_key.value = vec![0xf2];
+        future_service_ticket.ticket = b"future-service-ticket".to_vec();
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_current(&mut tgt_credential, now)?;
+        let mut current_credential = current_service_ticket
+            .to_ccache_credential()
+            .context("current service ticket converts")?;
+        make_credential_current(&mut current_credential, now)?;
+        current_credential.times.end_time = now + 60 * 60;
+        let mut future_credential = future_service_ticket
+            .to_ccache_credential()
+            .context("future service ticket converts")?;
+        future_credential.times.auth_time = now;
+        future_credential.times.start_time = now + 60;
+        future_credential.times.end_time = now + 2 * 60 * 60;
+        future_credential.times.renew_till = now + 3 * 60 * 60;
+
+        cache.credentials_mut().push(tgt_credential);
+        cache.credentials_mut().push(current_credential);
+        cache.credentials_mut().push(future_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let returned = runtime()?
+            .block_on(client.get_service_ticket(sample_service_principal()))
+            .context("current cached service ticket is returned")?;
+
+        assert_eq!(client.cached_service_ticket_count(), 1);
+        assert_eq!(returned.session_key, current_service_ticket.session_key);
+        assert_eq!(returned.ticket, current_service_ticket.ticket);
+        Ok(())
+    }
+
+    /// Pins that loading a ccache with only an expired TGT and no credentials is rejected.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_from_ccache_rejects_expired_tgt_without_live_credentials()
+    -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_expired(&mut tgt_credential, now)?;
+        cache.credentials_mut().push(tgt_credential);
+
+        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let error = runtime()?
+            .block_on(client.get_service_ticket(sample_service_principal()))
+            .err()
+            .context("expired cache-only TGT cannot acquire a service ticket")?;
+
+        assert!(matches!(error, Error::NoClientCredentials));
+        Ok(())
+    }
+
+    /// Pins that loading a ccache skips an expired service ticket.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_from_ccache_rejects_expired_service_ticket() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let now = u32::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("current time is after unix epoch")?
+                .as_secs(),
+        )?;
+
+        let mut cache = ccache::CCache::new(ccache::Principal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["testuser1".to_owned()],
+        ));
+        let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+        make_credential_current(&mut tgt_credential, now)?;
         let mut service_credential = service_ticket
             .to_ccache_credential()
-            .expect("service ticket converts");
-        service_credential.times.auth_time = now - 2 * 60 * 60;
-        service_credential.times.start_time = now - 2 * 60 * 60;
-        service_credential.times.end_time = now - 60 * 60;
-        service_credential.times.renew_till = now + 60 * 60;
+            .context("service ticket converts")?;
+        make_credential_expired(&mut service_credential, now)?;
         cache.credentials_mut().push(tgt_credential);
         cache.credentials_mut().push(service_credential);
 
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind local KDC listener");
-        let addr = listener.local_addr().expect("local listener address");
-        let mut client = TokioClient::from_ccache(
-            config_with_kdc_server(addr.to_string()),
-            KdcProtocol::Tcp,
-            &cache,
-        );
-        assert_eq!(client.cached_service_ticket_count(), 1);
+        let mut client = TokioClient::from_ccache(config_without_kdcs()?, KdcProtocol::Tcp, &cache);
+        let error = runtime()?
+            .block_on(client.get_service_ticket(sample_service_principal()))
+            .err()
+            .context("expired service ticket is not returned from cache")?;
 
-        let task = tokio::spawn(async move {
-            let (request, mut socket) = read_tcp_kdc_request(&listener).await;
-            let decoded: rasn_kerberos::TgsReq =
-                rasn::der::decode(&request).expect("TGS-REQ decodes");
-            let body = &decoded.0.req_body;
-            let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
-            assert_eq!(
-                body.kdc_options.0.as_raw_slice(),
-                expected_options.to_be_bytes().as_slice()
-            );
-            assert_eq!(
-                principal_from_parts(&body.realm, body.sname.as_ref().expect("sname")),
-                sample_service_principal()
-            );
-
-            let built = built_tgs_request_from_der(decoded, &request);
-            let response = synthetic_tgs_rep(&built, built.nonce, &renewal_reply_key);
-            write_tcp_kdc_response(&mut socket, &response).await;
-        });
-
-        let renewed = client
-            .get_service_ticket(sample_service_principal())
-            .await
-            .expect("ccache-loaded renewable service ticket renews");
-        task.await.expect("KDC task succeeds");
-
-        assert_eq!(renewed.service, sample_service_principal());
-        assert_eq!(hex_encode(&renewed.session_key.value), SERVICE_SESSION_KEY);
-        let cached = client
-            .remove_cached_service_ticket(sample_service_principal())
-            .expect("renewed service ticket is cached");
-        assert_eq!(cached.session_key, renewed.session_key);
-        assert_ne!(cached.session_key, cached_session_key);
-    });
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_renews_cached_referral_tgt_before_reusing_it() {
-    runtime().block_on(async {
-        let primary_tgt = current_tgt_session(10, 50);
-        let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5");
-        referral_tgt.session_key.value = vec![0x45; 32];
-        let cached_referral_key = referral_tgt.session_key.clone();
-        let referral_renewal_reply_key = referral_tgt.session_key.clone();
-        let now = SystemTime::now();
-        referral_tgt.start_time = now
-            .checked_sub(Duration::from_secs(2 * 60 * 60))
-            .expect("expired start time");
-        referral_tgt.end_time = now
-            .checked_sub(Duration::from_secs(60 * 60))
-            .expect("expired end time");
-        referral_tgt.renew_till = Some(
-            now.checked_add(Duration::from_secs(60 * 60))
-                .expect("renew-till time"),
-        );
-
-        let resource_service = Principal::new("RESDOM.GOKRB5", 2, ["HTTP", "app.resdom.gokrb5"]);
-        let expected_client = primary_tgt.client.clone();
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind local KDC listener");
-        let addr = listener.local_addr().expect("local listener address");
-        let mut client = TokioClient::from_tgt_session(
-            config_with_kdc_server(addr.to_string()),
-            KdcProtocol::Tcp,
-            primary_tgt,
-        );
-        client
-            .cache_tgt_session(referral_tgt)
-            .expect("expired referral TGT caches");
-
-        let expected_resource_service = resource_service.clone();
-        let task = tokio::spawn(async move {
-            let (renewal_request, mut renewal_socket) = read_tcp_kdc_request(&listener).await;
-            let renewal_decoded: rasn_kerberos::TgsReq =
-                rasn::der::decode(&renewal_request).expect("renewal TGS-REQ decodes");
-            let renewal_body = &renewal_decoded.0.req_body;
-            let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
-            assert_eq!(
-                renewal_body.kdc_options.0.as_raw_slice(),
-                expected_options.to_be_bytes().as_slice()
-            );
-            assert_eq!(
-                principal_from_parts(
-                    &renewal_body.realm,
-                    renewal_body.sname.as_ref().expect("renewal sname")
-                ),
-                Principal::tgt_service("RESDOM.GOKRB5")
-            );
-            let mut renewal_built = built_tgs_request_from_der(renewal_decoded, &renewal_request);
-            renewal_built.client = expected_client.clone();
-            let renewal_response = synthetic_tgs_rep(
-                &renewal_built,
-                renewal_built.nonce,
-                &referral_renewal_reply_key,
-            );
-            write_tcp_kdc_response(&mut renewal_socket, &renewal_response).await;
-
-            let (service_request, mut service_socket) = read_tcp_kdc_request(&listener).await;
-            let service_decoded: rasn_kerberos::TgsReq =
-                rasn::der::decode(&service_request).expect("service TGS-REQ decodes");
-            let service_body = &service_decoded.0.req_body;
-            assert_eq!(
-                principal_from_parts(
-                    &service_body.realm,
-                    service_body.sname.as_ref().expect("service sname")
-                ),
-                expected_resource_service
-            );
-            let mut service_built = built_tgs_request_from_der(service_decoded, &service_request);
-            service_built.client = expected_client;
-            let renewed_referral_key = EncryptionKey {
-                etype: 18,
-                value: decode_hex(SERVICE_SESSION_KEY),
-            };
-            let service_response =
-                synthetic_tgs_rep(&service_built, service_built.nonce, &renewed_referral_key);
-            write_tcp_kdc_response(&mut service_socket, &service_response).await;
-        });
-
-        let ticket = client
-            .get_service_ticket(resource_service.clone())
-            .await
-            .expect("service ticket is acquired through renewed referral TGT");
-        task.await.expect("KDC task succeeds");
-
-        assert_eq!(ticket.service, resource_service);
-        assert_eq!(client.cached_service_ticket_count(), 1);
-        let renewed_referral = client
-            .tgt_session_for_realm("RESDOM.GOKRB5")
-            .expect("renewed referral TGT is cached");
-        assert_ne!(renewed_referral.session_key, cached_referral_key);
-        assert_eq!(
-            hex_encode(&renewed_referral.session_key.value),
-            SERVICE_SESSION_KEY
-        );
-    });
-}
-
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_renews_tgt_session_for_realm() {
-    runtime().block_on(async {
-        let primary_tgt = current_tgt_session(10, 50);
-        let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5");
-        referral_tgt.session_key.value = vec![0x47; 32];
-        let cached_referral_key = referral_tgt.session_key.clone();
-        let referral_renewal_reply_key = referral_tgt.session_key.clone();
-        let expected_client = primary_tgt.client.clone();
-
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind local KDC listener");
-        let addr = listener.local_addr().expect("local listener address");
-        let mut client = TokioClient::from_tgt_session(
-            config_with_kdc_server(addr.to_string()),
-            KdcProtocol::Tcp,
-            primary_tgt,
-        );
-        client
-            .cache_tgt_session(referral_tgt)
-            .expect("referral TGT caches");
-
-        let task = tokio::spawn(async move {
-            let (request, mut socket) = read_tcp_kdc_request(&listener).await;
-            let decoded: rasn_kerberos::TgsReq =
-                rasn::der::decode(&request).expect("TGS-REQ decodes");
-            let body = &decoded.0.req_body;
-            let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
-            assert_eq!(
-                body.kdc_options.0.as_raw_slice(),
-                expected_options.to_be_bytes().as_slice()
-            );
-            assert_eq!(
-                principal_from_parts(&body.realm, body.sname.as_ref().expect("sname")),
-                Principal::tgt_service("RESDOM.GOKRB5")
-            );
-
-            let mut built = built_tgs_request_from_der(decoded, &request);
-            built.client = expected_client;
-            let response = synthetic_tgs_rep(&built, built.nonce, &referral_renewal_reply_key);
-            write_tcp_kdc_response(&mut socket, &response).await;
-        });
-
-        let renewed = client
-            .renew_tgt_session_for_realm("RESDOM.GOKRB5")
-            .await
-            .expect("referral TGT renews explicitly");
-        task.await.expect("KDC task succeeds");
-
-        assert_eq!(renewed.service, Principal::tgt_service("RESDOM.GOKRB5"));
-        assert_ne!(renewed.session_key, cached_referral_key);
-        assert_eq!(hex_encode(&renewed.session_key.value), SERVICE_SESSION_KEY);
-        assert_eq!(
-            client
-                .tgt_session_for_realm("RESDOM.GOKRB5")
-                .expect("renewed referral is cached")
-                .session_key,
-            renewed.session_key
-        );
         assert!(matches!(
-            client
-                .renew_tgt_session_for_realm("MISSING.GOKRB5")
-                .await
-                .expect_err("missing realm has no TGT"),
-            Error::NoTgtSession
+            error,
+            Error::NoKdcEndpoints {
+                realm,
+                protocol: KdcProtocol::Tcp,
+            } if realm == "TEST.GOKRB5"
         ));
-    });
-}
+        Ok(())
+    }
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::redundant_clone,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_exports_and_saves_ccache() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-    client.cache_service_ticket(service_ticket.clone());
+    /// Pins that an expired but renewable cached service ticket is renewed at the KDC.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_renews_expired_renewable_cached_service_ticket() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let tgt = sample_tgt_session()?;
+            let mut service_ticket = sample_service_ticket_session(&tgt)?;
+            service_ticket.session_key.value = vec![0x44; 32];
+            let cached_session_key = service_ticket.session_key.clone();
+            let renewal_reply_key = service_ticket.session_key.clone();
+            let now = SystemTime::now();
+            service_ticket.start_time = now
+                .checked_sub(Duration::from_hours(2))
+                .context("expired start time")?;
+            service_ticket.end_time = now
+                .checked_sub(Duration::from_hours(1))
+                .context("expired end time")?;
+            service_ticket.renew_till = Some(
+                now.checked_add(Duration::from_hours(1))
+                    .context("renew-till time")?,
+            );
 
-    let cache = client.to_ccache().expect("client exports ccache");
-    assert_eq!(cache.default_principal().realm, "TEST.GOKRB5");
-    assert_eq!(cache.default_principal().components, ["testuser1"]);
-    assert_eq!(cache.entries().len(), 2);
-    assert!(cache.contains_server(&["krbtgt", "TEST.GOKRB5"]));
-    assert!(cache.contains_server(&["HTTP", "host.test.gokrb5"]));
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("bind local KDC listener")?;
+            let addr = listener.local_addr().context("local listener address")?;
+            let mut client = TokioClient::from_tgt_session(
+                config_with_kdc_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                tgt,
+            );
+            client.cache_service_ticket(service_ticket.clone());
+            assert_eq!(client.cached_service_ticket_count(), 1);
 
-    let reloaded = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    assert_eq!(reloaded.tgt_session().expect("TGT reloads"), &tgt);
-    assert_eq!(reloaded.cached_service_ticket_count(), 1);
+            let task = tokio::spawn(async move {
+                let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                let decoded: rasn_kerberos::TgsReq =
+                    der::decode(&request).context("TGS-REQ decodes")?;
+                let body = &decoded.0.req_body;
+                let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
+                assert_eq!(
+                    body.kdc_options.0.as_raw_slice(),
+                    expected_options.to_be_bytes().as_slice()
+                );
+                assert_eq!(
+                    principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
+                    sample_service_principal()
+                );
 
-    let path = temp_client_ccache_file("export-save");
-    client.save_ccache(&path).expect("client saves ccache");
-    let loaded = ccache::CCache::load(&path).expect("saved ccache loads");
-    let _ = std::fs::remove_file(&path);
-    assert_eq!(loaded, cache);
+                let built = built_tgs_request_from_der(decoded, &request)?;
+                let response = synthetic_tgs_rep(&built, built.nonce, &renewal_reply_key)?;
+                write_tcp_kdc_response(&mut socket, &response).await?;
+                Ok::<(), TestError>(())
+            });
 
-    let name_path = temp_client_ccache_file("export-save-name");
-    let name = format!("FILE:{}", name_path.display());
-    client
-        .save_ccache_name(&name)
-        .expect("client saves ccache by name");
-    let loaded_by_name = ccache::CCache::load_name(&name).expect("named ccache loads");
-    let _ = std::fs::remove_file(&name_path);
-    assert_eq!(loaded_by_name, cache);
-}
+            let renewed = client
+                .get_service_ticket(sample_service_principal())
+                .await
+                .context("renewable cached service ticket renews")?;
+            task.await.context("KDC task succeeds")??;
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_loads_from_ccache_name() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-    client.cache_service_ticket(service_ticket);
-    let cache = client.to_ccache().expect("client exports ccache");
-    let path = temp_client_ccache_file("load-name");
-    let name = format!("FILE:{}", path.display());
-    cache.save_name(&name).expect("ccache saves by name");
+            assert_eq!(renewed.service, sample_service_principal());
+            assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
+            assert_eq!(client.cached_service_ticket_count(), 1);
+            let cached = client
+                .remove_cached_service_ticket(sample_service_principal())
+                .context("renewed service ticket is cached")?;
+            assert_eq!(cached.session_key, renewed.session_key);
+            assert_ne!(cached.session_key, cached_session_key);
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
 
-    let loaded = TokioClient::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
-        .expect("client loads ccache by name");
-    let _ = std::fs::remove_file(&path);
+    /// Pins that a renewable service ticket loaded from a ccache is renewed at the KDC.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_renews_ccache_loaded_renewable_service_ticket() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let tgt = sample_tgt_session()?;
+            let mut service_ticket = sample_service_ticket_session(&tgt)?;
+            service_ticket.session_key.value = vec![0x46; 32];
+            let cached_session_key = service_ticket.session_key.clone();
+            let renewal_reply_key = service_ticket.session_key.clone();
+            let now = u32::try_from(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .context("current time is after unix epoch")?
+                    .as_secs(),
+            )?;
 
-    assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
-    assert_eq!(loaded.cached_service_ticket_count(), 1);
-}
+            let mut cache = ccache::CCache::new(ccache::Principal::new(
+                "TEST.GOKRB5",
+                1,
+                vec!["testuser1".to_owned()],
+            ));
+            let mut tgt_credential = tgt.to_ccache_credential().context("TGT converts")?;
+            make_credential_current(&mut tgt_credential, now)?;
+            let mut service_credential = service_ticket
+                .to_ccache_credential()
+                .context("service ticket converts")?;
+            service_credential.times.auth_time = now - 2 * 60 * 60;
+            service_credential.times.start_time = now - 2 * 60 * 60;
+            service_credential.times.end_time = now - 60 * 60;
+            service_credential.times.renew_till = now + 60 * 60;
+            cache.credentials_mut().push(tgt_credential);
+            cache.credentials_mut().push(service_credential);
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(all(feature = "tokio", feature = "spnego"))]
-#[test]
-fn negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
-    let (path, name) = save_sample_negotiate_ccache("negotiate-load-name");
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("bind local KDC listener")?;
+            let addr = listener.local_addr().context("local listener address")?;
+            let mut client = TokioClient::from_ccache(
+                config_with_kdc_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                &cache,
+            );
+            assert_eq!(client.cached_service_ticket_count(), 1);
 
-    let mut client =
-        NegotiateClient::from_ccache_name(Config::new(), &name).expect("negotiate client loads");
-    assert_eq!(client.inner().protocol(), KdcProtocol::Auto);
-    let header = runtime()
-        .block_on(client.authorization_header_for_host("HTTP", "host.test.gokrb5"))
-        .expect("authorization header builds");
-    let _ = std::fs::remove_file(&path);
+            let task = tokio::spawn(async move {
+                let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                let decoded: rasn_kerberos::TgsReq =
+                    der::decode(&request).context("TGS-REQ decodes")?;
+                let body = &decoded.0.req_body;
+                let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
+                assert_eq!(
+                    body.kdc_options.0.as_raw_slice(),
+                    expected_options.to_be_bytes().as_slice()
+                );
+                assert_eq!(
+                    principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
+                    sample_service_principal()
+                );
 
-    assert!(header.starts_with("Negotiate "));
-    rskrb5_ng::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
-}
+                let built = built_tgs_request_from_der(decoded, &request)?;
+                let response = synthetic_tgs_rep(&built, built.nonce, &renewal_reply_key)?;
+                write_tcp_kdc_response(&mut socket, &response).await?;
+                Ok::<(), TestError>(())
+            });
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        unused_results,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(all(feature = "tokio", feature = "spnego"))]
-#[test]
-fn blocking_negotiate_client_builds_authorization_header_for_host_from_ccache_name() {
-    let (path, name) = save_sample_negotiate_ccache("blocking-negotiate-load-name");
+            let renewed = client
+                .get_service_ticket(sample_service_principal())
+                .await
+                .context("ccache-loaded renewable service ticket renews")?;
+            task.await.context("KDC task succeeds")??;
 
-    let mut client = BlockingNegotiateClient::from_ccache_name(Config::new(), &name)
-        .expect("blocking negotiate client loads");
-    let header = client
-        .authorization_header_for_host("HTTP", "host.test.gokrb5")
-        .expect("blocking authorization header builds");
-    let _ = std::fs::remove_file(&path);
+            assert_eq!(renewed.service, sample_service_principal());
+            assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
+            let cached = client
+                .remove_cached_service_ticket(sample_service_principal())
+                .context("renewed service ticket is cached")?;
+            assert_eq!(cached.session_key, renewed.session_key);
+            assert_ne!(cached.session_key, cached_session_key);
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
 
-    assert!(header.starts_with("Negotiate "));
-    rskrb5_ng::spnego::parse_negotiate_header(&header).expect("SPNEGO header parses");
-}
+    /// Pins that a cached referral TGT is renewed before it is reused.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_renews_cached_referral_tgt_before_reusing_it() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let primary_tgt = current_tgt_session(10, 50)?;
+            let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
+            referral_tgt.session_key.value = vec![0x45; 32];
+            let cached_referral_key = referral_tgt.session_key.clone();
+            let referral_renewal_reply_key = referral_tgt.session_key.clone();
+            let now = SystemTime::now();
+            referral_tgt.start_time = now
+                .checked_sub(Duration::from_hours(2))
+                .context("expired start time")?;
+            referral_tgt.end_time = now
+                .checked_sub(Duration::from_hours(1))
+                .context("expired end time")?;
+            referral_tgt.renew_till = Some(
+                now.checked_add(Duration::from_hours(1))
+                    .context("renew-till time")?,
+            );
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(all(feature = "tokio", feature = "spnego"))]
-#[test]
-fn negotiate_client_preserves_unsupported_cache_type_error() {
-    let error = NegotiateClient::from_ccache_name(Config::new(), "API:")
-        .expect_err("unsupported cache type rejected");
+            let resource_service =
+                Principal::new("RESDOM.GOKRB5", 2, ["HTTP", "app.resdom.gokrb5"]);
+            let expected_client = primary_tgt.client.clone();
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("bind local KDC listener")?;
+            let addr = listener.local_addr().context("local listener address")?;
+            let mut client = TokioClient::from_tgt_session(
+                config_with_kdc_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                primary_tgt,
+            );
+            client
+                .cache_tgt_session(referral_tgt)
+                .context("expired referral TGT caches")?;
 
-    assert!(matches!(
-        error,
-        Error::CCache(ccache::Error::UnsupportedCacheType { cache_type })
-            if cache_type == "API"
-    ));
-}
+            let expected_resource_service = resource_service.clone();
+            let task = tokio::spawn(async move {
+                let (renewal_request, mut renewal_socket) = read_tcp_kdc_request(&listener).await?;
+                let renewal_decoded: rasn_kerberos::TgsReq =
+                    der::decode(&renewal_request).context("renewal TGS-REQ decodes")?;
+                let renewal_body = &renewal_decoded.0.req_body;
+                let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
+                assert_eq!(
+                    renewal_body.kdc_options.0.as_raw_slice(),
+                    expected_options.to_be_bytes().as_slice()
+                );
+                assert_eq!(
+                    principal_from_parts(
+                        &renewal_body.realm,
+                        renewal_body.sname.as_ref().context("renewal sname")?
+                    )?,
+                    Principal::tgt_service("RESDOM.GOKRB5")
+                );
+                let mut renewal_built =
+                    built_tgs_request_from_der(renewal_decoded, &renewal_request)?;
+                renewal_built.client = expected_client.clone();
+                let renewal_response = synthetic_tgs_rep(
+                    &renewal_built,
+                    renewal_built.nonce,
+                    &referral_renewal_reply_key,
+                )?;
+                write_tcp_kdc_response(&mut renewal_socket, &renewal_response).await?;
 
-/// Child-process test of loading a client ccache from `KRB5CCNAME`.
-#[cfg(test)]
-#[cfg(feature = "tokio")]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod ccache_env_load {
-    use super::*;
+                let (service_request, mut service_socket) = read_tcp_kdc_request(&listener).await?;
+                let service_decoded: rasn_kerberos::TgsReq =
+                    der::decode(&service_request).context("service TGS-REQ decodes")?;
+                let service_body = &service_decoded.0.req_body;
+                assert_eq!(
+                    principal_from_parts(
+                        &service_body.realm,
+                        service_body.sname.as_ref().context("service sname")?
+                    )?,
+                    expected_resource_service
+                );
+                let mut service_built =
+                    built_tgs_request_from_der(service_decoded, &service_request)?;
+                service_built.client = expected_client;
+                let renewed_referral_key = EncryptionKey {
+                    etype: 18,
+                    value: decode_hex(SERVICE_SESSION_KEY)?,
+                };
+                let service_response =
+                    synthetic_tgs_rep(&service_built, service_built.nonce, &renewed_referral_key)?;
+                write_tcp_kdc_response(&mut service_socket, &service_response).await?;
+                Ok::<(), TestError>(())
+            });
 
-    #[expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
+            let ticket = client
+                .get_service_ticket(resource_service.clone())
+                .await
+                .context("service ticket is acquired through renewed referral TGT")?;
+            task.await.context("KDC task succeeds")??;
+
+            assert_eq!(ticket.service, resource_service);
+            assert_eq!(client.cached_service_ticket_count(), 1);
+            let renewed_referral = client
+                .tgt_session_for_realm("RESDOM.GOKRB5")
+                .context("renewed referral TGT is cached")?;
+            assert_ne!(renewed_referral.session_key, cached_referral_key);
+            assert_eq!(
+                hex_encode(&renewed_referral.session_key.value)?,
+                SERVICE_SESSION_KEY
+            );
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
+
+    /// Pins that the TGT session of a realm is renewed at that realm's KDC.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_renews_tgt_session_for_realm() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let primary_tgt = current_tgt_session(10, 50)?;
+            let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
+            referral_tgt.session_key.value = vec![0x47; 32];
+            let cached_referral_key = referral_tgt.session_key.clone();
+            let referral_renewal_reply_key = referral_tgt.session_key.clone();
+            let expected_client = primary_tgt.client.clone();
+
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("bind local KDC listener")?;
+            let addr = listener.local_addr().context("local listener address")?;
+            let mut client = TokioClient::from_tgt_session(
+                config_with_kdc_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                primary_tgt,
+            );
+            client
+                .cache_tgt_session(referral_tgt)
+                .context("referral TGT caches")?;
+
+            let task = tokio::spawn(async move {
+                let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                let decoded: rasn_kerberos::TgsReq =
+                    der::decode(&request).context("TGS-REQ decodes")?;
+                let body = &decoded.0.req_body;
+                let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
+                assert_eq!(
+                    body.kdc_options.0.as_raw_slice(),
+                    expected_options.to_be_bytes().as_slice()
+                );
+                assert_eq!(
+                    principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
+                    Principal::tgt_service("RESDOM.GOKRB5")
+                );
+
+                let mut built = built_tgs_request_from_der(decoded, &request)?;
+                built.client = expected_client;
+                let response = synthetic_tgs_rep(&built, built.nonce, &referral_renewal_reply_key)?;
+                write_tcp_kdc_response(&mut socket, &response).await?;
+                Ok::<(), TestError>(())
+            });
+
+            let renewed = client
+                .renew_tgt_session_for_realm("RESDOM.GOKRB5")
+                .await
+                .context("referral TGT renews explicitly")?;
+            task.await.context("KDC task succeeds")??;
+
+            assert_eq!(renewed.service, Principal::tgt_service("RESDOM.GOKRB5"));
+            assert_ne!(renewed.session_key, cached_referral_key);
+            assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
+            assert_eq!(
+                client
+                    .tgt_session_for_realm("RESDOM.GOKRB5")
+                    .context("renewed referral is cached")?
+                    .session_key,
+                renewed.session_key
+            );
+            assert!(matches!(
+                client
+                    .renew_tgt_session_for_realm("MISSING.GOKRB5")
+                    .await
+                    .err()
+                    .context("missing realm has no TGT")?,
+                Error::NoTgtSession
+            ));
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
+
+    /// Pins that the Tokio client exports, saves and reloads its ccache, by path and by name.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_exports_and_saves_ccache() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        client.cache_service_ticket(service_ticket);
+
+        let cache = client.to_ccache().context("client exports ccache")?;
+        assert_eq!(cache.default_principal().realm, "TEST.GOKRB5");
+        assert_eq!(cache.default_principal().components, ["testuser1"]);
+        assert_eq!(cache.entries().len(), 2);
+        assert!(cache.contains_server(&["krbtgt", "TEST.GOKRB5"]));
+        assert!(cache.contains_server(&["HTTP", "host.test.gokrb5"]));
+
+        let reloaded = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        assert_eq!(reloaded.tgt_session().context("TGT reloads")?, &tgt);
+        assert_eq!(reloaded.cached_service_ticket_count(), 1);
+
+        let path = temp_client_ccache_file("export-save")?;
+        client.save_ccache(&path).context("client saves ccache")?;
+        let loaded = ccache::CCache::load(&path).context("saved ccache loads")?;
+        fs::remove_file(&path).context("remove the test file")?;
+        assert_eq!(loaded, cache);
+
+        let name_path = temp_client_ccache_file("export-save-name")?;
+        let name = format!("FILE:{}", name_path.display());
+        client
+            .save_ccache_name(&name)
+            .context("client saves ccache by name")?;
+        let loaded_by_name = ccache::CCache::load_name(&name).context("named ccache loads")?;
+        fs::remove_file(&name_path).context("remove the test file")?;
+        assert_eq!(loaded_by_name, cache);
+        Ok(())
+    }
+
+    /// Pins that the Tokio client loads its sessions from a `FILE:` ccache name.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_loads_from_ccache_name() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        client.cache_service_ticket(service_ticket);
+        let cache = client.to_ccache().context("client exports ccache")?;
+        let path = temp_client_ccache_file("load-name")?;
+        let name = format!("FILE:{}", path.display());
+        cache.save_name(&name).context("ccache saves by name")?;
+
+        let loaded = TokioClient::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
+            .context("client loads ccache by name")?;
+        fs::remove_file(&path).context("remove the test file")?;
+
+        assert_eq!(loaded.tgt_session().context("TGT reloads")?, &tgt);
+        assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
+    }
+
+    /// Pins that a `NegotiateClient` loaded from a ccache name builds a SPNEGO header for a host.
+    #[cfg(all(feature = "tokio", feature = "spnego"))]
+    #[test]
+    fn negotiate_client_builds_authorization_header_for_host_from_ccache_name()
+    -> Result<(), TestError> {
+        let (path, name) = save_sample_negotiate_ccache("negotiate-load-name")?;
+
+        let mut client = NegotiateClient::from_ccache_name(Config::new(), &name)
+            .context("negotiate client loads")?;
+        assert_eq!(client.inner().protocol(), KdcProtocol::Auto);
+        let header = runtime()?
+            .block_on(client.authorization_header_for_host("HTTP", "host.test.gokrb5"))
+            .context("authorization header builds")?;
+        fs::remove_file(&path).context("remove the test file")?;
+
+        assert!(header.starts_with("Negotiate "));
+        drop(parse_negotiate_header(&header).context("SPNEGO header parses")?);
+        Ok(())
+    }
+
+    /// Pins that a `BlockingNegotiateClient` loaded from a ccache name builds a SPNEGO header for a host.
+    #[cfg(all(feature = "tokio", feature = "spnego"))]
+    #[test]
+    fn blocking_negotiate_client_builds_authorization_header_for_host_from_ccache_name()
+    -> Result<(), TestError> {
+        let (path, name) = save_sample_negotiate_ccache("blocking-negotiate-load-name")?;
+
+        let mut client = BlockingNegotiateClient::from_ccache_name(Config::new(), &name)
+            .context("blocking negotiate client loads")?;
+        let header = client
+            .authorization_header_for_host("HTTP", "host.test.gokrb5")
+            .context("blocking authorization header builds")?;
+        fs::remove_file(&path).context("remove the test file")?;
+
+        assert!(header.starts_with("Negotiate "));
+        drop(parse_negotiate_header(&header).context("SPNEGO header parses")?);
+        Ok(())
+    }
+
+    /// Pins that a `NegotiateClient` reports an unsupported ccache type as such.
+    #[cfg(all(feature = "tokio", feature = "spnego"))]
+    #[test]
+    fn negotiate_client_preserves_unsupported_cache_type_error() -> Result<(), TestError> {
+        let error = NegotiateClient::from_ccache_name(Config::new(), "API:")
+            .err()
+            .context("unsupported cache type rejected")?;
+
+        assert!(matches!(
+            error,
+            Error::CCache(ccache::Error::UnsupportedCacheType { cache_type })
+                if cache_type == "API"
+        ));
+        Ok(())
+    }
+
     /// Pins that the client loads its ccache from `KRB5CCNAME`.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_loads_from_ccache_env() -> Result<(), TestError> {
-        const TEST_PATH: &str =
-            "session_cache::ccache_env_load::tokio_client_loads_from_ccache_env";
+        const TEST_PATH: &str = "session_cache::tests::tokio_client_loads_from_ccache_env";
         if !env::in_child(TEST_PATH) {
-            let path = temp_client_ccache_file("load-env");
+            let path = temp_client_ccache_file("load-env")?;
             let name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(name.as_ref()))]);
             return Ok(());
         }
-        let tgt = sample_tgt_session();
-        let service_ticket = sample_service_ticket_session(&tgt);
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client =
             TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket);
@@ -1814,131 +1470,93 @@ mod ccache_env_load {
 
         let loaded = TokioClient::from_ccache_env(Config::new(), KdcProtocol::Tcp)
             .map_err(|cause| format!("client loads ccache from env: {cause}"))?;
-        let _ = std::fs::remove_file(&path);
+        fs::remove_file(&path).context("remove the test file")?;
 
-        assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
+        assert_eq!(loaded.tgt_session().context("TGT reloads")?, &tgt);
         assert_eq!(loaded.cached_service_ticket_count(), 1);
         Ok(())
     }
-}
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::create_dir,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_saves_and_loads_dir_collection_ccache_name() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-    client.cache_service_ticket(service_ticket);
-    let directory = temp_client_ccache_dir("dir-collection-name");
-    std::fs::create_dir(&directory).expect("temp DIR collection is created");
-    let name = format!("DIR:{}", directory.display());
+    /// Pins that the Tokio client saves to and loads from a `DIR:` ccache collection.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_saves_and_loads_dir_collection_ccache_name() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        client.cache_service_ticket(service_ticket);
+        let directory = temp_client_ccache_dir("dir-collection-name")?;
+        fs::create_dir_all(&directory).context("temp DIR collection is created")?;
+        let name = format!("DIR:{}", directory.display());
 
-    client
-        .save_ccache_name(&name)
-        .expect("client saves ccache to DIR collection");
-    let loaded = TokioClient::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
-        .expect("client loads ccache from DIR collection");
+        client
+            .save_ccache_name(&name)
+            .context("client saves ccache to DIR collection")?;
+        let loaded = TokioClient::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
+            .context("client loads ccache from DIR collection")?;
 
-    let _ = std::fs::remove_file(directory.join("tkt"));
-    let _ = std::fs::remove_file(directory.join("primary"));
-    let _ = std::fs::remove_dir(&directory);
+        fs::remove_file(directory.join("tkt")).context("remove the test file")?;
+        fs::remove_file(directory.join("primary")).context("remove the test file")?;
+        fs::remove_dir(&directory).context("remove the test directory")?;
 
-    assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
-    assert_eq!(loaded.cached_service_ticket_count(), 1);
-}
+        assert_eq!(loaded.tgt_session().context("TGT reloads")?, &tgt);
+        assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
+    }
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::create_dir,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_loads_from_config_default_ccache_name() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let directory = temp_client_ccache_dir("default-ccache-name");
-    std::fs::create_dir(&directory).expect("temp DIR collection is created");
-    let name = format!("DIR:{}", directory.display());
-    let mut client = TokioClient::from_tgt_session(
-        config_with_default_ccache_name(name.clone()),
-        KdcProtocol::Tcp,
-        tgt.clone(),
-    );
-    client.cache_service_ticket(service_ticket);
-    client
-        .save_default_ccache_name()
-        .expect("client saves configured ccache");
+    /// Pins that the Tokio client loads the default ccache named by the configuration.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_loads_from_config_default_ccache_name() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let directory = temp_client_ccache_dir("default-ccache-name")?;
+        fs::create_dir_all(&directory).context("temp DIR collection is created")?;
+        let name = format!("DIR:{}", directory.display());
+        let mut client = TokioClient::from_tgt_session(
+            config_with_default_ccache_name(&name)?,
+            KdcProtocol::Tcp,
+            tgt.clone(),
+        );
+        client.cache_service_ticket(service_ticket);
+        client
+            .save_default_ccache_name()
+            .context("client saves configured ccache")?;
 
-    let loaded = TokioClient::from_default_ccache_name(
-        config_with_default_ccache_name(name),
-        KdcProtocol::Tcp,
-    )
-    .expect("client loads configured default ccache");
+        let loaded = TokioClient::from_default_ccache_name(
+            config_with_default_ccache_name(&name)?,
+            KdcProtocol::Tcp,
+        )
+        .context("client loads configured default ccache")?;
 
-    let _ = std::fs::remove_file(directory.join("tkt"));
-    let _ = std::fs::remove_file(directory.join("primary"));
-    let _ = std::fs::remove_dir(&directory);
+        fs::remove_file(directory.join("tkt")).context("remove the test file")?;
+        fs::remove_file(directory.join("primary")).context("remove the test file")?;
+        fs::remove_dir(&directory).context("remove the test directory")?;
 
-    assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
-    assert_eq!(loaded.cached_service_ticket_count(), 1);
-}
+        assert_eq!(loaded.tgt_session().context("TGT reloads")?, &tgt);
+        assert_eq!(loaded.cached_service_ticket_count(), 1);
+        Ok(())
+    }
 
-/// Child-process test of the configured default ccache without `KRB5CCNAME`.
-#[cfg(test)]
-#[cfg(feature = "tokio")]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod config_default_ccache_fallback {
-    use super::*;
-
-    #[expect(
-        clippy::absolute_paths,
-        clippy::create_dir,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     /// Pins the configured default ccache when `KRB5CCNAME` is unset.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_uses_config_default_ccache_when_env_is_absent() -> Result<(), TestError> {
-        const TEST_PATH: &str = "session_cache::config_default_ccache_fallback::tokio_client_uses_config_default_ccache_when_env_is_absent";
+        const TEST_PATH: &str =
+            "session_cache::tests::tokio_client_uses_config_default_ccache_when_env_is_absent";
         if !env::in_child(TEST_PATH) {
             env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
             return Ok(());
         }
-        let tgt = sample_tgt_session();
-        let service_ticket = sample_service_ticket_session(&tgt);
-        let directory = temp_client_ccache_dir("default-ccache-env-fallback");
-        std::fs::create_dir(&directory)
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let directory = temp_client_ccache_dir("default-ccache-env-fallback")?;
+        fs::create_dir_all(&directory)
             .map_err(|cause| format!("temp DIR collection is created: {cause}"))?;
         let name = format!("DIR:{}", directory.display());
         let mut client = TokioClient::from_tgt_session(
-            config_with_default_ccache_name(name.clone()),
+            config_with_default_ccache_name(&name)?,
             KdcProtocol::Tcp,
             tgt.clone(),
         );
@@ -1948,7 +1566,7 @@ mod config_default_ccache_fallback {
             .map_err(|cause| format!("client saves default ccache: {cause}"))?;
 
         let loaded = TokioClient::from_default_ccache(
-            config_with_default_ccache_name(name),
+            config_with_default_ccache_name(&name)?,
             KdcProtocol::Tcp,
         )
         .map_err(|cause| format!("client loads default ccache: {cause}"))?;
@@ -1956,53 +1574,33 @@ mod config_default_ccache_fallback {
             .update_default_ccache()
             .map_err(|cause| format!("client updates default ccache: {cause}"))?;
 
-        let _ = std::fs::remove_file(directory.join("tkt"));
-        let _ = std::fs::remove_file(directory.join("primary"));
-        let _ = std::fs::remove_dir(&directory);
+        fs::remove_file(directory.join("tkt")).context("remove the test file")?;
+        fs::remove_file(directory.join("primary")).context("remove the test file")?;
+        fs::remove_dir(&directory).context("remove the test directory")?;
 
-        assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
+        assert_eq!(loaded.tgt_session().context("TGT reloads")?, &tgt);
         assert_eq!(loaded.cached_service_ticket_count(), 1);
         Ok(())
     }
-}
 
-/// Child-process test of `KRB5CCNAME` precedence over the configured ccache name.
-#[cfg(test)]
-#[cfg(feature = "tokio")]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod env_default_ccache_precedence {
-    use super::*;
-
-    #[expect(
-        clippy::absolute_paths,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     /// Pins that `KRB5CCNAME` overrides the configured default ccache name.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_prefers_env_default_ccache_over_config_name() -> Result<(), TestError> {
-        const TEST_PATH: &str = "session_cache::env_default_ccache_precedence::tokio_client_prefers_env_default_ccache_over_config_name";
+        const TEST_PATH: &str =
+            "session_cache::tests::tokio_client_prefers_env_default_ccache_over_config_name";
         if !env::in_child(TEST_PATH) {
-            let path = temp_client_ccache_file("default-ccache-env-precedence");
+            let path = temp_client_ccache_file("default-ccache-env-precedence")?;
             let env_name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5CCNAME", Some(env_name.as_ref()))]);
             return Ok(());
         }
-        let tgt = sample_tgt_session();
-        let service_ticket = sample_service_ticket_session(&tgt);
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
         let (_, path) = file_name_from_parent("KRB5CCNAME");
         let config_default = "MEMORY:config-default".to_owned();
         let mut client = TokioClient::from_tgt_session(
-            config_with_default_ccache_name(config_default.clone()),
+            config_with_default_ccache_name(&config_default)?,
             KdcProtocol::Tcp,
             tgt.clone(),
         );
@@ -2012,253 +1610,104 @@ mod env_default_ccache_precedence {
             .map_err(|cause| format!("client saves default ccache from env: {cause}"))?;
 
         let loaded = TokioClient::from_default_ccache(
-            config_with_default_ccache_name(config_default),
+            config_with_default_ccache_name(&config_default)?,
             KdcProtocol::Tcp,
         )
         .map_err(|cause| format!("client loads default ccache from env: {cause}"))?;
         loaded
             .update_default_ccache()
             .map_err(|cause| format!("client updates default ccache from env: {cause}"))?;
-        let _ = std::fs::remove_file(&path);
+        fs::remove_file(&path).context("remove the test file")?;
 
-        assert_eq!(loaded.tgt_session().expect("TGT reloads"), &tgt);
+        assert_eq!(loaded.tgt_session().context("TGT reloads")?, &tgt);
         assert_eq!(loaded.cached_service_ticket_count(), 1);
         Ok(())
     }
-}
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::shadow_unrelated,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-/// Pins `NoDefaultCCacheName` when neither `KRB5CCNAME` nor the config names a ccache.
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_rejects_missing_config_default_ccache_name() {
-    const TEST_PATH: &str =
-        "session_cache::tokio_client_rejects_missing_config_default_ccache_name";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
-        return;
+    /// Pins `NoDefaultCCacheName` when neither `KRB5CCNAME` nor the config names a ccache.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_rejects_missing_config_default_ccache_name() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::tests::tokio_client_rejects_missing_config_default_ccache_name";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
+            return Ok(());
+        }
+        let error = TokioClient::from_default_ccache_name(Config::new(), KdcProtocol::Tcp)
+            .err()
+            .context("missing default ccache name is rejected")?;
+
+        assert!(matches!(error, Error::NoDefaultCCacheName));
+
+        let client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session()?);
+        let save_error = client
+            .save_default_ccache_name()
+            .err()
+            .context("missing default ccache name is rejected")?;
+        assert!(matches!(save_error, Error::NoDefaultCCacheName));
+
+        let update_error = client
+            .update_default_ccache_name()
+            .err()
+            .context("missing default ccache name is rejected")?;
+        assert!(matches!(update_error, Error::NoDefaultCCacheName));
+
+        let load_default_error = TokioClient::from_default_ccache(Config::new(), KdcProtocol::Tcp)
+            .err()
+            .context("missing default ccache name is rejected")?;
+        assert!(matches!(load_default_error, Error::NoDefaultCCacheName));
+
+        let save_default_error = client
+            .save_default_ccache()
+            .err()
+            .context("missing default ccache name is rejected")?;
+        assert!(matches!(save_default_error, Error::NoDefaultCCacheName));
+
+        let update_default_error = client
+            .update_default_ccache()
+            .err()
+            .context("missing default ccache name is rejected")?;
+        assert!(matches!(update_default_error, Error::NoDefaultCCacheName));
+        Ok(())
     }
-    let error = TokioClient::from_default_ccache_name(Config::new(), KdcProtocol::Tcp)
-        .expect_err("missing default ccache name is rejected");
 
-    assert!(matches!(error, Error::NoDefaultCCacheName));
+    /// Pins that the Tokio client loads the client keytab named by the configuration.
+    #[cfg(all(feature = "tokio", feature = "serde"))]
+    #[test]
+    fn tokio_client_loads_client_keytab_from_config_name() -> Result<(), TestError> {
+        let keytab = keytab_with_reply_key(1)?;
+        let path = temp_client_keytab_file("load-config-name")?;
+        let name = format!("FILE:{}", path.display());
+        keytab.save_name(&name).context("keytab saves by name")?;
 
-    let client =
-        TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session());
-    let error = client
-        .save_default_ccache_name()
-        .expect_err("missing default ccache name is rejected");
-    assert!(matches!(error, Error::NoDefaultCCacheName));
-
-    let error = client
-        .update_default_ccache_name()
-        .expect_err("missing default ccache name is rejected");
-    assert!(matches!(error, Error::NoDefaultCCacheName));
-
-    let error = TokioClient::from_default_ccache(Config::new(), KdcProtocol::Tcp)
-        .expect_err("missing default ccache name is rejected");
-    assert!(matches!(error, Error::NoDefaultCCacheName));
-
-    let error = client
-        .save_default_ccache()
-        .expect_err("missing default ccache name is rejected");
-    assert!(matches!(error, Error::NoDefaultCCacheName));
-
-    let error = client
-        .update_default_ccache()
-        .expect_err("missing default ccache name is rejected");
-    assert!(matches!(error, Error::NoDefaultCCacheName));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+        let client = TokioClient::with_client_keytab_from_config(
+            config_with_client_keytab_name(&name)?,
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
         )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[test]
-fn tokio_client_loads_client_keytab_from_config_name() {
-    let keytab = keytab_with_reply_key(1);
-    let path = temp_client_keytab_file("load-config-name");
-    let name = format!("FILE:{}", path.display());
-    keytab.save_name(&name).expect("keytab saves by name");
+        .context("client loads keytab by config name")?;
+        fs::remove_file(&path).context("remove the test file")?;
 
-    let client = TokioClient::with_client_keytab_from_config(
-        config_with_client_keytab_name(name),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-    )
-    .expect("client loads keytab by config name");
-    let _ = std::fs::remove_file(&path);
+        let diagnostics = runtime()?.block_on(client.diagnostics());
+        assert_eq!(diagnostics.credential_source, "keytab");
+        assert_eq!(diagnostics.keytab_enctypes, [18_i32]);
+        Ok(())
+    }
 
-    let diagnostics = runtime().block_on(client.diagnostics());
-    assert_eq!(diagnostics.credential_source, "keytab");
-    assert_eq!(diagnostics.keytab_enctypes, [18]);
-}
-
-/// Child-process test of loading a keytab from `KRB5_KTNAME`.
-#[cfg(test)]
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod keytab_env_load {
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::let_underscore_must_use,
-            clippy::let_underscore_untyped,
-            clippy::missing_panics_doc,
-            let_underscore_drop,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins that the client loads its keytab from `KRB5_KTNAME`.
     #[test]
     fn tokio_client_loads_keytab_from_env() -> Result<(), TestError> {
-        const TEST_PATH: &str =
-            "session_cache::keytab_env_load::tokio_client_loads_keytab_from_env";
+        const TEST_PATH: &str = "session_cache::tests::tokio_client_loads_keytab_from_env";
         if !env::in_child(TEST_PATH) {
-            let path = temp_client_keytab_file("load-keytab-env");
+            let path = temp_client_keytab_file("load-keytab-env")?;
             let name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", Some(name.as_ref()))]);
             return Ok(());
         }
-        let keytab = keytab_with_reply_key(1);
+        let keytab = keytab_with_reply_key(1)?;
         let (name, path) = file_name_from_parent("KRB5_KTNAME");
         keytab
             .save_name(&name)
@@ -2270,107 +1719,26 @@ mod keytab_env_load {
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
         .map_err(|cause| format!("client loads keytab from env: {cause}"))?;
-        let _ = std::fs::remove_file(&path);
+        fs::remove_file(&path).context("remove the test file")?;
 
-        let diagnostics = runtime().block_on(client.diagnostics());
+        let diagnostics = runtime()?.block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
-        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        assert_eq!(diagnostics.keytab_enctypes, [18_i32]);
         Ok(())
     }
-}
 
-/// Child-process test of loading a client keytab from `KRB5_CLIENT_KTNAME`.
-#[cfg(test)]
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod client_keytab_env_load {
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::let_underscore_must_use,
-            clippy::let_underscore_untyped,
-            clippy::missing_panics_doc,
-            let_underscore_drop,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins that the client loads its client keytab from `KRB5_CLIENT_KTNAME`.
     #[test]
     fn tokio_client_loads_client_keytab_from_env() -> Result<(), TestError> {
-        const TEST_PATH: &str =
-            "session_cache::client_keytab_env_load::tokio_client_loads_client_keytab_from_env";
+        const TEST_PATH: &str = "session_cache::tests::tokio_client_loads_client_keytab_from_env";
         if !env::in_child(TEST_PATH) {
-            let path = temp_client_keytab_file("load-client-keytab-env");
+            let path = temp_client_keytab_file("load-client-keytab-env")?;
             let name = format!("FILE:{}", path.display());
             env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", Some(name.as_ref()))]);
             return Ok(());
         }
-        let keytab = keytab_with_reply_key(1);
+        let keytab = keytab_with_reply_key(1)?;
         let (name, path) = file_name_from_parent("KRB5_CLIENT_KTNAME");
         keytab
             .save_name(&name)
@@ -2382,211 +1750,53 @@ mod client_keytab_env_load {
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
         .map_err(|cause| format!("client loads client keytab from env: {cause}"))?;
-        let _ = std::fs::remove_file(&path);
+        fs::remove_file(&path).context("remove the test file")?;
 
-        let diagnostics = runtime().block_on(client.diagnostics());
+        let diagnostics = runtime()?.block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
-        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        assert_eq!(diagnostics.keytab_enctypes, [18_i32]);
         Ok(())
     }
-}
 
-/// Child-process test of the configured client keytab without `KRB5_CLIENT_KTNAME`.
-#[cfg(test)]
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod default_client_keytab_fallback {
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::let_underscore_must_use,
-            clippy::let_underscore_untyped,
-            clippy::missing_panics_doc,
-            let_underscore_drop,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins the configured default client keytab when `KRB5_CLIENT_KTNAME` is unset.
     #[test]
     fn tokio_client_loads_default_client_keytab_when_env_is_absent() -> Result<(), TestError> {
-        const TEST_PATH: &str = "session_cache::default_client_keytab_fallback::tokio_client_loads_default_client_keytab_when_env_is_absent";
+        const TEST_PATH: &str =
+            "session_cache::tests::tokio_client_loads_default_client_keytab_when_env_is_absent";
         if !env::in_child(TEST_PATH) {
             env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
             return Ok(());
         }
-        let keytab = keytab_with_reply_key(1);
-        let path = temp_client_keytab_file("load-default-client-keytab");
+        let keytab = keytab_with_reply_key(1)?;
+        let path = temp_client_keytab_file("load-default-client-keytab")?;
         let name = format!("FILE:{}", path.display());
         keytab
             .save_name(&name)
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
         let client = TokioClient::with_client_keytab_from_default(
-            config_with_client_keytab_name(name),
+            config_with_client_keytab_name(&name)?,
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
         .map_err(|cause| format!("client loads default client keytab: {cause}"))?;
-        let _ = std::fs::remove_file(&path);
+        fs::remove_file(&path).context("remove the test file")?;
 
-        let diagnostics = runtime().block_on(client.diagnostics());
+        let diagnostics = runtime()?.block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
-        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        assert_eq!(diagnostics.keytab_enctypes, [18_i32]);
         Ok(())
     }
-}
 
-/// Child-process test of `KRB5_CLIENT_KTNAME` precedence over the configured name.
-#[cfg(test)]
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod env_client_keytab_precedence {
-    use super::*;
-
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                not(feature = "http"),
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::absolute_paths,
-            clippy::default_numeric_fallback,
-            clippy::let_underscore_must_use,
-            clippy::let_underscore_untyped,
-            clippy::missing_panics_doc,
-            let_underscore_drop,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     #[cfg(all(feature = "tokio", feature = "serde"))]
     /// Pins that `KRB5_CLIENT_KTNAME` overrides the configured client keytab name.
     #[test]
     fn tokio_client_prefers_env_client_keytab_over_config_name() -> Result<(), TestError> {
-        const TEST_PATH: &str = "session_cache::env_client_keytab_precedence::tokio_client_prefers_env_client_keytab_over_config_name";
+        const TEST_PATH: &str =
+            "session_cache::tests::tokio_client_prefers_env_client_keytab_over_config_name";
         if !env::in_child(TEST_PATH) {
-            let path = temp_client_keytab_file("load-env-client-keytab");
+            let path = temp_client_keytab_file("load-env-client-keytab")?;
             let env_name = format!("FILE:{}", path.display());
             env::run_in_child(
                 TEST_PATH,
@@ -2594,316 +1804,235 @@ mod env_client_keytab_precedence {
             );
             return Ok(());
         }
-        let keytab = keytab_with_reply_key(1);
+        let keytab = keytab_with_reply_key(1)?;
         let (env_name, path) = file_name_from_parent("KRB5_CLIENT_KTNAME");
         keytab
             .save_name(&env_name)
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
         let missing_config_name = format!(
             "FILE:{}",
-            temp_client_keytab_file("missing-config-client-keytab").display()
+            temp_client_keytab_file("missing-config-client-keytab")?.display()
         );
 
         let client = TokioClient::with_client_keytab_from_default(
-            config_with_client_keytab_name(missing_config_name),
+            config_with_client_keytab_name(&missing_config_name)?,
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
         )
         .map_err(|cause| {
             format!("client loads env client keytab before config default: {cause}")
         })?;
-        let _ = std::fs::remove_file(&path);
+        fs::remove_file(&path).context("remove the test file")?;
 
-        let diagnostics = runtime().block_on(client.diagnostics());
+        let diagnostics = runtime()?.block_on(client.diagnostics());
         assert_eq!(diagnostics.credential_source, "keytab");
-        assert_eq!(diagnostics.keytab_enctypes, [18]);
+        assert_eq!(diagnostics.keytab_enctypes, [18_i32]);
         Ok(())
     }
-}
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-/// Pins the error for a client keytab named by neither the environment nor the config.
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_reports_missing_client_keytab_env() {
-    const TEST_PATH: &str = "session_cache::tokio_client_reports_missing_client_keytab_env";
-    if !env::in_child(TEST_PATH) {
-        env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
-        return;
-    }
-    let error = TokioClient::with_client_keytab_from_env(
-        Config::new(),
-        KdcProtocol::Tcp,
-        Principal::user("TEST.GOKRB5", "testuser1"),
-    )
-    .expect_err("missing client keytab env is rejected");
-
-    assert!(matches!(error, Error::DefaultClientKeytabName(_)));
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_tracks_multiple_tgt_sessions() {
-    let primary_tgt = sample_tgt_session();
-    let referral_tgt = sample_referral_tgt_session("RESDOM.GOKRB5");
-    let mut client =
-        TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt.clone());
-
-    client
-        .cache_tgt_session(referral_tgt.clone())
-        .expect("referral TGT caches");
-
-    assert_eq!(client.tgt_session_count(), 2);
-    assert_eq!(
-        client
-            .tgt_session_for_realm("TEST.GOKRB5")
-            .expect("primary TGT is cached")
-            .service,
-        primary_tgt.service
-    );
-    assert_eq!(
-        client
-            .tgt_session_for_realm("RESDOM.GOKRB5")
-            .expect("referral TGT is cached")
-            .service,
-        referral_tgt.service
-    );
-
-    let cache = client.to_ccache().expect("client exports ccache");
-    assert_eq!(cache.entries().len(), 2);
-    assert!(cache.contains_server(&["krbtgt", "TEST.GOKRB5"]));
-    assert!(cache.contains_server(&["krbtgt", "RESDOM.GOKRB5"]));
-
-    let reloaded = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
-    assert_eq!(reloaded.tgt_session_count(), 2);
-    assert!(reloaded.tgt_session_for_realm("RESDOM.GOKRB5").is_some());
-
-    let removed_referral = client
-        .remove_tgt_session_for_realm("RESDOM.GOKRB5")
-        .expect("referral TGT is removed");
-    assert_eq!(removed_referral.service, referral_tgt.service);
-    assert_eq!(client.tgt_session_count(), 1);
-    assert!(client.tgt_session_for_realm("RESDOM.GOKRB5").is_none());
-    assert_eq!(
-        client.tgt_session().expect("primary TGT remains").service,
-        primary_tgt.service
-    );
-
-    let removed_primary = client
-        .remove_tgt_session_for_realm("TEST.GOKRB5")
-        .expect("primary TGT is removed");
-    assert_eq!(removed_primary.service, primary_tgt.service);
-    assert!(client.tgt_session().is_none());
-    assert_eq!(client.tgt_session_count(), 0);
-    assert!(
-        client
-            .remove_tgt_session_for_realm("MISSING.GOKRB5")
-            .is_none()
-    );
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_rejects_non_tgt_session_cache_insert() {
-    let tgt = current_tgt_session(5, 180);
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
-
-    let error = client
-        .cache_tgt_session(service_ticket)
-        .expect_err("service ticket is rejected as a TGT session");
-
-    assert!(matches!(
-        error,
-        Error::InvalidTgtSession { service } if service == "HTTP/host.test.gokrb5"
-    ));
-}
-
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::redundant_clone,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_prefers_freshest_cached_tgt_session() {
-    let primary_session = |remaining_minutes: u64, ticket: &[u8]| {
-        let mut tgt = current_tgt_session(5, remaining_minutes);
-        tgt.ticket = ticket.to_vec();
-        tgt
-    };
-    let referral_session = |remaining_minutes: u64, ticket: &[u8]| {
-        let mut tgt = primary_session(remaining_minutes, ticket);
-        tgt.service = Principal::new(
-            "TEST.GOKRB5",
-            2,
-            ["krbtgt".to_owned(), "RESDOM.GOKRB5".to_owned()],
-        );
-        tgt
-    };
-
-    let primary_tgt = primary_session(120, b"primary-long");
-    let mut client =
-        TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt.clone());
-
-    client
-        .cache_tgt_session(primary_session(30, b"primary-short"))
-        .expect("shorter primary TGT caches");
-    assert_eq!(
-        client
-            .tgt_session()
-            .expect("primary TGT remains")
-            .ticket
-            .as_slice(),
-        b"primary-long"
-    );
-    assert_eq!(
-        client
-            .tgt_session_for_realm("TEST.GOKRB5")
-            .expect("realm-keyed primary remains")
-            .ticket
-            .as_slice(),
-        b"primary-long"
-    );
-
-    client
-        .cache_tgt_session(primary_session(180, b"primary-longer"))
-        .expect("longer primary TGT caches");
-    assert_eq!(
-        client
-            .tgt_session()
-            .expect("primary TGT is replaced")
-            .ticket
-            .as_slice(),
-        b"primary-longer"
-    );
-
-    client
-        .cache_tgt_session(referral_session(90, b"referral-long"))
-        .expect("referral TGT caches");
-
-    client
-        .cache_tgt_session(referral_session(15, b"referral-short"))
-        .expect("shorter referral TGT caches");
-    assert_eq!(
-        client
-            .tgt_session_for_realm("RESDOM.GOKRB5")
-            .expect("longer referral TGT remains")
-            .ticket
-            .as_slice(),
-        b"referral-long"
-    );
-
-    client
-        .cache_tgt_session(referral_session(180, b"referral-longer"))
-        .expect("longer referral TGT caches");
-    assert_eq!(
-        client
-            .tgt_session_for_realm("RESDOM.GOKRB5")
-            .expect("longer referral TGT is selected")
-            .ticket
-            .as_slice(),
-        b"referral-longer"
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+    /// Pins the error for a client keytab named by neither the environment nor the config.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_reports_missing_client_keytab_env() -> Result<(), TestError> {
+        const TEST_PATH: &str =
+            "session_cache::tests::tokio_client_reports_missing_client_keytab_env";
+        if !env::in_child(TEST_PATH) {
+            env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
+            return Ok(());
+        }
+        let error = TokioClient::with_client_keytab_from_env(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("TEST.GOKRB5", "testuser1"),
         )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::redundant_clone,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[test]
-fn tokio_client_json_snapshots_match_gokrb5_shapes() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-    client.cache_service_ticket(service_ticket);
+        .err()
+        .context("missing client keytab env is rejected")?;
 
-    let sessions = client.sessions_json().expect("sessions JSON renders");
-    assert_eq!(
-        sessions,
-        r#"[
+        assert!(matches!(error, Error::DefaultClientKeytabName(_)));
+        Ok(())
+    }
+
+    /// Pins that the Tokio client keeps TGT sessions of several realms.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_tracks_multiple_tgt_sessions() -> Result<(), TestError> {
+        let primary_tgt = sample_tgt_session()?;
+        let referral_tgt = sample_referral_tgt_session("RESDOM.GOKRB5")?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt.clone());
+
+        client
+            .cache_tgt_session(referral_tgt.clone())
+            .context("referral TGT caches")?;
+
+        assert_eq!(client.tgt_session_count(), 2);
+        assert_eq!(
+            client
+                .tgt_session_for_realm("TEST.GOKRB5")
+                .context("primary TGT is cached")?
+                .service,
+            primary_tgt.service
+        );
+        assert_eq!(
+            client
+                .tgt_session_for_realm("RESDOM.GOKRB5")
+                .context("referral TGT is cached")?
+                .service,
+            referral_tgt.service
+        );
+
+        let cache = client.to_ccache().context("client exports ccache")?;
+        assert_eq!(cache.entries().len(), 2);
+        assert!(cache.contains_server(&["krbtgt", "TEST.GOKRB5"]));
+        assert!(cache.contains_server(&["krbtgt", "RESDOM.GOKRB5"]));
+
+        let reloaded = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        assert_eq!(reloaded.tgt_session_count(), 2);
+        assert!(reloaded.tgt_session_for_realm("RESDOM.GOKRB5").is_some());
+
+        let removed_referral = client
+            .remove_tgt_session_for_realm("RESDOM.GOKRB5")
+            .context("referral TGT is removed")?;
+        assert_eq!(removed_referral.service, referral_tgt.service);
+        assert_eq!(client.tgt_session_count(), 1);
+        assert!(client.tgt_session_for_realm("RESDOM.GOKRB5").is_none());
+        assert_eq!(
+            client.tgt_session().context("primary TGT remains")?.service,
+            primary_tgt.service
+        );
+
+        let removed_primary = client
+            .remove_tgt_session_for_realm("TEST.GOKRB5")
+            .context("primary TGT is removed")?;
+        assert_eq!(removed_primary.service, primary_tgt.service);
+        assert!(client.tgt_session().is_none());
+        assert_eq!(client.tgt_session_count(), 0);
+        assert!(
+            client
+                .remove_tgt_session_for_realm("MISSING.GOKRB5")
+                .is_none()
+        );
+        Ok(())
+    }
+
+    /// Pins that caching a non-TGT session as a TGT session is rejected.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_rejects_non_tgt_session_cache_insert() -> Result<(), TestError> {
+        let tgt = current_tgt_session(5, 180)?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
+
+        let error = client
+            .cache_tgt_session(service_ticket)
+            .err()
+            .context("service ticket is rejected as a TGT session")?;
+
+        assert!(matches!(
+            error,
+            Error::InvalidTgtSession { service } if service == "HTTP/host.test.gokrb5"
+        ));
+        Ok(())
+    }
+
+    /// Pins that the TGT-session cache keeps the session with the latest end time.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_prefers_freshest_cached_tgt_session() -> Result<(), TestError> {
+        let primary_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
+            let mut tgt = current_tgt_session(5, remaining_minutes)?;
+            tgt.ticket = ticket.to_vec();
+            Ok(tgt)
+        };
+        let referral_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
+            let mut tgt = primary_session(remaining_minutes, ticket)?;
+            tgt.service = Principal::new(
+                "TEST.GOKRB5",
+                2,
+                ["krbtgt".to_owned(), "RESDOM.GOKRB5".to_owned()],
+            );
+            Ok(tgt)
+        };
+
+        let primary_tgt = primary_session(120, b"primary-long")?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt);
+
+        client
+            .cache_tgt_session(primary_session(30, b"primary-short")?)
+            .context("shorter primary TGT caches")?;
+        assert_eq!(
+            client
+                .tgt_session()
+                .context("primary TGT remains")?
+                .ticket
+                .as_slice(),
+            b"primary-long"
+        );
+        assert_eq!(
+            client
+                .tgt_session_for_realm("TEST.GOKRB5")
+                .context("realm-keyed primary remains")?
+                .ticket
+                .as_slice(),
+            b"primary-long"
+        );
+
+        client
+            .cache_tgt_session(primary_session(180, b"primary-longer")?)
+            .context("longer primary TGT caches")?;
+        assert_eq!(
+            client
+                .tgt_session()
+                .context("primary TGT is replaced")?
+                .ticket
+                .as_slice(),
+            b"primary-longer"
+        );
+
+        client
+            .cache_tgt_session(referral_session(90, b"referral-long")?)
+            .context("referral TGT caches")?;
+
+        client
+            .cache_tgt_session(referral_session(15, b"referral-short")?)
+            .context("shorter referral TGT caches")?;
+        assert_eq!(
+            client
+                .tgt_session_for_realm("RESDOM.GOKRB5")
+                .context("longer referral TGT remains")?
+                .ticket
+                .as_slice(),
+            b"referral-long"
+        );
+
+        client
+            .cache_tgt_session(referral_session(180, b"referral-longer")?)
+            .context("longer referral TGT caches")?;
+        assert_eq!(
+            client
+                .tgt_session_for_realm("RESDOM.GOKRB5")
+                .context("longer referral TGT is selected")?
+                .ticket
+                .as_slice(),
+            b"referral-longer"
+        );
+        Ok(())
+    }
+
+    /// Pins that the JSON snapshots of the Tokio client match the gokrb5 shapes.
+    #[cfg(all(feature = "tokio", feature = "serde"))]
+    #[test]
+    fn tokio_client_json_snapshots_match_gokrb5_shapes() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
+        client.cache_service_ticket(service_ticket);
+
+        let sessions = client.sessions_json().context("sessions JSON renders")?;
+        assert_eq!(
+            sessions,
+            r#"[
   {
     "Realm": "TEST.GOKRB5",
     "AuthTime": "2030-01-02T03:04:05Z",
@@ -2912,14 +2041,14 @@ fn tokio_client_json_snapshots_match_gokrb5_shapes() {
     "SessionKeyExpiration": "2030-01-03T03:04:05Z"
   }
 ]"#
-    );
+        );
 
-    let service_tickets = client
-        .service_ticket_cache_json()
-        .expect("service-ticket cache JSON renders");
-    assert_eq!(
-        service_tickets,
-        r#"[
+        let service_tickets = client
+            .service_ticket_cache_json()
+            .context("service-ticket cache JSON renders")?;
+        assert_eq!(
+            service_tickets,
+            r#"[
   {
     "SPN": "HTTP/host.test.gokrb5",
     "AuthTime": "2030-01-02T03:04:05Z",
@@ -2928,136 +2057,105 @@ fn tokio_client_json_snapshots_match_gokrb5_shapes() {
     "RenewTill": "2030-01-08T03:04:06Z"
   }
 ]"#
-    );
-}
+        );
+        Ok(())
+    }
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg(feature = "tokio")]
-#[test]
-fn tokio_client_updates_ccache_file_without_duplicate_tickets() {
-    let tgt = sample_tgt_session();
-    let service_ticket = sample_service_ticket_session(&tgt);
-    let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-    client.cache_service_ticket(service_ticket.clone());
+    /// Pins that updating a ccache file replaces tickets instead of duplicating them.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_updates_ccache_file_without_duplicate_tickets() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let service_ticket = sample_service_ticket_session(&tgt)?;
+        let mut client =
+            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        client.cache_service_ticket(service_ticket.clone());
 
-    let mut old_tgt = tgt.to_ccache_credential().expect("TGT converts");
-    old_tgt.client.name_type = 0;
-    old_tgt.key.value = vec![0xaa];
-    let mut old_service = service_ticket
-        .to_ccache_credential()
-        .expect("service ticket converts");
-    old_service.client.name_type = 0;
-    old_service.key.value = vec![0xbb];
-    let config_entry = x_cacheconf_credential(&old_service.client);
-    let mut other_client = old_service.clone();
-    other_client.client = ccache::Principal::new("OTHER.REALM", 1, vec!["other".to_owned()]);
-    other_client.server = ccache::Principal::new(
-        "OTHER.REALM",
-        2,
-        vec!["HTTP".to_owned(), "other".to_owned()],
-    );
+        let mut old_tgt = tgt.to_ccache_credential().context("TGT converts")?;
+        old_tgt.client.name_type = 0_i32;
+        old_tgt.key.value = vec![0xaa];
+        let mut old_service = service_ticket
+            .to_ccache_credential()
+            .context("service ticket converts")?;
+        old_service.client.name_type = 0_i32;
+        old_service.key.value = vec![0xbb];
+        let config_entry = x_cacheconf_credential(&old_service.client);
+        let mut other_client = old_service.clone();
+        other_client.client = ccache::Principal::new("OTHER.REALM", 1, vec!["other".to_owned()]);
+        other_client.server = ccache::Principal::new(
+            "OTHER.REALM",
+            2,
+            vec!["HTTP".to_owned(), "other".to_owned()],
+        );
 
-    let mut existing = ccache::CCache::new(old_tgt.client.clone());
-    existing.credentials_mut().push(old_tgt);
-    existing.credentials_mut().push(config_entry.clone());
-    existing.credentials_mut().push(old_service);
-    existing.credentials_mut().push(other_client.clone());
+        let mut existing = ccache::CCache::new(old_tgt.client.clone());
+        existing.credentials_mut().push(old_tgt);
+        existing.credentials_mut().push(config_entry.clone());
+        existing.credentials_mut().push(old_service);
+        existing.credentials_mut().push(other_client.clone());
 
-    let path = temp_client_ccache_file("update-file");
-    existing.save(&path).expect("existing ccache saves");
-    let name = format!("FILE:{}", path.display());
-    client
-        .update_ccache_name(&name)
-        .expect("client updates ccache name");
-    let updated = ccache::CCache::load(&path).expect("updated ccache loads");
-    let _ = std::fs::remove_file(&path);
+        let path = temp_client_ccache_file("update-file")?;
+        existing.save(&path).context("existing ccache saves")?;
+        let name = format!("FILE:{}", path.display());
+        client
+            .update_ccache_name(&name)
+            .context("client updates ccache name")?;
+        let updated = ccache::CCache::load(&path).context("updated ccache loads")?;
+        fs::remove_file(&path).context("remove the test file")?;
 
-    assert_eq!(updated.default_principal().components, ["testuser1"]);
-    assert_eq!(
-        updated
-            .credentials()
-            .iter()
-            .filter(|credential| credential.client == config_entry.client
-                && credential.server.components == ["krb5_ccache_conf_data", "fast_avail"])
-            .count(),
-        1
-    );
-    assert!(updated.credentials().contains(&other_client));
-    assert_eq!(
-        matching_credentials(
-            &updated,
-            &ccache::Principal::new(
-                "TEST.GOKRB5",
-                2,
-                vec!["krbtgt".to_owned(), "TEST.GOKRB5".to_owned()]
+        assert_eq!(updated.default_principal().components, ["testuser1"]);
+        assert_eq!(
+            updated
+                .credentials()
+                .iter()
+                .filter(|credential| credential.client == config_entry.client
+                    && credential.server.components == ["krb5_ccache_conf_data", "fast_avail"])
+                .count(),
+            1
+        );
+        assert!(updated.credentials().contains(&other_client));
+        assert_eq!(
+            matching_credentials(
+                &updated,
+                &ccache::Principal::new(
+                    "TEST.GOKRB5",
+                    2,
+                    vec!["krbtgt".to_owned(), "TEST.GOKRB5".to_owned()]
+                )
             )
-        )
-        .len(),
-        1
-    );
-    assert_eq!(
-        matching_credentials(
-            &updated,
-            &ccache::Principal::new(
-                "TEST.GOKRB5",
-                2,
-                vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()]
+            .len(),
+            1
+        );
+        assert_eq!(
+            matching_credentials(
+                &updated,
+                &ccache::Principal::new(
+                    "TEST.GOKRB5",
+                    2,
+                    vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()]
+                )
             )
-        )
-        .len(),
-        1
-    );
-    assert_eq!(
-        updated
-            .get_entry(&["krbtgt", "TEST.GOKRB5"])
-            .expect("updated TGT exists")
-            .key
-            .value,
-        tgt.session_key.value
-    );
-    assert_eq!(
-        updated
-            .get_entry(&["HTTP", "host.test.gokrb5"])
-            .expect("updated service ticket exists")
-            .key
-            .value,
-        service_ticket.session_key.value
-    );
-}
-
-/// Fork-authored session-cache tests: renewal pacing, expired-TGT fallback and realm case folding.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod fork_tests {
-    use alloc::sync::Arc;
-    use core::sync::atomic::{AtomicUsize, Ordering};
-    use std::{sync::mpsc, thread};
-
-    use rasn::{der, types::Integer};
-    use rskrb5_ng::client::AsRepSession;
-    use tokio::{
-        runtime::Builder as RuntimeBuilder,
-        sync::Mutex,
-        task::{JoinHandle, yield_now},
-        time::sleep,
-    };
-
-    use super::*;
+            .len(),
+            1
+        );
+        assert_eq!(
+            updated
+                .get_entry(&["krbtgt", "TEST.GOKRB5"])
+                .context("updated TGT exists")?
+                .key
+                .value,
+            tgt.session_key.value
+        );
+        assert_eq!(
+            updated
+                .get_entry(&["HTTP", "host.test.gokrb5"])
+                .context("updated service ticket exists")?
+                .key
+                .value,
+            service_ticket.session_key.value
+        );
+        Ok(())
+    }
 
     /// A counting KDC: its serving task, then the AS-REQ and TGS-REQ counts.
     type CountingKdc = (
@@ -3070,10 +2168,10 @@ mod fork_tests {
     #[cfg(feature = "tokio")]
     #[test]
     fn cached_service_ticket_identity_is_case_folded() -> Result<(), TestError> {
-        let tgt = sample_tgt_session();
-        let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
+        let tgt = sample_tgt_session()?;
+        let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
         let session_for = |host: &str| -> Result<_, TestError> {
-            let mut ticket = sample_service_ticket_session(&tgt);
+            let mut ticket = sample_service_ticket_session(&tgt)?;
             ticket.service = Principal::host_based_service_in_realm("HTTP", host, "CERN.CH")?;
             ticket.start_time = now
                 .checked_sub(Duration::from_mins(1))
@@ -3112,7 +2210,7 @@ mod fork_tests {
             runtime.block_on(async move {
                 // Due (55 min old, 5 min left) but not renewable, and cache-only:
                 // the refresh is a successful no-op that must be paced.
-                let mut tgt = current_tgt_session(55, 5);
+                let mut tgt = current_tgt_session(55, 5)?;
                 tgt.renew_till = None;
                 let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
                     Config::new(),
@@ -3126,7 +2224,8 @@ mod fork_tests {
                 // complete; a spinning loop keeps the runtime busy instead.
                 sleep(Duration::from_mins(10)).await;
                 renewal.abort();
-                done.send(())
+                done.send(())?;
+                Ok::<(), TestError>(())
             })?;
             Ok(())
         }));
@@ -3142,7 +2241,7 @@ mod fork_tests {
     #[test]
     fn tokio_client_refresh_due_uses_current_ticket_life() -> Result<(), TestError> {
         let now = SystemTime::now();
-        let mut renewed = current_tgt_session(60 * 60, 10 * 60);
+        let mut renewed = current_tgt_session(60 * 60, 10 * 60)?;
         renewed.start_time = now
             .checked_sub(Duration::from_mins(1))
             .ok_or("recent start time")?;
@@ -3214,7 +2313,7 @@ mod fork_tests {
                     Some(0x6a) => {
                         let _: usize = as_count.fetch_add(1, Ordering::SeqCst);
                         let decoded: rasn_kerberos::AsReq = der::decode(&body)?;
-                        let built = built_request_from_der(decoded, &body);
+                        let built = built_request_from_der(decoded, &body)?;
                         let reply_key = derive_password_reply_key(
                             &client_principal,
                             &password,
@@ -3223,9 +2322,9 @@ mod fork_tests {
                         synthetic_as_rep_with_reply_key(
                             &built,
                             built.nonce,
-                            built.service.clone(),
+                            &built.service,
                             &reply_key,
-                        )
+                        )?
                     }
                     Some(0x6c) => {
                         let _: usize = tgs_count.fetch_add(1, Ordering::SeqCst);
@@ -3252,13 +2351,16 @@ mod fork_tests {
             msg_type: Integer::from(30_i32),
             ctime: None,
             cusec: None,
-            stime: kerberos_time(1_893_553_440),
+            stime: kerberos_time(1_893_553_440)?,
             susec: Integer::from(0_i32),
             error_code,
-            crealm: Some(realm("TEST.GOKRB5")),
-            cname: Some(rasn_principal(&Principal::user("TEST.GOKRB5", "testuser1"))),
-            realm: realm("TEST.GOKRB5"),
-            sname: rasn_principal(&Principal::tgt_service("TEST.GOKRB5")),
+            crealm: Some(realm("TEST.GOKRB5")?),
+            cname: Some(rasn_principal(&Principal::user(
+                "TEST.GOKRB5",
+                "testuser1",
+            ))?),
+            realm: realm("TEST.GOKRB5")?,
+            sname: rasn_principal(&Principal::tgt_service("TEST.GOKRB5"))?,
             e_text: None,
             e_data: None,
         };
@@ -3269,7 +2371,7 @@ mod fork_tests {
     #[cfg(feature = "tokio")]
     fn expired_renewable_tgt() -> Result<AsRepSession, TestError> {
         let now = SystemTime::now();
-        let mut tgt = current_tgt_session(120, 0);
+        let mut tgt = current_tgt_session(120, 0)?;
         tgt.renew_till = Some(
             now.checked_add(Duration::from_hours(1))
                 .ok_or("renew till")?,
@@ -3282,7 +2384,7 @@ mod fork_tests {
     #[test]
     fn tokio_client_affirm_login_falls_back_to_as_for_expired_renewable_tgt()
     -> Result<(), TestError> {
-        runtime().block_on(async {
+        runtime()?.block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
@@ -3293,7 +2395,7 @@ mod fork_tests {
             );
 
             let mut client = TokioClient::from_tgt_session(
-                config_with_kdc_server(addr.to_string()),
+                config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
             )
@@ -3316,7 +2418,7 @@ mod fork_tests {
     #[test]
     fn tokio_client_refresh_tgt_if_needed_falls_back_to_as_for_expired_renewable_tgt()
     -> Result<(), TestError> {
-        runtime().block_on(async {
+        runtime()?.block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
@@ -3327,7 +2429,7 @@ mod fork_tests {
             );
 
             let mut client = TokioClient::from_tgt_session(
-                config_with_kdc_server(addr.to_string()),
+                config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
             )
@@ -3350,7 +2452,7 @@ mod fork_tests {
     #[test]
     fn tokio_client_cache_only_expired_renewable_tgt_keeps_renewal_error() -> Result<(), TestError>
     {
-        runtime().block_on(async {
+        runtime()?.block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let client_principal = Principal::user("TEST.GOKRB5", "testuser1");
@@ -3361,7 +2463,7 @@ mod fork_tests {
             );
 
             let mut client = TokioClient::from_tgt_session(
-                config_with_kdc_server(addr.to_string()),
+                config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
             );
@@ -3428,31 +2530,31 @@ mod fork_tests {
         request: rasn_kerberos::TgsReq,
         der: &[u8],
     ) -> Result<Vec<u8>, TestError> {
-        let built = built_tgs_request_from_der(request, der);
+        let built = built_tgs_request_from_der(request, der)?;
         let now = unix_seconds(SystemTime::now())?;
         let session_key = EncryptionKey {
             etype: 18,
-            value: decode_hex(SESSION_KEY),
+            value: decode_hex(SESSION_KEY)?,
         };
         let enc_part = rasn_kerberos::EncTgsRepPart(rasn_kerberos::EncKdcRepPart {
             key: rasn_encryption_key(&session_key),
             last_req: vec![rasn_kerberos::LastReqValue {
                 r#type: 0,
-                value: kerberos_time(now),
+                value: kerberos_time(now)?,
             }],
             nonce: built.nonce,
             key_expiration: None,
             flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(
                 TICKET_FLAGS,
             )),
-            auth_time: kerberos_time(now.checked_sub(60 * 60 * 60).ok_or("auth time")?),
-            start_time: Some(kerberos_time(now)),
-            end_time: kerberos_time(now.checked_add(10 * 60 * 60).ok_or("end time")?),
+            auth_time: kerberos_time(now.checked_sub(60 * 60 * 60).ok_or("auth time")?)?,
+            start_time: Some(kerberos_time(now)?),
+            end_time: kerberos_time(now.checked_add(10 * 60 * 60).ok_or("end time")?)?,
             renew_till: Some(kerberos_time(
                 now.checked_add(7 * 24 * 60 * 60).ok_or("renew till")?,
-            )),
-            srealm: realm(&built.service.realm),
-            sname: rasn_principal(&built.service),
+            )?),
+            srealm: realm(&built.service.realm)?,
+            sname: rasn_principal(&built.service)?,
             caddr: None,
             encrypted_pa_data: None,
         });
@@ -3461,17 +2563,17 @@ mod fork_tests {
             &der::encode(&enc_part)?,
             TGS_REP_ENCPART_SESSION_KEY_USAGE,
             TGS_REP_CONFOUNDER,
-        );
+        )?;
         let tgs_rep = rasn_kerberos::TgsRep(rasn_kerberos::KdcRep {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(13_i32),
             padata: None,
-            crealm: realm(&built.client.realm),
-            cname: rasn_principal(&built.client),
+            crealm: realm(&built.client.realm)?,
+            cname: rasn_principal(&built.client)?,
             ticket: rasn_kerberos::Ticket {
                 tkt_vno: Integer::from(5_i32),
-                realm: realm(&built.service.realm),
-                sname: rasn_principal(&built.service),
+                realm: realm(&built.service.realm)?,
+                sname: rasn_principal(&built.service)?,
                 enc_part: rasn_kerberos::EncryptedData {
                     etype: 18,
                     kvno: Some(2),
@@ -3506,9 +2608,9 @@ mod fork_tests {
             // Due (55 min old, 5 min left) and renewable; cache-only, so only a
             // renewal can refresh it.
             let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
-                config_with_kdc_server(addr.to_string()),
+                config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
-                current_tgt_session(55, 5),
+                current_tgt_session(55, 5)?,
             )));
             let renewal = TokioClient::spawn_auto_renewal(Arc::clone(&client));
 
@@ -3571,9 +2673,9 @@ mod fork_tests {
             // fail on the KDC's refusal, not on a virtual timeout.
             let client = Arc::new(Mutex::new(
                 TokioClient::from_tgt_session(
-                    config_with_kdc_server(addr.to_string()),
+                    config_with_kdc_server(&addr.to_string())?,
                     KdcProtocol::Tcp,
-                    current_tgt_session(55, 5),
+                    current_tgt_session(55, 5)?,
                 )
                 .with_password_credential(TESTUSER_PASSWORD)
                 .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_hours(24))),
@@ -3612,12 +2714,12 @@ mod fork_tests {
     #[test]
     fn tokio_client_get_service_ticket_falls_back_to_as_for_expired_renewable_tgt()
     -> Result<(), TestError> {
-        runtime().block_on(async {
+        runtime()?.block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let tgt_session_key = EncryptionKey {
                 etype: 18,
-                value: decode_hex(SESSION_KEY),
+                value: decode_hex(SESSION_KEY)?,
             };
             let (kdc, as_requests, tgs_requests) = spawn_counting_kdc_with_tgs_reply(
                 listener,
@@ -3629,13 +2731,13 @@ mod fork_tests {
                     if is_renewal_request(&request) || as_requests_before == 0 {
                         return krb_error_bytes(32);
                     }
-                    let built = built_tgs_request_from_der(request, der);
-                    Ok(synthetic_tgs_rep(&built, built.nonce, &tgt_session_key))
+                    let built = built_tgs_request_from_der(request, der)?;
+                    synthetic_tgs_rep(&built, built.nonce, &tgt_session_key)
                 },
             );
 
             let mut client = TokioClient::from_tgt_session(
-                config_with_kdc_server(addr.to_string()),
+                config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
             )
@@ -3669,9 +2771,9 @@ mod fork_tests {
  .example.com = PARTNER.REALM
 ",
         )?;
-        let tgt = sample_tgt_session();
-        let mut service_ticket = sample_service_ticket_session(&tgt);
-        let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
+        let tgt = sample_tgt_session()?;
+        let mut service_ticket = sample_service_ticket_session(&tgt)?;
+        let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
         service_ticket.start_time = now
             .checked_sub(Duration::from_mins(1))
             .ok_or("start time")?;

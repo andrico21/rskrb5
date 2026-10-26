@@ -1,0 +1,3 @@
+tests/client.rs
+tests/client/**
+tests/client_principal.rs
