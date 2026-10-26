@@ -31,9 +31,13 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rasn::der;
     use rskrb5_ng::{
+        ap_req::{decode_authenticator, decrypt_ap_req_authenticator},
         config::Config,
         crypto::AesSha1Etype,
-        error::{Crypto as CryptoError, Pac as PacError, Service as Error},
+        error::{
+            ApReq as ApReqError, Crypto as CryptoError, Pac as PacError, Service as Error,
+            Ticket as TicketError,
+        },
         keytab::{EncryptionKey, Keytab},
         pac,
         service::{ApRepOptions, Principal, SharedReplayCache, ValidatedApReq, Validator},
@@ -1226,6 +1230,114 @@ mod tests {
     fn valid_ap_req_struct() -> Result<rasn_kerberos::ApReq, TestError> {
         Ok(der::decode(&decode_hex(VALID_AP_REQ)?)
             .map_err(|cause| format!("fixture AP-REQ decodes: {cause}"))?)
+    }
+
+    /// Rejects a nested ticket version even when its encrypted part is valid.
+    #[test]
+    fn service_rejects_nested_ticket_version() -> Result<(), TestError> {
+        // Given a valid ticket with only the cleartext version changed.
+        let keytab = http_keytab()?;
+        let mut request = valid_ap_req_struct()?;
+        request.ticket.tkt_vno = 6_i32.into();
+        let bytes = der::encode(&request)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+
+        // When the service accepts the AP-REQ.
+        let error = validator
+            .validate_ap_req(&bytes)
+            .err()
+            .context("version rejected")?;
+
+        // Then semantic rejection precedes replay admission.
+        assert!(
+            matches!(error, Error::InvalidMessage { field: "tkt-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        assert_eq!(validator.replay_cache_mut().len(), 0);
+        Ok(())
+    }
+
+    /// Rejects a decrypted authenticator with a non-v5 protocol version.
+    #[test]
+    fn service_rejects_nested_authenticator_version() -> Result<(), TestError> {
+        // Given a correctly encrypted authenticator whose version is six.
+        let keytab = http_keytab()?;
+        let mut request = valid_ap_req_struct()?;
+        let session_key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator = decrypt_ap_req_authenticator(
+            &request,
+            &session_key,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+        )?;
+        authenticator.authenticator_vno = 6_i32.into();
+        request.authenticator.cipher = encrypt_message(
+            &session_key,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
+        let bytes = der::encode(&request)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+
+        // When the service accepts the AP-REQ.
+        let error = validator
+            .validate_ap_req(&bytes)
+            .err()
+            .context("version rejected")?;
+
+        // Then semantic rejection precedes replay admission.
+        assert!(
+            matches!(error, Error::InvalidMessage { field: "authenticator-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        assert_eq!(validator.replay_cache_mut().len(), 0);
+        Ok(())
+    }
+
+    /// Shared authenticator decoding enforces the version without service validation.
+    #[test]
+    fn authenticator_decoder_rejects_nested_version() -> Result<(), TestError> {
+        // Given a DER authenticator with an invalid fixed version.
+        let request = valid_ap_req_struct()?;
+        let session_key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator = decrypt_ap_req_authenticator(
+            &request,
+            &session_key,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+        )?;
+        authenticator.authenticator_vno = 6_i32.into();
+        let bytes = der::encode(&authenticator)?;
+
+        // When decoded through the semantic boundary.
+        let error = decode_authenticator(&bytes)
+            .err()
+            .context("version rejected")?;
+
+        // Then the failure identifies the version, not DER or crypto.
+        assert!(
+            matches!(error, ApReqError::InvalidMessage { field: "authenticator-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        Ok(())
+    }
+
+    /// Shared ticket decryption enforces the version without service validation.
+    #[test]
+    fn ticket_decryptor_rejects_nested_version() -> Result<(), TestError> {
+        // Given a valid encrypted ticket with the wrong outer ticket version.
+        let keytab = http_keytab()?;
+        let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+        let mut request = valid_ap_req_struct()?;
+        request.ticket.tkt_vno = 6_i32.into();
+
+        // When decrypted through the shared semantic boundary.
+        let error = decrypt_ticket_enc_part(&request.ticket, key)
+            .err()
+            .context("version rejected")?;
+
+        // Then the failure identifies the version, not DER or crypto.
+        assert!(
+            matches!(error, TicketError::InvalidMessage { field: "tkt-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        Ok(())
     }
 
     /// Re-encrypt the fixture authenticator under the ticket session key with a

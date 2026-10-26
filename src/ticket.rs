@@ -60,12 +60,14 @@ pub fn decode_enc_ticket_part(bytes: &[u8]) -> Result<rasn_kerberos::EncTicketPa
 /// Returns [`Error::KeyEtypeMismatch`] when the key's enctype differs from the
 /// encrypted part's, [`Error::UnsupportedEtype`] for an enctype that is not
 /// implemented, [`Error::Crypto`] when decryption fails, and [`Error::Decode`]
-/// when the plaintext is not a DER `EncTicketPart`.
+/// when the plaintext is not a DER `EncTicketPart`. Returns
+/// [`Error::InvalidMessage`] when the ticket version is not 5.
 #[inline]
 pub fn decrypt_ticket_enc_part(
     ticket: &rasn_kerberos::Ticket,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::EncTicketPart, Error> {
+    validate(ticket)?;
     if key.etype != ticket.enc_part.etype {
         return Err(Error::KeyEtypeMismatch {
             key_etype: key.etype,
