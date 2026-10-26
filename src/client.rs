@@ -702,7 +702,7 @@ pub struct Tokio {
     /// TGT sessions keyed by the realm they are issued for.
     tgt_sessions: BTreeMap<String, AsRepSession>,
     /// Service tickets keyed by `service_cache_key`.
-    service_tickets: BTreeMap<String, TgsRepSession>,
+    service_tickets: BTreeMap<(String, Vec<String>), TgsRepSession>,
     /// Send PA-ENC-TIMESTAMP in the first AS-REQ instead of probing.
     assume_preauthentication: bool,
     /// Request FAST negotiation (PA-REQ-ENC-PA-REP) in AS-REQs.
@@ -4780,15 +4780,10 @@ fn prefer_current_session_at(
     }
 }
 
-/// Cache key for a service: the realm and components, NUL-separated.
+/// Service identity keeps realm/component boundaries; name type is advisory.
 #[cfg(feature = "tokio")]
-fn service_cache_key(service: &Principal) -> String {
-    let mut key = service.realm.clone();
-    for component in &service.components {
-        key.push('\0');
-        key.push_str(component);
-    }
-    key
+fn service_cache_key(service: &Principal) -> (String, Vec<String>) {
+    (service.realm.clone(), service.components.clone())
 }
 
 /// Whether a session is inside its start and end time at `now`.
