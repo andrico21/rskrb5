@@ -27,12 +27,12 @@ mod tests {
             Some(Rc4HmacEtype::new())
         );
 
-        assert_eq!(Rc4HmacEtype::new().etype_id(), 23_i32);
-        assert_eq!(Rc4HmacEtype::new().checksum_type_id(), -138_i32);
-        assert_eq!(Rc4HmacEtype::new().key_len(), 16);
-        assert_eq!(Rc4HmacEtype::new().confounder_len(), 8);
-        assert_eq!(Rc4HmacEtype::new().hmac_len(), 16);
-        assert_eq!(Rc4HmacEtype::new().default_s2kparams(), "");
+        assert_eq!(Rc4HmacEtype::etype_id(), 23_i32);
+        assert_eq!(Rc4HmacEtype::checksum_type_id(), -138_i32);
+        assert_eq!(Rc4HmacEtype::key_len(), 16);
+        assert_eq!(Rc4HmacEtype::confounder_len(), 8);
+        assert_eq!(Rc4HmacEtype::hmac_len(), 16);
+        assert_eq!(Rc4HmacEtype::default_s2kparams(), "");
 
         assert_eq!(
             KerberosEtype::from_etype_id(23),
@@ -47,7 +47,7 @@ mod tests {
     /// Pins the RC4-HMAC string-to-key output against the gokrb5 vector.
     #[test]
     fn rc4_hmac_string_to_key_matches_gokrb5_vector() -> Result<(), TestError> {
-        let key = Rc4HmacEtype::new().string_to_key(b"foo", b"ignored-salt", "ignored-params")?;
+        let key = Rc4HmacEtype::string_to_key(b"foo", b"ignored-salt", "ignored-params")?;
 
         assert_eq!(hex::encode(&key), "ac8e657f83df82beea5d43bdaf7800cc");
         Ok(())
@@ -56,17 +56,17 @@ mod tests {
     /// Pins the RC4-HMAC checksum against the gokrb5 vector, and its verification.
     #[test]
     fn rc4_hmac_checksum_matches_gokrb5_vector() -> Result<(), TestError> {
-        let etype = Rc4HmacEtype::new();
+        let _etype = Rc4HmacEtype::new();
         let key = hex::decode("ac8e657f83df82beea5d43bdaf7800cc")?;
-        let checksum = etype.checksum(&key, b"kerberos rc4 checksum", 2)?;
+        let checksum = Rc4HmacEtype::checksum(&key, b"kerberos rc4 checksum", 2)?;
 
         assert_eq!(hex::encode(&checksum), "97ab2d24a2a9746b2abb88e2df99578d");
         assert!(
-            etype.verify_checksum(&key, b"kerberos rc4 checksum", &checksum, 2),
+            Rc4HmacEtype::verify_checksum(&key, b"kerberos rc4 checksum", &checksum, 2),
             "checksum verifies"
         );
         assert!(
-            !etype.verify_checksum(&key, b"kerberos rc4 tampered", &checksum, 2),
+            !Rc4HmacEtype::verify_checksum(&key, b"kerberos rc4 tampered", &checksum, 2),
             "checksum of tampered data does not verify"
         );
         Ok(())
@@ -75,18 +75,22 @@ mod tests {
     /// Pins RC4-HMAC message encryption against the gokrb5 vector, and decryption directly and via dispatch.
     #[test]
     fn rc4_hmac_message_encryption_matches_gokrb5_vector() -> Result<(), TestError> {
-        let etype = Rc4HmacEtype::new();
+        let _etype = Rc4HmacEtype::new();
         let key = hex::decode("ac8e657f83df82beea5d43bdaf7800cc")?;
         let confounder = hex::decode("0001020304050607")?;
         let expected = hex::decode(
             "52b24c30a78833dc78994646b37f14108e7af6ecc788485cb4c3d8d536669996e6f2a7d46047ce81a766bab4",
         )?;
 
-        let encrypted =
-            etype.encrypt_message_with_confounder(&key, b"kerberos rc4 message", 2, &confounder)?;
+        let encrypted = Rc4HmacEtype::encrypt_message_with_confounder(
+            &key,
+            b"kerberos rc4 message",
+            2,
+            &confounder,
+        )?;
         assert_eq!(encrypted, expected);
 
-        let decrypted = etype.decrypt_message(&key, &encrypted, 2)?;
+        let decrypted = Rc4HmacEtype::decrypt_message(&key, &encrypted, 2)?;
         assert_eq!(decrypted, b"kerberos rc4 message");
 
         let dispatcher = KerberosEtype::Rc4Hmac(Rc4HmacEtype::new());
@@ -100,13 +104,13 @@ mod tests {
     /// Pins that RC4-HMAC rejects bad key, confounder and ciphertext lengths, a bad secret and tampering.
     #[test]
     fn rc4_hmac_rejects_invalid_inputs_and_tampering() -> Result<(), TestError> {
-        let etype = Rc4HmacEtype::new();
+        let _etype = Rc4HmacEtype::new();
         let key = hex::decode("ac8e657f83df82beea5d43bdaf7800cc")?;
         let confounder = hex::decode("0001020304050607")?;
 
         assert!(
             matches!(
-                etype.encrypt_data(key.get(..15).ok_or("15-byte key prefix")?, b"data"),
+                Rc4HmacEtype::encrypt_data(key.get(..15).ok_or("15-byte key prefix")?, b"data"),
                 Err(Error::InvalidKeyLength {
                     expected: 16,
                     actual: 15
@@ -116,7 +120,7 @@ mod tests {
         );
         assert!(
             matches!(
-                etype.encrypt_message_with_confounder(
+                Rc4HmacEtype::encrypt_message_with_confounder(
                     &key,
                     b"data",
                     2,
@@ -131,7 +135,7 @@ mod tests {
         );
         assert!(
             matches!(
-                etype.decrypt_message(&key, &[0_u8; 23], 2),
+                Rc4HmacEtype::decrypt_message(&key, &[0_u8; 23], 2),
                 Err(Error::CiphertextTooShort {
                     minimum: 24,
                     actual: 23
@@ -141,17 +145,21 @@ mod tests {
         );
         assert!(
             matches!(
-                etype.string_to_key(&[0xff], b"", ""),
+                Rc4HmacEtype::string_to_key(&[0xff], b"", ""),
                 Err(Error::InvalidStringToKeySecret)
             ),
             "non-UTF-8 secret is rejected"
         );
 
-        let mut encrypted =
-            etype.encrypt_message_with_confounder(&key, b"kerberos rc4 message", 2, &confounder)?;
+        let mut encrypted = Rc4HmacEtype::encrypt_message_with_confounder(
+            &key,
+            b"kerberos rc4 message",
+            2,
+            &confounder,
+        )?;
         *encrypted.first_mut().ok_or("ciphertext is not empty")? ^= 1;
         assert_eq!(
-            etype.decrypt_message(&key, &encrypted, 2),
+            Rc4HmacEtype::decrypt_message(&key, &encrypted, 2),
             Err(Error::IntegrityCheckFailed)
         );
         Ok(())

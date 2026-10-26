@@ -1,11 +1,7 @@
 //! AES tests: SHA-1 and SHA-2 AES etypes against the gokrb5 and RFC 3962 vectors.
 
-#[expect(
-    clippy::missing_const_for_fn,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
 /// Returns the 5-byte key-derivation constant: the big-endian `usage` followed by `suffix`.
-fn usage_constant(usage: u32, suffix: u8) -> [u8; 5] {
+const fn usage_constant(usage: u32, suffix: u8) -> [u8; 5] {
     let [byte0, byte1, byte2, byte3] = usage.to_be_bytes();
     [byte0, byte1, byte2, byte3, suffix]
 }
@@ -96,14 +92,14 @@ mod tests {
         assert_eq!(AesSha1Etype::Aes128.etype_id(), 17_i32);
         assert_eq!(AesSha1Etype::Aes128.checksum_type_id(), 15_i32);
         assert_eq!(AesSha1Etype::Aes128.key_len(), 16_usize);
-        assert_eq!(AesSha1Etype::Aes128.confounder_len(), 16_usize);
-        assert_eq!(AesSha1Etype::Aes128.hmac_len(), 12_usize);
-        assert_eq!(AesSha1Etype::Aes128.default_s2kparams(), "00001000");
+        assert_eq!(AesSha1Etype::confounder_len(), 16_usize);
+        assert_eq!(AesSha1Etype::hmac_len(), 12_usize);
+        assert_eq!(AesSha1Etype::default_s2kparams(), "00001000");
 
         assert_eq!(AesSha1Etype::Aes256.etype_id(), 18_i32);
         assert_eq!(AesSha1Etype::Aes256.checksum_type_id(), 16_i32);
         assert_eq!(AesSha1Etype::Aes256.key_len(), 32_usize);
-        assert_eq!(AesSha1Etype::Aes256.default_s2kparams(), "00001000");
+        assert_eq!(AesSha1Etype::default_s2kparams(), "00001000");
     }
 
     /// Pins the AES-SHA2 etype metadata and the dispatch of every AES etype through `KerberosEtype`.
@@ -117,16 +113,16 @@ mod tests {
         assert_eq!(AesSha2Etype::Aes128.checksum_type_id(), 19_i32);
         assert_eq!(AesSha2Etype::Aes128.ename(), "aes128-cts-hmac-sha256-128");
         assert_eq!(AesSha2Etype::Aes128.key_len(), 16_usize);
-        assert_eq!(AesSha2Etype::Aes128.confounder_len(), 16_usize);
+        assert_eq!(AesSha2Etype::confounder_len(), 16_usize);
         assert_eq!(AesSha2Etype::Aes128.hmac_len(), 16_usize);
-        assert_eq!(AesSha2Etype::Aes128.default_s2kparams(), "00008000");
+        assert_eq!(AesSha2Etype::default_s2kparams(), "00008000");
 
         assert_eq!(AesSha2Etype::Aes256.etype_id(), 20_i32);
         assert_eq!(AesSha2Etype::Aes256.checksum_type_id(), 20_i32);
         assert_eq!(AesSha2Etype::Aes256.ename(), "aes256-cts-hmac-sha384-192");
         assert_eq!(AesSha2Etype::Aes256.key_len(), 32_usize);
         assert_eq!(AesSha2Etype::Aes256.hmac_len(), 24_usize);
-        assert_eq!(AesSha2Etype::Aes256.default_s2kparams(), "00008000");
+        assert_eq!(AesSha2Etype::default_s2kparams(), "00008000");
 
         assert_eq!(
             KerberosEtype::from_etype_id(17),

@@ -247,7 +247,7 @@ mod tests {
     {
         runtime()?.block_on(async {
             let mut config = config_with_kpasswd_servers(["kpasswd.test.gokrb5".to_owned()], 1465)?;
-            config.libdefaults.dns_lookup_kdc = true;
+            config.libdefaults.dns_lookup_kdc = true.into();
 
             let endpoints = TokioKdcTransport::new()
                 .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Udp)

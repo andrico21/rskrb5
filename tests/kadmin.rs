@@ -410,9 +410,11 @@ mod tests {
             service_ticket,
             &service_session_key,
             options,
-            reply_key.clone(),
-            &decode_hex(CHG_PASSWD_MSG_AP_REQ_CONFOUNDER)?,
-            &decode_hex(CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER)?,
+            rskrb5_ng::kadmin::PasswordEncryption::new(
+                reply_key.clone(),
+                &decode_hex(CHG_PASSWD_MSG_AP_REQ_CONFOUNDER)?,
+                &decode_hex(CHG_PASSWD_MSG_KRB_PRIV_CONFOUNDER)?,
+            ),
         )
         .context("kpasswd message builds")?;
 
@@ -570,9 +572,11 @@ mod tests {
             service_ticket,
             &service_session_key,
             options,
-            reply_key.clone(),
-            &ap_req_confounder,
-            &krb_priv_confounder,
+            rskrb5_ng::kadmin::PasswordEncryption::new(
+                reply_key.clone(),
+                &ap_req_confounder,
+                &krb_priv_confounder,
+            ),
         )
         .context("change-password message with confounders builds")?;
 

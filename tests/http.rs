@@ -1036,7 +1036,7 @@ mod tests {
         accepted
             .ap_rep_response_header_with_confounder(
                 &decode_hex(AP_REP_CONFOUNDER)?,
-                ApRepOptions::default(),
+                &ApRepOptions::default(),
             )
             .context("AP-REP response header builds")
     }
@@ -1631,7 +1631,7 @@ mod tests {
         Ok(accepted
             .ap_rep_response_header_with_confounder(
                 &decode_hex(AP_REP_CONFOUNDER)?,
-                ApRepOptions::default(),
+                &ApRepOptions::default(),
             )
             .map_err(|cause| format!("AP-REP response header builds: {cause}"))?)
     }

@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn as_req_options_from_libdefaults_sets_canonicalize_flag() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
-            .with_canonicalize(true)
+            .with_canonicalize(true.into())
             .with_kdc_default_options(0x0000_0010);
         let client = Principal::user("TEST.GOKRB5", "testuser1");
         let options =
@@ -405,7 +405,7 @@ mod tests {
         let defaults = LibDefaults::default()
             .with_default_tkt_enctype_ids(vec![18_i32, 17_i32, 23_i32])
             .with_permitted_enctype_ids(vec![18_i32])
-            .with_permitted_enctypes_explicit(true);
+            .with_permitted_enctypes_explicit(true.into());
         let options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
@@ -421,7 +421,7 @@ mod tests {
         let defaults = LibDefaults::default()
             .with_default_tkt_enctype_ids(vec![18_i32])
             .with_permitted_enctype_ids(vec![17_i32])
-            .with_permitted_enctypes_explicit(true);
+            .with_permitted_enctypes_explicit(true.into());
         let options =
             AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         assert!(
@@ -461,7 +461,7 @@ mod tests {
  default_tkt_enctypes = aes128-cts-hmac-sha256-128
 ",
         )?;
-        assert!(!config.libdefaults.permitted_enctypes_explicit);
+        assert!(!config.libdefaults.permitted_enctypes_explicit.is_enabled());
 
         let options = AsReqOptions::from_libdefaults(
             timestamp(1_893_553_447)?,

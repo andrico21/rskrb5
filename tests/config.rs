@@ -203,13 +203,13 @@ mod tests {
                 "[libdefaults]\n permitted_enctypes = {}\n",
                 names.join(" ")
             ))?;
-            prop_assert!(config.libdefaults.permitted_enctypes_explicit, "parsed list is explicit");
+            prop_assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled(), "parsed list is explicit");
             prop_assert_eq!(&config.libdefaults.permitted_enctype_ids, &expected_ids);
 
             let json = serde_json::to_string(&config.libdefaults)?;
             let decoded: LibDefaults = serde_json::from_str(&json)?;
 
-            prop_assert!(decoded.permitted_enctypes_explicit, "explicit flag survives serde");
+            prop_assert!(decoded.permitted_enctypes_explicit.is_enabled(), "explicit flag survives serde");
             prop_assert_eq!(&decoded.permitted_enctype_ids, &expected_ids);
             prop_assert_eq!(decoded, config.libdefaults);
         }
@@ -252,10 +252,10 @@ mod tests {
     fn libdefaults_defaults_match_gokrb5() {
         let config = Config::new();
 
-        assert!(!config.libdefaults.dns_lookup_kdc);
-        assert!(!config.libdefaults.dns_lookup_realm);
-        assert!(config.libdefaults.dns_canonicalize_hostname);
-        assert!(config.libdefaults.no_addresses);
+        assert!(!config.libdefaults.dns_lookup_kdc.is_enabled());
+        assert!(!config.libdefaults.dns_lookup_realm.is_enabled());
+        assert!(config.libdefaults.dns_canonicalize_hostname.is_enabled());
+        assert!(config.libdefaults.no_addresses.is_enabled());
     }
 
     /// Pins the libdefaults, KDCs, kpasswd servers and realm mapping of the gokrb5 integration config.
@@ -264,10 +264,10 @@ mod tests {
         let config = Config::parse(KRB5_CONF).context("config parses")?;
 
         assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-        assert!(!config.libdefaults.dns_lookup_realm);
-        assert!(!config.libdefaults.dns_lookup_kdc);
-        assert!(!config.libdefaults.no_addresses);
-        assert!(config.libdefaults.forwardable);
+        assert!(!config.libdefaults.dns_lookup_realm.is_enabled());
+        assert!(!config.libdefaults.dns_lookup_kdc.is_enabled());
+        assert!(!config.libdefaults.no_addresses.is_enabled());
+        assert!(config.libdefaults.forwardable.is_enabled());
         assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(24));
         assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32]);
         assert_eq!(config.libdefaults.default_tgs_enctype_ids, [18_i32]);
@@ -502,7 +502,7 @@ mod tests {
 
         assert_eq!(config.realms.len(), 3);
         let test_realm = config.realm("TEST.GOKRB5").context("TEST realm exists")?;
-        assert_eq!(test_realm.realm, "TEST.GOKRB5");
+        assert_eq!(test_realm.name, "TEST.GOKRB5");
         assert_eq!(test_realm.admin_server, ["10.80.88.88:749"]);
         assert_eq!(test_realm.kpasswd_server, ["10.80.88.88:464"]);
         assert_eq!(test_realm.default_domain, "test.gokrb5");
@@ -708,7 +708,7 @@ mod tests {
         )
         .context("config parses")?;
 
-        assert!(config.libdefaults.dns_lookup_kdc);
+        assert!(config.libdefaults.dns_lookup_kdc.is_enabled());
         assert_eq!(
             config
                 .configured_kdcs("TEST.GOKRB5")
@@ -733,7 +733,7 @@ mod tests {
         .context("config parses")?;
 
         assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-        assert!(config.libdefaults.forwardable);
+        assert!(config.libdefaults.forwardable.is_enabled());
         assert_eq!(config.libdefaults.extra_addresses.len(), 2);
         assert_eq!(
             config
@@ -989,14 +989,14 @@ mod tests {
 ",
         )
         .map_err(|cause| format!("config parses: {cause}"))?;
-        assert!(config.libdefaults.permitted_enctypes_explicit);
+        assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled());
 
         let json = serde_json::to_string(&config.libdefaults)
             .map_err(|cause| format!("libdefaults serialize: {cause}"))?;
         let decoded: LibDefaults = serde_json::from_str(&json)
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
 
-        assert!(decoded.permitted_enctypes_explicit);
+        assert!(decoded.permitted_enctypes_explicit.is_enabled());
         assert_eq!(decoded, config.libdefaults);
         #[cfg(feature = "messages")]
         assert_eq!(encoded_as_req_etypes(&decoded)?, vec![18_i32]);
@@ -1007,14 +1007,14 @@ mod tests {
     #[test]
     fn implicit_permitted_enctypes_round_trip_stays_implicit() -> Result<(), TestError> {
         let config = Config::parse(KRB5_CONF).map_err(|cause| format!("config parses: {cause}"))?;
-        assert!(!config.libdefaults.permitted_enctypes_explicit);
+        assert!(!config.libdefaults.permitted_enctypes_explicit.is_enabled());
 
         let json = serde_json::to_string(&config.libdefaults)
             .map_err(|cause| format!("libdefaults serialize: {cause}"))?;
         let decoded: LibDefaults = serde_json::from_str(&json)
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
 
-        assert!(!decoded.permitted_enctypes_explicit);
+        assert!(!decoded.permitted_enctypes_explicit.is_enabled());
         assert_eq!(decoded, config.libdefaults);
         Ok(())
     }
@@ -1041,7 +1041,7 @@ mod tests {
         let decoded: LibDefaults = serde_json::from_value(value)
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
 
-        assert!(!decoded.permitted_enctypes_explicit);
+        assert!(!decoded.permitted_enctypes_explicit.is_enabled());
         assert_eq!(decoded.permitted_enctype_ids, vec![18_i32]);
         Ok(())
     }
@@ -1112,7 +1112,7 @@ mod tests {
             format!("an implicit request list is not validated at parse time: {cause}")
         })?;
 
-        assert!(config.libdefaults.permitted_enctypes_explicit);
+        assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled());
         assert_eq!(
             config.libdefaults.default_tkt_enctype_ids,
             vec![18_i32, 17_i32, 23_i32]

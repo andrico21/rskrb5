@@ -99,80 +99,6 @@ const HTTP_KEYTAB: &str = concat!(
     "c4dc02001200209cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51",
 );
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::needless_pass_by_value,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Builds a preauthenticated AS-REQ for the test user with an AES256 timestamp.
 ///
 /// The cusec, nonce and confounder vary by `protocol`, so the UDP and TCP
@@ -183,7 +109,7 @@ const HTTP_KEYTAB: &str = concat!(
 /// Returns an error if the clock is before the Unix epoch or the request cannot be built.
 fn build_login_request(
     protocol: KdcProtocol,
-    key: EncryptionKey,
+    key: &EncryptionKey,
 ) -> Result<BuiltAsReq, Box<dyn Error>> {
     let now = SystemTime::now();
     let elapsed = now.duration_since(UNIX_EPOCH)?;
@@ -213,7 +139,7 @@ fn build_login_request(
             _ => return Err("unexpected non-exhaustive protocol variant".into()),
         };
     let padata = pa_enc_timestamp_with_confounder(
-        &key,
+        key,
         timestamp,
         cusec,
         &confounder(protocol, elapsed),
@@ -227,86 +153,12 @@ fn build_login_request(
     Ok(build_tgt_as_req(Principal::user(REALM, USER), options)?)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::needless_pass_by_value,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Asserts that `session` is a fresh AES256 TGT of the test user in the test realm.
 ///
 /// # Panics
 ///
 /// Panics if any of those properties does not hold.
-fn assert_login_session(session: AsRepSession) {
+fn assert_login_session(session: &AsRepSession) {
     assert_eq!(
         session.client,
         Principal::user(REALM, USER),
@@ -435,7 +287,7 @@ mod tests {
                     protocol_label(protocol)
                 )?;
                 let key = testuser_reply_key()?;
-                let request = build_login_request(protocol, key.clone())?;
+                let request = build_login_request(protocol, &key)?;
                 let session = transport
                     .exchange_as_req(protocol, addr.as_str(), &request, &key)
                     .await?;
@@ -488,7 +340,7 @@ mod tests {
                         login_options(protocol, 1)?,
                     )
                     .await?;
-                assert_login_session(password_session);
+                assert_login_session(&password_session);
 
                 writeln!(
                     io::stderr(),
@@ -504,7 +356,7 @@ mod tests {
                         login_options(protocol, 2)?,
                     )
                     .await?;
-                assert_login_session(keytab_session);
+                assert_login_session(&keytab_session);
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -594,7 +446,7 @@ mod tests {
                 assert_eq!(session.session_key.etype, DES3_ETYPE);
                 assert_eq!(
                     session.session_key.value.len(),
-                    Des3CbcSha1KdEtype::new().key_len()
+                    Des3CbcSha1KdEtype::key_len()
                 );
                 assert!(
                     !session.ticket.is_empty(),
@@ -641,7 +493,7 @@ mod tests {
                         login_options(protocol, 7)?,
                     )
                     .await?;
-                assert_login_session(password_session);
+                assert_login_session(&password_session);
 
                 let keytab_session = transport
                     .login_tgt_with_keytab_config(
@@ -652,7 +504,7 @@ mod tests {
                         login_options(protocol, 8)?,
                     )
                     .await?;
-                assert_login_session(keytab_session);
+                assert_login_session(&keytab_session);
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -803,7 +655,7 @@ mod tests {
             .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
             let session = client.login().await?;
 
-            assert_login_session(session.clone());
+            assert_login_session(&session.clone());
 
             Ok::<_, Box<dyn Error>>(())
         })
@@ -876,7 +728,7 @@ mod tests {
             let _: &AsRepSession = client.login().await?;
             let ticket = client.get_service_ticket(service.clone()).await?;
 
-            assert_login_session(client.tgt_session().ok_or("TGT is cached")?.clone());
+            assert_login_session(&client.tgt_session().ok_or("TGT is cached")?.clone());
             assert_eq!(ticket.service, service);
             assert_eq!(client.cached_service_ticket_count(), 1);
             assert!(client.cached_service_ticket(service.clone()).is_some());
@@ -953,7 +805,7 @@ mod tests {
             assert_eq!(restored.code, KPASSWD_SUCCESS);
 
             let session = password_login(&config, protocol, PASSWORD).await?;
-            assert_login_session(session);
+            assert_login_session(&session);
 
             Ok::<_, Box<dyn Error>>(())
         })
@@ -1003,7 +855,7 @@ mod tests {
                         login_options(protocol, 9)?,
                     )
                     .await?;
-                assert_login_session(session);
+                assert_login_session(&session);
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1039,7 +891,7 @@ mod tests {
                         login_options(protocol, 3)?,
                     )
                     .await?;
-                assert_login_session(tgt.clone());
+                assert_login_session(&tgt.clone());
 
                 let service = service_principal();
                 let request = build_tgs_req(&tgt, service.clone(), tgs_options(protocol, 4)?)?;
@@ -1090,7 +942,7 @@ mod tests {
                     login_options(protocol, 47)?,
                 )
                 .await?;
-            assert_login_session(tgt.clone());
+            assert_login_session(&tgt.clone());
 
             let service = service_principal();
             let request = build_tgs_req(&tgt, service.clone(), tgs_options(protocol, 48)?)?;
@@ -1275,7 +1127,7 @@ mod tests {
                 assert_eq!(ticket.session_key.etype, DES3_ETYPE);
                 assert_eq!(
                     ticket.session_key.value.len(),
-                    Des3CbcSha1KdEtype::new().key_len()
+                    Des3CbcSha1KdEtype::key_len()
                 );
                 assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
                 assert!(ticket.end_time > ticket.start_time);
@@ -1552,14 +1404,14 @@ mod tests {
                             .with_renew_lifetime(Some(Duration::from_mins(10))),
                     )
                     .await?;
-                assert_login_session(tgt.clone());
+                assert_login_session(&tgt.clone());
                 let original_renew_till = tgt.renew_till.ok_or("renewable TGT has renew-till")?;
 
                 let renewed = transport
                     .renew_tgt(protocol, addr.as_str(), &tgt, tgs_options(protocol, 13)?)
                     .await?;
 
-                assert_login_session(renewed.clone());
+                assert_login_session(&renewed.clone());
                 assert_eq!(renewed.service, Principal::tgt_service(REALM));
                 assert_eq!(renewed.renew_till, Some(original_renew_till));
                 assert!(renewed.end_time <= original_renew_till);
@@ -1601,7 +1453,7 @@ mod tests {
                     original.renew_till.ok_or("renewable TGT has renew-till")?;
                 let renewed = client.renew_tgt().await?.clone();
 
-                assert_login_session(renewed.clone());
+                assert_login_session(&renewed.clone());
                 assert_eq!(renewed.service, Principal::tgt_service(REALM));
                 assert_eq!(renewed.renew_till, Some(original_renew_till));
                 assert!(renewed.end_time <= original_renew_till);
@@ -1641,7 +1493,7 @@ mod tests {
                         login_options(protocol, 10)?,
                     )
                     .await?;
-                assert_login_session(tgt.clone());
+                assert_login_session(&tgt.clone());
 
                 let service = resdom_service_principal();
                 let ticket = transport
@@ -1769,7 +1621,7 @@ mod tests {
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
                     &confounder(protocol, elapsed),
-                    ApRepOptions::default(),
+                    &ApRepOptions::default(),
                 )?;
                 let verified = context.verify_ap_rep_response_header(&response_header)?;
                 assert_eq!(verified.ctime, context.authenticator_ctime);
@@ -1979,7 +1831,7 @@ mod tests {
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
                     &rc4_confounder(protocol, elapsed),
-                    ApRepOptions::default(),
+                    &ApRepOptions::default(),
                 )?;
                 let verified = context.verify_ap_rep_response_header(&response_header)?;
                 assert_eq!(verified.ctime, context.authenticator_ctime);
@@ -2054,7 +1906,7 @@ mod tests {
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
                     &des3_confounder(protocol, elapsed),
-                    ApRepOptions::default(),
+                    &ApRepOptions::default(),
                 )?;
                 let verified = context.verify_ap_rep_response_header(&response_header)?;
                 assert_eq!(verified.ctime, context.authenticator_ctime);
@@ -2392,7 +2244,7 @@ mod tests {
         let etype = AesSha1Etype::Aes256;
         Ok(EncryptionKey::new(
             etype.etype_id(),
-            etype.string_to_key(PASSWORD, TESTUSER1_SALT, etype.default_s2kparams())?,
+            etype.string_to_key(PASSWORD, TESTUSER1_SALT, AesSha1Etype::default_s2kparams())?,
         ))
     }
 

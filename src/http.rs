@@ -248,82 +248,8 @@ pub struct NegotiateHttpResponse<B> {
 
 #[cfg(feature = "tokio")]
 impl<B> NegotiateHttpResponse<B> {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// The result for a first response that issued no Negotiate challenge.
-    fn not_negotiated(response: Response<B>) -> Self {
+    const fn not_negotiated(response: Response<B>) -> Self {
         Self {
             response,
             context: None,
@@ -331,83 +257,9 @@ impl<B> NegotiateHttpResponse<B> {
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// The result of an authenticated retry with its initiator context and the
     /// classification of its final response.
-    fn negotiated(
+    const fn negotiated(
         response: Response<B>,
         context: spnego::InitiatorContext,
         negotiation: ClientNegotiateResponse,
@@ -419,83 +271,9 @@ impl<B> NegotiateHttpResponse<B> {
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                not(feature = "tower"),
-                test
-            )
-        ),
-        expect(
-            clippy::missing_const_for_fn,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Return whether the wrapper retried after a Negotiate challenge.
     #[inline]
-    pub fn did_negotiate(&self) -> bool {
+    pub const fn did_negotiate(&self) -> bool {
         self.context.is_some()
     }
 
@@ -1349,58 +1127,7 @@ impl<'keytab> NegotiateLayer<'keytab> {
 
 #[cfg(feature = "tower")]
 impl NegotiateLayer<'static> {
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            )
-        ),
-        expect(
-            clippy::must_use_candidate,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    #[must_use]
     /// Create a Negotiate layer from an owned service keytab.
     #[inline]
     pub fn from_keytab(keytab: Keytab) -> Self {
@@ -1411,58 +1138,6 @@ impl NegotiateLayer<'static> {
         }
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            )
-        ),
-        expect(
-            clippy::impl_trait_in_params,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Create a Negotiate layer by loading a file-backed keytab name.
     ///
     /// Bare paths, `FILE:path`, and `WRFILE:path` are supported by the keytab
@@ -1473,7 +1148,10 @@ impl NegotiateLayer<'static> {
     /// Returns [`Error::Keytab`] when the name is not a file keytab or the
     /// file cannot be read or parsed.
     #[inline]
-    pub fn from_keytab_name(keytab_name: impl AsRef<str>) -> Result<Self> {
+    pub fn from_keytab_name<P>(keytab_name: P) -> Result<Self>
+    where
+        P: AsRef<str>,
+    {
         Ok(Self::from_keytab(Keytab::load_name(keytab_name)?))
     }
 
@@ -1665,58 +1343,6 @@ impl<S> NegotiateService<'static, S> {
         NegotiateLayer::from_keytab(keytab).layer(inner)
     }
 
-    #[cfg_attr(
-        any(
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                feature = "evaluation",
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                not(test)
-            ),
-            all(
-                feature = "default",
-                not(feature = "evaluation"),
-                feature = "http",
-                feature = "messages",
-                feature = "serde",
-                feature = "spnego",
-                feature = "tokio",
-                feature = "tower",
-                test
-            )
-        ),
-        expect(
-            clippy::impl_trait_in_params,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
     /// Wrap an inner service by loading a file-backed keytab name.
     ///
     /// Bare paths, `FILE:path`, and `WRFILE:path` are supported by the keytab
@@ -1727,7 +1353,10 @@ impl<S> NegotiateService<'static, S> {
     /// Returns [`Error::Keytab`] when the name is not a file keytab or the
     /// file cannot be read or parsed.
     #[inline]
-    pub fn from_keytab_name(inner: S, keytab_name: impl AsRef<str>) -> Result<Self> {
+    pub fn from_keytab_name<P>(inner: S, keytab_name: P) -> Result<Self>
+    where
+        P: AsRef<str>,
+    {
         Ok(NegotiateLayer::from_keytab_name(keytab_name)?.layer(inner))
     }
 
@@ -1806,7 +1435,7 @@ where
         };
 
         let ap_rep_header = if self.response.emit_ap_rep {
-            match accepted.ap_rep_response_header(self.response.ap_rep_options.clone()) {
+            match accepted.ap_rep_response_header(&self.response.ap_rep_options.clone()) {
                 Ok(header) => Some(header),
                 Err(error) => {
                     return Box::pin(async { Err(TowerError::Http(Error::Spnego(error))) });

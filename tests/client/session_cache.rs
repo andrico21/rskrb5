@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn tokio_client_validates_configuration() -> Result<(), TestError> {
         let mut dns_config = Config::new();
-        dns_config.libdefaults.dns_lookup_kdc = true;
+        dns_config.libdefaults.dns_lookup_kdc = true.into();
         let configured = TokioClient::with_password(
             dns_config,
             KdcProtocol::Tcp,
