@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/prose_gate.py --self-test
+# How to run: python3 scripts/lint-gates/prose_gate.py --self-test
 """Whole-tree prose rules, ported from rmcp-server-kit (MIT/Apache-2.0)."""
 
 from __future__ import annotations
@@ -210,8 +210,9 @@ def self_test() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=common.ROOT)
-    parser.add_argument("--paths-file", type=Path)
-    parser.add_argument("--paths", nargs="+")
+    parser.add_argument(
+        "--paths", nargs="+", help="path globs to scan (default: the whole tree)"
+    )
     parser.add_argument("--only", action="append", choices=CHECKS)
     parser.add_argument("--report", action="store_true")
     parser.add_argument("--enforce", action="store_true")
@@ -220,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_test:
         return self_test()
     try:
-        hits = report(args.root, path_scope.patterns(args.paths, args.paths_file))
+        hits = report(args.root, args.paths)
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"prose_gate: {error}", file=sys.stderr)
         return 1

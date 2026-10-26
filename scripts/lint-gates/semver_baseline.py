@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/semver_baseline.py [--self-test]
+# How to run: python3 scripts/lint-gates/semver_baseline.py [--self-test]
 """Run cargo-semver-checks against the last published rskrb5-ng release tag.
 
 The baseline is the highest `vX.Y.Z` tag whose `Cargo.toml` names `rskrb5-ng`

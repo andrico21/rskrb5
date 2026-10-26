@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Lint tooling
+
+- Removed the transition baseline machinery: the empty `lint-migration:`
+  baseline and its gates (`baseline_gate.py`, `generate_baseline.py`,
+  `closure_report.py`, `clean-paths.txt`) are deleted with
+  `scripts/lint-ratchet/`. The remaining gates live in `scripts/lint-gates/`,
+  joined by `exception_gate.py`, which admits only the six sanctioned
+  `expect` forms. `docs/lint-policy.md` replaces `docs/lint-baseline.md`.
+
 ## [0.3.0] - 2026-10-24
 
 Patched fork of `rskrb5`, still based on upstream `clelange/rskrb5` `main` at
@@ -107,11 +118,11 @@ retirement trigger.
   guidelines (equal to rmcp-server-kit `b7f6b66`), with `clippy.toml`,
   `.cargo/config.toml` (`build.warnings = "deny"`) and no `allow` attributes.
   Upstream code keeps its existing violations as generated, item-level
-  `lint-migration:` expectations listed in `scripts/lint-ratchet/baseline.toml`
+  `lint-migration:` expectations listed in a generated baseline manifest
   (7,396 at adoption, 6,514 now), which can only shrink. Fork code passes the
   profile outright. Gates: fork-lines (differential diagnostics), prose (the
   core's non-lint rules), baseline ratchet, profile equality, profile
-  completeness and allow. See `docs/lint-baseline.md`.
+  completeness and allow. See `docs/lint-policy.md` (the baseline is gone).
 - CI floats on `stable`; rustfmt and the second rustdoc run use
   `nightly-2026-10-03` with rmcp-server-kit's `rustfmt.toml`.
 - **Breaking:** `rust-version` is raised from 1.88 to 1.99. The lockfile holds

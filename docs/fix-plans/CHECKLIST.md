@@ -103,7 +103,7 @@ Plan tests that were missing, all written in todos 1, 5, 6 and 7:
 
 ## 4. Lint profile and tooling on `release/0.3.0`
 
-Details in [`../lint-baseline.md`](../lint-baseline.md); summary in FORK-NOTES "Lint profile".
+Details in `docs/lint-baseline.md` at `856da18` (the current policy is [`../lint-policy.md`](../lint-policy.md)); summary in FORK-NOTES "Lint profile".
 
 - [x] Nightly rustfmt profile from rmcp-server-kit, `nightly-2026-10-03` (todo 11, `8eb3977`).
 - [x] Environment test helper: child-process re-exec instead of `unsafe` `set_var`, shared helpers split into `tests/support/` (todo 12, `b61c3f2`).
@@ -126,7 +126,7 @@ aliases, (l) the crate-level `dead_code_pub_in_binary` expectation,
 (m) module-wrap re-keying counted as a move by the ratchet, and (n)/(o) `?`
 rewrites in the listed fork-touched upstream tests plus one shadowing rename.
 Each one is listed, with its commits, in
-[`../lint-baseline.md`](../lint-baseline.md) ("Authorized upstream-line
+`docs/lint-baseline.md` at `856da18` ("Authorized upstream-line
 rewrites and exceptions").
 
 ## 5. Upstream (clelange/rskrb5) bookkeeping

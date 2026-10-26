@@ -1,0 +1,327 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+# How to run: python3 scripts/lint-gates/exception_gate.py --enforce
+"""Admit only the six sanctioned lint exceptions, each on its item kind.
+
+Every `#[expect]`/`#![expect]` in the Rust tree, including one nested in
+`cfg_attr`, must be exactly one of:
+
+1. a test pair on a `mod` under `#[cfg(test)]`:
+   `clippy::missing_errors_doc`, `clippy::missing_panics_doc` and/or
+   `clippy::too_long_first_doc_paragraph` with "test code is not rendered API
+   documentation", or `clippy::panic_in_result_fn` with "a test fails by
+   panicking";
+2. `missing_copy_implementations` on a type, "secret material must not be
+   implicitly copied";
+3. the crate-root facade `#![expect(clippy::pub_use, reason = "public facade")]`
+   in `src/lib.rs`;
+4. `clippy::missing_const_for_fn` on a `fn`, "deliberate: <path> - <why>";
+5. `clippy::unused_async_trait_impl` on a `fn` or `impl`,
+   "deliberate: <path> - <foreign trait> mandates async";
+6. `#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "public API:
+   unused inside the unit-test harness"))]` in `src/lib.rs`.
+
+`#[deny(lint, reason = "...")]` opt-ins of excluded lints are not exceptions and
+pass. `#[allow]` is the allow gate's business.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Final
+
+import common
+
+TEST_DOCS: Final = frozenset(
+    {
+        "clippy::missing_errors_doc",
+        "clippy::missing_panics_doc",
+        "clippy::too_long_first_doc_paragraph",
+    }
+)
+TEST_DOCS_REASON: Final = "test code is not rendered API documentation"
+TEST_PANIC_REASON: Final = "a test fails by panicking"
+SECRET_REASON: Final = "secret material must not be implicitly copied"
+FACADE_REASON: Final = "public facade"
+HARNESS_REASON: Final = "public API: unused inside the unit-test harness"
+DELIBERATE_CONST: Final = re.compile(r"deliberate: \S*::\S* - \S.*", re.S)
+DELIBERATE_ASYNC: Final = re.compile(
+    r"deliberate: \S*::\S* - \S.* mandates async", re.S
+)
+TYPE_KINDS: Final = frozenset({"struct", "enum", "union"})
+CRATE_ROOT: Final = "src/lib.rs"
+
+
+def is_cfg_test(body: str) -> bool:
+    predicate = re.sub(r"\s+", "", body)
+    return predicate == "cfg(test)" or predicate.startswith("cfg(all(test,")
+
+
+def under_cfg_test(stripped: str, items: list[common.Item], item: common.Item) -> bool:
+    """The item, or an item enclosing it, carries `#[cfg(test)]`."""
+    return any(
+        outer.start <= item.start and item.end <= outer.end
+        for outer in items
+        for _, _, inner, body in common.iter_attributes(
+            stripped[outer.start : outer.keyword]
+        )
+        if not inner and is_cfg_test(body)
+    )
+
+
+def outer_item(items: list[common.Item], offset: int) -> common.Item | None:
+    """The item an outer attribute at `offset` belongs to."""
+    return max(
+        (item for item in items if item.start <= offset < item.keyword),
+        key=lambda item: item.start,
+        default=None,
+    )
+
+
+def check(
+    call: common.AttributeCall,
+    file: str,
+    stripped: str,
+    items: list[common.Item],
+) -> str | None:
+    """Return why `call` is not a sanctioned exception, or None."""
+    lints, reason = call.lints, call.reason
+    if reason.startswith(("lint-migration:", "invariant:")):
+        return f"transition reason form {reason.split(':', 1)[0]!r} is forbidden"
+    if call.inner:
+        enclosing = common.owner(items, call.start)
+        crate_level = file == CRATE_ROOT and enclosing is None
+        if lints == ("clippy::pub_use",) and reason == FACADE_REASON:
+            if crate_level and call.predicate == "always":
+                return None
+            return "the facade is allowed only as a plain inner attribute of src/lib.rs"
+        if lints == ("dead_code_pub_in_binary",) and reason == HARNESS_REASON:
+            if crate_level and call.predicate == "test":
+                return None
+            return (
+                "form (6) is allowed only as the inner "
+                "cfg_attr(test, expect(..)) attribute of src/lib.rs"
+            )
+        return "only the facade and form (6) may be inner attributes"
+    item = outer_item(items, call.start)
+    kind = item.kind if item is not None else "statement"
+    test_docs = (
+        lints
+        and len(set(lints)) == len(lints)
+        and set(lints) <= TEST_DOCS
+        and reason == TEST_DOCS_REASON
+    )
+    test_panic = (
+        lints == ("clippy::panic_in_result_fn",) and reason == TEST_PANIC_REASON
+    )
+    if test_docs or test_panic:
+        if item is not None and kind == "mod" and under_cfg_test(stripped, items, item):
+            return None
+        return f"a test pair is allowed only on a mod under #[cfg(test)], not on {kind}"
+    if lints == ("missing_copy_implementations",) and reason == SECRET_REASON:
+        return (
+            None if kind in TYPE_KINDS else f"the secret pair needs a type, not {kind}"
+        )
+    if lints == ("clippy::missing_const_for_fn",) and DELIBERATE_CONST.fullmatch(
+        reason
+    ):
+        return None if kind == "fn" else f"deliberate const needs a fn, not {kind}"
+    if lints == ("clippy::unused_async_trait_impl",) and DELIBERATE_ASYNC.fullmatch(
+        reason
+    ):
+        return None if kind in ("fn", "impl") else f"deliberate async on {kind}"
+    if lints == ("clippy::pub_use",) and reason == FACADE_REASON:
+        return "the facade is allowed only as an inner attribute of src/lib.rs"
+    if lints == ("dead_code_pub_in_binary",) and reason == HARNESS_REASON:
+        return "form (6) is allowed only as an inner attribute of src/lib.rs"
+    return "not one of the six sanctioned exception forms"
+
+
+def scan(file: str, source: str) -> list[str]:
+    stripped = common.strip_comments_and_strings(source)
+    items = common.scan_items(source)
+    hits = []
+    for call in common.attribute_calls(source, stripped):
+        if call.form != "expect":
+            continue
+        problem = check(call, file, stripped, items)
+        if problem is not None:
+            line = common.line_of(source, call.kw_start)
+            hits.append(
+                f"{file}:{line}: expect({', '.join(call.lints)}, "
+                f"reason = {call.reason!r}) [{call.predicate}]: {problem}"
+            )
+    return hits
+
+
+def report(root: Path) -> list[str]:
+    return [
+        hit
+        for path in common.iter_rust_files(root)
+        for hit in scan(path.relative_to(root).as_posix(), path.read_text())
+    ]
+
+
+ACCEPTED: Final = (
+    (
+        "src/client.rs",
+        "#[cfg(test)]\n#[expect(\n    clippy::missing_errors_doc,\n"
+        '    clippy::too_long_first_doc_paragraph,\n    reason = "test code is not rendered API documentation"\n)]\n'
+        "mod tests {}\n",
+    ),
+    (
+        "tests/kdc.rs",
+        '#[cfg(test)]\n#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]\n'
+        "mod tests {}\n",
+    ),
+    (
+        "src/crypto.rs",
+        '/// Key bytes.\n#[expect(missing_copy_implementations, reason = "secret material must not be implicitly copied")]\n'
+        "pub struct Key { bytes: [u8; 16] }\n",
+    ),
+    (
+        "src/lib.rs",
+        '//! Crate.\n#![forbid(unsafe_code)]\n#![expect(clippy::pub_use, reason = "public facade")]\n'
+        "pub use crate::client::Client;\n",
+    ),
+    (
+        "src/client.rs",
+        "impl Client {\n    #[expect(\n        clippy::missing_const_for_fn,\n"
+        '        reason = "deliberate: crate::Client::new - may allocate later"\n    )]\n'
+        "    pub fn new() -> Self { Self }\n}\n",
+    ),
+    (
+        "src/http.rs",
+        "impl Service for Layer {\n    #[expect(\n        clippy::unused_async_trait_impl,\n"
+        '        reason = "deliberate: crate::http::Layer::call - tower::Service mandates async"\n    )]\n'
+        "    async fn call(&self) {}\n}\n",
+    ),
+    (
+        "src/lib.rs",
+        "#![cfg_attr(\n    test,\n    expect(\n        dead_code_pub_in_binary,\n"
+        '        reason = "public API: unused inside the unit-test harness"\n    )\n)]\n',
+    ),
+    (
+        "src/io.rs",
+        '#[deny(clippy::missing_trait_methods, reason = "every Read method must delegate")]\n'
+        "impl Read for Audited {}\n",
+    ),
+)
+
+REJECTED: Final = (
+    (
+        "invariant:",
+        "src/der.rs",
+        '#[expect(clippy::indexing_slicing, reason = "invariant: checked above")]\nfn f() {}\n',
+    ),
+    (
+        "lint-migration:",
+        "src/der.rs",
+        '#[cfg_attr(test, expect(dead_code, reason = "lint-migration: upstream baseline at abc1234"))]\nfn f() {}\n',
+    ),
+    (
+        "test pair on a non-test item",
+        "src/der.rs",
+        '#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]\nmod tests {}\n'
+        '#[cfg(test)]\n#[expect(clippy::missing_panics_doc, reason = "test code is not rendered API documentation")]\nfn helper() {}\n',
+    ),
+    (
+        "facade outside lib.rs",
+        "src/client.rs",
+        '#![expect(clippy::pub_use, reason = "public facade")]\npub use crate::Thing;\n',
+    ),
+    (
+        "form (6) outside lib.rs",
+        "src/main.rs",
+        '#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "public API: unused inside the unit-test harness"))]\n',
+    ),
+)
+
+
+WHY: Final = {
+    "invariant:": "transition reason form 'invariant'",
+    "lint-migration:": "transition reason form 'lint-migration'",
+    "test pair on a non-test item": "only on a mod under #[cfg(test)]",
+    "facade outside lib.rs": "only as a plain inner attribute of src/lib.rs",
+    "form (6) outside lib.rs": "form (6) is allowed only as the inner",
+}
+
+
+def self_test() -> int:
+    for file, source in ACCEPTED:
+        assert scan(file, source) == [], (file, source, scan(file, source))
+    for label, file, source in REJECTED:
+        hits = scan(file, source)
+        expected = 2 if label == "test pair on a non-test item" else 1
+        assert len(hits) == expected, (label, hits)
+        assert all(WHY[label] in hit for hit in hits), (label, hits)
+    # Near misses of the sanctioned forms are rejected too.
+    for file, source in (
+        ("src/der.rs", '#[expect(clippy::unwrap_used, reason = "x")]\nfn f() {}\n'),
+        ("src/lib.rs", '#![expect(clippy::pub_use, reason = "public facade!")]\n'),
+        (
+            "src/lib.rs",
+            '#![expect(dead_code_pub_in_binary, reason = "public API: unused inside the unit-test harness")]\n',
+        ),
+        (
+            "src/lib.rs",
+            'mod inner {\n    #![expect(clippy::pub_use, reason = "public facade")]\n}\n',
+        ),
+        (
+            "src/crypto.rs",
+            '#[expect(missing_copy_implementations, reason = "secret material must not be implicitly copied")]\nfn f() {}\n',
+        ),
+        (
+            "src/client.rs",
+            '#[expect(clippy::missing_const_for_fn, reason = "deliberate: new - no path")]\nfn new() {}\n',
+        ),
+        (
+            "src/client.rs",
+            '#[cfg(test)]\n#[expect(clippy::missing_errors_doc, clippy::missing_errors_doc, reason = "test code is not rendered API documentation")]\nmod tests {}\n',
+        ),
+    ):
+        assert len(scan(file, source)) == 1, (file, source, scan(file, source))
+    # A test pair on a mod nested in a cfg(test) mod is under cfg(test).
+    nested = (
+        "#[cfg(test)]\nmod tests {\n"
+        '    #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]\n'
+        "    mod inner {}\n}\n"
+    )
+    assert scan("src/der.rs", nested) == []
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "src").mkdir()
+        (root / "src/der.rs").write_text(REJECTED[0][2])
+        assert main(["--enforce", "--root", str(root)]) == 1
+        (root / "src/der.rs").write_text(ACCEPTED[1][1])
+        assert main(["--enforce", "--root", str(root)]) == 0
+    print(
+        "exception_gate self-test: ok (six sanctioned forms and a deny opt-in "
+        "accepted; five rejected forms and seven near misses rejected)"
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=common.ROOT)
+    parser.add_argument("--report", action="store_true")
+    parser.add_argument("--enforce", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args(argv)
+    if args.self_test:
+        return self_test()
+    hits = report(args.root)
+    print("\n".join(hits + [f"exception_gate: {len(hits)} unsanctioned expect(s)"]))
+    return int(args.enforce and bool(hits))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

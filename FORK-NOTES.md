@@ -75,12 +75,12 @@ gh run list -R andrico21/rskrb5 -w CI -b release/0.3.0 -e workflow_dispatch -L 1
 
 The crate builds under the strictest lint profile of the vendored Rust
 guidelines (core Section 9, equal to rmcp-server-kit `b7f6b66`), with no
-`allow` attributes. Inherited upstream violations are item-level
-`lint-migration:` expectations in a manifest that can only shrink; fork code
-passes the profile outright. [`docs/lint-baseline.md`](docs/lint-baseline.md)
-describes the profile, the baseline, the gates, every authorized rewrite of
-upstream lines, the rebaseline procedure for a new stable, and how the
-release line diverges from each upstream PR branch.
+`allow` attributes and no baseline: the whole tree passes the profile in every
+feature closure. [`docs/lint-policy.md`](docs/lint-policy.md) describes the
+profile, the six sanctioned exceptions, the gates and the procedure for a new
+stable. The transition record (every authorized rewrite of upstream lines and
+how the release line diverged from each upstream PR branch) is
+`docs/lint-baseline.md` at commit `856da18`.
 
 Known item: `client::build_tgs_req_for_realm_with_confounder_and_subkey`
 (fork commit `782dcb8`, issue #13) carries the only `deliberate:`
@@ -134,7 +134,7 @@ stable 0.13.0.
   `std::result::Result<…>` (same type), gains `#[inline]` and an `# Errors`
   section, and drops its 5 `lint-migration:` expectations (shrink only).
   These rewrites preserve runtime behavior;
-  the exact authorization record is in `docs/lint-baseline.md`.
+  the exact authorization record is in `docs/lint-baseline.md` at `856da18`.
 - **Behaviour changes:**
   - a config whose explicit `default_tkt_enctypes` or `default_tgs_enctypes`
     names an enctype outside an explicit `permitted_enctypes` fails to parse
@@ -157,9 +157,8 @@ stable 0.13.0.
   this crate with its own `[lints]` table and no lint cap. That build is
   verified warning-free, with warnings denied, for
   `default-features = false, features = ["tokio"]` and for the default
-  features (CI job `consumer`). Other feature combinations aren't covered by
-  the baseline and can fail a strict build; see O-7 in
-  `docs/lint-baseline.md`.
+  features (CI job `consumer`). Every other feature closure also lints and
+  tests clean; see `docs/lint-policy.md`.
 
 ## What it changes
 

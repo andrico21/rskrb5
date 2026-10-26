@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/scanner.py --self-test
+# How to run: python3 scripts/lint-gates/scanner.py --self-test
 # noqa: SIZE_OK - Only this scanner helper is authorized; lexer fixtures stay inline.
 """Byte-oriented Rust item locator; no compiler or third-party parser required.
 

@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/rust_lex.py --self-test
+# How to run: python3 scripts/lint-gates/rust_lex.py --self-test
 """Rust suppression lexer; character offsets preserve line structure."""
 
 from __future__ import annotations

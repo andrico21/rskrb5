@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/prose_infallible.py --self-test
+# How to run: python3 scripts/lint-gates/prose_infallible.py --self-test
 """Require test Results only when a propagation site is present.
 
 Assertions (including expect_err/unwrap_err) consume their fallible receivers.

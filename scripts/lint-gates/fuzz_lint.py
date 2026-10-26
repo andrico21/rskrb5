@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/fuzz_lint.py --enforce
+# How to run: python3 scripts/lint-gates/fuzz_lint.py --enforce
 """Apply the root lint profile to the separate fuzz crate."""
 
 from __future__ import annotations

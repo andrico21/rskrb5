@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/allow_gate.py --self-test
+# How to run: python3 scripts/lint-gates/allow_gate.py --self-test
 """Forbid Rust allow attributes; ported from rmcp-server-kit (MIT/Apache-2.0)."""
 
 from __future__ import annotations

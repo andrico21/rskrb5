@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/facade_gate.py --enforce
+# How to run: python3 scripts/lint-gates/facade_gate.py --enforce
 """Restrict public re-exports to the crate-root facade."""
 
 from __future__ import annotations
@@ -11,11 +11,17 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import common
-from diagnostics import Diagnostic
+
+
+@dataclass(frozen=True, slots=True)
+class Violation:
+    file: str
+    line: int
 
 
 def statements(source: str, file: str) -> list[tuple[str, int]]:
@@ -48,9 +54,9 @@ def statements(source: str, file: str) -> list[tuple[str, int]]:
     return result
 
 
-def report(root: Path, paths: list[str] | None = None) -> list[Diagnostic]:
+def report(root: Path, paths: list[str] | None = None) -> list[Violation]:
     return [
-        Diagnostic("SOURCE", "all", file, "clippy::pub_use", line)
+        Violation(file, line)
         for path in common.iter_rust_files(root)
         if common.selected(file := path.relative_to(root).as_posix(), paths)
         for _, line in statements(path.read_text(), file)
@@ -95,7 +101,7 @@ def main() -> int:
         return self_test()
     hits = report(args.root, args.paths)
     for hit in hits:
-        print(f"{hit.file}:{hit.line}: {hit.lint}")
+        print(f"{hit.file}:{hit.line}: clippy::pub_use outside the crate-root facade")
     print(f"facade_gate: {len(hits)} violations")
     return int(args.enforce and bool(hits))
 

@@ -15,7 +15,7 @@ exclude = [
   "docs/scratch-log.md",
   "fuzz/",
   ".cargo/",
-  "scripts/lint-ratchet/",
+  "scripts/lint-gates/",
   "RUST_GUIDELINES.md",
   "docs/rust-guidelines/",
   "supply-chain/",
