@@ -777,3 +777,11 @@ let error = Client::PrincipalMismatch {
 assert!(matches!(error, Client::PrincipalMismatch { .. }));
 # }
 ```
+# S4U frontend keys
+
+S4U exchanges now require frontend long-term keys to validate delegated ticket
+identity. Set `TgsReq::with_delegation_keytab(keytab)` for runtime-neutral or
+transport APIs. High-level keytab-backed clients provide their keys automatically.
+Without keys, reply processing returns `error::Client::DelegationKeyRequired`;
+protected ticket/evidence identity mismatches return `DelegationPrincipalMismatch`.
+`TgsReq` and `BuiltTgsReq` carry optional local-only `delegation_keytab` metadata.

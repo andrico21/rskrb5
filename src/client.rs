@@ -181,6 +181,8 @@ impl BuiltAsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
+    /// Frontend keys for validating S4U tickets; never encoded on the wire.
+    pub delegation_keytab: Option<Keytab>,
     /// ASN.1 TGS-REQ message.
     pub message: rasn_kerberos::TgsReq,
     /// DER-encoded TGS-REQ bytes suitable for KDC transport.
@@ -216,6 +218,7 @@ impl BuiltTgsReq {
             service,
             kdc_realm,
             nonce,
+            delegation_keytab: None,
         }
     }
 }
@@ -702,7 +705,7 @@ pub struct Tokio {
     /// TGT sessions keyed by the realm they are issued for.
     tgt_sessions: BTreeMap<String, AsRepSession>,
     /// Service tickets keyed by `service_cache_key`.
-    service_tickets: BTreeMap<String, TgsRepSession>,
+    service_tickets: BTreeMap<(String, Vec<String>), TgsRepSession>,
     /// Send PA-ENC-TIMESTAMP in the first AS-REQ instead of probing.
     assume_preauthentication: bool,
     /// Request FAST negotiation (PA-REQ-ENC-PA-REP) in AS-REQs.
@@ -1595,6 +1598,7 @@ impl Tokio {
             }
         };
         self.tgt_sessions.clear();
+        self.tgt = None;
         self.cache_tgt_session(session)?;
         self.service_tickets.clear();
         self.tgt.as_ref().ok_or(Error::NoTgtSession)
@@ -1768,8 +1772,13 @@ impl Tokio {
     pub async fn s4u2self_with_options(
         &mut self,
         user: Principal,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        if options.delegation_keytab.is_none()
+            && let Some(TokioClientCredentials::Keytab(keytab)) = &self.credentials
+        {
+            options.delegation_keytab = Some(keytab.clone());
+        }
         let service_tgt = self.ensure_tgt().await?;
         self.transport
             .s4u2self_with_config(&self.config, self.protocol, &service_tgt, user, options)
@@ -1810,8 +1819,13 @@ impl Tokio {
         &mut self,
         evidence_ticket: &TgsRepSession,
         target_service: Principal,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        if options.delegation_keytab.is_none()
+            && let Some(TokioClientCredentials::Keytab(keytab)) = &self.credentials
+        {
+            options.delegation_keytab = Some(keytab.clone());
+        }
         let service_tgt = self.ensure_tgt().await?;
         self.transport
             .s4u2proxy_with_config(
@@ -2429,7 +2443,10 @@ pub fn build_as_req(
         .map(|duration| options.now.checked_add(duration).ok_or(Error::TimeOverflow))
         .transpose()?;
     let padata = (!options.padata.is_empty()).then_some(options.padata);
-    let kdc_option_bits = request_kdc_option_bits(options.kdc_option_bits, options.renew_lifetime);
+    let kdc_option_bits = request_kdc_option_bits(
+        options.kdc_option_bits & !KDC_OPTION_CANONICALIZE,
+        options.renew_lifetime,
+    );
     let req_body = rasn_kerberos::KdcReqBody {
         kdc_options: kdc_options_from_bits(kdc_option_bits),
         cname: Some(principal_to_rasn(&client)?),
@@ -3112,7 +3129,7 @@ fn build_tgs_req_for_realm_inner(
     )?;
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(KRB5_PVNO),
-        crealm: ticket.realm.clone(),
+        crealm: kerberos_string(&tgt.client.realm)?,
         cname,
         cksum: Some(rasn_kerberos::Checksum {
             r#type: etype.checksum_type_id(),
@@ -3155,6 +3172,7 @@ fn build_tgs_req_for_realm_inner(
             kdc_realm: kdc_realm_name,
             service,
             nonce: options.nonce,
+            delegation_keytab: options.delegation_keytab,
         },
         ap_req_der,
     ))
@@ -3538,7 +3556,11 @@ pub fn process_as_rep(
 
     let enc_part = kdc_rep::decrypt_as_rep_enc_part(&as_rep, reply_key).map_err(kdc_rep_error)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
-    validate_as_rep_encrypted_padata(request, &enc_part, reply_key)?;
+    validate_reply_encrypted_padata(
+        (&request.der, request.message.0.padata.as_deref()),
+        &enc_part,
+        reply_key,
+    )?;
 
     if enc_part.nonce != request.nonce {
         return Err(Error::NonceMismatch {
@@ -3588,7 +3610,7 @@ pub fn process_as_rep(
     })
 }
 
-/// Verify the FAST negotiation checksum in an AS-REP (RFC 6806).
+/// Verify negotiated AS/TGS request integrity (RFC 6806 section 11).
 ///
 /// The check runs only when the request carried PA-REQ-ENC-PA-REP and the reply
 /// sets the `enc-pa-rep` ticket flag.
@@ -3600,12 +3622,14 @@ pub fn process_as_rep(
 /// checksum type, [`Error::FastNegotiationChecksumMismatch`] when the checksum
 /// does not match the request, and [`Error::Message`] when the checksum does not
 /// decode.
-fn validate_as_rep_encrypted_padata(
-    request: &BuiltAsReq,
+fn validate_reply_encrypted_padata(
+    request: (&[u8], Option<&[rasn_kerberos::PaData]>),
     enc_part: &rasn_kerberos::EncKdcRepPart,
     reply_key: &EncryptionKey,
 ) -> Result<(), Error> {
-    if !as_req_contains_padata(request, PA_REQ_ENC_PA_REP)
+    if !request
+        .1
+        .is_some_and(|data| padata_contains(data, PA_REQ_ENC_PA_REP))
         || !ticket_flags_contain_bits(&enc_part.flags, TICKET_FLAG_ENC_PA_REP)
     {
         return Ok(());
@@ -3615,9 +3639,6 @@ fn validate_as_rep_encrypted_padata(
         .encrypted_pa_data
         .as_ref()
         .ok_or(Error::InvalidFastNegotiationResponse)?;
-    if encrypted_pa_data.len() < 2 || !padata_contains(encrypted_pa_data, PA_FX_FAST) {
-        return Err(Error::InvalidFastNegotiationResponse);
-    }
     let pa_req_enc_pa_rep = encrypted_pa_data
         .iter()
         .find(|padata| padata.r#type == PA_REQ_ENC_PA_REP)
@@ -3627,23 +3648,13 @@ fn validate_as_rep_encrypted_padata(
         .ok_or(Error::UnsupportedChecksumType(checksum.checksum_type))?;
     if !etype.verify_checksum(
         &reply_key.value,
-        &request.der,
+        request.0,
         checksum.checksum.as_ref(),
         AS_REQ_CHECKSUM_USAGE,
     ) {
         return Err(Error::FastNegotiationChecksumMismatch);
     }
     Ok(())
-}
-
-/// Whether the AS-REQ carries padata of `padata_type`.
-fn as_req_contains_padata(request: &BuiltAsReq, padata_type: i32) -> bool {
-    request
-        .message
-        .0
-        .padata
-        .as_ref()
-        .is_some_and(|padata| padata_contains(padata, padata_type))
 }
 
 /// Whether `padata` contains an entry of `padata_type`.
@@ -3703,6 +3714,39 @@ fn process_tgs_rep_inner(
     let tgs_rep = kdc_rep::decode_tgs_rep(bytes).map_err(kdc_rep_error)?;
     let kdc_rep = &tgs_rep.0;
 
+    if request
+        .message
+        .0
+        .padata
+        .as_deref()
+        .is_some_and(|data| padata_contains(data, PA_FOR_USER))
+    {
+        let keys = request
+            .delegation_keytab
+            .as_ref()
+            .ok_or(Error::DelegationKeyRequired)?;
+        validate_delegated_ticket(&kdc_rep.ticket, &request.client, keys)?;
+    }
+    if u32::from_be_bytes(ticket_flags_to_bytes(&rasn_kerberos::TicketFlags(
+        request.message.0.req_body.kdc_options.0.clone(),
+    ))) & KDC_OPTION_CNAME_IN_ADDL_TKT
+        != 0
+    {
+        let keys = request
+            .delegation_keytab
+            .as_ref()
+            .ok_or(Error::DelegationKeyRequired)?;
+        let evidence = request
+            .message
+            .0
+            .req_body
+            .additional_tickets
+            .as_ref()
+            .and_then(|tickets| tickets.first())
+            .ok_or(Error::DelegationPrincipalMismatch)?;
+        validate_delegated_ticket(evidence, &request.client, keys)?;
+    }
+
     let client = principal_from_parts(&kdc_rep.crealm, &kdc_rep.cname)?;
     if !principal_matches(&client, &request.client) {
         return Err(Error::PrincipalMismatch {
@@ -3714,6 +3758,11 @@ fn process_tgs_rep_inner(
     let enc_part =
         kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key).map_err(kdc_rep_error)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
+    validate_reply_encrypted_padata(
+        (&request.der, request.message.0.padata.as_deref()),
+        &enc_part,
+        tgs_session_key,
+    )?;
 
     if enc_part.nonce != request.nonce {
         return Err(Error::NonceMismatch {
@@ -3764,6 +3813,36 @@ fn process_tgs_rep_inner(
             .map(system_time_from_kerberos_time)
             .transpose()?,
     })
+}
+
+/// Bind a delegated user to a frontend-decryptable ticket, not KDC-REP cleartext.
+///
+/// # Errors
+/// Returns key lookup/decryption errors, or `DelegationPrincipalMismatch` when
+/// the protected ticket client differs from the requested/evidence identity.
+fn validate_delegated_ticket(
+    ticket: &rasn_kerberos::Ticket,
+    expected: &Principal,
+    keys: &Keytab,
+) -> Result<(), Error> {
+    let service = principal_from_parts(&ticket.realm, &ticket.sname)?;
+    let names = service
+        .components
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let (key, _) = keys.find_key(
+        &names,
+        &service.realm,
+        ticket.enc_part.kvno.unwrap_or_default(),
+        ticket.enc_part.etype,
+    )?;
+    let part = ticket::decrypt_ticket_enc_part(ticket, key).map_err(ticket_error)?;
+    let client = principal_from_parts(&part.crealm, &part.cname)?;
+    if !principal_matches(&client, expected) {
+        return Err(Error::DelegationPrincipalMismatch);
+    }
+    Ok(())
 }
 
 /// Decode a KRB-ERROR and any METHOD-DATA preauthentication hints.
@@ -4116,7 +4195,7 @@ fn password_preauth_request(
     }
     let key_info = select_preauth_key_info(&error, &requested.etypes)?;
     let reply_key = derive_password_reply_key(&client, password, &key_info)?;
-    let options = initial_preauth_probe_options(requested);
+    let options = preauth_retry_options(requested, &error.method_data);
     let request = build_preauthenticated_as_req(client, service, options, &reply_key, None)?;
     Ok((request, reply_key))
 }
@@ -4161,10 +4240,20 @@ fn password_initial_as_rep_session(
         return Ok(None);
     };
     enforce_requested_enctypes(&request.message.0.req_body.etype, etype)?;
-    let key_info = PreauthKeyInfo {
-        etype,
-        salt: None,
-        s2kparams: None,
+    let reply = kdc_rep::decode_as_rep(response).map_err(kdc_rep_error)?;
+    let padata = reply.0.padata.as_deref().unwrap_or_default();
+    let infos = preauth_key_info_from_method_data(padata)?;
+    let key_info = match infos.into_iter().find(|info| info.etype == etype) {
+        Some(info) => info,
+        None => PreauthKeyInfo {
+            etype,
+            salt: padata
+                .iter()
+                .find(|pa| pa.r#type == 3_i32)
+                .map(|pa| str::from_utf8(pa.value.as_ref()).map(str::to_owned))
+                .transpose()?,
+            s2kparams: None,
+        },
     };
     let reply_key = derive_password_reply_key(client, password, &key_info)?;
     process_as_rep(request, response, &reply_key).map(Some)
@@ -4190,7 +4279,7 @@ fn keytab_preauth_request(
     }
     let key_info = select_preauth_key_info(&error, &requested.etypes)?;
     let (reply_key, kvno) = select_keytab_reply_key(keytab, &client, &key_info)?;
-    let options = initial_preauth_probe_options(requested);
+    let options = preauth_retry_options(requested, &error.method_data);
     let request = build_preauthenticated_as_req(client, service, options, &reply_key, Some(kvno))?;
     Ok((request, reply_key))
 }
@@ -4335,6 +4424,18 @@ fn initial_preauth_probe_options(mut options: AsReq) -> AsReq {
         });
     }
     options
+}
+
+/// Replace conversation state with the KDC's exact cookies, never other hints.
+fn preauth_retry_options(mut options: AsReq, method_data: &[rasn_kerberos::PaData]) -> AsReq {
+    options.padata.retain(|entry| entry.r#type != PA_FX_COOKIE);
+    options.padata.extend(
+        method_data
+            .iter()
+            .filter(|entry| entry.r#type == PA_FX_COOKIE)
+            .cloned(),
+    );
+    initial_preauth_probe_options(options)
 }
 
 /// Reject a reply enctype the request did not offer.
@@ -4759,21 +4860,18 @@ fn prefer_current_session_at(
     }
 }
 
-/// Cache key for a service: the realm and components, NUL-separated.
+/// Service identity keeps realm/component boundaries; name type is advisory.
 #[cfg(feature = "tokio")]
-fn service_cache_key(service: &Principal) -> String {
-    let mut key = service.realm.clone();
-    for component in &service.components {
-        key.push('\0');
-        key.push_str(component);
-    }
-    key
+fn service_cache_key(service: &Principal) -> (String, Vec<String>) {
+    (service.realm.clone(), service.components.clone())
 }
 
 /// Whether a session is inside its start and end time at `now`.
 #[cfg(feature = "tokio")]
 fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
-    session.start_time <= now && now < session.end_time
+    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
+        && session.start_time <= now
+        && now < session.end_time
 }
 
 /// Whether a session is valid or renewable at `now`.
@@ -4828,9 +4926,10 @@ fn session_refresh_delay_at(session: &AsRepSession, now: SystemTime) -> Duration
 /// Whether a session can still be renewed at `now`.
 #[cfg(feature = "tokio")]
 fn session_renewable_at(session: &AsRepSession, now: SystemTime) -> bool {
-    session
-        .renew_till
-        .is_some_and(|renew_till| now < renew_till)
+    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
+        && session
+            .renew_till
+            .is_some_and(|renew_till| now < renew_till)
 }
 
 /// Convert a Kerberos time to a `SystemTime`.

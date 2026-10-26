@@ -460,6 +460,12 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("no TGT session is available")]
     NoTgtSession,
+    /// S4U processing requires frontend keys to authenticate the delegated user.
+    #[error("S4U delegated identity requires frontend service keys")]
+    DelegationKeyRequired,
+    /// The decrypted evidence or self ticket names a different delegated user.
+    #[error("S4U ticket client differs from the requested delegated identity")]
+    DelegationPrincipalMismatch,
     /// SPNEGO/GSSAPI token processing failed.
     #[cfg(feature = "spnego")]
     #[error("SPNEGO error: {0}")]
