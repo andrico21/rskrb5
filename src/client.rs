@@ -1595,6 +1595,7 @@ impl Tokio {
             }
         };
         self.tgt_sessions.clear();
+        self.tgt = None;
         self.cache_tgt_session(session)?;
         self.service_tickets.clear();
         self.tgt.as_ref().ok_or(Error::NoTgtSession)
