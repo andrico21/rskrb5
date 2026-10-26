@@ -1,5 +1,14 @@
 use super::{Error, ObjectIdentifier, oid};
 
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests;
+
 /// DER universal tag of a SEQUENCE (constructed).
 pub(super) const TAG_SEQUENCE: u8 = 0x30;
 /// DER universal tag of an OBJECT IDENTIFIER.
@@ -187,8 +196,8 @@ pub(super) fn decode_oid_tlv(tlv: Tlv<'_>) -> Result<ObjectIdentifier, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidOidEncoding`] for empty content, a truncated arc or
-/// an arc wider than 32 bits, and [`Error::InvalidOid`] when the arcs are
+/// Returns [`Error::InvalidOidEncoding`] for empty content, a truncated or
+/// nonminimal arc, or an arc wider than 32 bits, and [`Error::InvalidOid`] when the arcs are
 /// invalid.
 fn decode_oid_value(value: &[u8]) -> Result<ObjectIdentifier, Error> {
     let (&first, mut rest) = value.split_first().ok_or(Error::InvalidOidEncoding)?;
@@ -197,11 +206,17 @@ fn decode_oid_value(value: &[u8]) -> Result<ObjectIdentifier, Error> {
         u32::from(first.rem_euclid(40)),
     ];
     while !rest.is_empty() {
+        if rest.first() == Some(&0x80) {
+            return Err(Error::InvalidOidEncoding);
+        }
         let mut arc = 0_u32;
         loop {
             let (&byte, tail) = rest.split_first().ok_or(Error::InvalidOidEncoding)?;
             rest = tail;
-            arc = arc.checked_shl(7).ok_or(Error::InvalidOidEncoding)? | u32::from(byte & 0x7f);
+            arc = arc
+                .checked_mul(128)
+                .and_then(|base| base.checked_add(u32::from(byte & 0x7f)))
+                .ok_or(Error::InvalidOidEncoding)?;
             if byte & 0x80 == 0 {
                 break;
             }
@@ -256,7 +271,7 @@ fn encode_base128(value: u32, out: &mut Vec<u8>) {
 /// # Errors
 ///
 /// Returns [`Error::InvalidInteger`] for empty content, more than five
-/// octets, a negative value or a value above `u32::MAX`.
+/// octets, a redundant sign octet, a negative value or a value above `u32::MAX`.
 pub(super) fn decode_u32(bytes: &[u8]) -> Result<u32, Error> {
     let Some((first, _)) = bytes.split_first() else {
         return Err(Error::InvalidInteger);
@@ -264,9 +279,17 @@ pub(super) fn decode_u32(bytes: &[u8]) -> Result<u32, Error> {
     if bytes.len() > 5 || first & 0x80 != 0 {
         return Err(Error::InvalidInteger);
     }
+    if let [0, second, ..] = bytes
+        && second & 0x80 == 0
+    {
+        return Err(Error::InvalidInteger);
+    }
     let mut value = 0_u32;
     for byte in bytes {
-        value = value.checked_shl(8).ok_or(Error::InvalidInteger)? | u32::from(*byte);
+        value = value
+            .checked_mul(256)
+            .and_then(|base| base.checked_add(u32::from(*byte)))
+            .ok_or(Error::InvalidInteger)?;
     }
     Ok(value)
 }
