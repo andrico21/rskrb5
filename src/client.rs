@@ -3112,7 +3112,7 @@ fn build_tgs_req_for_realm_inner(
     )?;
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(KRB5_PVNO),
-        crealm: ticket.realm.clone(),
+        crealm: kerberos_string(&tgt.client.realm)?,
         cname,
         cksum: Some(rasn_kerberos::Checksum {
             r#type: etype.checksum_type_id(),

@@ -89,6 +89,8 @@ mod as_exchange;
 mod login_preauth;
 #[path = "client/password_change.rs"]
 mod password_change;
+#[path = "client/review.rs"]
+mod review;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;
