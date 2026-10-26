@@ -32,9 +32,9 @@ compiled and failed at least one test; every baseline run passed.
 - [x] **Version 0.3.0** (todo 9, `cebf1a7`). `cargo semver-checks` against 0.2.2 reported the major changes before the bump and passes after it. The new variants and fields:
   - `LibDefaults.permitted_enctypes_explicit`
   - `InitiatorContext.context_flags`
-  - `client::Error::{EnctypeNotRequested, EnctypeNotPermitted}`
-  - `kadmin::Error::UnauthenticatedSuccess`
-  - `config::Error::EnctypeNotPermitted`
+  - `rskrb5_ng::error::Client::{EnctypeNotRequested, EnctypeNotPermitted}`
+  - `rskrb5_ng::error::Kadmin::UnauthenticatedSuccess`
+  - `rskrb5_ng::error::Config::EnctypeNotPermitted`
   - `NegotiateHttpError::MutualAuthenticationNotProven` and the new body type parameter
 - [x] CHANGELOG `[0.3.0]`, FORK-NOTES (table rows, "Upgrading from 0.2", Retirement) and `docs/gokrb5-parity.md` divergence entries for the behaviour changes (todos 9 and 24):
   - kpasswd rejects an unsigned success;
@@ -155,7 +155,7 @@ rewrites and exceptions").
 
 ### Open follow-ups outside this plan
 
-- [x] **`fix/enctype-policy` fails open when `permitted_enctypes` resolves to zero supported ids.** An explicit `permitted_enctypes` that names only enctypes the crate does not implement left `permitted_enctype_ids` empty, and the empty set meant "no policy". Fixed in `cc8060c` (PR #27): parsing fails with `config::Error::NoPermittedEnctypes`, and a hand-built `LibDefaults` with the flag set and no ids fails closed (`EmptyEtypes` / `EnctypeNotPermitted`).
+- [x] **`fix/enctype-policy` fails open when `permitted_enctypes` resolves to zero supported ids.** An explicit `permitted_enctypes` that names only enctypes the crate does not implement left `permitted_enctype_ids` empty, and the empty set meant "no policy". Fixed in `cc8060c` (PR #27): parsing fails with `rskrb5_ng::error::Config::NoPermittedEnctypes`, and a hand-built `LibDefaults` with the flag set and no ids fails closed (`EmptyEtypes` / `EnctypeNotPermitted`).
 - [x] **MIT name `des3-cbc-sha1` is not recognized** by the enctype name parser, so a `krb5.conf` using that spelling dropped DES3 from the list. Fixed in `752832b` (PR #27): `des3-cbc-sha1` and `des3-hmac-sha1` resolve to enctype 16; gokrb5 divergence recorded in `docs/gokrb5-parity.md`.
 
 ## 6. Run-2 needs-validation leads (18): not planned, no owner

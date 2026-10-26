@@ -24,7 +24,7 @@ mod tests {
     fn builds_tgs_req_with_pa_tgs_req_and_checksum() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
-        let options = TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788)
+        let options = TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788)
             .with_ticket_lifetime(Duration::from_hours(2))
             .with_etypes(vec![18_i32]);
 
@@ -123,8 +123,7 @@ mod tests {
             .with_kdc_default_options(0x0000_0010);
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
-        let options =
-            TgsReqOptions::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
+        let options = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
 
         let request = build_tgs_req_with_confounder(
             &tgt,
@@ -157,7 +156,7 @@ mod tests {
             &tgt,
             "TEST.GOKRB5",
             service.clone(),
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x4455_6677).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x4455_6677).with_etypes(vec![18_i32]),
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -192,7 +191,7 @@ mod tests {
         let request = build_s4u2self_req_with_confounder(
             &service_tgt,
             user.clone(),
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![18_i32]),
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -257,7 +256,7 @@ mod tests {
             &service_tgt,
             &evidence_ticket,
             target_service.clone(),
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x9988_7766).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x9988_7766).with_etypes(vec![18_i32]),
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -317,7 +316,7 @@ mod tests {
             &service_tgt,
             &evidence_ticket,
             target_service,
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x8877_6655)
+            TgsReq::new(timestamp(1_893_553_450)?, 0x8877_6655)
                 .with_etypes(vec![18_i32])
                 .with_padata(vec![pac_options]),
             timestamp(1_893_553_451)?,
@@ -353,7 +352,7 @@ mod tests {
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
         let subkey = EncryptionKey::new(18, vec![0x44; 32]);
-        let options = ApReqOptions::new()
+        let options = ApReq::new()
             .with_ap_option_bits(0x2000_0000)
             .with_subkey(Some(subkey.clone()))
             .with_sequence_number(Some(42));
@@ -424,7 +423,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let request = build_tgt_renewal_req_with_confounder(
             &tgt,
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x7788_99aa)
+            TgsReq::new(timestamp(1_893_553_450)?, 0x7788_99aa)
                 .with_kdc_option_bits(0x0000_0010)
                 .with_renew_lifetime(Some(Duration::from_hours(10)))
                 .with_etypes(vec![18_i32]),
@@ -462,7 +461,7 @@ mod tests {
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let request = build_ticket_renewal_req_with_confounder(
             &service_ticket,
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x8877_6655)
+            TgsReq::new(timestamp(1_893_553_450)?, 0x8877_6655)
                 .with_kdc_option_bits(0x0000_0010)
                 .with_renew_lifetime(Some(Duration::from_hours(10)))
                 .with_etypes(vec![18_i32]),
@@ -616,7 +615,7 @@ mod tests {
             &mut transport,
             &service_tgt,
             user.clone(),
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x6677_8899).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x6677_8899).with_etypes(vec![18_i32]),
         )
         .context("S4U2Self exchange succeeds")?;
 
@@ -647,7 +646,7 @@ mod tests {
             &service_tgt,
             &evidence_ticket,
             target_service.clone(),
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x6655_4433).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x6655_4433).with_etypes(vec![18_i32]),
         )
         .context("S4U2Proxy exchange succeeds")?;
 
@@ -683,8 +682,7 @@ mod tests {
                     addr,
                     &service_tgt,
                     user.clone(),
-                    TgsReqOptions::new(timestamp(1_893_553_450)?, 0x6677_8899)
-                        .with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x6677_8899).with_etypes(vec![18_i32]),
                 )
                 .await
                 .context("Tokio transport S4U2Self succeeds")?;
@@ -710,7 +708,7 @@ mod tests {
                 .await
                 .context("bind local KDC listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 service_tgt.clone(),
@@ -726,8 +724,7 @@ mod tests {
             let session = client
                 .s4u2self_with_options(
                     user.clone(),
-                    TgsReqOptions::new(timestamp(1_893_553_450)?, 0x7766_5544)
-                        .with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x7766_5544).with_etypes(vec![18_i32]),
                 )
                 .await
                 .context("Tokio client S4U2Self succeeds")?;
@@ -771,8 +768,7 @@ mod tests {
                     &service_tgt,
                     &evidence_ticket,
                     target_service.clone(),
-                    TgsReqOptions::new(timestamp(1_893_553_450)?, 0x2233_4455)
-                        .with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x2233_4455).with_etypes(vec![18_i32]),
                 )
                 .await
                 .context("Tokio transport S4U2Proxy succeeds")?;
@@ -800,7 +796,7 @@ mod tests {
                 .await
                 .context("bind local KDC listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 service_tgt.clone(),
@@ -818,8 +814,7 @@ mod tests {
                 .s4u2proxy_with_options(
                     &evidence_ticket,
                     target_service.clone(),
-                    TgsReqOptions::new(timestamp(1_893_553_450)?, 0x3344_5566)
-                        .with_etypes(vec![18_i32]),
+                    TgsReq::new(timestamp(1_893_553_450)?, 0x3344_5566).with_etypes(vec![18_i32]),
                 )
                 .await
                 .context("Tokio client S4U2Proxy succeeds")?;
@@ -846,7 +841,7 @@ mod tests {
         let session = renew_tgt(
             &mut transport,
             &tgt,
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x6677_8899).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x6677_8899).with_etypes(vec![18_i32]),
         )
         .context("TGT renewal succeeds")?;
 
@@ -871,7 +866,7 @@ mod tests {
         let session = renew_ticket(
             &mut transport,
             &service_ticket,
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x7766_5544).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x7766_5544).with_etypes(vec![18_i32]),
         )
         .context("service-ticket renewal succeeds")?;
 
@@ -889,7 +884,7 @@ mod tests {
         let request = build_tgs_req_with_confounder(
             &tgt,
             sample_service_principal(),
-            TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![23_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![23_i32]),
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -925,7 +920,7 @@ mod tests {
             ))?;
             let request = build_tgt_as_req(
                 Principal::user("TEST.GOKRB5", "testuser1"),
-                AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]),
+                AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]),
             )?;
             let reply_key = reply_key()?;
             let response = synthetic_as_rep_with_reply_key(
@@ -976,8 +971,7 @@ mod tests {
             let request = build_tgs_req_with_confounder(
                 &tgt,
                 sample_service_principal(),
-                TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788)
-                    .with_etypes(vec![18_i32]),
+                TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![18_i32]),
                 timestamp(1_893_553_451)?,
                 654_321,
                 &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -1008,8 +1002,7 @@ mod tests {
             .with_default_tgs_enctype_ids(vec![18_i32, 17_i32, 23_i32])
             .with_permitted_enctype_ids(vec![18_i32])
             .with_permitted_enctypes_explicit(true.into());
-        let options =
-            TgsReqOptions::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
+        let options = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
         let request = build_tgs_req_with_confounder(
             &sample_tgt_session()?,
             sample_service_principal(),
@@ -1039,7 +1032,7 @@ mod tests {
     fn tgs_req_authenticator_carries_subkey_for_implicit_armor() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
-        let options = TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788)
+        let options = TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788)
             .with_ticket_lifetime(Duration::from_hours(2))
             .with_etypes(vec![18_i32]);
 
@@ -1090,7 +1083,7 @@ mod tests {
     fn tgs_req_exposes_pa_tgs_req_ap_req_bytes() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
-        let options = TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788)
+        let options = TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788)
             .with_ticket_lifetime(Duration::from_hours(2))
             .with_etypes(vec![18_i32]);
         let subkey = EncryptionKey::new(18, vec![0x24; 32]);
@@ -1125,7 +1118,7 @@ mod tests {
     fn legacy_tgs_builder_stays_unarmored_for_existing_callers() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
-        let options = TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788)
+        let options = TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788)
             .with_ticket_lifetime(Duration::from_hours(2))
             .with_etypes(vec![18_i32]);
 
@@ -1167,7 +1160,7 @@ mod tests {
                 "TEST.GOKRB5",
                 sample_service_principal(),
                 rskrb5_ng::client::TgsRequestParts::new(
-                    TgsReqOptions::new(request_time, 0x5566_7788).with_etypes(vec![18_i32]),
+                    TgsReq::new(request_time, 0x5566_7788).with_etypes(vec![18_i32]),
                     &confounder,
                     subkey,
                 )
@@ -1214,7 +1207,7 @@ mod tests {
             config.libdefaults.permitted_enctype_ids.clear();
             let request = build_tgt_as_req(
                 Principal::user("TEST.GOKRB5", "testuser1"),
-                AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]),
+                AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]),
             )?;
             let reply_key = reply_key()?;
             let response = synthetic_as_rep_with_reply_key(
@@ -1267,8 +1260,7 @@ mod tests {
             let request = build_tgs_req_with_confounder(
                 &tgt,
                 sample_service_principal(),
-                TgsReqOptions::new(timestamp(1_893_553_450)?, 0x5566_7788)
-                    .with_etypes(vec![18_i32]),
+                TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![18_i32]),
                 timestamp(1_893_553_451)?,
                 654_321,
                 &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -1302,8 +1294,7 @@ mod tests {
             .with_permitted_enctype_ids(Vec::new())
             .with_permitted_enctypes_explicit(true.into());
 
-        let as_options =
-            AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
+        let as_options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         assert!(
             as_options.etypes.is_empty(),
             "no AS-REQ etype is permitted: {:?}",
@@ -1317,7 +1308,7 @@ mod tests {
         assert!(matches!(as_error, Error::EmptyEtypes));
 
         let tgs_options =
-            TgsReqOptions::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
+            TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
         assert!(
             tgs_options.etypes.is_empty(),
             "no TGS-REQ etype is permitted: {:?}",

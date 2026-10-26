@@ -6,7 +6,7 @@
 
 ## Problem
 
-`Config` parses `[libdefaults] clockskew` into `LibDefaults.clockskew`, but the only functional read is the config JSON view; every `Config`-driven acceptor constructor copies just `default_keytab_name` and leaves `ServiceValidator::max_clock_skew` at the compile-time `DEFAULT_MAX_CLOCK_SKEW` (300 s). An operator who tightens `clockskew = 1` therefore gets a validator that still accepts authenticators 2–299 s stale (and tickets up to 300 s past `end_time`). A captured AP-REQ (ticket + authenticator ciphertext, no key material) is replayable while its authenticator stays inside 300 s, so the declared acceptance policy is silently not enforced; default-config services behave as intended.
+`Config` parses `[libdefaults] clockskew` into `LibDefaults.clockskew`, but the only functional read is the config JSON view; every `Config`-driven acceptor constructor copies just `default_keytab_name` and leaves `Validator::max_clock_skew` at the compile-time `DEFAULT_MAX_CLOCK_SKEW` (300 s). An operator who tightens `clockskew = 1` therefore gets a validator that still accepts authenticators 2–299 s stale (and tickets up to 300 s past `end_time`). A captured AP-REQ (ticket + authenticator ciphertext, no key material) is replayable while its authenticator stays inside 300 s, so the declared acceptance policy is silently not enforced; default-config services behave as intended.
 
 ## Root cause (verified against upstream 6f4abc9)
 
@@ -26,19 +26,19 @@ Fork delta: `src/service.rs` constructors are at fork `:581`/`:589` (base `:557`
 - `.../vfy-clockskew-probe.log:177` — control: `with_max_clock_skew(1s) now=ctime+2s -> REJECTED 'authenticator clock skew exceeds 1s'` (the window is enforceable).
 - `.../vfy-clockskew-probe.log:178`/`:179` — control: default validator rejects at `ctime+301s`, accepts at `ctime+299s` (the 300 s bound actually in force).
 - `.../vfy-clockskew-probe.log:171`/`:172` — Tower: `NegotiateLayer::from_default_keytab_name(config)` at `+2s -> 200 OK` while `with_max_clock_skew(1s) -> 401 Unauthorized`.
-- `.../vfy-clockskew-probe.log:192`–`:200` — stage 3 (candidate fix): config constructors now reject at `+2s`; `ServiceValidator::new` still accepts at `+2s`/rejects at `+301s`; Tower config layer returns `401` at `+2s`.
+- `.../vfy-clockskew-probe.log:192`–`:200` — stage 3 (candidate fix): config constructors now reject at `+2s`; `Validator::new` still accepts at `+2s`/rejects at `+301s`; Tower config layer returns `401` at `+2s`.
 - `run-2/agents/hunt4-acceptor-policy/artifacts/wave4-policy-probe.log:140`–`:143` — prior hunter reproduction of the same divergence.
 
 ## Proposed fix
 
-Wire the already-parsed field into every `Config`-driven constructor via the existing `with_max_clock_skew` builder; keep `ServiceValidator::new` at 300 s for gokrb5 compatibility. Four constructor bodies plus the two `NegotiateService` delegates (which already delegate to the layer).
+Wire the already-parsed field into every `Config`-driven constructor via the existing `with_max_clock_skew` builder; keep `Validator::new` at 300 s for gokrb5 compatibility. Four constructor bodies plus the two `NegotiateService` delegates (which already delegate to the layer).
 
 1. `src/service.rs` `from_default_keytab_name` / `from_default_keytab` (base `:557`, `:565`): append `.with_max_clock_skew(config.libdefaults.clockskew)`.
 2. `src/http.rs` `NegotiateLayer::from_default_keytab_name` / `from_default_keytab` (base `:756`, `:764`): same append.
 3. Leave `ValidatorOptions`/`with_max_clock_skew` untouched; do not change `src/service.rs:306` or `DEFAULT_MAX_CLOCK_SKEW`.
 
 ```rust
-// src/service.rs — ServiceValidator<'static>
+// src/service.rs — Validator<'static>
 pub fn from_default_keytab_name(config: &Config) -> Result<Self, Error> {
     Ok(Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
         .with_max_clock_skew(config.libdefaults.clockskew))
@@ -68,7 +68,7 @@ pub fn from_default_keytab(config: &Config) -> Result<Self> {
 ## Regression tests
 
 - `tests/service.rs::config_clockskew_bounds_authenticator_freshness` — reuse the existing `HTTP_KEYTAB` and `VALID_AP_REQ` fixtures (authenticator ctime `1_893_553_447.123456`, `http_keytab()`/`timestamp()`/`decode_hex()` helpers). Build a config with `clockskew = 1` plus `default_keytab_name` pointing at the saved keytab (extend `config_with_default_keytab_name`, base `tests/service.rs:537`); assert `from_default_keytab_name(&config).with_now(ctime + 2s)` returns the `Error::ClockSkew` error and `.with_now(ctime)` validates; repeat for `from_default_keytab` with `KRB5_KTNAME` unset (`common::EnvVarGuard`).
-- `tests/service.rs::service_validator_new_keeps_default_skew` — `ServiceValidator::new(&keytab)` still accepts at `ctime + 2s` and rejects at `ctime + 301s`, pinning the gokrb5-compatible 300 s default.
+- `tests/service.rs::service_validator_new_keeps_default_skew` — `Validator::new(&keytab)` still accepts at `ctime + 2s` and rejects at `ctime + 301s`, pinning the gokrb5-compatible 300 s default.
 - `tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator` (`#[cfg(feature = "tower")]`) — model on `tower_layer_loads_config_default_keytab_name` (base `tests/http.rs:670`); `NegotiateLayer::from_default_keytab_name(&config clockskew = 1)` at `now = ctime + 2s` must return `401 Unauthorized`, and `with_max_clock_skew(1s)` remains a working override.
 
 ## Verification
@@ -82,8 +82,8 @@ cargo test --all-features --features tower --test http
 
 ## Compatibility / notes
 
-- Parity: `ServiceValidator::new` and `from_keytab_cow` keep 300 s (gokrb5 default); only `Config`-driven constructors adopt the declared value. Document that `clockskew` is applied on `Config` paths only.
-- Interaction with the two in-flight HIGH fixes: `src/service.rs:ReplayKey:unbound-ticket-service-identity` and `src/service.rs:validate_ap_req:unbound-authenticator-realm` both edit `ServiceValidator::validate_ap_req` (around `src/service.rs:434` and the replay-key construction) — the same function whose skew check this fix feeds. The clockskew hunk edits only the constructors (`:557`/`:565`), so a textual merge is unlikely, but the regression tests must run after those land because they exercise `validate_ap_req`.
+- Parity: `Validator::new` and `from_keytab_cow` keep 300 s (gokrb5 default); only `Config`-driven constructors adopt the declared value. Document that `clockskew` is applied on `Config` paths only.
+- Interaction with the two in-flight HIGH fixes: `src/service.rs:ReplayKey:unbound-ticket-service-identity` and `src/service.rs:validate_ap_req:unbound-authenticator-realm` both edit `Validator::validate_ap_req` (around `src/service.rs:434` and the replay-key construction) — the same function whose skew check this fix feeds. The clockskew hunk edits only the constructors (`:557`/`:565`), so a textual merge is unlikely, but the regression tests must run after those land because they exercise `validate_ap_req`.
 - No API break: constructors keep their signatures and return types.
 
 ## Upstream route

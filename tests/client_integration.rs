@@ -21,14 +21,17 @@ use std::{
 use rskrb5_ng::{
     ccache::CCache,
     client::{
-        AsRepSession, AsReqOptions, BuiltAsReq, Error as ClientError, KdcEndpoint,
-        KdcEndpointSource, KdcProtocol, PreauthKeyInfo, Principal, TgsReqOptions, TokioClient,
-        TokioKdcTransport, build_tgs_req, build_tgt_as_req, derive_password_reply_key,
+        AsRepSession, BuiltAsReq, PreauthKeyInfo, Tokio, build_tgs_req, build_tgt_as_req,
+        derive_password_reply_key,
+        options::{AsReq, TgsReq},
         pa_enc_timestamp_with_confounder,
+        principal::Principal,
+        transport::{KdcEndpoint, KdcEndpointSource, KdcProtocol, Tokio as TokioKdcTransport},
     },
     config::Config,
     crypto::{AesSha1Etype, Des3CbcSha1KdEtype},
-    kadmin::{ChangePasswordResult, KPASSWD_SUCCESS, ipv4_host_address},
+    error::{Client as ClientError, Service as ServiceError},
+    kadmin::{ChangePasswordResult, KPASSWD_SUCCESS},
     keytab::{EncryptionKey, Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
 };
 
@@ -145,7 +148,7 @@ fn build_login_request(
         &confounder(protocol, elapsed),
         Some(TESTUSER1_KVNO),
     )?;
-    let options = AsReqOptions::new(timestamp, nonce)
+    let options = AsReq::new(timestamp, nonce)
         .with_ticket_lifetime(Duration::from_hours(24))
         .with_etypes(vec![AES256_ETYPE])
         .with_padata(vec![padata]);
@@ -229,11 +232,10 @@ fn confounder(protocol: KdcProtocol, elapsed: Duration) -> [u8; 16] {
 mod tests {
     use std::{env, io, net::TcpListener, process};
 
+    use rskrb5_ng::{error::Spnego as SpnegoError, krb_priv::ipv4_host_address};
     #[cfg(feature = "spnego")]
     use rskrb5_ng::{
-        service::{
-            ApRepOptions, Error as ServiceError, Principal as ServicePrincipal, ServiceValidator,
-        },
+        service::{ApRepOptions, Principal as ServicePrincipal, Validator},
         spnego,
     };
     use tokio::runtime::{Builder, Runtime};
@@ -522,7 +524,7 @@ mod tests {
             .map_err(|cause| format!("integration test lock: {cause}"))?;
 
         runtime()?.block_on(async {
-            let mut client = TokioClient::with_keytab(
+            let mut client = Tokio::with_keytab(
                 configured_kdc_config()?,
                 KdcProtocol::Auto,
                 Principal::user(REALM, USER),
@@ -552,7 +554,7 @@ mod tests {
         runtime()?.block_on(async {
             let keytab = keytab_from_hex(KEYTAB_TESTUSER2_TEST_GOKRB5)?;
             for protocol in [KdcProtocol::Auto, KdcProtocol::Tcp] {
-                let mut client = TokioClient::with_keytab(
+                let mut client = Tokio::with_keytab(
                     configured_kdc_config()?,
                     protocol,
                     Principal::user(REALM, "testuser2"),
@@ -581,7 +583,7 @@ mod tests {
             .map_err(|cause| format!("integration test lock: {cause}"))?;
 
         runtime()?.block_on(async {
-            let mut client = TokioClient::with_keytab(
+            let mut client = Tokio::with_keytab(
                 configured_kdc_config()?,
                 KdcProtocol::Auto,
                 Principal::user(REALM, USER),
@@ -615,7 +617,7 @@ mod tests {
             .map_err(|cause| format!("integration test lock: {cause}"))?;
 
         runtime()?.block_on(async {
-            let mut client = TokioClient::with_keytab(
+            let mut client = Tokio::with_keytab(
                 configured_kdc_config_with_primary_realm_kdcs(&[closed_tcp_kdc_addr()])?,
                 KdcProtocol::Tcp,
                 Principal::user(REALM, USER),
@@ -643,7 +645,7 @@ mod tests {
             .map_err(|cause| format!("integration test lock: {cause}"))?;
 
         runtime()?.block_on(async {
-            let mut client = TokioClient::with_keytab(
+            let mut client = Tokio::with_keytab(
                 configured_kdc_config_with_primary_realm_kdcs(&[
                     closed_tcp_kdc_addr(),
                     kdc_addr(),
@@ -680,7 +682,7 @@ mod tests {
                     "running high-level Tokio client cached TGS flow over {}",
                     protocol_label(protocol)
                 )?;
-                let mut client = TokioClient::with_password(
+                let mut client = Tokio::with_password(
                     config.clone(),
                     protocol,
                     Principal::user(REALM, USER),
@@ -718,7 +720,7 @@ mod tests {
 
         runtime()?.block_on(async {
             let service = service_principal();
-            let mut client = TokioClient::with_keytab(
+            let mut client = Tokio::with_keytab(
                 configured_kdc_config()?,
                 KdcProtocol::Auto,
                 Principal::user(REALM, USER),
@@ -786,7 +788,7 @@ mod tests {
                 "running high-level Tokio client kpasswd change over {}",
                 protocol_label(protocol)
             )?;
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 config.clone(),
                 protocol,
                 Principal::user(REALM, USER),
@@ -1327,7 +1329,7 @@ mod tests {
 
         runtime()?.block_on(async {
             let mut client =
-                TokioClient::from_ccache(configured_kdc_config()?, KdcProtocol::Auto, &cache)
+                Tokio::from_ccache(configured_kdc_config()?, KdcProtocol::Auto, &cache)
                     .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
             let first = client.get_service_ticket(service_principal()).await?;
             let second = client.get_service_ticket(service_principal()).await?;
@@ -1362,7 +1364,7 @@ mod tests {
         let cache = CCache::load_name(&env.ccache_name)?;
 
         runtime()?.block_on(async {
-            let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Auto, &cache)
+            let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Auto, &cache)
                 .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
             let ticket = client.get_service_ticket(service_principal()).await?;
 
@@ -1440,7 +1442,7 @@ mod tests {
                     "running high-level Tokio client TGT renewal over {}",
                     protocol_label(protocol)
                 )?;
-                let mut client = TokioClient::with_password(
+                let mut client = Tokio::with_password(
                     config.clone(),
                     protocol,
                     Principal::user(REALM, USER),
@@ -1540,7 +1542,7 @@ mod tests {
                     "running high-level Tokio client TGS referral cache over {}",
                     protocol_label(protocol)
                 )?;
-                let mut client = TokioClient::with_password(
+                let mut client = Tokio::with_password(
                     config.clone(),
                     protocol,
                     Principal::user(REALM, USER),
@@ -1610,7 +1612,7 @@ mod tests {
                 assert!(context.sequence_number.is_some());
 
                 let keytab = http_keytab()?;
-                let mut validator = ServiceValidator::new(&keytab).with_now(SystemTime::now());
+                let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
@@ -1644,7 +1646,7 @@ mod tests {
             .map_err(|cause| format!("integration test lock: {cause}"))?;
 
         runtime()?.block_on(async {
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 configured_kdc_config()?,
                 KdcProtocol::Auto,
                 Principal::user(REALM, USER),
@@ -1669,7 +1671,7 @@ mod tests {
             )?;
 
             let keytab = http_keytab()?;
-            let mut validator = ServiceValidator::new(&keytab).with_now(now);
+            let mut validator = Validator::new(&keytab).with_now(now);
             drop(spnego::accept_sec_context_header(
                 &mut validator,
                 &first.header,
@@ -1688,11 +1690,11 @@ mod tests {
 
             assert!(matches!(
                 first_replay,
-                spnego::Error::Service(ServiceError::Replay)
+                SpnegoError::Service(ServiceError::Replay)
             ));
             assert!(matches!(
                 second_replay,
-                spnego::Error::Service(ServiceError::Replay)
+                SpnegoError::Service(ServiceError::Replay)
             ));
 
             Ok::<_, Box<dyn Error>>(())
@@ -1712,7 +1714,7 @@ mod tests {
 
         runtime()?.block_on(async {
             let config = configured_kdc_config()?;
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 config,
                 KdcProtocol::Auto,
                 Principal::user(REALM, USER),
@@ -1744,7 +1746,7 @@ mod tests {
             .map_err(|cause| format!("integration test lock: {cause}"))?;
 
         runtime()?.block_on(async {
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 configured_kdc_config()?,
                 KdcProtocol::Auto,
                 Principal::user(REALM, USER),
@@ -1819,7 +1821,7 @@ mod tests {
                 assert!(context.sequence_number.is_some());
 
                 let keytab = http_keytab()?;
-                let mut validator = ServiceValidator::new(&keytab).with_now(SystemTime::now());
+                let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
@@ -1894,7 +1896,7 @@ mod tests {
                 assert!(context.sequence_number.is_some());
 
                 let keytab = http_keytab()?;
-                let mut validator = ServiceValidator::new(&keytab).with_now(SystemTime::now());
+                let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
@@ -1918,7 +1920,7 @@ mod tests {
     }
 
     /// Builds AS-REQ options with AES256 and a nonce unique to `protocol` and `sequence`.
-    fn login_options(protocol: KdcProtocol, sequence: u32) -> Result<AsReqOptions, Box<dyn Error>> {
+    fn login_options(protocol: KdcProtocol, sequence: u32) -> Result<AsReq, Box<dyn Error>> {
         login_options_with_etypes(protocol, sequence, vec![AES256_ETYPE])
     }
 
@@ -1927,7 +1929,7 @@ mod tests {
         protocol: KdcProtocol,
         sequence: u32,
         etypes: Vec<i32>,
-    ) -> Result<AsReqOptions, Box<dyn Error>> {
+    ) -> Result<AsReq, Box<dyn Error>> {
         let now = SystemTime::now();
         let elapsed = now.duration_since(UNIX_EPOCH)?;
         let nonce = (u32::try_from(elapsed.as_nanos() & 0x00ff_ffff)? | sequence.wrapping_shl(24))
@@ -1938,13 +1940,13 @@ mod tests {
 
                 _ => return Err("unexpected non-exhaustive protocol variant".into()),
             };
-        Ok(AsReqOptions::new(now, nonce)
+        Ok(AsReq::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
             .with_etypes(etypes))
     }
 
     /// Builds TGS-REQ options with AES256 and a nonce unique to `protocol` and `sequence`.
-    fn tgs_options(protocol: KdcProtocol, sequence: u32) -> Result<TgsReqOptions, Box<dyn Error>> {
+    fn tgs_options(protocol: KdcProtocol, sequence: u32) -> Result<TgsReq, Box<dyn Error>> {
         tgs_options_with_etypes(protocol, sequence, vec![AES256_ETYPE])
     }
 
@@ -1953,7 +1955,7 @@ mod tests {
         protocol: KdcProtocol,
         sequence: u32,
         etypes: Vec<i32>,
-    ) -> Result<TgsReqOptions, Box<dyn Error>> {
+    ) -> Result<TgsReq, Box<dyn Error>> {
         let now = SystemTime::now();
         let elapsed = now.duration_since(UNIX_EPOCH)?;
         let nonce = (u32::try_from(elapsed.as_nanos() & 0x00ff_ffff)? | sequence.wrapping_shl(24))
@@ -1964,7 +1966,7 @@ mod tests {
 
                 _ => return Err("unexpected non-exhaustive protocol variant".into()),
             };
-        Ok(TgsReqOptions::new(now, nonce)
+        Ok(TgsReq::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
             .with_etypes(etypes))
     }
@@ -2200,7 +2202,7 @@ mod tests {
         current_password: &[u8],
         new_password: &[u8],
     ) -> Result<ChangePasswordResult, Box<dyn Error>> {
-        let mut client = TokioClient::with_password(
+        let mut client = Tokio::with_password(
             config.clone(),
             protocol,
             Principal::user(REALM, USER),
@@ -2218,7 +2220,7 @@ mod tests {
         protocol: KdcProtocol,
         password: &[u8],
     ) -> Result<AsRepSession, Box<dyn Error>> {
-        let mut client = TokioClient::with_password(
+        let mut client = Tokio::with_password(
             config.clone(),
             protocol,
             Principal::user(REALM, USER),

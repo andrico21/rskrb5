@@ -1,3 +1,5 @@
+use rskrb5_ng::error::Ccache as CcacheError;
+
 use super::*;
 
 /// Session-cache tests: cached tickets, ccache and keytab loading (including the
@@ -53,7 +55,7 @@ mod tests {
         cache.credentials_mut().push(tgt_credential);
         cache.credentials_mut().push(service_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let returned = runtime()?
             .block_on(client.get_service_ticket(sample_service_principal()))
             .context("cached service ticket is returned")?;
@@ -88,7 +90,7 @@ mod tests {
         service_ticket.end_time = now
             .checked_add(Duration::from_hours(1))
             .context("end time")?;
-        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(service_ticket.clone());
 
         let cached = client
@@ -132,8 +134,7 @@ mod tests {
             );
             Ok(service_ticket)
         };
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
 
         client.cache_service_ticket(service_session(120, b"service-long")?);
         client.cache_service_ticket(service_session(30, b"service-short")?);
@@ -165,8 +166,7 @@ mod tests {
     fn tokio_client_clears_service_ticket_cache_without_dropping_tgt() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket);
 
         assert_eq!(client.cached_service_ticket_count(), 1);
@@ -203,7 +203,7 @@ mod tests {
                 .domain_realm
                 .insert("host.test.gokrb5".to_owned(), "TEST.GOKRB5".to_owned()),
         );
-        let mut client = TokioClient::from_tgt_session(config, KdcProtocol::Tcp, tgt);
+        let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(service_ticket);
 
         assert!(
@@ -237,8 +237,7 @@ mod tests {
         let future_renew_till = now
             .checked_add(Duration::from_hours(1))
             .context("renew-till time")?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
 
         let mut expired_referral_tgt = sample_referral_tgt_session("EXPIRED.GOKRB5")?;
         expired_referral_tgt.auth_time = expired_start;
@@ -298,7 +297,7 @@ mod tests {
     fn tokio_client_prunes_expired_nonrenewable_primary_tgt() -> Result<(), TestError> {
         let mut tgt = current_tgt_session(70, 0)?;
         tgt.renew_till = None;
-        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
 
         let pruned = client.prune_unusable_sessions();
 
@@ -328,7 +327,7 @@ mod tests {
     fn tokio_client_destroy_clears_credentials_sessions_and_cache() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt)
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt)
             .with_password_credential(TESTUSER_PASSWORD);
         client.cache_service_ticket(service_ticket);
 
@@ -401,7 +400,7 @@ mod tests {
         cache.credentials_mut().push(other_service);
         cache.credentials_mut().push(service_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let returned = runtime()?
             .block_on(client.get_service_ticket(sample_service_principal()))
             .context("default client's cached service ticket is returned")?;
@@ -456,7 +455,7 @@ mod tests {
         cache.credentials_mut().push(fresh_credential);
         cache.credentials_mut().push(older_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let returned = runtime()?
             .block_on(client.get_service_ticket(sample_service_principal()))
             .context("freshest cached service ticket is returned")?;
@@ -504,7 +503,7 @@ mod tests {
         cache.credentials_mut().push(current_credential);
         cache.credentials_mut().push(future_credential);
 
-        let client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let loaded_tgt = client.tgt_session().context("TGT loaded")?;
 
         assert_eq!(loaded_tgt.session_key, current_tgt.session_key);
@@ -532,7 +531,7 @@ mod tests {
         make_credential_current(&mut tgt_credential, now)?;
         cache.credentials_mut().push(tgt_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let session = runtime()?
             .block_on(client.login())
             .context("current cache-only TGT is returned")?;
@@ -564,7 +563,7 @@ mod tests {
         make_credential_current(&mut tgt_credential, now)?;
         cache.credentials_mut().push(tgt_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let session = runtime()?
             .block_on(client.affirm_login())
             .context("current cache-only TGT is returned")?;
@@ -595,9 +594,8 @@ mod tests {
             now.checked_add(Duration::from_hours(2))
                 .context("renew time")?,
         );
-        let mut client =
-            TokioClient::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt)
-                .with_password_credential(TESTUSER_PASSWORD);
+        let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt)
+            .with_password_credential(TESTUSER_PASSWORD);
 
         let session = runtime()?
             .block_on(client.affirm_login())
@@ -632,8 +630,8 @@ mod tests {
 
     /// A Tokio client of `testuser1` with the test password and no KDC.
     #[cfg(feature = "tokio")]
-    fn password_client() -> TokioClient {
-        TokioClient::with_password(
+    fn password_client() -> Tokio {
+        Tokio::with_password(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -645,7 +643,7 @@ mod tests {
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_reports_tgt_refresh_due_window() -> Result<(), TestError> {
-        let missing = TokioClient::with_password(
+        let missing = Tokio::with_password(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -653,25 +651,19 @@ mod tests {
         );
         assert!(missing.tgt_refresh_due());
 
-        let fresh = TokioClient::from_tgt_session(
+        let fresh = Tokio::from_tgt_session(
             Config::new(),
             KdcProtocol::Tcp,
             current_tgt_session(10, 50)?,
         );
         assert!(!fresh.tgt_refresh_due());
 
-        let due = TokioClient::from_tgt_session(
-            Config::new(),
-            KdcProtocol::Tcp,
-            current_tgt_session(55, 5)?,
-        );
+        let due =
+            Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, current_tgt_session(55, 5)?);
         assert!(due.tgt_refresh_due());
 
-        let expired = TokioClient::from_tgt_session(
-            Config::new(),
-            KdcProtocol::Tcp,
-            current_tgt_session(70, 0)?,
-        );
+        let expired =
+            Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, current_tgt_session(70, 0)?);
         assert!(expired.tgt_refresh_due());
         Ok(())
     }
@@ -681,8 +673,7 @@ mod tests {
     #[test]
     fn tokio_client_refresh_tgt_if_needed_reuses_fresh_cache_only_tgt() -> Result<(), TestError> {
         let tgt = current_tgt_session(10, 50)?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
 
         let refreshed = runtime()?
             .block_on(client.refresh_tgt_if_needed())
@@ -698,13 +689,12 @@ mod tests {
     #[test]
     fn tokio_client_auto_renewal_handle_aborts() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
+            let client = Arc::new(Mutex::new(Tokio::from_tgt_session(
                 Config::new(),
                 KdcProtocol::Tcp,
                 current_tgt_session(10, 50)?,
             )));
-            let renewal =
-                TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(10));
+            let renewal = Tokio::spawn_auto_renewal_with_retry(client, Duration::from_millis(10));
 
             assert!(!renewal.is_finished());
             renewal.abort();
@@ -720,7 +710,7 @@ mod tests {
     fn tokio_client_validates_configuration() -> Result<(), TestError> {
         let mut dns_config = Config::new();
         dns_config.libdefaults.dns_lookup_kdc = true.into();
-        let configured = TokioClient::with_password(
+        let configured = Tokio::with_password(
             dns_config,
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -731,7 +721,7 @@ mod tests {
             .validate_configuration()
             .context("password-backed client with DNS KDC lookup is configured")?;
 
-        let missing_name = TokioClient::with_password(
+        let missing_name = Tokio::with_password(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", ""),
@@ -743,7 +733,7 @@ mod tests {
             Err(Error::MissingClientName)
         ));
 
-        let missing_realm = TokioClient::with_password(
+        let missing_realm = Tokio::with_password(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("", "testuser1"),
@@ -756,7 +746,7 @@ mod tests {
         ));
 
         let mut missing_credentials =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session()?);
+            Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session()?);
         missing_credentials.destroy();
         assert!(!missing_credentials.is_configured());
         assert!(matches!(
@@ -764,7 +754,7 @@ mod tests {
             Err(Error::NoClientCredentials)
         ));
 
-        let missing_kdc = TokioClient::with_password(
+        let missing_kdc = Tokio::with_password(
             config_without_kdcs()?,
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -782,7 +772,7 @@ mod tests {
     #[cfg(all(feature = "tokio", feature = "serde"))]
     #[test]
     fn tokio_client_diagnostics_reports_keytab_and_kdc_state() -> Result<(), TestError> {
-        let client = TokioClient::with_keytab(
+        let client = Tokio::with_keytab(
             config_with_kdc()?,
             KdcProtocol::Auto,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -842,7 +832,7 @@ mod tests {
         make_credential_expired(&mut tgt_credential, now)?;
         cache.credentials_mut().push(tgt_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let error = runtime()?
             .block_on(client.login())
             .err()
@@ -895,7 +885,7 @@ mod tests {
         cache.credentials_mut().push(current_credential);
         cache.credentials_mut().push(future_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let returned = runtime()?
             .block_on(client.get_service_ticket(sample_service_principal()))
             .context("current cached service ticket is returned")?;
@@ -928,7 +918,7 @@ mod tests {
         make_credential_expired(&mut tgt_credential, now)?;
         cache.credentials_mut().push(tgt_credential);
 
-        let mut client = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let error = runtime()?
             .block_on(client.get_service_ticket(sample_service_principal()))
             .err()
@@ -965,7 +955,7 @@ mod tests {
         cache.credentials_mut().push(tgt_credential);
         cache.credentials_mut().push(service_credential);
 
-        let mut client = TokioClient::from_ccache(config_without_kdcs()?, KdcProtocol::Tcp, &cache);
+        let mut client = Tokio::from_ccache(config_without_kdcs()?, KdcProtocol::Tcp, &cache);
         let error = runtime()?
             .block_on(client.get_service_ticket(sample_service_principal()))
             .err()
@@ -1007,7 +997,7 @@ mod tests {
                 .await
                 .context("bind local KDC listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 tgt,
@@ -1093,7 +1083,7 @@ mod tests {
                 .await
                 .context("bind local KDC listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_ccache(
+            let mut client = Tokio::from_ccache(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 &cache,
@@ -1168,7 +1158,7 @@ mod tests {
                 .await
                 .context("bind local KDC listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 primary_tgt,
@@ -1263,7 +1253,7 @@ mod tests {
                 .await
                 .context("bind local KDC listener")?;
             let addr = listener.local_addr().context("local listener address")?;
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 primary_tgt,
@@ -1329,8 +1319,7 @@ mod tests {
     fn tokio_client_exports_and_saves_ccache() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket);
 
         let cache = client.to_ccache().context("client exports ccache")?;
@@ -1340,7 +1329,7 @@ mod tests {
         assert!(cache.contains_server(&["krbtgt", "TEST.GOKRB5"]));
         assert!(cache.contains_server(&["HTTP", "host.test.gokrb5"]));
 
-        let reloaded = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let reloaded = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         assert_eq!(reloaded.tgt_session().context("TGT reloads")?, &tgt);
         assert_eq!(reloaded.cached_service_ticket_count(), 1);
 
@@ -1367,15 +1356,14 @@ mod tests {
     fn tokio_client_loads_from_ccache_name() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket);
         let cache = client.to_ccache().context("client exports ccache")?;
         let path = temp_client_ccache_file("load-name")?;
         let name = format!("FILE:{}", path.display());
         cache.save_name(&name).context("ccache saves by name")?;
 
-        let loaded = TokioClient::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
+        let loaded = Tokio::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
             .context("client loads ccache by name")?;
         fs::remove_file(&path).context("remove the test file")?;
 
@@ -1433,7 +1421,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            Error::CCache(ccache::Error::UnsupportedCacheType { cache_type })
+            Error::CCache(CcacheError::UnsupportedCacheType { cache_type })
                 if cache_type == "API"
         ));
         Ok(())
@@ -1452,8 +1440,7 @@ mod tests {
         }
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket);
         let cache = client
             .to_ccache()
@@ -1463,7 +1450,7 @@ mod tests {
             .save_name(&name)
             .map_err(|cause| format!("ccache saves by name: {cause}"))?;
 
-        let loaded = TokioClient::from_ccache_env(Config::new(), KdcProtocol::Tcp)
+        let loaded = Tokio::from_ccache_env(Config::new(), KdcProtocol::Tcp)
             .map_err(|cause| format!("client loads ccache from env: {cause}"))?;
         fs::remove_file(&path).context("remove the test file")?;
 
@@ -1478,8 +1465,7 @@ mod tests {
     fn tokio_client_saves_and_loads_dir_collection_ccache_name() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket);
         let directory = temp_client_ccache_dir("dir-collection-name")?;
         fs::create_dir_all(&directory).context("temp DIR collection is created")?;
@@ -1488,7 +1474,7 @@ mod tests {
         client
             .save_ccache_name(&name)
             .context("client saves ccache to DIR collection")?;
-        let loaded = TokioClient::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
+        let loaded = Tokio::from_ccache_name(Config::new(), KdcProtocol::Tcp, &name)
             .context("client loads ccache from DIR collection")?;
 
         fs::remove_file(directory.join("tkt")).context("remove the test file")?;
@@ -1509,7 +1495,7 @@ mod tests {
         let directory = temp_client_ccache_dir("default-ccache-name")?;
         fs::create_dir_all(&directory).context("temp DIR collection is created")?;
         let name = format!("DIR:{}", directory.display());
-        let mut client = TokioClient::from_tgt_session(
+        let mut client = Tokio::from_tgt_session(
             config_with_default_ccache_name(&name)?,
             KdcProtocol::Tcp,
             tgt.clone(),
@@ -1519,7 +1505,7 @@ mod tests {
             .save_default_ccache_name()
             .context("client saves configured ccache")?;
 
-        let loaded = TokioClient::from_default_ccache_name(
+        let loaded = Tokio::from_default_ccache_name(
             config_with_default_ccache_name(&name)?,
             KdcProtocol::Tcp,
         )
@@ -1550,7 +1536,7 @@ mod tests {
         fs::create_dir_all(&directory)
             .map_err(|cause| format!("temp DIR collection is created: {cause}"))?;
         let name = format!("DIR:{}", directory.display());
-        let mut client = TokioClient::from_tgt_session(
+        let mut client = Tokio::from_tgt_session(
             config_with_default_ccache_name(&name)?,
             KdcProtocol::Tcp,
             tgt.clone(),
@@ -1560,11 +1546,9 @@ mod tests {
             .save_default_ccache()
             .map_err(|cause| format!("client saves default ccache: {cause}"))?;
 
-        let loaded = TokioClient::from_default_ccache(
-            config_with_default_ccache_name(&name)?,
-            KdcProtocol::Tcp,
-        )
-        .map_err(|cause| format!("client loads default ccache: {cause}"))?;
+        let loaded =
+            Tokio::from_default_ccache(config_with_default_ccache_name(&name)?, KdcProtocol::Tcp)
+                .map_err(|cause| format!("client loads default ccache: {cause}"))?;
         loaded
             .update_default_ccache()
             .map_err(|cause| format!("client updates default ccache: {cause}"))?;
@@ -1594,7 +1578,7 @@ mod tests {
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let (_, path) = file_name_from_parent("KRB5CCNAME");
         let config_default = "MEMORY:config-default".to_owned();
-        let mut client = TokioClient::from_tgt_session(
+        let mut client = Tokio::from_tgt_session(
             config_with_default_ccache_name(&config_default)?,
             KdcProtocol::Tcp,
             tgt.clone(),
@@ -1604,7 +1588,7 @@ mod tests {
             .save_default_ccache()
             .map_err(|cause| format!("client saves default ccache from env: {cause}"))?;
 
-        let loaded = TokioClient::from_default_ccache(
+        let loaded = Tokio::from_default_ccache(
             config_with_default_ccache_name(&config_default)?,
             KdcProtocol::Tcp,
         )
@@ -1629,14 +1613,14 @@ mod tests {
             env::run_in_child(TEST_PATH, &[("KRB5CCNAME", None)]);
             return Ok(());
         }
-        let error = TokioClient::from_default_ccache_name(Config::new(), KdcProtocol::Tcp)
+        let error = Tokio::from_default_ccache_name(Config::new(), KdcProtocol::Tcp)
             .err()
             .context("missing default ccache name is rejected")?;
 
         assert!(matches!(error, Error::NoDefaultCCacheName));
 
         let client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session()?);
+            Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session()?);
         let save_error = client
             .save_default_ccache_name()
             .err()
@@ -1649,7 +1633,7 @@ mod tests {
             .context("missing default ccache name is rejected")?;
         assert!(matches!(update_error, Error::NoDefaultCCacheName));
 
-        let load_default_error = TokioClient::from_default_ccache(Config::new(), KdcProtocol::Tcp)
+        let load_default_error = Tokio::from_default_ccache(Config::new(), KdcProtocol::Tcp)
             .err()
             .context("missing default ccache name is rejected")?;
         assert!(matches!(load_default_error, Error::NoDefaultCCacheName));
@@ -1677,7 +1661,7 @@ mod tests {
         let name = format!("FILE:{}", path.display());
         keytab.save_name(&name).context("keytab saves by name")?;
 
-        let client = TokioClient::with_client_keytab_from_config(
+        let client = Tokio::with_client_keytab_from_config(
             config_with_client_keytab_name(&name)?,
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -1708,7 +1692,7 @@ mod tests {
             .save_name(&name)
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
-        let client = TokioClient::with_keytab_from_env(
+        let client = Tokio::with_keytab_from_env(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -1739,7 +1723,7 @@ mod tests {
             .save_name(&name)
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
-        let client = TokioClient::with_client_keytab_from_env(
+        let client = Tokio::with_client_keytab_from_env(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -1770,7 +1754,7 @@ mod tests {
             .save_name(&name)
             .map_err(|cause| format!("keytab saves by name: {cause}"))?;
 
-        let client = TokioClient::with_client_keytab_from_default(
+        let client = Tokio::with_client_keytab_from_default(
             config_with_client_keytab_name(&name)?,
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -1809,7 +1793,7 @@ mod tests {
             temp_client_keytab_file("missing-config-client-keytab")?.display()
         );
 
-        let client = TokioClient::with_client_keytab_from_default(
+        let client = Tokio::with_client_keytab_from_default(
             config_with_client_keytab_name(&missing_config_name)?,
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -1835,7 +1819,7 @@ mod tests {
             env::run_in_child(TEST_PATH, &[("KRB5_CLIENT_KTNAME", None)]);
             return Ok(());
         }
-        let error = TokioClient::with_client_keytab_from_env(
+        let error = Tokio::with_client_keytab_from_env(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -1854,7 +1838,7 @@ mod tests {
         let primary_tgt = sample_tgt_session()?;
         let referral_tgt = sample_referral_tgt_session("RESDOM.GOKRB5")?;
         let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt.clone());
+            Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt.clone());
 
         client
             .cache_tgt_session(referral_tgt.clone())
@@ -1881,7 +1865,7 @@ mod tests {
         assert!(cache.contains_server(&["krbtgt", "TEST.GOKRB5"]));
         assert!(cache.contains_server(&["krbtgt", "RESDOM.GOKRB5"]));
 
-        let reloaded = TokioClient::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
+        let reloaded = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         assert_eq!(reloaded.tgt_session_count(), 2);
         assert!(reloaded.tgt_session_for_realm("RESDOM.GOKRB5").is_some());
 
@@ -1916,7 +1900,7 @@ mod tests {
     fn tokio_client_rejects_non_tgt_session_cache_insert() -> Result<(), TestError> {
         let tgt = current_tgt_session(5, 180)?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
 
         let error = client
             .cache_tgt_session(service_ticket)
@@ -1950,8 +1934,7 @@ mod tests {
         };
 
         let primary_tgt = primary_session(120, b"primary-long")?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt);
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, primary_tgt);
 
         client
             .cache_tgt_session(primary_session(30, b"primary-short")?)
@@ -2021,7 +2004,7 @@ mod tests {
     fn tokio_client_json_snapshots_match_gokrb5_shapes() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client = TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(service_ticket);
 
         let sessions = client.sessions_json().context("sessions JSON renders")?;
@@ -2062,8 +2045,7 @@ mod tests {
     fn tokio_client_updates_ccache_file_without_duplicate_tickets() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(service_ticket.clone());
 
         let mut old_tgt = tgt.to_ccache_credential().context("TGT converts")?;
@@ -2174,8 +2156,7 @@ mod tests {
             ticket.end_time = now.checked_add(Duration::from_hours(1)).ok_or("end time")?;
             Ok(ticket)
         };
-        let mut client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
+        let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
         client.cache_service_ticket(session_for("auth.cern.ch")?);
 
         assert!(
@@ -2207,13 +2188,13 @@ mod tests {
                 // the refresh is a successful no-op that must be paced.
                 let mut tgt = current_tgt_session(55, 5)?;
                 tgt.renew_till = None;
-                let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
+                let client = Arc::new(Mutex::new(Tokio::from_tgt_session(
                     Config::new(),
                     KdcProtocol::Tcp,
                     tgt,
                 )));
                 let renewal =
-                    TokioClient::spawn_auto_renewal_with_retry(client, Duration::from_millis(50));
+                    Tokio::spawn_auto_renewal_with_retry(client, Duration::from_millis(50));
 
                 // With auto-advanced paused time, a paced loop lets this sleep
                 // complete; a spinning loop keeps the runtime busy instead.
@@ -2242,7 +2223,7 @@ mod tests {
             .ok_or("recent start time")?;
 
         let renewed_client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, renewed.clone());
+            Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, renewed.clone());
         assert!(
             !renewed_client.tgt_refresh_due(),
             "a ticket renewed 60 s ago with 10 h left is not due from a 60 h old auth_time"
@@ -2253,8 +2234,7 @@ mod tests {
             .checked_add(Duration::from_secs(10))
             .ok_or("near end time")?;
         near_end.key_expiration = Some(near_end.end_time);
-        let near_end_client =
-            TokioClient::from_tgt_session(Config::new(), KdcProtocol::Tcp, near_end);
+        let near_end_client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, near_end);
         assert!(
             near_end_client.tgt_refresh_due(),
             "the current life, not auth_time, drives the refresh band"
@@ -2389,7 +2369,7 @@ mod tests {
                 TESTUSER_PASSWORD.to_vec(),
             );
 
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
@@ -2423,7 +2403,7 @@ mod tests {
                 TESTUSER_PASSWORD.to_vec(),
             );
 
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
@@ -2457,7 +2437,7 @@ mod tests {
                 TESTUSER_PASSWORD.to_vec(),
             );
 
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
@@ -2599,12 +2579,12 @@ mod tests {
 
             // Due (55 min old, 5 min left) and renewable; cache-only, so only a
             // renewal can refresh it.
-            let client = Arc::new(Mutex::new(TokioClient::from_tgt_session(
+            let client = Arc::new(Mutex::new(Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 current_tgt_session(55, 5)?,
             )));
-            let renewal = TokioClient::spawn_auto_renewal(Arc::clone(&client));
+            let renewal = Tokio::spawn_auto_renewal(Arc::clone(&client));
 
             // Spin without timers until the first renewal is installed: an idle
             // paused runtime auto-advances the clock while loopback I/O is still
@@ -2664,7 +2644,7 @@ mod tests {
             // keep the transport timeout beyond the 600 s window: the renewal must
             // fail on the KDC's refusal, not on a virtual timeout.
             let client = Arc::new(Mutex::new(
-                TokioClient::from_tgt_session(
+                Tokio::from_tgt_session(
                     config_with_kdc_server(&addr.to_string())?,
                     KdcProtocol::Tcp,
                     current_tgt_session(55, 5)?,
@@ -2672,7 +2652,7 @@ mod tests {
                 .with_password_credential(TESTUSER_PASSWORD)
                 .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_hours(24))),
             ));
-            let renewal = TokioClient::spawn_auto_renewal(client);
+            let renewal = Tokio::spawn_auto_renewal(client);
 
             for _ in 0_u16..600 {
                 if as_requests.load(Ordering::SeqCst) >= 1 {
@@ -2725,7 +2705,7 @@ mod tests {
                 },
             );
 
-            let mut client = TokioClient::from_tgt_session(
+            let mut client = Tokio::from_tgt_session(
                 config_with_kdc_server(&addr.to_string())?,
                 KdcProtocol::Tcp,
                 expired_renewable_tgt()?,
@@ -2769,7 +2749,7 @@ mod tests {
         service_ticket.end_time = now.checked_add(Duration::from_hours(1)).ok_or("end time")?;
         service_ticket.service = Principal::new("PARTNER.REALM", 2, ["HTTP", "Host.Example.COM"]);
 
-        let mut client = TokioClient::from_tgt_session(config, KdcProtocol::Tcp, tgt);
+        let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(service_ticket.clone());
 
         let lookup = Principal::new("", 2, ["HTTP", "Host.Example.COM"]);

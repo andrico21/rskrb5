@@ -14,7 +14,7 @@
 
 There were two related gaps in how the client applies enctype policy.
 
-**1. Replies weren't bound to the requested enctypes (#5).** When the first AS-REQ is answered directly with an AS-REP (an account without pre-authentication, or a caller that set `assume_preauthentication`), the client derived the reply key from the reply's own `enc_part.etype`. The keytab consumer also selected its key by the reply's `etype`/`kvno`. Neither path checked `AsReqOptions.etypes`. `process_as_rep` and `process_tgs_rep_inner` then imported the returned session key without checking it against the request either. So a reply in an enctype the caller never asked for was accepted; RC4-HMAC (23) against a request listing only AES256 (18) was reproduced for both consumers.
+**1. Replies weren't bound to the requested enctypes (#5).** When the first AS-REQ is answered directly with an AS-REP (an account without pre-authentication, or a caller that set `assume_preauthentication`), the client derived the reply key from the reply's own `enc_part.etype`. The keytab consumer also selected its key by the reply's `etype`/`kvno`. Neither path checked `AsReq.etypes`. `process_as_rep` and `process_tgs_rep_inner` then imported the returned session key without checking it against the request either. So a reply in an enctype the caller never asked for was accepted; RC4-HMAC (23) against a request listing only AES256 (18) was reproduced for both consumers.
 
 **2. `[libdefaults] permitted_enctypes` was parsed and never used.** `permitted_enctype_ids` was filled in and then only reported. Request lists came from `default_tkt_enctypes`/`default_tgs_enctypes` alone, and the config-driven exchanges accepted any session-key enctype. An operator who narrowed `permitted_enctypes` still advertised the excluded enctypes (the shipped defaults resolve to `[18, 17, 23]`, RC4 included) and accepted a session key outside the allowlist.
 
@@ -35,13 +35,13 @@ Reply binding (`236c4ce`):
 
 - `password_initial_as_rep_session` and `keytab_initial_as_rep_session` reject a reply `enc_part.etype` outside the request's `KDC-REQ-BODY.etype` before they derive or select the reply key.
 - `process_as_rep` and `process_tgs_rep_inner` reject an imported session key outside the request's list. On the TGS path only the new session key is checked; the TGS-REP encryption itself keeps using the TGT session-key enctype.
-- New error: `client::Error::EnctypeNotRequested(i32)`.
+- New error: `rskrb5_ng::error::Client::EnctypeNotRequested(i32)`.
 
 Allowlist (`6b64394`, `f8ffc5e`, `79a15db`):
 
 - `LibDefaults` gains `permitted_enctypes_explicit: bool`, set when `[libdefaults] permitted_enctypes` is parsed.
-- When the flag is set, `AsReqOptions::from_libdefaults` and `TgsReqOptions::from_libdefaults` narrow the request list to `permitted_enctype_ids`. An empty result fails closed through the existing `Error::EmptyEtypes`.
-- When the flag is set, `exchange_as_req_with_config` and `exchange_tgs_req_with_config` reject a session key outside the allowlist with the new `client::Error::EnctypeNotPermitted(i32)`.
+- When the flag is set, `AsReq::from_libdefaults` and `TgsReq::from_libdefaults` narrow the request list to `permitted_enctype_ids`. An empty result fails closed through the existing `Error::EmptyEtypes`.
+- When the flag is set, `exchange_as_req_with_config` and `exchange_tgs_req_with_config` reject a session key outside the allowlist with the new `rskrb5_ng::error::Client::EnctypeNotPermitted(i32)`.
 - Without the flag, behaviour is unchanged, so SHA2 request lists keep working on the implicit default.
 
 Serde (`31e5910`):
@@ -51,7 +51,7 @@ Serde (`31e5910`):
 
 Reject, never silently narrow (`7c2c297`):
 
-- `Config::parse` fails when an explicit `default_tkt_enctypes` or `default_tgs_enctypes` names an enctype outside an explicit `permitted_enctypes`. The new `config::Error::EnctypeNotPermitted { key, enctype }` names both, for example `[libdefaults] default_tkt_enctypes lists aes128-cts-hmac-sha1-96, which permitted_enctypes does not permit`.
+- `Config::parse` fails when an explicit `default_tkt_enctypes` or `default_tgs_enctypes` names an enctype outside an explicit `permitted_enctypes`. The new `rskrb5_ng::error::Config::EnctypeNotPermitted { key, enctype }` names both, for example `[libdefaults] default_tkt_enctypes lists aes128-cts-hmac-sha1-96, which permitted_enctypes does not permit`.
 - Repeated `[libdefaults]` sections are allowed, so the explicitness state spans the whole parse (a private parse-state struct, no new public field). The check runs once, on the final effective values after the last section:
   - a request list in one section is still checked against a `permitted_enctypes` line in a later one;
   - a later section can repair an earlier conflict.
@@ -108,8 +108,8 @@ All runs used stable Rust 1.99.1 on the branch tip.
 
 Breaking API changes (none of these types is `#[non_exhaustive]`):
 
-- `client::Error` gains `EnctypeNotRequested(i32)` and `EnctypeNotPermitted(i32)`.
-- `config::Error` gains `EnctypeNotPermitted { key: &'static str, enctype: String }`.
+- `rskrb5_ng::error::Client` gains `EnctypeNotRequested(i32)` and `EnctypeNotPermitted(i32)`.
+- `rskrb5_ng::error::Config` gains `EnctypeNotPermitted { key: &'static str, enctype: String }`.
 - `LibDefaults` gains the public field `permitted_enctypes_explicit: bool`. Struct literals without `..Default::default()` need it.
 
 Behaviour changes:

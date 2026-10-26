@@ -17,13 +17,14 @@ mod tests {
     use rasn_kerberos::{KerberosString, PrincipalName};
     use rskrb5_ng::{
         ap_req::{
-            AP_REQ_AUTHENTICATOR_USAGE, Error, KRB_AP_REQ_MSG_TYPE,
-            TGS_REQ_AP_REQ_AUTHENTICATOR_USAGE, ap_options_from_bits, ap_options_to_bits,
-            authenticator_usage_for_ticket, build_ap_req, build_ap_req_with_confounder,
-            decode_ap_req, decode_authenticator, decrypt_ap_req_authenticator, encode_ap_req,
+            AP_REQ_AUTHENTICATOR_USAGE, KRB_AP_REQ_MSG_TYPE, TGS_REQ_AP_REQ_AUTHENTICATOR_USAGE,
+            ap_options_from_bits, ap_options_to_bits, authenticator_usage_for_ticket,
+            build as build_ap_req, build_ap_req_with_confounder, decode as decode_ap_req,
+            decode_authenticator, decrypt_ap_req_authenticator, encode as encode_ap_req,
             encode_build_ap_req_with_confounder,
         },
         crypto::KerberosEtype,
+        error::ApReq as Error,
         keytab::EncryptionKey,
     };
 

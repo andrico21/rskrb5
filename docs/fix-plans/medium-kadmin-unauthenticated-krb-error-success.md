@@ -42,7 +42,7 @@ authenticated provenance.
    site covers the high-level flow and the library-level
    `exchange_kpasswd_result` / `exchange_kpasswd_result_with_config`
    (`src/client/transport.rs:398,417`). Add an `Error::UnauthenticatedSuccess`
-   variant to `kadmin::Error`.
+   variant to `rskrb5_ng::error::Kadmin`.
 2. Defense in depth in `change_password_for_with_options`: treat the change as
    successful only when `verify_kpasswd_ap_rep` returned `Some(..)`; require
    `verified.is_some()` before `ensure_success`/credential replacement.

@@ -18,7 +18,6 @@ mod env;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    #[cfg(feature = "tokio")]
     use alloc::rc::Rc;
     #[cfg(feature = "tokio")]
     use core::cell::{Cell, RefCell};
@@ -52,17 +51,21 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rasn::der;
     #[cfg(feature = "tokio")]
-    use rskrb5_ng::client::{BlockingNegotiateClient, KdcProtocol, NegotiateClient, TokioClient};
+    use rskrb5_ng::client::{
+        Tokio, negotiate::BlockingClient as BlockingNegotiateClient,
+        negotiate::Client as NegotiateClient, transport::KdcProtocol,
+    };
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::config::Config;
+    #[cfg(feature = "tokio")]
+    use rskrb5_ng::error::Http as HttpError;
     use rskrb5_ng::{
-        client::{AsRepSession, Principal},
+        client::{AsRepSession, principal::Principal},
         http as krb_http,
         keytab::{EncryptionKey, Keytab},
-        service::{ApRepOptions, ServiceValidator},
+        service::{ApRepOptions, Validator},
         spnego::{
-            self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit,
-            SpnegoToken,
+            self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit, Token,
         },
     };
     #[cfg(feature = "tokio")]
@@ -112,7 +115,7 @@ mod tests {
         let mut request = Request::new(());
         assert!(matches!(
             krb_http::authorization_header(&request),
-            Err(krb_http::Error::MissingAuthorization)
+            Err(HttpError::MissingAuthorization)
         ));
 
         krb_http::set_authorization_header(&mut request, "Negotiate token")
@@ -140,7 +143,7 @@ mod tests {
     #[test]
     fn accept_request_validates_spnego_header_and_adds_extension() -> Result<(), TestError> {
         let keytab = keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let mut request = Request::new(());
         krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)
             .context("authorization header sets")?;
@@ -161,7 +164,7 @@ mod tests {
     #[test]
     fn accept_request_validates_raw_krb5_header() -> Result<(), TestError> {
         let keytab = keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let mut request = Request::new(());
         krb_http::set_authorization_header(&mut request, &raw_krb5_authorization_header()?)
             .context("authorization header sets")?;
@@ -180,7 +183,7 @@ mod tests {
         let mut missing = Response::new(());
         assert!(matches!(
             krb_http::www_authenticate_negotiate_header(&missing),
-            Err(krb_http::Error::MissingWwwAuthenticate)
+            Err(HttpError::MissingWwwAuthenticate)
         ));
 
         let _: bool = missing.headers_mut().append(
@@ -189,7 +192,7 @@ mod tests {
         );
         assert!(matches!(
             krb_http::www_authenticate_negotiate_header(&missing),
-            Err(krb_http::Error::MissingNegotiateChallenge)
+            Err(HttpError::MissingNegotiateChallenge)
         ));
 
         let challenge = krb_http::challenge_response::<()>();
@@ -223,7 +226,7 @@ mod tests {
         runtime()?.block_on(async {
             let service_ticket = current_service_ticket_session()?;
             let service = service_ticket.service.clone();
-            let mut client = TokioClient::with_password(
+            let mut client = Tokio::with_password(
                 Config::new(),
                 KdcProtocol::Auto,
                 Principal::user("TEST.GOKRB5", "testuser1"),
@@ -257,7 +260,7 @@ mod tests {
         runtime()?.block_on(async {
             let mut service_ticket = current_service_ticket_session()?;
             let service = service_ticket.service.clone();
-            let mut tokio_client = TokioClient::with_password(
+            let mut tokio_client = Tokio::with_password(
                 Config::new(),
                 KdcProtocol::Auto,
                 Principal::user("TEST.GOKRB5", "testuser1"),
@@ -295,7 +298,7 @@ mod tests {
         runtime()?.block_on(async {
             let service_ticket = current_service_ticket_session()?;
             let service = service_ticket.service.clone();
-            let mut tokio_client = TokioClient::with_password(
+            let mut tokio_client = Tokio::with_password(
                 Config::new(),
                 KdcProtocol::Auto,
                 Principal::user("TEST.GOKRB5", "testuser1"),
@@ -650,7 +653,7 @@ mod tests {
             .context("AP-REP header is a string")?;
         assert!(matches!(
             spnego::parse_negotiate_header(ap_rep_header).context("AP-REP header parses")?,
-            SpnegoToken::Resp(_)
+            Token::Resp(_)
         ));
         Ok(())
     }
@@ -993,7 +996,7 @@ mod tests {
         let ap_req_token = Krb5MechToken::ap_req(decode_hex(VALID_AP_REQ)?)
             .encode()
             .context("KRB5 AP-REQ token encodes")?;
-        let spnego_token = SpnegoToken::Init(NegTokenInit::krb5(ap_req_token));
+        let spnego_token = Token::Init(NegTokenInit::krb5(ap_req_token));
         spnego::negotiate_header(&spnego_token).context("Negotiate header encodes")
     }
 
@@ -1030,7 +1033,7 @@ mod tests {
 
     fn ap_rep_response_header(context: &spnego::InitiatorContext) -> Result<String, TestError> {
         let keytab = keytab()?;
-        let mut validator = ServiceValidator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)
             .context("client SPNEGO header validates")?;
         accepted
@@ -1604,7 +1607,7 @@ mod tests {
     /// A Negotiate client whose cache already holds the fixture service ticket.
     #[cfg(feature = "tokio")]
     fn negotiate_client_with_cached_service_ticket() -> Result<NegotiateClient, TestError> {
-        let mut tokio_client = TokioClient::with_password(
+        let mut tokio_client = Tokio::with_password(
             Config::new(),
             KdcProtocol::Auto,
             Principal::user("TEST.GOKRB5", "testuser1"),
@@ -1623,7 +1626,7 @@ mod tests {
         authorization: &str,
     ) -> Result<String, TestError> {
         let keytab = keytab()?;
-        let mut validator = ServiceValidator::new(&keytab)
+        let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
             .with_max_clock_skew(Duration::from_hours(100 * 365 * 24));
         let accepted = spnego::accept_sec_context_header(&mut validator, authorization)

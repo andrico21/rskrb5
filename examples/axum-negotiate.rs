@@ -17,9 +17,10 @@ use axum::{
     routing::get,
 };
 use rskrb5_ng::{
+    error::Http as HttpError,
     http as krb_http,
     keytab::Keytab,
-    service::{ApRepOptions, ServiceValidator},
+    service::{ApRepOptions, Validator},
     spnego::AcceptedContext,
 };
 use tokio::net::TcpListener;
@@ -28,7 +29,7 @@ use tokio::net::TcpListener;
 #[derive(Clone)]
 struct AppState {
     /// The acceptor shared by every request; its replay cache must see all of them.
-    validator: Arc<Mutex<ServiceValidator<'static>>>,
+    validator: Arc<Mutex<Validator<'static>>>,
 }
 
 // cancel-safe: the server future owns every resource; dropping it stops the server.
@@ -36,7 +37,7 @@ struct AppState {
 async fn main() -> Result<(), Box<dyn Error>> {
     let keytab = Box::leak(Box::new(load_keytab()?));
     let state = AppState {
-        validator: Arc::new(Mutex::new(ServiceValidator::new(keytab))),
+        validator: Arc::new(Mutex::new(Validator::new(keytab))),
     };
 
     let app = Router::new()
@@ -79,10 +80,10 @@ async fn negotiate(
         };
         match krb_http::accept_request(&mut validator, &mut request) {
             Ok(accepted) => accepted,
-            Err(krb_http::Error::MissingAuthorization | krb_http::Error::InvalidHeader(_)) => {
+            Err(HttpError::MissingAuthorization | HttpError::InvalidHeader(_)) => {
                 return krb_http::challenge_response();
             }
-            Err(krb_http::Error::Spnego(_)) => {
+            Err(HttpError::Spnego(_)) => {
                 return krb_http::reject_response()
                     .unwrap_or_else(|_| krb_http::challenge_response());
             }

@@ -2,7 +2,7 @@ use alloc::fmt;
 
 use tokio::runtime::{Builder, Runtime};
 
-use super::{Error, KdcProtocol, KpasswdRequestOptions, Principal, TokioClient};
+use super::{Error, KdcProtocol, Principal, RequestOptions, Tokio};
 use crate::{
     config::Config,
     kadmin::ChangePasswordResult,
@@ -13,19 +13,19 @@ use crate::{
 /// Small client API for HTTP Negotiate/SPNEGO initiator headers.
 ///
 /// This wrapper keeps the stable HTTP-Negotiate surface narrow while reusing
-/// [`TokioClient`] for ticket acquisition, cache reuse, and SPNEGO token
-/// construction. Advanced Kerberos flows remain available on `TokioClient`.
+/// [`Tokio`] for ticket acquisition, cache reuse, and SPNEGO token
+/// construction. Advanced Kerberos flows remain available on `Tokio`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NegotiateClient {
+pub struct Client {
     /// High-level client that acquires tickets and builds tokens.
-    inner: TokioClient,
+    inner: Tokio,
 }
 
-impl NegotiateClient {
+impl Client {
     #[must_use]
     /// Wrap an existing high-level Tokio client.
     #[inline]
-    pub const fn from_tokio_client(client: TokioClient) -> Self {
+    pub const fn from_tokio_client(client: Tokio) -> Self {
         Self { inner: client }
     }
 
@@ -35,7 +35,7 @@ impl NegotiateClient {
     where
         P: Into<Vec<u8>>,
     {
-        Self::from_tokio_client(TokioClient::with_password(
+        Self::from_tokio_client(Tokio::with_password(
             config,
             KdcProtocol::Auto,
             client,
@@ -47,7 +47,7 @@ impl NegotiateClient {
     /// Create a keytab-backed Negotiate client using automatic UDP/TCP KDC transport.
     #[inline]
     pub const fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Self {
-        Self::from_tokio_client(TokioClient::with_keytab(
+        Self::from_tokio_client(Tokio::with_keytab(
             config,
             KdcProtocol::Auto,
             client,
@@ -70,7 +70,7 @@ impl NegotiateClient {
     where
         P: AsRef<str>,
     {
-        Ok(Self::from_tokio_client(TokioClient::with_keytab_name(
+        Ok(Self::from_tokio_client(Tokio::with_keytab_name(
             config,
             KdcProtocol::Auto,
             client,
@@ -89,7 +89,7 @@ impl NegotiateClient {
     where
         P: AsRef<str>,
     {
-        Ok(Self::from_tokio_client(TokioClient::from_ccache_name(
+        Ok(Self::from_tokio_client(Tokio::from_ccache_name(
             config,
             KdcProtocol::Auto,
             cache_name,
@@ -108,7 +108,7 @@ impl NegotiateClient {
     /// read or parsed.
     #[inline]
     pub fn from_default_ccache(config: Config) -> Result<Self, Error> {
-        Ok(Self::from_tokio_client(TokioClient::from_default_ccache(
+        Ok(Self::from_tokio_client(Tokio::from_default_ccache(
             config,
             KdcProtocol::Auto,
         )?))
@@ -122,29 +122,29 @@ impl NegotiateClient {
     /// the cache it names cannot be read or parsed.
     #[inline]
     pub fn from_ccache_env(config: Config) -> Result<Self, Error> {
-        Ok(Self::from_tokio_client(TokioClient::from_ccache_env(
+        Ok(Self::from_tokio_client(Tokio::from_ccache_env(
             config,
             KdcProtocol::Auto,
         )?))
     }
 
     #[must_use]
-    /// Borrow the wrapped `TokioClient`.
+    /// Borrow the wrapped `Tokio`.
     #[inline]
-    pub const fn inner(&self) -> &TokioClient {
+    pub const fn inner(&self) -> &Tokio {
         &self.inner
     }
 
-    /// Mutably borrow the wrapped `TokioClient`.
+    /// Mutably borrow the wrapped `Tokio`.
     #[inline]
-    pub const fn inner_mut(&mut self) -> &mut TokioClient {
+    pub const fn inner_mut(&mut self) -> &mut Tokio {
         &mut self.inner
     }
 
     #[must_use]
-    /// Consume this wrapper and return the wrapped `TokioClient`.
+    /// Consume this wrapper and return the wrapped `Tokio`.
     #[inline]
-    pub fn into_inner(self) -> TokioClient {
+    pub fn into_inner(self) -> Tokio {
         self.inner
     }
 
@@ -168,7 +168,7 @@ impl NegotiateClient {
 
     /// Build an HTTP `Authorization` header for a host-based service.
     ///
-    /// The service realm is left empty so `TokioClient` can resolve it from
+    /// The service realm is left empty so `Tokio` can resolve it from
     /// `[domain_realm]` or fall back to the client realm.
     ///
     /// # Errors
@@ -245,7 +245,7 @@ impl NegotiateClient {
 
     /// Build a SPNEGO initiator context for a host-based service.
     ///
-    /// The service realm is left empty so `TokioClient` can resolve it from
+    /// The service realm is left empty so `Tokio` can resolve it from
     /// `[domain_realm]` or fall back to the client realm.
     ///
     /// # Errors
@@ -354,7 +354,7 @@ impl NegotiateClient {
     pub async fn change_password_with_options<P>(
         &mut self,
         new_password: P,
-        options: KpasswdRequestOptions,
+        options: RequestOptions,
     ) -> Result<ChangePasswordResult, Error>
     where
         P: AsRef<[u8]>,
@@ -385,7 +385,7 @@ impl NegotiateClient {
         &mut self,
         target: Principal,
         new_password: P,
-        options: KpasswdRequestOptions,
+        options: RequestOptions,
     ) -> Result<ChangePasswordResult, Error>
     where
         P: AsRef<[u8]>,
@@ -398,17 +398,17 @@ impl NegotiateClient {
 
 /// Blocking wrapper for synchronous CLI consumers of HTTP Negotiate.
 ///
-/// Async applications should use [`NegotiateClient`] directly. This type owns a
+/// Async applications should use [`Client`] directly. This type owns a
 /// small current-thread Tokio runtime so callers can generate headers without
 /// managing a runtime.
-pub struct BlockingNegotiateClient {
+pub struct BlockingClient {
     /// Current-thread runtime that drives the async client.
     runtime: Runtime,
     /// Async client whose futures `runtime` blocks on.
-    client: NegotiateClient,
+    client: Client,
 }
 
-impl fmt::Debug for BlockingNegotiateClient {
+impl fmt::Debug for BlockingClient {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BlockingNegotiateClient")
@@ -417,14 +417,14 @@ impl fmt::Debug for BlockingNegotiateClient {
     }
 }
 
-impl BlockingNegotiateClient {
+impl BlockingClient {
     /// Wrap an existing Negotiate client.
     ///
     /// # Errors
     ///
     /// Returns an I/O error when the blocking runtime cannot be created.
     #[inline]
-    pub fn new(client: NegotiateClient) -> Result<Self, Error> {
+    pub fn new(client: Client) -> Result<Self, Error> {
         Ok(Self {
             runtime: blocking_runtime()?,
             client,
@@ -441,7 +441,7 @@ impl BlockingNegotiateClient {
     where
         P: Into<Vec<u8>>,
     {
-        Self::new(NegotiateClient::with_password(config, client, password))
+        Self::new(Client::with_password(config, client, password))
     }
 
     /// Create a keytab-backed blocking Negotiate client.
@@ -451,7 +451,7 @@ impl BlockingNegotiateClient {
     /// Returns an I/O error when the blocking runtime cannot be created.
     #[inline]
     pub fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Result<Self, Error> {
-        Self::new(NegotiateClient::with_keytab(config, client, keytab))
+        Self::new(Client::with_keytab(config, client, keytab))
     }
 
     /// Create a keytab-backed blocking Negotiate client by loading a file-backed keytab name.
@@ -470,11 +470,7 @@ impl BlockingNegotiateClient {
     where
         P: AsRef<str>,
     {
-        Self::new(NegotiateClient::with_keytab_name(
-            config,
-            client,
-            keytab_name,
-        )?)
+        Self::new(Client::with_keytab_name(config, client, keytab_name)?)
     }
 
     /// Create a cache-only blocking Negotiate client by loading a ccache name.
@@ -489,7 +485,7 @@ impl BlockingNegotiateClient {
     where
         P: AsRef<str>,
     {
-        Self::new(NegotiateClient::from_ccache_name(config, cache_name)?)
+        Self::new(Client::from_ccache_name(config, cache_name)?)
     }
 
     /// Create a cache-only blocking Negotiate client from the default credential cache.
@@ -502,7 +498,7 @@ impl BlockingNegotiateClient {
     /// Returns an I/O error when the blocking runtime cannot be created.
     #[inline]
     pub fn from_default_ccache(config: Config) -> Result<Self, Error> {
-        Self::new(NegotiateClient::from_default_ccache(config)?)
+        Self::new(Client::from_default_ccache(config)?)
     }
 
     /// Create a cache-only blocking Negotiate client by loading the cache named by `KRB5CCNAME`.
@@ -514,18 +510,18 @@ impl BlockingNegotiateClient {
     /// Returns an I/O error when the blocking runtime cannot be created.
     #[inline]
     pub fn from_ccache_env(config: Config) -> Result<Self, Error> {
-        Self::new(NegotiateClient::from_ccache_env(config)?)
+        Self::new(Client::from_ccache_env(config)?)
     }
 
     /// Borrow the wrapped async client.
     #[inline]
-    pub const fn client(&self) -> &NegotiateClient {
+    pub const fn client(&self) -> &Client {
         &self.client
     }
 
     /// Mutably borrow the wrapped async client.
     #[inline]
-    pub const fn client_mut(&mut self) -> &mut NegotiateClient {
+    pub const fn client_mut(&mut self) -> &mut Client {
         &mut self.client
     }
 
@@ -674,7 +670,7 @@ impl BlockingNegotiateClient {
     pub fn change_password_with_options<P>(
         &mut self,
         new_password: P,
-        options: KpasswdRequestOptions,
+        options: RequestOptions,
     ) -> Result<ChangePasswordResult, Error>
     where
         P: AsRef<[u8]>,
@@ -699,7 +695,7 @@ impl BlockingNegotiateClient {
         &mut self,
         target: Principal,
         new_password: P,
-        options: KpasswdRequestOptions,
+        options: RequestOptions,
     ) -> Result<ChangePasswordResult, Error>
     where
         P: AsRef<[u8]>,
@@ -712,7 +708,7 @@ impl BlockingNegotiateClient {
     }
 }
 
-/// Build the current-thread runtime that drives a [`BlockingNegotiateClient`].
+/// Build the current-thread runtime that drives a [`BlockingClient`].
 ///
 /// # Errors
 ///

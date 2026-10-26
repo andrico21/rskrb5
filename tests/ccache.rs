@@ -30,7 +30,10 @@ mod tests {
         prelude::{Strategy, TestCaseError, any},
         prop_assert, prop_assert_eq, prop_oneof, proptest,
     };
-    use rskrb5_ng::ccache::{CCache, CacheName, Credential, EncryptionKey, Error, Principal};
+    use rskrb5_ng::{
+        ccache::{CCache, CacheName, Credential, EncryptionKey, Principal},
+        error::Ccache as Error,
+    };
 
     use super::env;
 

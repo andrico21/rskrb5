@@ -18,9 +18,12 @@ mod tests {
     use core::error;
 
     use pretty_assertions::assert_eq;
-    use rskrb5_ng::crypto::{
-        AesSha1Etype, AesSha2Etype, Error, KerberosEtype, Rc4HmacEtype, iterations_to_s2kparams,
-        nfold, s2kparams_to_iterations,
+    use rskrb5_ng::{
+        crypto::{
+            AesSha1Etype, AesSha2Etype, KerberosEtype, Rc4HmacEtype, iterations_to_s2kparams,
+            nfold, s2kparams_to_iterations,
+        },
+        error::Crypto as Error,
     };
 
     use super::usage_constant;

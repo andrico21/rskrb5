@@ -19,19 +19,20 @@ use tokio::{
 };
 
 use super::{
-    AsRepSession, AsReqOptions, BuiltAsReq, BuiltTgsReq, Error, KRB_ERR_RESPONSE_TOO_BIG,
-    KRB_NT_SRV_INST, Principal, ReferralTgsResult, TgsRepSession, TgsReqOptions,
-    build_s4u2proxy_req, build_s4u2self_req, build_tgs_req_for_realm, build_tgt_renewal_req,
-    build_ticket_renewal_req, keytab_initial_as_rep_session, keytab_initial_as_req,
-    keytab_preauth_request, password_initial_as_rep_session, password_initial_as_req,
-    password_preauth_request, principal_matches, process_as_rep, process_tgs_rep,
-    process_tgs_rep_with_referral, service_realm, tgt_realm,
+    AsRepSession, AsReq, BuiltAsReq, BuiltTgsReq, Error, KRB_ERR_RESPONSE_TOO_BIG, KRB_NT_SRV_INST,
+    Principal, ReferralTgsResult, TgsRepSession, TgsReq, build_s4u2proxy_req, build_s4u2self_req,
+    build_tgs_req_for_realm, build_tgt_renewal_req, build_ticket_renewal_req,
+    keytab_initial_as_rep_session, keytab_initial_as_req, keytab_preauth_request,
+    password_initial_as_rep_session, password_initial_as_req, password_preauth_request,
+    principal_matches, process_as_rep, process_tgs_rep, process_tgs_rep_with_referral,
+    service_realm, tgt_realm,
 };
 use crate::{
-    config::{Config, Error as ConfigError},
+    config::Config,
+    error::Config as ConfigError,
     kadmin,
     keytab::{EncryptionKey, Keytab},
-    krb_error::decode_krb_error,
+    krb_error::decode as decode_krb_error,
 };
 
 /// Default timeout applied to each KDC exchange.
@@ -145,7 +146,7 @@ impl KdcEndpoint {
 /// Tokio-backed KDC transport for explicit TCP or UDP exchanges.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TokioKdcTransport {
+pub struct Tokio {
     /// Timeout applied to each KDC exchange.
     timeout: Duration,
     /// UDP receive buffer size; a larger datagram is truncated.
@@ -155,7 +156,7 @@ pub struct TokioKdcTransport {
 }
 
 #[cfg(feature = "tokio")]
-impl Default for TokioKdcTransport {
+impl Default for Tokio {
     #[inline]
     fn default() -> Self {
         Self::new()
@@ -163,7 +164,7 @@ impl Default for TokioKdcTransport {
 }
 
 #[cfg(feature = "tokio")]
-impl TokioKdcTransport {
+impl Tokio {
     #[must_use]
     /// Create a transport with conservative gokrb5-compatible defaults.
     #[inline]
@@ -1015,7 +1016,7 @@ impl TokioKdcTransport {
         addr: A,
         service_tgt: &AsRepSession,
         user: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1045,7 +1046,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         service_tgt: &AsRepSession,
         user: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
         let request = build_s4u2self_req(service_tgt, user, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &service_tgt.session_key)
@@ -1073,7 +1074,7 @@ impl TokioKdcTransport {
         service_tgt: &AsRepSession,
         evidence_ticket: &TgsRepSession,
         target_service: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1104,7 +1105,7 @@ impl TokioKdcTransport {
         service_tgt: &AsRepSession,
         evidence_ticket: &TgsRepSession,
         target_service: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
         let request = build_s4u2proxy_req(service_tgt, evidence_ticket, target_service, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &service_tgt.session_key)
@@ -1130,7 +1131,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         addr: A,
         tgt: &AsRepSession,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1159,7 +1160,7 @@ impl TokioKdcTransport {
         config: &Config,
         protocol: KdcProtocol,
         tgt: &AsRepSession,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
         let request = build_tgt_renewal_req(tgt, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &tgt.session_key)
@@ -1185,7 +1186,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         addr: A,
         ticket: &AsRepSession,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1214,7 +1215,7 @@ impl TokioKdcTransport {
         config: &Config,
         protocol: KdcProtocol,
         ticket: &AsRepSession,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
         let request = build_ticket_renewal_req(ticket, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &ticket.session_key)
@@ -1249,7 +1250,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         tgt: &AsRepSession,
         service: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
         Ok(self
             .get_service_ticket_with_referral_trace(config, protocol, tgt, service, options)
@@ -1281,7 +1282,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         tgt: &AsRepSession,
         service: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<ReferralTgsResult, Error> {
         self.get_service_ticket_with_referral_trace_limit(
             config,
@@ -1318,7 +1319,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         tgt: &AsRepSession,
         service: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
         max_referrals: usize,
     ) -> Result<TgsRepSession, Error> {
         Ok(self
@@ -1358,7 +1359,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         tgt: &AsRepSession,
         mut service: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
         max_referrals: usize,
     ) -> Result<ReferralTgsResult, Error> {
         let mut current_tgt = tgt.clone();
@@ -1447,7 +1448,7 @@ impl TokioKdcTransport {
         addr: A,
         client: Principal,
         password: &[u8],
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1480,7 +1481,7 @@ impl TokioKdcTransport {
         client: Principal,
         service: Principal,
         password: &[u8],
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1526,7 +1527,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         client: Principal,
         password: &[u8],
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error> {
         let service = Principal::tgt_service(client.realm.clone());
         self.login_as_service_with_password_config(
@@ -1558,7 +1559,7 @@ impl TokioKdcTransport {
         client: Principal,
         service: Principal,
         password: &[u8],
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error> {
         let initial_request =
             password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
@@ -1604,7 +1605,7 @@ impl TokioKdcTransport {
         addr: A,
         client: Principal,
         keytab: &Keytab,
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1637,7 +1638,7 @@ impl TokioKdcTransport {
         client: Principal,
         service: Principal,
         keytab: &Keytab,
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error>
     where
         A: ToSocketAddrs + Clone,
@@ -1683,7 +1684,7 @@ impl TokioKdcTransport {
         protocol: KdcProtocol,
         client: Principal,
         keytab: &Keytab,
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error> {
         let service = Principal::tgt_service(client.realm.clone());
         self.login_as_service_with_keytab_config(config, protocol, client, service, keytab, options)
@@ -1713,7 +1714,7 @@ impl TokioKdcTransport {
         client: Principal,
         service: Principal,
         keytab: &Keytab,
-        options: AsReqOptions,
+        options: AsReq,
     ) -> Result<AsRepSession, Error> {
         let initial_request =
             keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;

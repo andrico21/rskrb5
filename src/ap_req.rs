@@ -2,11 +2,7 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{
-    crypto::{self, KerberosEtype},
-    der::trim_zero_padded_der,
-    keytab::EncryptionKey,
-};
+use crate::{crypto::KerberosEtype, der::trim_zero_padded_der, keytab::EncryptionKey};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -20,146 +16,6 @@ pub const TGS_REQ_AP_REQ_AUTHENTICATOR_USAGE: u32 = 7;
 /// Key usage for normal AP-REQ authenticators.
 pub const AP_REQ_AUTHENTICATOR_USAGE: u32 = 11;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Decode and validate a DER-encoded AP-REQ message.
 ///
 /// # Errors
@@ -167,152 +23,12 @@ pub const AP_REQ_AUTHENTICATOR_USAGE: u32 = 11;
 /// Returns [`Error::Decode`] when `bytes` is not a DER AP-REQ, and
 /// [`Error::InvalidMessage`] when its protocol version or message type is wrong.
 #[inline]
-pub fn decode_ap_req(bytes: &[u8]) -> Result<rasn_kerberos::ApReq, Error> {
-    let ap_req = decode::<rasn_kerberos::ApReq>("AP-REQ", bytes)?;
-    validate_ap_req(&ap_req)?;
+pub fn decode(bytes: &[u8]) -> Result<rasn_kerberos::ApReq, Error> {
+    let ap_req = decode_der::<rasn_kerberos::ApReq>("AP-REQ", bytes)?;
+    validate(&ap_req)?;
     Ok(ap_req)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Validate AP-REQ protocol version and message type on an already decoded value.
 ///
 /// # Errors
@@ -320,159 +36,19 @@ pub fn decode_ap_req(bytes: &[u8]) -> Result<rasn_kerberos::ApReq, Error> {
 /// Returns [`Error::InvalidMessage`] when the protocol version or message type
 /// is wrong.
 #[inline]
-pub fn validate_ap_req(ap_req: &rasn_kerberos::ApReq) -> Result<(), Error> {
+pub fn validate(ap_req: &rasn_kerberos::ApReq) -> Result<(), Error> {
     validate_integer("pvno", &ap_req.pvno, KRB5_PVNO)?;
     validate_integer("msg-type", &ap_req.msg_type, KRB_AP_REQ_MSG_TYPE)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Encode an AP-REQ message as DER.
 ///
 /// # Errors
 ///
 /// Returns [`Error::Encode`] when the DER encoder fails.
 #[inline]
-pub fn encode_ap_req(ap_req: &rasn_kerberos::ApReq) -> Result<Vec<u8>, Error> {
-    encode("AP-REQ", ap_req)
+pub fn encode(ap_req: &rasn_kerberos::ApReq) -> Result<Vec<u8>, Error> {
+    encode_der("AP-REQ", ap_req)
 }
 
 /// Decode a DER-encoded Authenticator.
@@ -482,7 +58,7 @@ pub fn encode_ap_req(ap_req: &rasn_kerberos::ApReq) -> Result<Vec<u8>, Error> {
 /// Returns [`Error::Decode`] when `bytes` is not a DER Authenticator.
 #[inline]
 pub fn decode_authenticator(bytes: &[u8]) -> Result<rasn_kerberos::Authenticator, Error> {
-    decode::<rasn_kerberos::Authenticator>("Authenticator", bytes)
+    decode_der::<rasn_kerberos::Authenticator>("Authenticator", bytes)
 }
 
 /// Encode an Authenticator as DER.
@@ -494,7 +70,7 @@ pub fn decode_authenticator(bytes: &[u8]) -> Result<rasn_kerberos::Authenticator
 pub fn encode_authenticator(
     authenticator: &rasn_kerberos::Authenticator,
 ) -> Result<Vec<u8>, Error> {
-    encode("Authenticator", authenticator)
+    encode_der("Authenticator", authenticator)
 }
 
 /// Decrypt and decode an AP-REQ authenticator with an explicit key usage.
@@ -561,146 +137,6 @@ pub fn ap_options_to_bits(ap_options: &rasn_kerberos::ApOptions) -> u32 {
     ])
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Build an AP-REQ message using a random confounder.
 ///
 /// # Errors
@@ -709,7 +145,7 @@ pub fn ap_options_to_bits(ap_options: &rasn_kerberos::ApOptions) -> u32 {
 /// implemented, [`Error::Random`] when the confounder cannot be generated, and
 /// the errors of [`build_ap_req_with_confounder`].
 #[inline]
-pub fn build_ap_req(
+pub fn build(
     ticket: rasn_kerberos::Ticket,
     ap_options: rasn_kerberos::ApOptions,
     authenticator: &rasn_kerberos::Authenticator,
@@ -767,154 +203,14 @@ pub fn build_ap_req_with_confounder(
     })
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Encode an AP-REQ message built using a random confounder.
 ///
 /// # Errors
 ///
-/// Returns the errors of [`build_ap_req`] and [`Error::Encode`] when the AP-REQ
+/// Returns the errors of [`build`] and [`Error::Encode`] when the AP-REQ
 /// cannot be encoded.
 #[inline]
-pub fn encode_build_ap_req(
+pub fn build_encoded(
     ticket: rasn_kerberos::Ticket,
     ap_options: rasn_kerberos::ApOptions,
     authenticator: &rasn_kerberos::Authenticator,
@@ -922,8 +218,8 @@ pub fn encode_build_ap_req(
     usage: u32,
     kvno: Option<u32>,
 ) -> Result<Vec<u8>, Error> {
-    let ap_req = build_ap_req(ticket, ap_options, authenticator, key, usage, kvno)?;
-    encode_ap_req(&ap_req)
+    let ap_req = build(ticket, ap_options, authenticator, key, usage, kvno)?;
+    encode(&ap_req)
 }
 
 /// Encode an AP-REQ message built using an explicit confounder.
@@ -951,7 +247,7 @@ pub fn encode_build_ap_req_with_confounder(
         kvno,
         confounder,
     )?;
-    encode_ap_req(&ap_req)
+    encode(&ap_req)
 }
 
 /// Decode a DER value with a typed error.
@@ -960,7 +256,7 @@ pub fn encode_build_ap_req_with_confounder(
 ///
 /// Returns [`Error::Decode`] naming `target` when `bytes` is not valid DER for
 /// `T`.
-fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
+fn decode_der<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
@@ -975,7 +271,7 @@ where
 /// # Errors
 ///
 /// Returns [`Error::Encode`] naming `target` when the DER encoder fails.
-fn encode<T>(target: &'static str, value: &T) -> Result<Vec<u8>, Error>
+fn encode_der<T>(target: &'static str, value: &T) -> Result<Vec<u8>, Error>
 where
     T: rasn::Encode,
 {
@@ -1001,199 +297,4 @@ fn validate_integer(field: &'static str, actual: &Integer, expected: i32) -> Res
     Ok(())
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// AP-REQ helper error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// ASN.1 DER decode failed.
-    #[error("failed to decode {target}: {message}")]
-    Decode {
-        /// Decoded type name.
-        target: &'static str,
-        /// Decoder error text.
-        message: String,
-    },
-
-    /// ASN.1 DER encode failed.
-    #[error("failed to encode {target}: {message}")]
-    Encode {
-        /// Encoded type name.
-        target: &'static str,
-        /// Encoder error text.
-        message: String,
-    },
-
-    /// Message field did not contain the expected value.
-    #[error("invalid {field}: expected {expected}, got {actual}")]
-    InvalidMessage {
-        /// Field name.
-        field: &'static str,
-        /// Expected value.
-        expected: i32,
-        /// Actual value.
-        actual: String,
-    },
-
-    /// The encrypted data etype is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-
-    /// A key did not match the encrypted AP-REQ authenticator etype.
-    #[error(
-        "key etype {key_etype} does not match AP-REQ authenticator etype {encrypted_data_etype}"
-    )]
-    KeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// AP-REQ authenticator encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// Random byte generation failed.
-    #[error("random byte generation failed: {0}")]
-    Random(#[from] getrandom::Error),
-
-    /// Crypto operation failed.
-    #[error("crypto error: {0}")]
-    Crypto(#[from] crypto::Error),
-}
+use crate::error::ApReq as Error;

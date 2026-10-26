@@ -32,7 +32,7 @@ required for `gokrb5/v8` parity.
 
 Intentional divergences from the gokrb5 baseline are recorded as they land:
 
-- **AP-REQ client identity (hardening).** `ServiceValidator::validate_ap_req`
+- **AP-REQ client identity (hardening).** `Validator::validate_ap_req`
   compares the authenticator's client realm with the ticket's `crealm` in
   addition to the ordered name components, per RFC 4120 section 3.2.3, and
   returns the ticket-derived client identity in `ValidatedApReq.client`.
@@ -42,14 +42,14 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
 - **AS/TGS reply enctypes and `permitted_enctypes` (hardening).** The client
   rejects an AS-REP whose reply-key enctype, or an AS/TGS reply whose session
   key enctype, is not in the request's `etype` list
-  (`client::Error::EnctypeNotRequested`). An explicitly configured
+  (`rskrb5_ng::error::Client::EnctypeNotRequested`). An explicitly configured
   `[libdefaults] permitted_enctypes` narrows the request lists, rejects
   session keys outside it in the config-driven exchanges
-  (`client::Error::EnctypeNotPermitted`), and makes an explicit
+  (`rskrb5_ng::error::Client::EnctypeNotPermitted`), and makes an explicit
   `default_tkt_enctypes`/`default_tgs_enctypes` entry outside it a parse error
-  (`config::Error::EnctypeNotPermitted`); the seeded default list changes
+  (`rskrb5_ng::error::Config::EnctypeNotPermitted`); the seeded default list changes
   nothing. An explicit `permitted_enctypes` that resolves to no supported
-  enctype is a parse error (`config::Error::NoPermittedEnctypes`) rather than
+  enctype is a parse error (`rskrb5_ng::error::Config::NoPermittedEnctypes`) rather than
   "no policy". gokrb5 v8.4.4 derives the reply key from the reply's own
   `EncPart.EType` without consulting the request list
   (`messages.ASRep.DecryptEncPart`) and parses `PermittedEnctypeIDs` without
@@ -65,7 +65,7 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   changes.
 - **kpasswd success provenance (hardening).** A kpasswd reply reports success
   only through a verified AP-REP and KRB-PRIV; a bare KRB-ERROR carrying result
-  code 0 fails with `kadmin::Error::UnauthenticatedSuccess`, and the
+  code 0 fails with `rskrb5_ng::error::Kadmin::UnauthenticatedSuccess`, and the
   high-level client keeps its stored password. gokrb5 v8.4.4 reaches the same
   outcome by a different path (`kadmin.Reply.Decrypt` returns any KRB-ERROR
   reply as an error), so this entry records a behaviour change against earlier
@@ -98,11 +98,11 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   so a mixed-case host misses its mapping and a bare tag matches only that
   exact host. This follows MIT krb5 and is revisited if upstream changes.
 - **`[libdefaults] clockskew` on the `Config`-driven acceptors.**
-  `ServiceValidator::from_default_keytab_name` and
-  `ServiceValidator::from_default_keytab`, and the `NegotiateLayer` and
+  `Validator::from_default_keytab_name` and
+  `Validator::from_default_keytab`, and the `NegotiateLayer` and
   `NegotiateService` constructors of the same names, apply the parsed
   `clockskew` to authenticator freshness and to the ticket start and end time
-  checks. The plain constructors (`ServiceValidator::new`, `from_keytab`,
+  checks. The plain constructors (`Validator::new`, `from_keytab`,
   `from_keytab_cow`) keep the 300 s default. Earlier `rskrb5` releases ignored
   a configured `clockskew` in these constructors. gokrb5 v8.4.4 reads
   `clockskew` on the client side only (`messages.ASRep.Verify`,
@@ -114,7 +114,7 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   sixth of its current ticket life, `end_time - start_time`: a renewal
   advances `start_time` while `auth_time` stays fixed (RFC 4120), so a
   just-renewed TGT is not due again at once.
-  `TokioClient::spawn_auto_renewal_with_retry` (and `spawn_auto_renewal`,
+  `Tokio::spawn_auto_renewal_with_retry` (and `spawn_auto_renewal`,
   60 s) sleeps the retry delay after a refresh that fails or leaves the TGT
   still due, so a cache-only, non-renewable TGT does not spin through the
   band. With a configured password or keytab, an expired TGT whose
@@ -132,7 +132,7 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
 - **Credential-cache record counts (hardening).** `CCache::parse` checks
   every principal component, address and authorization-data count against the
   bytes left in the input before reserving memory, and reports an impossible
-  count as `ccache::Error::Truncated` (`ccache::Error::LengthOverflow` when
+  count as `rskrb5_ng::error::Ccache::Truncated` (`rskrb5_ng::error::Ccache::LengthOverflow` when
   the count's byte size does not fit `usize`, as on 32-bit targets). Earlier
   `rskrb5` releases reserved capacity straight from these counts, so a short
   malformed cache could abort the process on a failed allocation; this entry

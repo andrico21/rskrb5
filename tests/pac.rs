@@ -28,6 +28,7 @@ mod tests {
     use rasn::der;
     use rskrb5_ng::{
         crypto::{AesSha1Etype, KerberosEtype},
+        error::Pac as PacError,
         keytab::{EncryptionKey, Keytab},
         pac::{
             self, CHECKSUM_HMAC_MD5_UNSIGNED, CHECKSUM_HMAC_SHA1_96_AES256, CLAIM_TYPE_ID_INT64,
@@ -585,7 +586,7 @@ mod tests {
         );
         assert!(matches!(
             pac.verify(key),
-            Err(pac::Error::ServerChecksumVerificationFailed)
+            Err(PacError::ServerChecksumVerificationFailed)
         ));
         Ok(())
     }

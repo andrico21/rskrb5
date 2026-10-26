@@ -1,14 +1,11 @@
 //! Candidate compatibility matrix and fixture probes.
 
 /// Static candidate, contract and fixture tables behind the report.
-mod data;
+pub mod data;
 
 use core::fmt::{self, Display, Formatter};
 
-pub use data::{
-    ASN1_FIXTURES, ASSESSMENTS, Asn1Fixture, Candidate, CandidateAssessment, CandidateReport,
-    Capability, ContractArea, DerType, REPORTS, Support, SupportByArea, V8_CONTRACT,
-};
+use data::{ASN1_FIXTURES, ASSESSMENTS, REPORTS, V8_CONTRACT};
 
 /// Render the current compatibility matrix as Markdown.
 #[inline]

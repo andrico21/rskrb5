@@ -146,7 +146,7 @@ impl Config {
     /// # Errors
     ///
     /// Returns the [`Config::load_from_env`] errors when `KRB5_CONFIG` is set,
-    /// [`Error::NoDefaultConfig`] when no platform default file exists, and the
+    /// [`Error::NoDefault`] when no platform default file exists, and the
     /// [`Config::load_paths`] errors for the files that do.
     #[inline]
     pub fn load_default() -> Result<Self, Error> {
@@ -226,7 +226,7 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NoDefaultConfig`] when none of them exists, and the
+    /// Returns [`Error::NoDefault`] when none of them exists, and the
     /// [`Config::load_paths`] errors for those that do.
     fn load_default_paths<I, P>(paths: I) -> Result<Self, Error>
     where
@@ -235,7 +235,7 @@ impl Config {
     {
         let existing = existing_default_config_paths(paths);
         if existing.is_empty() {
-            return Err(Error::NoDefaultConfig);
+            return Err(Error::NoDefault);
         }
         Self::load_paths(existing)
     }
@@ -254,7 +254,7 @@ impl Config {
     {
         match Self::load_default_paths(paths) {
             Ok(config) => Ok(config),
-            Err(Error::NoDefaultConfig) => Self::parse(embedded_krb5_conf),
+            Err(Error::NoDefault) => Self::parse(embedded_krb5_conf),
             Err(error) => Err(error),
         }
     }
@@ -1063,8 +1063,8 @@ impl LibDefaults {
     ///
     /// Dropping the enctype instead would silently send a narrower request
     /// list than the operator configured. Seeded (implicit) request lists are
-    /// not checked here; `AsReqOptions::from_libdefaults` and
-    /// `TgsReqOptions::from_libdefaults` narrow them to the allowlist.
+    /// not checked here; `AsReq::from_libdefaults` and
+    /// `TgsReq::from_libdefaults` narrow them to the allowlist.
     ///
     /// An explicit allowlist without any supported enctype is rejected as a
     /// whole: treating it as "no policy" would permit every enctype.
@@ -1231,306 +1231,7 @@ impl Realm {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            not(feature = "messages"),
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            not(feature = "tokio"),
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Configuration parsing error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// File loading failed.
-    #[error("configuration file could not be read: {0}")]
-    Io(#[from] io::Error),
-    /// The default config path list could not be read from `KRB5_CONFIG`.
-    #[error("default configuration path list is not set in KRB5_CONFIG")]
-    DefaultConfigName,
-    /// A config path list contained no usable paths.
-    #[error("configuration path list is empty")]
-    EmptyConfigPathList,
-    /// No environment or platform-default config file exists.
-    #[error("no default Kerberos configuration file found")]
-    NoDefaultConfig,
-    /// A section line was syntactically invalid.
-    #[error("invalid {section} section line {line}: {text}")]
-    InvalidLine {
-        /// Section name.
-        section: &'static str,
-        /// One-based line number.
-        line: usize,
-        /// Line text after comment stripping.
-        text: String,
-    },
-    /// A directive is explicitly unsupported.
-    #[error("{0}")]
-    UnsupportedDirective(String),
-    /// A boolean value was invalid.
-    #[error("invalid boolean value: {0}")]
-    InvalidBoolean(String),
-    /// A duration value was invalid.
-    #[error("invalid time duration value: {0}")]
-    InvalidDuration(String),
-    /// A duration value overflowed.
-    #[error("time duration overflow: {0}")]
-    DurationOverflow(String),
-    /// An integer value was invalid.
-    #[error("invalid integer for {key} on line {line}: {value}")]
-    InvalidInteger {
-        /// Line number.
-        line: usize,
-        /// Config key.
-        key: String,
-        /// Config value.
-        value: String,
-    },
-    /// An IP address was invalid.
-    #[error("invalid IP address for {key} on line {line}: {value}")]
-    InvalidIpAddress {
-        /// Line number.
-        line: usize,
-        /// Config key.
-        key: String,
-        /// Config value.
-        value: String,
-    },
-    /// The realms section has invalid brace structure.
-    #[error("invalid realms section: {0}")]
-    InvalidRealmsSection(String),
-    /// The requested realm is absent.
-    #[error("realm not configured: {0}")]
-    NoRealm(String),
-    /// The requested realm has no configured KDCs.
-    #[error("realm has no configured KDCs: {0}")]
-    NoKdc(String),
-    /// The requested realm has no configured password-change servers.
-    #[error("realm has no configured kpasswd servers: {0}")]
-    NoKpasswdServer(String),
-    /// Include nesting reached past [`MAX_INCLUDE_DEPTH`].
-    #[error("include nesting reached depth {depth}, past the limit of {limit}")]
-    IncludeTooDeep {
-        /// The depth the parser reached.
-        depth: usize,
-        /// The documented limit.
-        limit: usize,
-    },
-    /// More files were included than [`MAX_INCLUDE_FILES`] allows.
-    #[error("configuration included {count} files, past the limit of {limit}")]
-    IncludeTooMany {
-        /// The number of files the parser reached.
-        count: usize,
-        /// The documented limit.
-        limit: usize,
-    },
-    /// Included files carried more bytes than [`MAX_INCLUDE_BYTES`] allows.
-    #[error("included configuration reached {bytes} bytes, past the limit of {limit}")]
-    IncludeTooLarge {
-        /// The number of included bytes the parser read. A single file that
-        /// overshoots the limit is read only up to the limit plus one byte, so
-        /// this is the limit plus one in that case.
-        bytes: usize,
-        /// The documented limit.
-        limit: usize,
-    },
-    /// An include chain returned to a file or directory it is already reading.
-    #[error("include cycle: {path} is already being read")]
-    IncludeCycle {
-        /// The file or directory the cycle returned to.
-        path: PathBuf,
-    },
-    /// An `include` directive named a file that could not be read, or that is
-    /// not UTF-8 text.
-    #[error("include file {path} could not be read: {source}")]
-    IncludeFile {
-        /// The file the directive named.
-        path: PathBuf,
-        /// Why it could not be used.
-        source: io::Error,
-    },
-    /// An `includedir` directive named a directory that could not be listed.
-    #[error("includedir {path} could not be listed: {source}")]
-    IncludeDir {
-        /// The directory the directive named.
-        path: PathBuf,
-        /// Why it could not be listed.
-        source: io::Error,
-    },
-    /// An explicit request enctype list names an enctype outside the explicit
-    /// `permitted_enctypes` allowlist.
-    #[error("[libdefaults] {key} lists {enctype}, which permitted_enctypes does not permit")]
-    EnctypeNotPermitted {
-        /// Request-list key: `default_tkt_enctypes` or `default_tgs_enctypes`.
-        key: &'static str,
-        /// The configured enctype name.
-        enctype: String,
-    },
-    /// An explicit `permitted_enctypes` allowlist names no supported enctype.
-    #[error(
-        "[libdefaults] permitted_enctypes = {} names no supported enctype",
-        names.join(" ")
-    )]
-    NoPermittedEnctypes {
-        /// The configured enctype names.
-        names: Vec<String>,
-    },
-}
+use crate::error::Config as Error;
 
 /// Which `[libdefaults]` request enctype lists one parse set explicitly.
 ///

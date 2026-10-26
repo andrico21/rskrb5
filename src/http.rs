@@ -18,7 +18,7 @@ use std::time::SystemTime;
 
 use http_types::{
     Request, Response, StatusCode,
-    header::{AUTHORIZATION, HeaderValue, InvalidHeaderValue, ToStrError, WWW_AUTHENTICATE},
+    header::{AUTHORIZATION, HeaderValue, WWW_AUTHENTICATE},
 };
 #[cfg(feature = "tower")]
 use tower_layer::Layer;
@@ -26,7 +26,10 @@ use tower_layer::Layer;
 use tower_service::Service;
 
 #[cfg(feature = "tokio")]
-use crate::client::{self, BlockingNegotiateClient, NegotiateClient, Principal, TokioClient};
+use crate::client::{
+    Tokio, negotiate::BlockingClient as BlockingNegotiateClient,
+    negotiate::Client as NegotiateClient, principal::Principal,
+};
 #[cfg(feature = "tower")]
 use crate::config::Config;
 #[cfg(feature = "tower")]
@@ -35,125 +38,14 @@ use crate::keytab::{self, Keytab};
 use crate::service::{ApRepOptions, HostAddress, SharedReplayCache};
 use crate::{
     ap_req::ap_options_to_bits,
-    service::{ServiceValidator, VerifiedApRep},
+    service::{Validator, VerifiedApRep},
     spnego::{self, AcceptedContext},
 };
 
 /// HTTP Negotiate adapter result.
 pub type Result<T> = CoreResult<T, Error>;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// HTTP Negotiate adapter error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// The request did not contain an Authorization header.
-    #[error("missing HTTP Authorization header")]
-    MissingAuthorization,
-
-    /// The response did not contain a WWW-Authenticate header.
-    #[error("missing HTTP WWW-Authenticate header")]
-    MissingWwwAuthenticate,
-
-    /// No Negotiate challenge was present in WWW-Authenticate headers.
-    #[error("missing HTTP Negotiate challenge")]
-    MissingNegotiateChallenge,
-
-    /// The request or response header could not be represented as a string.
-    #[error("invalid HTTP header value: {0}")]
-    InvalidHeader(#[from] ToStrError),
-
-    /// A response header value could not be constructed.
-    #[error("invalid HTTP response header value: {0}")]
-    InvalidHeaderValue(#[from] InvalidHeaderValue),
-
-    /// SPNEGO/GSSAPI token processing failed.
-    #[error("SPNEGO error: {0}")]
-    Spnego(#[from] spnego::Error),
-
-    /// Tokio client processing failed while building an HTTP request.
-    #[cfg(feature = "tokio")]
-    #[error("client error: {0}")]
-    Client(#[from] client::Error),
-
-    /// Keytab loading failed while constructing HTTP middleware.
-    #[cfg(feature = "tower")]
-    #[error("keytab error: {0}")]
-    Keytab(#[from] keytab::Error),
-}
+use crate::error::Http as Error;
 
 /// Tower Negotiate middleware error.
 #[cfg(feature = "tower")]
@@ -330,7 +222,7 @@ pub fn set_authorization_header<B>(request: &mut Request<B>, value: &str) -> Res
 #[cfg(feature = "tokio")]
 #[inline]
 pub async fn authorize_request<B>(
-    client: &mut TokioClient,
+    client: &mut Tokio,
     request: &mut Request<B>,
     service: Principal,
 ) -> Result<()> {
@@ -354,7 +246,7 @@ pub async fn authorize_request<B>(
 #[cfg(feature = "tokio")]
 #[inline]
 pub async fn authorize_request_context<B>(
-    client: &mut TokioClient,
+    client: &mut Tokio,
     request: &mut Request<B>,
     service: Principal,
 ) -> Result<spnego::InitiatorContext> {
@@ -377,7 +269,7 @@ pub async fn authorize_request_context<B>(
 #[cfg(feature = "tokio")]
 #[inline]
 pub async fn authorize_request_context_with_options<B>(
-    client: &mut TokioClient,
+    client: &mut Tokio,
     request: &mut Request<B>,
     service: Principal,
     options: spnego::InitiatorContextOptions,
@@ -647,7 +539,7 @@ where
 /// the token is malformed or its AP-REQ fails validation.
 #[inline]
 pub fn accept_request<B>(
-    validator: &mut ServiceValidator<'_>,
+    validator: &mut Validator<'_>,
     request: &mut Request<B>,
 ) -> Result<AcceptedContext> {
     let accepted = spnego::accept_sec_context_header(validator, authorization_header(request)?)?;
@@ -882,8 +774,8 @@ fn classify_negotiate_challenge(
     };
 
     let response = match token {
-        spnego::SpnegoToken::Resp(response) => response,
-        spnego::SpnegoToken::Init(_) => {
+        spnego::Token::Resp(response) => response,
+        spnego::Token::Init(_) => {
             return ClientNegotiateResponse::InvalidToken {
                 message: "expected NegTokenResp, got NegTokenInit".to_owned(),
             };
@@ -1223,7 +1115,7 @@ pub struct NegotiateService<'keytab, S> {
     /// The wrapped service.
     inner: S,
     /// The validator of this service's requests.
-    validator: ServiceValidator<'keytab>,
+    validator: Validator<'keytab>,
     /// How accepted and rejected requests are answered.
     response: NegotiateResponseOptions,
 }
@@ -1494,8 +1386,8 @@ impl Default for ValidatorOptions {
 #[cfg(feature = "tower")]
 impl ValidatorOptions {
     /// Build a validator over `keytab` with these settings.
-    fn build<'keytab>(&self, keytab: Cow<'keytab, Keytab>) -> ServiceValidator<'keytab> {
-        let mut validator = ServiceValidator::from_keytab_cow(keytab);
+    fn build<'keytab>(&self, keytab: Cow<'keytab, Keytab>) -> Validator<'keytab> {
+        let mut validator = Validator::from_keytab_cow(keytab);
         if let Some(now) = self.now {
             validator = validator.with_now(now);
         }

@@ -9,7 +9,7 @@
 When the first AS-REQ is answered directly with an AS-REP (a no-preauth account,
 or a caller that enabled `assume_preauthentication`), the client derives the
 reply key from the reply's own `enc_part.etype` — and, for the keytab consumer,
-from the reply's `kvno`/`etype` — without intersecting `AsReqOptions.etypes`, and
+from the reply's `kvno`/`etype` — without intersecting `AsReq.etypes`, and
 `process_as_rep` imports the returned session key with no enctype-policy check at
 all. A reply encrypted in an enctype the caller never requested is therefore
 accepted; the run-2 probe reproduced RC4-HMAC (23) replies against requests
@@ -33,7 +33,7 @@ Fork deltas are line-number only (+163 in this region): `password_initial_as_rep
 
 - `agents/vfy-rskrb5-client-kdc-reply-re/artifacts/vfy-enctype-r4:186` — password consumer: the wire AS-REQ carried etypes `[18]`, the mock KDC answered RC4-HMAC (23), and `login_as_service_with_password` returned `Ok` in one transport call with `session_key.etype=23`.
 - `.../vfy-enctype-r4:184` — keytab consumer: the same out-of-list reply was accepted through `login_as_service_with_keytab` (keytab with etype-23 kvno-4 and etype-18 kvno-4 entries), `session_key.etype=23`.
-- `.../vfy-enctype-r4:180` — defaults: with `AsReqOptions::new` the wire request carried `[20,19,18,17]` (no 23) and the RC4 reply was still accepted.
+- `.../vfy-enctype-r4:180` — defaults: with `AsReq::new` the wire request carried `[20,19,18,17]` (no 23) and the RC4 reply was still accepted.
 - `.../vfy-enctype-r4:182,189` — control: an ENC-PA-REP reply whose `PA-REQ-ENC-PA-REP` checksum covers different request bytes is rejected with `Error::FastNegotiationChecksumMismatch`; `test result: ok. 4 passed; 0 failed`.
 - `tools/prior-evidence/run-1-consolidated-probes-a42705.log:264` — `requested=18 accepted=23 password_and_keytab; modern_integrity_control=rejected`.
 - Payloads: AS-REQ `req-body` etype rewritten to `[23]` with `PA-REQ-ENC-PA-REP` removed; AS-REP with `enc_part.etype=23`, `kvno=4`, ENC-PA-REP flag clear, `EncASRepPart` carrying an etype-23 session key.

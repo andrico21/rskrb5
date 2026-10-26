@@ -20,8 +20,8 @@ RFC basis: RFC 3244 section 2 returns the result of a processed request inside a
 
 ## Change
 
-- `Reply::decrypt_result` rejects a success result that came from the KRB-ERROR `e-data` branch (the only source of a pre-parsed result) with the new `kadmin::Error::UnauthenticatedSuccess`. This single check covers the high-level client and the library-level `exchange_kpasswd_result*` helpers.
-- `change_password_for_with_options` treats a success as authoritative only after a verified AP-REP. Otherwise it returns the existing `client::Error::MissingKpasswdApRep`, before `ensure_success` and before any credential replacement.
+- `Reply::decrypt_result` rejects a success result that came from the KRB-ERROR `e-data` branch (the only source of a pre-parsed result) with the new `rskrb5_ng::error::Kadmin::UnauthenticatedSuccess`. This single check covers the high-level client and the library-level `exchange_kpasswd_result*` helpers.
+- `change_password_for_with_options` treats a success as authoritative only after a verified AP-REP. Otherwise it returns the existing `rskrb5_ng::error::Client::MissingKpasswdApRep`, before `ensure_success` and before any credential replacement.
 - Non-zero result codes from a KRB-ERROR keep their `PasswordChangeFailed` behaviour, so the server's failure text still reaches the caller.
 
 ## Tests
@@ -46,7 +46,7 @@ All runs used stable Rust 1.99.1 on the branch tip.
 
 ## Compatibility
 
-- Breaking: `kadmin::Error` gains the variant `UnauthenticatedSuccess`. The enum isn't `#[non_exhaustive]`, so exhaustive matches need a new arm.
+- Breaking: `rskrb5_ng::error::Kadmin` gains the variant `UnauthenticatedSuccess`. The enum isn't `#[non_exhaustive]`, so exhaustive matches need a new arm.
 - Behaviour: a bare KRB-ERROR that claims code 0 is now an error instead of a success. Callers that relied on it must authenticate the reply (AP-REP plus KRB-PRIV), which conforming kpasswd servers already do. AP-REP-authenticated successes and non-zero error results behave as before.
 - Wire format unchanged.
 

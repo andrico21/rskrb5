@@ -6,7 +6,7 @@
 
 ## Summary
 
-`ServiceValidator::validate_ap_req` compared only the ordered name components of
+`Validator::validate_ap_req` compared only the ordered name components of
 the ticket's client against the authenticator's, and `ValidatedApReq.client`
 carried the authenticator-derived principal. RFC 4120 section 3.2.3 requires the
 client **name and realm** of the KDC-encrypted ticket to match the

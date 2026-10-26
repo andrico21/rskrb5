@@ -13,7 +13,7 @@ mod tests {
     use core::error;
 
     use pretty_assertions::assert_eq;
-    use rskrb5_ng::client::{Error, Principal};
+    use rskrb5_ng::{client::principal::Principal, error::Client as Error};
 
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;

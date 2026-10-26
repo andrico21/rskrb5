@@ -20,13 +20,13 @@ use std::{
 
 use rskrb5_ng::{
     client::{
-        ApReqOptions, AsRepSession, KdcProtocol, Principal, TgsRepSession, TokioClient,
-        build_ap_req_with_confounder,
+        AsRepSession, TgsRepSession, Tokio, build_ap_req_with_confounder, options::ApReq,
+        principal::Principal, transport::KdcProtocol,
     },
     config::Config,
     crypto::KerberosEtype,
     keytab::Keytab,
-    service::ServiceValidator,
+    service::Validator,
 };
 
 /// Realm of the AD user domain.
@@ -807,8 +807,8 @@ mod tests {
     }
 
     /// Builds a keytab client for `user` in the user realm, with or without the RC4 trust options.
-    fn ad_client(user: &str, keytab: Keytab, rc4: bool) -> Result<TokioClient, Box<dyn Error>> {
-        Ok(TokioClient::with_keytab(
+    fn ad_client(user: &str, keytab: Keytab, rc4: bool) -> Result<Tokio, Box<dyn Error>> {
+        Ok(Tokio::with_keytab(
             ad_config(rc4)?,
             KdcProtocol::Auto,
             Principal::user(USER_REALM, user),
@@ -890,9 +890,8 @@ mod tests {
             .ok_or("ticket etype is supported")?;
         let confounder = vec![0x42_u8; etype.confounder_len()];
         let timestamp = SystemTime::now();
-        let ap_req =
-            build_ap_req_with_confounder(ticket, ApReqOptions::new(), timestamp, 0, &confounder)?;
-        let mut validator = ServiceValidator::new(keytab)
+        let ap_req = build_ap_req_with_confounder(ticket, ApReq::new(), timestamp, 0, &confounder)?;
+        let mut validator = Validator::new(keytab)
             .with_now(timestamp)
             .with_keytab_principal(keytab_principal);
         Ok(validator.validate_ap_req(&ap_req.der)?)

@@ -19,16 +19,20 @@ mod tests {
     use rskrb5_ng::{
         ap_req,
         crypto::KerberosEtype,
+        error::Kadmin as KadminError,
         kadmin::{
-            ChangePasswdData, ChangePasswdMessageOptions, ChangePasswordResult,
-            EncKrbPrivPartOptions, Error as KadminError, KPASSWD_AUTHERROR, KPASSWD_SUCCESS,
-            KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO, Reply, Request, build_change_password_message,
+            ChangePasswdData, ChangePasswdMessageOptions, ChangePasswordResult, KPASSWD_AUTHERROR,
+            KPASSWD_SUCCESS, Reply, Request, build_change_password_message,
             build_change_password_message_with_confounders, build_change_password_request,
             build_change_password_request_with_confounder, build_krb_priv,
             build_krb_priv_with_confounder, decode_enc_krb_priv_part, decode_krb_priv,
-            decrypt_krb_priv_enc_part, encode_krb_priv, ipv4_host_address, ipv6_host_address,
+            decrypt_krb_priv_enc_part, encode_krb_priv,
         },
         keytab::EncryptionKey,
+        krb_priv::{
+            EncKrbPrivPartOptions, KRB_PRIV_MSG_TYPE, KRB_PRIV_PVNO, ipv4_host_address,
+            ipv6_host_address,
+        },
     };
 
     /// Error type of the `Result`-returning tests.

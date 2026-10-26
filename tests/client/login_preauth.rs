@@ -88,8 +88,7 @@ mod tests {
     #[test]
     fn login_tgt_with_password_retries_after_preauth_required() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options =
-            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
         let key_info = password_key_info();
         let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
             .context("password key derives")?;
@@ -109,7 +108,7 @@ mod tests {
     #[test]
     fn login_tgt_with_password_can_disable_fast_negotiation_marker() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_fast_negotiation(false);
         let key_info = password_key_info();
@@ -132,8 +131,7 @@ mod tests {
     fn login_as_service_with_password_retries_for_explicit_service() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
         let service = change_password_principal();
-        let options =
-            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
         let key_info = password_key_info();
         let reply_key = derive_password_reply_key(&client, TESTUSER_PASSWORD, &key_info)
             .context("password key derives")?;
@@ -158,7 +156,7 @@ mod tests {
     #[test]
     fn login_tgt_with_password_can_assume_preauthentication() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
         let key_info = PreauthKeyInfo::new(18).with_salt(None).with_s2kparams(None);
@@ -180,8 +178,7 @@ mod tests {
     #[test]
     fn login_tgt_with_keytab_retries_with_selected_keytab_kvno() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options =
-            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
         let keytab = keytab_with_reply_key(7)?;
         let mut transport = PreauthTransport::new(reply_key()?, Some(7));
 
@@ -198,7 +195,7 @@ mod tests {
     #[test]
     fn login_tgt_with_keytab_can_disable_fast_negotiation_marker() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_fast_negotiation(false);
         let keytab = keytab_with_reply_key(7)?;
@@ -219,8 +216,7 @@ mod tests {
     fn login_as_service_with_keytab_retries_for_explicit_service() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
         let service = change_password_principal();
-        let options =
-            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]);
         let keytab = keytab_with_reply_key(7)?;
         let mut transport = PreauthTransport::new(reply_key()?, Some(7));
 
@@ -243,7 +239,7 @@ mod tests {
     #[test]
     fn login_tgt_with_keytab_can_assume_preauthentication() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![20_i32, 18_i32])
             .with_assume_preauthentication(true);
         let keytab = keytab_with_reply_key(3)?;
@@ -262,7 +258,7 @@ mod tests {
     #[test]
     fn initial_as_rep_outside_requested_enctypes_is_rejected() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
         let aes128_key_info = PreauthKeyInfo::new(17).with_salt(None).with_s2kparams(None);
@@ -284,7 +280,7 @@ mod tests {
     #[test]
     fn keytab_initial_as_rep_outside_requested_enctypes_is_rejected() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_etypes(vec![18_i32])
             .with_assume_preauthentication(true);
         let mut keytab = keytab_with_reply_key(4)?;

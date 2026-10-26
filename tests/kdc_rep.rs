@@ -17,8 +17,9 @@ mod tests {
     use rasn_kerberos::{EncKdcRepPart, KdcRep, PrincipalName, TicketFlags};
     use rskrb5_ng::{
         crypto::KerberosEtype,
+        error::KdcRep as Error,
         kdc_rep::{
-            AS_REP_ENCPART_USAGE, Error, KRB_AS_REP_MSG_TYPE, KRB_TGS_REP_MSG_TYPE,
+            AS_REP_ENCPART_USAGE, KRB_AS_REP_MSG_TYPE, KRB_TGS_REP_MSG_TYPE,
             TGS_REP_ENCPART_SESSION_KEY_USAGE, decode_as_rep, decode_enc_kdc_rep_part,
             decode_tgs_rep, decrypt_as_rep_enc_part, decrypt_tgs_rep_enc_part, encode_as_rep,
             encode_enc_as_rep_part, encode_enc_tgs_rep_part, encode_tgs_rep,

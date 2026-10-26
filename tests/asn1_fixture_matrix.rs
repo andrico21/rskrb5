@@ -16,7 +16,7 @@ mod tests {
     use picky_krb::{data_types, messages as picky_messages};
     use rasn::{Decode, Encode, der};
     use rskrb5_ng::{
-        evaluation::{ASN1_FIXTURES, DerType, Support},
+        evaluation::data::{ASN1_FIXTURES, DerType, Support},
         kadmin, messages,
     };
     use serde::{Deserialize, Serialize};

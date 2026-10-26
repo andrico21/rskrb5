@@ -2,10 +2,7 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{
-    crypto::{self, KerberosEtype},
-    keytab::EncryptionKey,
-};
+use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -16,146 +13,6 @@ pub const KRB_SAFE_MSG_TYPE: i32 = 20;
 /// Key usage for KRB-SAFE checksums.
 pub const KRB_SAFE_CHECKSUM_USAGE: u32 = 15;
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Decode and validate a DER-encoded KRB-SAFE message.
 ///
 /// # Errors
@@ -163,314 +20,34 @@ pub const KRB_SAFE_CHECKSUM_USAGE: u32 = 15;
 /// Returns [`Error::Decode`] when `bytes` is not a DER KRB-SAFE, and
 /// [`Error::InvalidMessage`] when its protocol version or message type is wrong.
 #[inline]
-pub fn decode_krb_safe(bytes: &[u8]) -> Result<rasn_kerberos::KrbSafe, Error> {
-    let krb_safe = decode::<rasn_kerberos::KrbSafe>("KRB-SAFE", bytes)?;
+pub fn decode(bytes: &[u8]) -> Result<rasn_kerberos::KrbSafe, Error> {
+    let krb_safe = decode_der::<rasn_kerberos::KrbSafe>("KRB-SAFE", bytes)?;
     validate_integer("pvno", &krb_safe.pvno, KRB5_PVNO)?;
     validate_integer("msg-type", &krb_safe.msg_type, KRB_SAFE_MSG_TYPE)?;
     Ok(krb_safe)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Encode a KRB-SAFE message as DER.
 ///
 /// # Errors
 ///
 /// Returns [`Error::Encode`] when the DER encoder fails.
 #[inline]
-pub fn encode_krb_safe(krb_safe: &rasn_kerberos::KrbSafe) -> Result<Vec<u8>, Error> {
-    encode("KRB-SAFE", krb_safe)
+pub fn encode(krb_safe: &rasn_kerberos::KrbSafe) -> Result<Vec<u8>, Error> {
+    encode_der("KRB-SAFE", krb_safe)
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Build a KRB-SAFE message with a keyed checksum over the safe body.
 ///
 /// # Errors
 ///
-/// Returns the errors of [`krb_safe_checksum`].
+/// Returns the errors of [`checksum`].
 #[inline]
-pub fn build_krb_safe(
+pub fn build(
     body: rasn_kerberos::KrbSafeBody,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::KrbSafe, Error> {
-    let cksum = krb_safe_checksum(&body, key)?;
+    let cksum = checksum(&body, key)?;
     Ok(rasn_kerberos::KrbSafe {
         pvno: Integer::from(KRB5_PVNO),
         msg_type: Integer::from(KRB_SAFE_MSG_TYPE),
@@ -479,146 +56,6 @@ pub fn build_krb_safe(
     })
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// Compute the keyed checksum for a KRB-SAFE body.
 ///
 /// # Errors
@@ -627,13 +64,13 @@ pub fn build_krb_safe(
 /// implemented, [`Error::Encode`] when the body cannot be encoded, and
 /// [`Error::Crypto`] when the checksum cannot be computed.
 #[inline]
-pub fn krb_safe_checksum(
+pub fn checksum(
     body: &rasn_kerberos::KrbSafeBody,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::Checksum, Error> {
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let body_der = encode("KrbSafeBody", body)?;
+    let body_der = encode_der("KrbSafeBody", body)?;
     Ok(rasn_kerberos::Checksum {
         r#type: etype.checksum_type_id(),
         checksum: etype
@@ -663,7 +100,7 @@ pub fn verify_krb_safe_checksum(
             checksum_type: krb_safe.cksum.r#type,
         });
     }
-    let body_der = encode("KrbSafeBody", &krb_safe.body)?;
+    let body_der = encode_der("KrbSafeBody", &krb_safe.body)?;
     if !etype.verify_checksum(
         &key.value,
         &body_der,
@@ -681,7 +118,7 @@ pub fn verify_krb_safe_checksum(
 ///
 /// Returns [`Error::Decode`] naming `target` when `bytes` is not valid DER for
 /// `T`.
-fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
+fn decode_der<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
@@ -696,7 +133,7 @@ where
 /// # Errors
 ///
 /// Returns [`Error::Encode`] naming `target` when the DER encoder fails.
-fn encode<T>(target: &'static str, value: &T) -> Result<Vec<u8>, Error>
+fn encode_der<T>(target: &'static str, value: &T) -> Result<Vec<u8>, Error>
 where
     T: rasn::Encode,
 {
@@ -722,201 +159,4 @@ fn validate_integer(field: &'static str, actual: &Integer, expected: i32) -> Res
     Ok(())
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// KRB-SAFE helper error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// ASN.1 DER decode failed.
-    #[error("failed to decode {target}: {message}")]
-    Decode {
-        /// Decoded type name.
-        target: &'static str,
-        /// Decoder error text.
-        message: String,
-    },
-
-    /// ASN.1 DER encode failed.
-    #[error("failed to encode {target}: {message}")]
-    Encode {
-        /// Encoded type name.
-        target: &'static str,
-        /// Encoder error text.
-        message: String,
-    },
-
-    /// Message field did not contain the expected value.
-    #[error("invalid {field}: expected {expected}, got {actual}")]
-    InvalidMessage {
-        /// Field name.
-        field: &'static str,
-        /// Expected value.
-        expected: i32,
-        /// Actual value.
-        actual: String,
-    },
-
-    /// The encryption type is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-
-    /// The checksum type is not implemented yet.
-    #[error("unsupported checksum type: {0}")]
-    UnsupportedChecksumType(i32),
-
-    /// A key did not match the KRB-SAFE checksum type.
-    #[error("key etype {key_etype} does not match KRB-SAFE checksum type {checksum_type}")]
-    KeyChecksumTypeMismatch {
-        /// Key encryption type.
-        key_etype: i32,
-        /// KRB-SAFE checksum type.
-        checksum_type: i32,
-    },
-
-    /// KRB-SAFE checksum verification failed.
-    #[error("KRB-SAFE checksum verification failed")]
-    ChecksumMismatch,
-
-    /// Crypto operation failed.
-    #[error("crypto error: {0}")]
-    Crypto(#[from] crypto::Error),
-}
+use crate::error::KrbSafe as Error;

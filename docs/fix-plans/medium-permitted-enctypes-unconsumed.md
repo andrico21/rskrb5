@@ -42,8 +42,8 @@ Fork deltas are line-number only: `permitted_enctype_ids` sits at
 
 ## Proposed fix
 
-1. In `AsReqOptions::from_libdefaults` (`src/client/options.rs:56`) and
-   `TgsReqOptions::from_libdefaults` (`:153`), filter the effective request list
+1. In `AsReq::from_libdefaults` (`src/client/options.rs:56`) and
+   `TgsReq::from_libdefaults` (`:153`), filter the effective request list
    to `defaults.permitted_enctype_ids` when it is non-empty. An all-filtered list
    then fails closed through the existing `Error::EmptyEtypes`.
 2. Enforce the same set on reply acceptance in
@@ -68,7 +68,7 @@ options.etypes = if defaults.permitted_enctype_ids.is_empty() {
         .filter(|etype| defaults.permitted_enctype_ids.contains(etype))
         .collect()
 };
-// The identical guard belongs in TgsReqOptions::from_libdefaults (options.rs:153)
+// The identical guard belongs in TgsReq::from_libdefaults (options.rs:153)
 // with DEFAULT_TGS_ENCTYPES/default_tgs_enctype_ids.
 // An empty result is rejected by the existing Error::EmptyEtypes check in
 // build_as_req (src/client.rs:1575) and the TGS builder (src/client.rs:1913).
@@ -94,7 +94,7 @@ As implemented on `fix/enctype-policy`, two rules refine the steps above:
 - **Reject, never silently narrow** (Kerberos overlay, "Apply enctype
   allowlists", `7c2c297`). An explicitly configured `default_tkt_enctypes` or
   `default_tgs_enctypes` that contains an id outside an explicit
-  `permitted_enctypes` is a parse error, `config::Error::EnctypeNotPermitted`,
+  `permitted_enctypes` is a parse error, `rskrb5_ng::error::Config::EnctypeNotPermitted`,
   naming the key and the enctype. The check runs once, on the final effective
   values after every `[libdefaults]` section (and, on the release line, every
   included file, `07f1eb3`), so a later section can repair an earlier
@@ -106,8 +106,8 @@ As implemented on `fix/enctype-policy`, two rules refine the steps above:
 
 ## Regression tests
 
-- `tests/client/as_exchange.rs::as_req_etypes_are_intersected_with_permitted_enctypes` — build `LibDefaults` with `permitted_enctypes` narrowed and `default_tkt_enctypes` left at the defaults; assert `AsReqOptions::from_libdefaults(..).etypes` contains only permitted ids and that the excluded `17/23` are gone (fails before the change).
-- `tests/client/as_exchange.rs::tgs_req_etypes_are_intersected_with_permitted_enctypes` — the `TgsReqOptions` twin.
+- `tests/client/as_exchange.rs::as_req_etypes_are_intersected_with_permitted_enctypes` — build `LibDefaults` with `permitted_enctypes` narrowed and `default_tkt_enctypes` left at the defaults; assert `AsReq::from_libdefaults(..).etypes` contains only permitted ids and that the excluded `17/23` are gone (fails before the change).
+- `tests/client/as_exchange.rs::tgs_req_etypes_are_intersected_with_permitted_enctypes` — the `TgsReq` twin.
 - `tests/client/as_exchange.rs::all_permitted_etypes_filtered_fails_closed` — `permitted_enctypes` disjoint from `default_tkt_enctypes` yields `Error::EmptyEtypes` from `build_as_req`, not an empty request.
 - `tests/client_transport.rs::reply_session_key_outside_permitted_enctypes_is_rejected` — an `exchange_as_req_with_config`/`exchange_tgs_req_with_config` reply whose session key is excluded now returns `Error::EnctypeNotPermitted`; a permitted reply is unchanged. Fixtures: the existing config-driven transport mock plus the parsed-`krb5.conf` helper already used at `tests/client_ad_integration.rs:671`.
 
@@ -159,7 +159,7 @@ cargo test --all-features --test client_transport
   (`EnctypeNotRequested`) and to an explicit allowlist (`EnctypeNotPermitted`).
 - Closed (`cc8060c`): an explicit `permitted_enctypes` that resolves to zero
   supported ids no longer fails open. Parsing fails with
-  `config::Error::NoPermittedEnctypes` naming the configured entries, and a
+  `rskrb5_ng::error::Config::NoPermittedEnctypes` naming the configured entries, and a
   hand-built `LibDefaults` with the explicit flag and an empty
   `permitted_enctype_ids` requests no enctype (`EmptyEtypes`) and rejects
   every session key (`EnctypeNotPermitted`); the empty-set exemption above now

@@ -1,3 +1,5 @@
+use rskrb5_ng::error::Config as ConfigError;
+
 use super::*;
 
 /// AS exchange tests: AS-REQ building, pre-authentication, AS-REP processing,
@@ -15,7 +17,7 @@ mod tests {
     use rasn::{der, types::Integer};
     use rskrb5_ng::{
         client::{PA_AS_FRESHNESS, PA_FX_COOKIE, random_nonce},
-        config::{Error as ConfigError, LibDefaults},
+        config::LibDefaults,
         messages::PaForUser,
     };
 
@@ -25,7 +27,7 @@ mod tests {
     #[test]
     fn builds_tgt_as_req_with_expected_fields() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_ticket_lifetime(Duration::from_hours(8))
             .with_etypes(vec![18_i32, 17_i32]);
 
@@ -63,7 +65,7 @@ mod tests {
     #[test]
     fn builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag() -> Result<(), TestError> {
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344)
+        let options = AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
             .with_ticket_lifetime(Duration::from_hours(8))
             .with_renew_lifetime(Some(Duration::from_hours(10)));
 
@@ -89,8 +91,7 @@ mod tests {
             .with_canonicalize(true.into())
             .with_kdc_default_options(0x0000_0010);
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options =
-            AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
+        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
 
         let request = build_tgt_as_req(client, options).context("AS-REQ builds")?;
         let decoded: rasn_kerberos::AsReq = der::decode(&request.der).context("AS-REQ decodes")?;
@@ -113,7 +114,7 @@ mod tests {
         let request = build_preauthenticated_as_req(
             client.clone(),
             service.clone(),
-            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]),
+            AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]),
             &reply_key()?,
             Some(7),
         )
@@ -406,8 +407,7 @@ mod tests {
             .with_default_tkt_enctype_ids(vec![18_i32, 17_i32, 23_i32])
             .with_permitted_enctype_ids(vec![18_i32])
             .with_permitted_enctypes_explicit(true.into());
-        let options =
-            AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
+        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
 
         let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
@@ -422,8 +422,7 @@ mod tests {
             .with_default_tkt_enctype_ids(vec![18_i32])
             .with_permitted_enctype_ids(vec![17_i32])
             .with_permitted_enctypes_explicit(true.into());
-        let options =
-            AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
+        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         assert!(
             options.etypes.is_empty(),
             "no requested etype is permitted: {:?}",
@@ -444,8 +443,7 @@ mod tests {
         let defaults = LibDefaults::default()
             .with_default_tkt_enctype_ids(vec![19_i32, 20_i32])
             .with_permitted_enctype_ids(vec![18_i32, 17_i32, 23_i32]);
-        let options =
-            AsReqOptions::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
+        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
 
         assert_eq!(options.etypes, vec![19_i32, 20_i32]);
         Ok(())
@@ -463,11 +461,8 @@ mod tests {
         )?;
         assert!(!config.libdefaults.permitted_enctypes_explicit.is_enabled());
 
-        let options = AsReqOptions::from_libdefaults(
-            timestamp(1_893_553_447)?,
-            0x1122_3344,
-            &config.libdefaults,
-        );
+        let options =
+            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults);
         assert_eq!(options.etypes, vec![19_i32]);
         Ok(())
     }
@@ -503,7 +498,7 @@ mod tests {
     fn process_as_rep_rejects_session_key_outside_requested_enctypes() -> Result<(), TestError> {
         let request = build_tgt_as_req(
             Principal::user("TEST.GOKRB5", "testuser1"),
-            AsReqOptions::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![23_i32]),
+            AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![23_i32]),
         )?;
         let reply_key = reply_key()?;
         let response =
@@ -548,11 +543,8 @@ mod tests {
 ",
         )?;
 
-        let options = AsReqOptions::from_libdefaults(
-            timestamp(1_893_553_447)?,
-            0x1122_3344,
-            &config.libdefaults,
-        );
+        let options =
+            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults);
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
         let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
         assert_eq!(decoded.0.req_body.etype, vec![18_i32, 16_i32]);

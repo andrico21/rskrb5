@@ -71,7 +71,7 @@ fn session_refresh_delay_at(session: &AsRepSession, now: SystemTime) -> Duration
 ```
 
 ## Regression tests
-- `tests/client/session_cache.rs::tokio_client_refresh_due_uses_current_ticket_life` (new, runs under `--test client`) — build a session with `auth_time = now - 60 h`, `start_time = now - 60 s`, `end_time = now + 10 h`; assert `TokioClient::tgt_refresh_due()` is `false`, and a copy with `remaining <= lifetime/6` asserts `true`. Fixture: parameterize `current_tgt_session` (`tests/client.rs:362`) to accept a `start_time` distinct from `auth_time` while the existing callers keep `start_time = auth_time`.
+- `tests/client/session_cache.rs::tokio_client_refresh_due_uses_current_ticket_life` (new, runs under `--test client`) — build a session with `auth_time = now - 60 h`, `start_time = now - 60 s`, `end_time = now + 10 h`; assert `Tokio::tgt_refresh_due()` is `false`, and a copy with `remaining <= lifetime/6` asserts `true`. Fixture: parameterize `current_tgt_session` (`tests/client.rs:362`) to accept a `start_time` distinct from `auth_time` while the existing callers keep `start_time = auth_time`.
 - `tests/client/session_cache.rs::tokio_client_auto_renewal_paces_after_renewal` — answer the loopback mock KDC (`tests/client.rs:1038-1089` helpers) with a renewal that preserves `auth_time` and advances `start_time`; assert the number of TGS-REQs in a fixed window stays near one per refresh band instead of per round trip.
 - Keep `tests/client/session_cache.rs::tokio_client_reports_tgt_refresh_due_window` (`:559`) green as the non-regression anchor for the existing `start_time == auth_time` shape.
 

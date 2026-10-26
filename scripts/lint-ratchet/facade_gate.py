@@ -4,7 +4,7 @@
 # dependencies = []
 # ///
 # How to run: python3 scripts/lint-ratchet/facade_gate.py --enforce
-"""Restrict public re-exports to the root facade and shrinking statement keys."""
+"""Restrict public re-exports to the crate-root facade."""
 
 from __future__ import annotations
 
@@ -12,11 +12,10 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import common
 from diagnostics import Diagnostic
-
-EXCEPTIONS = "scripts/lint-ratchet/facade-exceptions.txt"
 
 
 def statements(source: str, file: str) -> list[tuple[str, int]]:
@@ -50,13 +49,11 @@ def statements(source: str, file: str) -> list[tuple[str, int]]:
 
 
 def report(root: Path, paths: list[str] | None = None) -> list[Diagnostic]:
-    allowed = set((root / EXCEPTIONS).read_text().splitlines())
     return [
         Diagnostic("SOURCE", "all", file, "clippy::pub_use", line)
         for path in common.iter_rust_files(root)
         if common.selected(file := path.relative_to(root).as_posix(), paths)
-        for key, line in statements(path.read_text(), file)
-        if key not in allowed
+        for _, line in statements(path.read_text(), file)
     ]
 
 
@@ -73,6 +70,15 @@ def self_test() -> int:
     assert not statements(
         '// pub use fake;\nconst S: &str = "pub use fake;";', "src/client.rs"
     )
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "src").mkdir()
+        (root / "src/lib.rs").write_text("pub use crate::client::Thing;\n")
+        module = root / "src/client.rs"
+        module.write_text("pub struct Thing;\n")
+        assert not report(root)
+        module.write_text("pub use crate::Thing;\n")
+        assert len(report(root)) == 1
     print("facade_gate self-test: ok")
     return 0
 

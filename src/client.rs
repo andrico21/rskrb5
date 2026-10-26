@@ -5,7 +5,6 @@
 //! PA-ENC-TIMESTAMP and PA-TGS-REQ preauthentication, a KDC transport
 //! boundary, encrypted-part validation, Tokio TCP/UDP transport, and
 //! `krb5.conf`-driven KDC discovery.
-
 #[cfg(feature = "tokio")]
 use alloc::collections::BTreeMap;
 #[cfg(feature = "tokio")]
@@ -14,7 +13,7 @@ use alloc::fmt;
 use alloc::sync::Arc;
 #[cfg(not(feature = "tokio"))]
 use core::fmt;
-use core::{str::Utf8Error, time::Duration};
+use core::time::Duration;
 #[cfg(feature = "tokio")]
 use std::env;
 #[cfg(feature = "tokio")]
@@ -31,157 +30,37 @@ use zeroize::Zeroizing;
 
 #[cfg(feature = "tokio")]
 use crate::config::Config;
-#[cfg(feature = "spnego")]
+#[cfg(all(feature = "spnego", feature = "tokio"))]
 use crate::spnego;
 use crate::{
-    ap_rep, ap_req, ccache, config,
-    crypto::{self, KerberosEtype, Rc4HmacEtype, kerb_checksum_hmac_md5},
-    kadmin, kdc_rep, kdc_req,
-    keytab::{self, EncryptionKey, Keytab},
+    ap_req, ccache,
+    crypto::{KerberosEtype, Rc4HmacEtype, kerb_checksum_hmac_md5},
+    error, kdc_rep, kdc_req,
+    keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
 };
-
-mod kpasswd;
+/// Password-change request construction and verification.
+pub mod kpasswd;
 /// High-level SPNEGO/HTTP Negotiate client wrappers.
 #[cfg(all(feature = "tokio", feature = "spnego"))]
-mod negotiate;
+pub mod negotiate;
 /// AS-REQ and TGS-REQ option builders.
-mod options;
+pub mod options;
 /// Kerberos principal names used by the client.
-mod principal;
+pub mod principal;
 #[cfg(feature = "tokio")]
-mod transport;
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(all(feature = "tokio", feature = "spnego"))]
-pub use self::negotiate::{BlockingNegotiateClient, NegotiateClient};
+/// KDC endpoint discovery and asynchronous transport.
+pub mod transport;
 #[cfg(feature = "tokio")]
-pub use self::transport::{KdcEndpoint, KdcEndpointSource, KdcProtocol, TokioKdcTransport};
-pub use self::{
-    kpasswd::{
-        BuiltKpasswdRequest, KpasswdRequestOptions, VerifiedKpasswdApRep, build_kpasswd_request,
-        build_kpasswd_request_with_confounders, verify_kpasswd_ap_rep,
-    },
-    options::{ApReqOptions, AsReqOptions, TgsReqOptions},
+use self::kpasswd::{RequestOptions, build_kpasswd_request, verify_kpasswd_ap_rep};
+#[cfg(feature = "tokio")]
+use self::transport::{KdcEndpoint, KdcProtocol, Tokio as TokioKdcTransport};
+use self::{
+    options::{ApReq, AsReq, TgsReq},
     principal::Principal,
 };
-
+#[cfg(feature = "tokio")]
+use crate::kadmin;
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
 /// `KRB_NT_PRINCIPAL` name type: a user or ordinary principal.
@@ -203,96 +82,66 @@ const KRB5_CLIENT_KTNAME_ENV: &str = "KRB5_CLIENT_KTNAME";
 /// A session is due for refresh once less than 1/6 of its lifetime remains.
 #[cfg(feature = "tokio")]
 const SESSION_REFRESH_DIVISOR: u32 = 6;
-
 /// PA-ENC-TIMESTAMP preauthentication type.
 pub const PA_ENC_TIMESTAMP: i32 = 2;
-
 /// PA-TGS-REQ preauthentication type.
 pub const PA_TGS_REQ: i32 = 1;
-
 /// PA-ETYPE-INFO preauthentication hint type.
 pub const PA_ETYPE_INFO: i32 = 11;
-
 /// PA-ETYPE-INFO2 preauthentication hint type.
 pub const PA_ETYPE_INFO2: i32 = 19;
-
 /// PA-REQ-ENC-PA-REP marker used by modern gokrb5-compatible AS exchanges.
 pub const PA_REQ_ENC_PA_REP: i32 = 149;
-
 /// PA-FX-FAST padata type used to signal FAST negotiation support.
 pub const PA_FX_FAST: i32 = 136;
-
 /// PA-FX-COOKIE padata type carrying KDC conversation state (RFC 6113 section 5.2).
 pub const PA_FX_COOKIE: i32 = 133;
-
 /// PA-AS-FRESHNESS padata type for AS freshness tokens (RFC 8070).
 pub const PA_AS_FRESHNESS: i32 = 150;
-
 /// PA-PAC-OPTIONS preauthentication type used by MS-KILE.
 pub const PA_PAC_OPTIONS: i32 = 167;
-
 /// PA-FOR-USER padata type used by `S4U2Self`.
 pub const PA_FOR_USER: i32 = 129;
-
 /// KDC error code for additional preauthentication required.
 pub const KDC_ERR_PREAUTH_REQUIRED: i32 = 25;
 /// KDC error code indicating the client should retry over TCP.
 pub const KRB_ERR_RESPONSE_TOO_BIG: i32 = 52;
-
 /// Key usage for AS-REQ encrypted timestamp preauthentication.
 pub const AS_REQ_PA_ENC_TIMESTAMP_USAGE: u32 = 1;
-
 /// Key usage for AS-REP encrypted parts.
 pub const AS_REP_ENCPART_USAGE: u32 = kdc_rep::AS_REP_ENCPART_USAGE;
-
 /// Key usage for PA-REQ-ENC-PA-REP checksums over the original AS-REQ.
 pub const AS_REQ_CHECKSUM_USAGE: u32 = 56;
-
 /// Key usage for the TGS-REQ request-body checksum inside the authenticator.
 pub const TGS_REQ_AUTHENTICATOR_CHECKSUM_USAGE: u32 = 6;
-
 /// Key usage for the PA-TGS-REQ AP-REQ authenticator.
 pub const TGS_REQ_AUTHENTICATOR_USAGE: u32 = 7;
-
 /// Key usage for normal AP-REQ authenticators.
 pub const AP_REQ_AUTHENTICATOR_USAGE: u32 = 11;
-
 /// Key usage for AP-REP encrypted parts.
 pub const AP_REP_ENCPART_USAGE: u32 = 12;
-
 /// Key usage for TGS-REP encrypted parts when encrypted with the TGT session key.
 pub const TGS_REP_ENCPART_SESSION_KEY_USAGE: u32 = kdc_rep::TGS_REP_ENCPART_SESSION_KEY_USAGE;
-
 /// Key usage/message type for PA-FOR-USER checksums.
 pub const PA_FOR_USER_CHECKSUM_USAGE: u32 = 17;
-
 /// Raw PAC option mask for `claims`.
 pub const PAC_OPTION_CLAIMS: u32 = 0x8000_0000;
-
 /// Raw PAC option mask for `branch-aware`.
 pub const PAC_OPTION_BRANCH_AWARE: u32 = 0x4000_0000;
-
 /// Raw PAC option mask for `forward-to-full-DC`.
 pub const PAC_OPTION_FORWARD_TO_FULL_DC: u32 = 0x2000_0000;
-
 /// Raw PAC option mask for `resource-based constrained delegation`.
 pub const PAC_OPTION_RESOURCE_BASED_CONSTRAINED_DELEGATION: u32 = 0x1000_0000;
-
 /// Ticket flag bit indicating the AS-REP carries encrypted padata.
 pub const TICKET_FLAG_ENC_PA_REP: u32 = 0x0001_0000;
-
 /// Raw KDC option mask for `renewable` in RFC 4120 bit-string order.
 pub const KDC_OPTION_RENEWABLE: u32 = 0x0080_0000;
-
 /// Raw KDC option mask for `canonicalize` in RFC 4120 bit-string order.
 pub const KDC_OPTION_CANONICALIZE: u32 = 0x0001_0000;
-
 /// Raw KDC option mask for `cname-in-addl-tkt` in RFC 4120 bit-string order.
 pub const KDC_OPTION_CNAME_IN_ADDL_TKT: u32 = 0x0002_0000;
-
 /// Raw KDC option mask for `renew` in RFC 4120 bit-string order.
 pub const KDC_OPTION_RENEW: u32 = 0x0000_0002;
-
 /// Encoded AS-REQ plus validation metadata needed when processing the AS-REP.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -308,7 +157,6 @@ pub struct BuiltAsReq {
     /// Request nonce.
     pub nonce: u32,
 }
-
 impl BuiltAsReq {
     /// Creates a `BuiltAsReq` from its required fields.
     #[must_use]
@@ -329,7 +177,6 @@ impl BuiltAsReq {
         }
     }
 }
-
 /// Encoded TGS-REQ plus validation metadata needed when processing the TGS-REP.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -350,7 +197,6 @@ pub struct BuiltTgsReq {
     /// Request nonce.
     pub nonce: u32,
 }
-
 impl BuiltTgsReq {
     /// Creates a `BuiltTgsReq` from its required fields.
     #[must_use]
@@ -373,7 +219,6 @@ impl BuiltTgsReq {
         }
     }
 }
-
 /// The TGS-REQ plus the pieces an implicit-FAST caller needs from it.
 ///
 /// RFC 6113 section 5.4.2 arms a TGS request implicitly when the TGT travels in
@@ -393,7 +238,6 @@ pub struct TgsFastRequestParts {
     /// armor key is derived from it, so it must not reach a log.
     pub authenticator_subkey: EncryptionKey,
 }
-
 impl fmt::Debug for TgsFastRequestParts {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -407,7 +251,6 @@ impl fmt::Debug for TgsFastRequestParts {
             .finish_non_exhaustive()
     }
 }
-
 /// Built client AP-REQ.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -433,7 +276,6 @@ pub struct BuiltApReq {
     /// Optional client-selected subkey supplied in the authenticator.
     pub subkey: Option<EncryptionKey>,
 }
-
 /// Successful AS-REP processing result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -459,7 +301,6 @@ pub struct AsRepSession {
     /// Session key expiration time, when supplied.
     pub key_expiration: Option<SystemTime>,
 }
-
 impl AsRepSession {
     /// Creates a `AsRepSession` from its required fields.
     #[must_use]
@@ -507,7 +348,6 @@ impl AsRepSession {
         self.key_expiration = value;
         self
     }
-
     /// Convert this AS-REP result into the existing MIT ccache credential shape.
     /// # Errors
     ///
@@ -541,13 +381,11 @@ impl AsRepSession {
         })
     }
 }
-
 /// Successful TGS-REP processing result.
 ///
 /// The ticket/session material is the same shape as an AS-REP result and can
 /// be written to the existing ccache credential representation.
 pub type TgsRepSession = AsRepSession;
-
 /// Result of a referral-following TGS exchange.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -557,7 +395,6 @@ pub struct ReferralTgsResult {
     /// Intermediate referral TGTs acquired while reaching the service realm.
     pub referral_tgts: Vec<AsRepSession>,
 }
-
 /// Runtime-neutral boundary for KDC request/response transport.
 pub trait KdcTransport {
     /// Send an encoded KDC request and return the encoded KDC response.
@@ -567,7 +404,6 @@ pub trait KdcTransport {
     /// response arrives.
     fn send(&mut self, realm: &str, request: &[u8]) -> Result<Vec<u8>, Error>;
 }
-
 /// Parsed KRB-ERROR returned by a KDC.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -595,7 +431,6 @@ pub struct KdcError {
     /// Parsed PA-ETYPE-INFO2/PA-ETYPE-INFO key derivation hints.
     pub preauth_key_info: Vec<PreauthKeyInfo>,
 }
-
 impl KdcError {
     /// Creates a `KdcError` from its required fields.
     #[must_use]
@@ -665,7 +500,6 @@ impl KdcError {
         self
     }
 }
-
 /// KDC hint for deriving or selecting a preauthentication key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -677,7 +511,6 @@ pub struct PreauthKeyInfo {
     /// Optional string-to-key parameters as raw bytes.
     pub s2kparams: Option<Vec<u8>>,
 }
-
 impl PreauthKeyInfo {
     /// Creates a `PreauthKeyInfo` from its required fields.
     #[must_use]
@@ -704,8 +537,7 @@ impl PreauthKeyInfo {
         self
     }
 }
-
-/// Long-term credential source used by [`TokioClient`].
+/// Long-term credential source used by [`Tokio`].
 #[cfg(feature = "tokio")]
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
@@ -715,7 +547,6 @@ pub enum TokioClientCredentials {
     /// Keytab credential for AS login.
     Keytab(Keytab),
 }
-
 #[cfg(feature = "tokio")]
 impl fmt::Debug for TokioClientCredentials {
     #[inline]
@@ -729,7 +560,6 @@ impl fmt::Debug for TokioClientCredentials {
         }
     }
 }
-
 /// Client configuration and runtime-state diagnostics.
 ///
 /// This is the structured equivalent of gokrb5's client diagnostics output:
@@ -770,7 +600,6 @@ pub struct TokioClientDiagnostics {
     /// Configuration and discovery errors found by diagnostics.
     pub errors: Vec<String>,
 }
-
 #[cfg(feature = "tokio")]
 impl TokioClientDiagnostics {
     #[must_use]
@@ -780,7 +609,6 @@ impl TokioClientDiagnostics {
         self.errors.is_empty()
     }
 }
-
 /// Counts of unusable sessions removed from a Tokio client cache.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -795,7 +623,6 @@ pub struct PrunedSessions {
     /// Number of service tickets removed.
     pub service_tickets: usize,
 }
-
 #[cfg(feature = "tokio")]
 impl PrunedSessions {
     /// Sets `primary_tgt`, preserving the other fields.
@@ -819,7 +646,6 @@ impl PrunedSessions {
         self.service_tickets = value;
         self
     }
-
     #[must_use]
     /// Whether no sessions were removed.
     #[inline]
@@ -827,7 +653,6 @@ impl PrunedSessions {
         !self.primary_tgt && self.tgt_sessions == 0 && self.service_tickets == 0
     }
 }
-
 /// Handle for a background Tokio TGT auto-renewal task.
 #[cfg(feature = "tokio")]
 #[derive(Debug)]
@@ -835,7 +660,6 @@ pub struct TokioClientAutoRenewal {
     /// The spawned renewal task.
     handle: JoinHandle<()>,
 }
-
 #[cfg(feature = "tokio")]
 impl TokioClientAutoRenewal {
     /// Request cancellation of the background renewal task.
@@ -843,7 +667,6 @@ impl TokioClientAutoRenewal {
     pub fn abort(&self) {
         self.handle.abort();
     }
-
     #[must_use]
     /// Whether the background task has finished.
     #[inline]
@@ -851,7 +674,6 @@ impl TokioClientAutoRenewal {
         self.handle.is_finished()
     }
 }
-
 // Drop audit: `JoinHandle::abort` only signals the task, never blocks or panics;
 // the task stops at its next await point and owns only an `Arc` of the client.
 #[cfg(feature = "tokio")]
@@ -861,151 +683,10 @@ impl Drop for TokioClientAutoRenewal {
         self.handle.abort();
     }
 }
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::module_name_repetitions,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
 /// High-level Tokio Kerberos client with TGT and service-ticket caching.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Eq, PartialEq)]
-pub struct TokioClient {
+pub struct Tokio {
     /// Kerberos configuration used for realm and KDC lookups.
     config: Config,
     /// Transport protocol policy for KDC exchanges.
@@ -1027,9 +708,8 @@ pub struct TokioClient {
     /// Request FAST negotiation (PA-REQ-ENC-PA-REP) in AS-REQs.
     fast_negotiation: bool,
 }
-
 #[cfg(feature = "tokio")]
-impl fmt::Debug for TokioClient {
+impl fmt::Debug for Tokio {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TokioClient")
@@ -1046,9 +726,8 @@ impl fmt::Debug for TokioClient {
             .finish()
     }
 }
-
 #[cfg(feature = "tokio")]
-impl TokioClient {
+impl Tokio {
     /// Create a password-backed client using KDCs discovered from config.
     #[inline]
     pub fn with_password<P>(
@@ -1069,7 +748,6 @@ impl TokioClient {
             ))),
         )
     }
-
     #[must_use]
     /// Create a keytab-backed client using KDCs discovered from config.
     #[inline]
@@ -1086,7 +764,6 @@ impl TokioClient {
             Some(TokioClientCredentials::Keytab(keytab)),
         )
     }
-
     /// Create a keytab-backed client by loading a file-backed keytab name.
     ///
     /// Bare paths, `FILE:path`, and `WRFILE:path` are supported by the keytab
@@ -1112,7 +789,6 @@ impl TokioClient {
             Keytab::load_name(keytab_name)?,
         ))
     }
-
     /// Create a keytab-backed client from `config.libdefaults.default_client_keytab_name`.
     /// # Errors
     ///
@@ -1126,7 +802,6 @@ impl TokioClient {
         let keytab_name = config.libdefaults.default_client_keytab_name.clone();
         Self::with_keytab_name(config, protocol, client, keytab_name)
     }
-
     /// Create a keytab-backed client from the default client keytab.
     ///
     /// `KRB5_CLIENT_KTNAME` takes precedence when set. Otherwise this falls
@@ -1144,7 +819,6 @@ impl TokioClient {
         let keytab_name = default_client_keytab_name(&config)?;
         Self::with_keytab_name(config, protocol, client, keytab_name)
     }
-
     /// Create a keytab-backed client by loading the file keytab named by `KRB5_CLIENT_KTNAME`.
     /// # Errors
     ///
@@ -1160,7 +834,6 @@ impl TokioClient {
             env::var(KRB5_CLIENT_KTNAME_ENV).map_err(Error::DefaultClientKeytabName)?;
         Self::with_keytab_name(config, protocol, client, keytab_name)
     }
-
     /// Create a keytab-backed client by loading the file keytab named by `KRB5_KTNAME`.
     /// # Errors
     ///
@@ -1179,7 +852,6 @@ impl TokioClient {
             Keytab::load_from_env()?,
         ))
     }
-
     #[must_use]
     /// Attach or replace password credentials on an existing client.
     ///
@@ -1195,7 +867,6 @@ impl TokioClient {
         )));
         self
     }
-
     #[must_use]
     /// Attach or replace keytab credentials on an existing client.
     ///
@@ -1206,7 +877,6 @@ impl TokioClient {
         self.credentials = Some(TokioClientCredentials::Keytab(keytab));
         self
     }
-
     #[must_use]
     /// Create a cache-only client from a ccache.
     ///
@@ -1235,7 +905,6 @@ impl TokioClient {
         }
         kerberos
     }
-
     /// Create a cache-only client by loading a ccache name.
     ///
     /// Bare paths, `FILE:path`, `WRFILE:path`, and MIT `DIR:` collection names
@@ -1257,7 +926,6 @@ impl TokioClient {
         let cache = ccache::CCache::load_name(cache_name)?;
         Ok(Self::from_ccache(config, protocol, &cache))
     }
-
     /// Create a cache-only client from `config.libdefaults.default_ccache_name`.
     /// # Errors
     ///
@@ -1268,7 +936,6 @@ impl TokioClient {
         let cache_name = configured_default_ccache_name(&config)?;
         Self::from_ccache_name(config, protocol, cache_name)
     }
-
     /// Create a cache-only client from the default credential cache.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
@@ -1282,7 +949,6 @@ impl TokioClient {
         let cache_name = default_ccache_name(&config)?;
         Self::from_ccache_name(config, protocol, cache_name)
     }
-
     /// Create a cache-only client by loading the file ccache named by `KRB5CCNAME`.
     /// # Errors
     ///
@@ -1293,7 +959,6 @@ impl TokioClient {
         let cache = ccache::CCache::load_from_env()?;
         Ok(Self::from_ccache(config, protocol, &cache))
     }
-
     #[must_use]
     /// Create a cache-only client from a known TGT session.
     #[inline]
@@ -1306,7 +971,6 @@ impl TokioClient {
         }
         kerberos
     }
-
     /// Export current TGT and service-ticket state to a fresh MIT ccache.
     /// # Errors
     ///
@@ -1320,7 +984,6 @@ impl TokioClient {
         }
         Ok(cache)
     }
-
     /// Replace this client's non-configuration entries in an existing ccache.
     ///
     /// X-CACHECONF metadata and entries for other clients are preserved. The
@@ -1339,7 +1002,6 @@ impl TokioClient {
         }
         Ok(())
     }
-
     /// Save current TGT and service-ticket state to a fresh ccache file.
     /// # Errors
     ///
@@ -1353,7 +1015,6 @@ impl TokioClient {
         self.to_ccache()?.save(path)?;
         Ok(())
     }
-
     /// Save current TGT and service-ticket state to a fresh ccache name.
     /// # Errors
     ///
@@ -1368,7 +1029,6 @@ impl TokioClient {
         self.to_ccache()?.save_name(cache_name)?;
         Ok(())
     }
-
     /// Save current TGT and service-ticket state to `config.libdefaults.default_ccache_name`.
     /// # Errors
     ///
@@ -1378,7 +1038,6 @@ impl TokioClient {
     pub fn save_default_ccache_name(&self) -> Result<(), Error> {
         self.save_ccache_name(configured_default_ccache_name(&self.config)?)
     }
-
     /// Save current TGT and service-ticket state to the default credential cache.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
@@ -1392,7 +1051,6 @@ impl TokioClient {
     pub fn save_default_ccache(&self) -> Result<(), Error> {
         self.save_ccache_name(default_ccache_name(&self.config)?)
     }
-
     /// Load an existing ccache when present, update this client's entries, and save it.
     ///
     /// Missing files are created. Existing X-CACHECONF metadata and entries for
@@ -1410,7 +1068,7 @@ impl TokioClient {
         let cache_path = path.as_ref();
         let mut cache = match ccache::CCache::load(cache_path) {
             Ok(cache) => cache,
-            Err(ccache::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
+            Err(error::Ccache::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
                 ccache::CCache::new(ccache_principal(&self.client))
             }
             Err(error) => return Err(error.into()),
@@ -1419,7 +1077,6 @@ impl TokioClient {
         cache.save(cache_path)?;
         Ok(())
     }
-
     /// Load an existing ccache name, update this client's entries, and save it.
     ///
     /// Missing files are created. Existing X-CACHECONF metadata and entries for
@@ -1436,7 +1093,6 @@ impl TokioClient {
         let path = ccache::CCache::file_path_from_cache_name(cache_name.as_ref())?;
         self.update_ccache_file(path)
     }
-
     /// Update the ccache named by `config.libdefaults.default_ccache_name`.
     /// # Errors
     ///
@@ -1446,7 +1102,6 @@ impl TokioClient {
     pub fn update_default_ccache_name(&self) -> Result<(), Error> {
         self.update_ccache_name(configured_default_ccache_name(&self.config)?)
     }
-
     /// Update the default credential cache.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
@@ -1460,7 +1115,6 @@ impl TokioClient {
     pub fn update_default_ccache(&self) -> Result<(), Error> {
         self.update_ccache_name(default_ccache_name(&self.config)?)
     }
-
     /// Build a client with empty caches, the default transport and FAST
     /// negotiation enabled.
     const fn new(
@@ -1482,7 +1136,6 @@ impl TokioClient {
             fast_negotiation: true,
         }
     }
-
     #[must_use]
     /// Override the transport used for KDC exchanges.
     #[inline]
@@ -1490,7 +1143,6 @@ impl TokioClient {
         self.transport = transport;
         self
     }
-
     #[must_use]
     /// Configure whether AS login sends PA-ENC-TIMESTAMP in the first AS-REQ.
     #[inline]
@@ -1498,7 +1150,6 @@ impl TokioClient {
         self.assume_preauthentication = assume_preauthentication;
         self
     }
-
     #[must_use]
     /// Configure whether AS login advertises PA-REQ-ENC-PA-REP.
     #[inline]
@@ -1506,7 +1157,6 @@ impl TokioClient {
         self.fast_negotiation = fast_negotiation;
         self
     }
-
     /// Spawn a background task that refreshes the primary TGT before expiry.
     ///
     /// Dropping or aborting the returned handle cancels the task. The client is
@@ -1515,7 +1165,6 @@ impl TokioClient {
     pub fn spawn_auto_renewal(client: Arc<Mutex<Self>>) -> TokioClientAutoRenewal {
         Self::spawn_auto_renewal_with_retry(client, Duration::from_secs(60))
     }
-
     /// Spawn a background TGT refresh task with a custom retry delay for errors.
     #[inline]
     pub fn spawn_auto_renewal_with_retry(
@@ -1534,7 +1183,6 @@ impl TokioClient {
                 if !delay.is_zero() {
                     sleep(delay).await;
                 }
-
                 let mut guard = client.lock().await;
                 if guard.credentials.is_none() && guard.tgt.is_none() {
                     return;
@@ -1555,28 +1203,24 @@ impl TokioClient {
         });
         TokioClientAutoRenewal { handle }
     }
-
     #[must_use]
     /// Parsed Kerberos configuration.
     #[inline]
     pub const fn config(&self) -> &Config {
         &self.config
     }
-
     #[must_use]
     /// Selected KDC wire protocol.
     #[inline]
     pub const fn protocol(&self) -> KdcProtocol {
         self.protocol
     }
-
     #[must_use]
     /// Client principal.
     #[inline]
     pub const fn client_principal(&self) -> &Principal {
         &self.client
     }
-
     /// Validate that the client has enough local state for KDC operations.
     /// # Errors
     ///
@@ -1612,14 +1256,12 @@ impl TokioClient {
         }
         Ok(())
     }
-
     #[must_use]
     /// Whether the client has enough local state for KDC operations.
     #[inline]
     pub fn is_configured(&self) -> bool {
         self.validate_configuration().is_ok()
     }
-
     /// Run structured client diagnostics.
     /// # Cancel safety
     ///
@@ -1631,7 +1273,6 @@ impl TokioClient {
         if let Err(error) = self.validate_configuration() {
             errors.push(error.to_string());
         }
-
         let keytab_enctypes = match self.credentials.as_ref() {
             Some(TokioClientCredentials::Keytab(keytab)) => {
                 let enctypes = keytab_realm_enctypes(keytab, &self.client.realm);
@@ -1651,14 +1292,12 @@ impl TokioClient {
             }
             _ => Vec::new(),
         };
-
         let udp_kdcs = self
             .diagnostic_kdc_endpoints(KdcProtocol::Udp, &mut errors)
             .await;
         let tcp_kdcs = self
             .diagnostic_kdc_endpoints(KdcProtocol::Tcp, &mut errors)
             .await;
-
         TokioClientDiagnostics {
             client: self.client.name(),
             realm: self.client.realm.clone(),
@@ -1675,7 +1314,6 @@ impl TokioClient {
             errors,
         }
     }
-
     /// Run diagnostics and return pretty-printed JSON.
     /// # Errors
     ///
@@ -1689,28 +1327,24 @@ impl TokioClient {
     pub async fn diagnostics_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(&self.diagnostics().await)
     }
-
     #[must_use]
     /// Whether AS login sends PA-ENC-TIMESTAMP in the first AS-REQ.
     #[inline]
     pub const fn assume_preauthentication(&self) -> bool {
         self.assume_preauthentication
     }
-
     #[must_use]
     /// Whether AS login advertises PA-REQ-ENC-PA-REP.
     #[inline]
     pub const fn fast_negotiation(&self) -> bool {
         self.fast_negotiation
     }
-
     #[must_use]
     /// Current TGT session, when logged in or loaded from cache.
     #[inline]
     pub const fn tgt_session(&self) -> Option<&AsRepSession> {
         self.tgt.as_ref()
     }
-
     #[must_use]
     /// Whether the primary TGT is missing, expired, or inside the refresh window.
     #[inline]
@@ -1719,21 +1353,18 @@ impl TokioClient {
             .as_ref()
             .is_none_or(|tgt| session_refresh_due_at(tgt, SystemTime::now()))
     }
-
     #[must_use]
     /// Number of cached TGT sessions keyed by target realm.
     #[inline]
     pub fn tgt_session_count(&self) -> usize {
         self.tgt_sessions.len()
     }
-
     #[must_use]
     /// Cached TGT session for a target realm, when present.
     #[inline]
     pub fn tgt_session_for_realm(&self, realm: &str) -> Option<&AsRepSession> {
         self.tgt_sessions.get(realm)
     }
-
     /// Remove a cached TGT session for a target realm.
     #[inline]
     pub fn remove_tgt_session_for_realm(&mut self, realm: &str) -> Option<AsRepSession> {
@@ -1744,20 +1375,17 @@ impl TokioClient {
         }
         removed
     }
-
     #[must_use]
     /// Number of cached service tickets.
     #[inline]
     pub fn cached_service_ticket_count(&self) -> usize {
         self.service_tickets.len()
     }
-
     /// Clear cached service tickets without dropping the TGT.
     #[inline]
     pub fn clear_service_ticket_cache(&mut self) {
         self.service_tickets.clear();
     }
-
     #[must_use]
     /// Return a currently valid cached service ticket without contacting a KDC.
     #[inline]
@@ -1771,7 +1399,6 @@ impl TokioClient {
         ticket.service = resolved;
         Some(ticket)
     }
-
     /// Remove a cached service ticket without dropping the TGT.
     #[inline]
     pub fn remove_cached_service_ticket(&mut self, service: Principal) -> Option<TgsRepSession> {
@@ -1779,13 +1406,11 @@ impl TokioClient {
         let key = service_cache_key(&resolved);
         self.service_tickets.remove(&key)
     }
-
     /// Drop expired, non-renewable TGT and service-ticket sessions from local caches.
     #[inline]
     pub fn prune_unusable_sessions(&mut self) -> PrunedSessions {
         self.prune_unusable_sessions_at(SystemTime::now())
     }
-
     /// Drop sessions that are neither valid nor renewable at `now`.
     fn prune_unusable_sessions_at(&mut self, now: SystemTime) -> PrunedSessions {
         let primary_tgt = self
@@ -1795,15 +1420,12 @@ impl TokioClient {
         if primary_tgt {
             self.tgt = None;
         }
-
         let tgt_session_count = self.tgt_sessions.len();
         self.tgt_sessions
             .retain(|_, session| session_usable_at(session, now));
-
         let service_ticket_count = self.service_tickets.len();
         self.service_tickets
             .retain(|_, session| session_usable_at(session, now));
-
         PrunedSessions {
             primary_tgt,
             // `retain` never grows a map, so these differences cannot underflow.
@@ -1811,7 +1433,6 @@ impl TokioClient {
             service_tickets: service_ticket_count.saturating_sub(self.service_tickets.len()),
         }
     }
-
     /// Drop live credentials, the TGT session, and all cached service tickets.
     #[inline]
     pub fn destroy(&mut self) {
@@ -1820,7 +1441,6 @@ impl TokioClient {
         self.tgt_sessions.clear();
         self.service_tickets.clear();
     }
-
     /// Return public TGT session metadata as pretty-printed JSON.
     /// # Errors
     ///
@@ -1835,7 +1455,6 @@ impl TokioClient {
             .collect::<Vec<_>>();
         serde_json::to_string_pretty(&sessions)
     }
-
     /// Return public service-ticket cache metadata as pretty-printed JSON.
     /// # Errors
     ///
@@ -1850,7 +1469,6 @@ impl TokioClient {
             .collect::<Vec<_>>();
         serde_json::to_string_pretty(&tickets)
     }
-
     /// Insert or replace a service ticket in the cache.
     #[inline]
     pub fn cache_service_ticket(&mut self, ticket: TgsRepSession) {
@@ -1859,7 +1477,6 @@ impl TokioClient {
             preferred_session_at(self.service_tickets.remove(&key), ticket, SystemTime::now());
         drop(self.service_tickets.insert(key, selected));
     }
-
     /// Insert or replace a TGT session in the realm-keyed session cache.
     /// # Errors
     ///
@@ -1869,7 +1486,6 @@ impl TokioClient {
     pub fn cache_tgt_session(&mut self, tgt: AsRepSession) -> Result<(), Error> {
         self.cache_tgt_session_at(tgt, SystemTime::now())
     }
-
     /// Cache a TGT session at `now`, keeping the better of it and any cached session
     /// for the same realm; a session for the client realm also becomes the primary TGT.
     ///
@@ -1891,7 +1507,6 @@ impl TokioClient {
         }
         Ok(())
     }
-
     /// Ensure this client has a valid TGT, reusing an existing TGT when possible.
     ///
     /// # Cancel safety
@@ -1926,10 +1541,8 @@ impl TokioClient {
                 }
             }
         }
-
         self.login().await
     }
-
     /// Perform AS login with the configured long-term credential.
     /// # Errors
     ///
@@ -1981,13 +1594,11 @@ impl TokioClient {
                     .await?
             }
         };
-
         self.tgt_sessions.clear();
         self.cache_tgt_session(session)?;
         self.service_tickets.clear();
         self.tgt.as_ref().ok_or(Error::NoTgtSession)
     }
-
     /// Renew the current TGT explicitly.
     /// # Errors
     ///
@@ -2005,7 +1616,6 @@ impl TokioClient {
         drop(self.renew_tgt_session_for_realm(&realm).await?);
         self.tgt.as_ref().ok_or(Error::NoTgtSession)
     }
-
     /// Renew a cached TGT session for a target realm.
     /// # Errors
     ///
@@ -2045,7 +1655,6 @@ impl TokioClient {
         drop(self.tgt_sessions.insert(renewed_realm, renewed.clone()));
         Ok(renewed)
     }
-
     /// Refresh the primary TGT if it is missing, expired, or inside the refresh window.
     /// # Errors
     ///
@@ -2061,7 +1670,6 @@ impl TokioClient {
         drop(self.ensure_tgt().await?);
         self.tgt.as_ref().ok_or(Error::NoTgtSession)
     }
-
     /// Return a service ticket from cache or acquire one from a KDC.
     /// # Errors
     ///
@@ -2103,7 +1711,6 @@ impl TokioClient {
                 return Ok(renewed);
             }
         }
-
         let tgt = match self.cached_tgt_session_for_realm(&service.realm) {
             Some(tgt) => tgt,
             None if service.realm != self.client.realm => match self
@@ -2132,7 +1739,6 @@ impl TokioClient {
         self.cache_service_ticket(ticket.clone());
         Ok(ticket)
     }
-
     /// Acquire an `S4U2Self` ticket for an impersonated user using the current service TGT.
     /// # Errors
     ///
@@ -2148,7 +1754,6 @@ impl TokioClient {
         let options = self.tgs_req_options()?;
         self.s4u2self_with_options(user, options).await
     }
-
     /// Acquire an `S4U2Self` ticket using explicit TGS request options.
     /// # Errors
     ///
@@ -2163,14 +1768,13 @@ impl TokioClient {
     pub async fn s4u2self_with_options(
         &mut self,
         user: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
         let service_tgt = self.ensure_tgt().await?;
         self.transport
             .s4u2self_with_config(&self.config, self.protocol, &service_tgt, user, options)
             .await
     }
-
     /// Acquire an `S4U2Proxy` ticket for a target service using a user evidence ticket.
     /// # Errors
     ///
@@ -2191,7 +1795,6 @@ impl TokioClient {
         self.s4u2proxy_with_options(evidence_ticket, target_service, options)
             .await
     }
-
     /// Acquire an `S4U2Proxy` ticket using explicit TGS request options.
     /// # Errors
     ///
@@ -2207,7 +1810,7 @@ impl TokioClient {
         &mut self,
         evidence_ticket: &TgsRepSession,
         target_service: Principal,
-        options: TgsReqOptions,
+        options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
         let service_tgt = self.ensure_tgt().await?;
         self.transport
@@ -2221,7 +1824,6 @@ impl TokioClient {
             )
             .await
     }
-
     /// Build a SPNEGO HTTP `Authorization` header for a service.
     /// # Errors
     ///
@@ -2236,7 +1838,6 @@ impl TokioClient {
     pub async fn spnego_header(&mut self, service: Principal) -> Result<String, Error> {
         Ok(self.spnego_context(service).await?.header)
     }
-
     /// Build a SPNEGO HTTP `Authorization` header with explicit initiator options.
     ///
     /// # Cancel safety
@@ -2259,7 +1860,6 @@ impl TokioClient {
             .await?
             .header)
     }
-
     /// Build a SPNEGO initiator context for a service.
     ///
     /// The returned context includes the HTTP `Authorization` header and the
@@ -2282,7 +1882,6 @@ impl TokioClient {
         self.spnego_context_with_options(service, spnego::InitiatorContextOptions::new())
             .await
     }
-
     /// Build a SPNEGO initiator context with explicit initiator options.
     ///
     /// # Cancel safety
@@ -2304,7 +1903,6 @@ impl TokioClient {
         let ticket = self.get_service_ticket(service).await?;
         Ok(spnego::init_sec_context(&ticket, options)?)
     }
-
     /// Return a TGT that is valid and outside the refresh window, renewing or
     /// logging in again as needed.
     ///
@@ -2335,41 +1933,35 @@ impl TokioClient {
                 return Ok(tgt);
             }
         }
-
         if self.credentials.is_none() {
             return Err(Error::NoClientCredentials);
         }
         Ok(self.login().await?.clone())
     }
-
     /// AS-REQ options from the configuration, with a fresh nonce.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Random`] when the nonce cannot be generated.
-    fn as_req_options(&self) -> Result<AsReqOptions, Error> {
-        Ok(AsReqOptions::from_libdefaults(
-            SystemTime::now(),
-            random_nonce()?,
-            &self.config.libdefaults,
+    fn as_req_options(&self) -> Result<AsReq, Error> {
+        Ok(
+            AsReq::from_libdefaults(SystemTime::now(), random_nonce()?, &self.config.libdefaults)
+                .with_assume_preauthentication(self.assume_preauthentication)
+                .with_fast_negotiation(self.fast_negotiation),
         )
-        .with_assume_preauthentication(self.assume_preauthentication)
-        .with_fast_negotiation(self.fast_negotiation))
     }
-
     /// TGS-REQ options from the configuration, with a fresh nonce.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Random`] when the nonce cannot be generated.
-    fn tgs_req_options(&self) -> Result<TgsReqOptions, Error> {
-        Ok(TgsReqOptions::from_libdefaults(
+    fn tgs_req_options(&self) -> Result<TgsReq, Error> {
+        Ok(TgsReq::from_libdefaults(
             SystemTime::now(),
             random_nonce()?,
             &self.config.libdefaults,
         ))
     }
-
     /// Fill in an empty service realm from the domain-realm mapping, falling back
     /// to the client realm.
     fn resolve_service_principal(&self, mut service: Principal) -> Principal {
@@ -2509,7 +2101,7 @@ impl TokioClient {
         self.change_password_for_with_options(
             self.client.clone(),
             new_password,
-            KpasswdRequestOptions::new(timestamp, cusec, sequence_number, sender_address),
+            RequestOptions::new(timestamp, cusec, sequence_number, sender_address),
         )
         .await
     }
@@ -2547,7 +2139,7 @@ impl TokioClient {
         self.change_password_for_with_options(
             target,
             new_password,
-            KpasswdRequestOptions::new(timestamp, cusec, sequence_number, sender_address),
+            RequestOptions::new(timestamp, cusec, sequence_number, sender_address),
         )
         .await
     }
@@ -2573,7 +2165,7 @@ impl TokioClient {
     pub async fn change_password_with_options<P>(
         &mut self,
         new_password: P,
-        options: KpasswdRequestOptions,
+        options: RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error>
     where
         P: AsRef<[u8]>,
@@ -2604,7 +2196,7 @@ impl TokioClient {
         &mut self,
         target: Principal,
         new_password: P,
-        options: KpasswdRequestOptions,
+        options: RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error>
     where
         P: AsRef<[u8]>,
@@ -2684,7 +2276,7 @@ impl TokioClient {
     }
 }
 
-/// JSON shape of one TGT session in [`TokioClient::sessions_json`].
+/// JSON shape of one TGT session in [`Tokio::sessions_json`].
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -2701,7 +2293,7 @@ struct SessionJsonEntry {
     session_key_expiration: String,
 }
 
-/// JSON shape of one service ticket in [`TokioClient::service_ticket_cache_json`].
+/// JSON shape of one service ticket in [`Tokio::service_ticket_cache_json`].
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -2806,7 +2398,7 @@ const fn protocol_label(protocol: KdcProtocol) -> &'static str {
 ///
 /// Returns the errors of [`build_as_req`].
 #[inline]
-pub fn build_tgt_as_req(client: Principal, options: AsReqOptions) -> Result<BuiltAsReq, Error> {
+pub fn build_tgt_as_req(client: Principal, options: AsReq) -> Result<BuiltAsReq, Error> {
     let service = Principal::tgt_service(client.realm.clone());
     build_as_req(client, service, options)
 }
@@ -2822,7 +2414,7 @@ pub fn build_tgt_as_req(client: Principal, options: AsReqOptions) -> Result<Buil
 pub fn build_as_req(
     client: Principal,
     service: Principal,
-    options: AsReqOptions,
+    options: AsReq,
 ) -> Result<BuiltAsReq, Error> {
     if options.etypes.is_empty() {
         return Err(Error::EmptyEtypes);
@@ -3010,7 +2602,7 @@ pub fn pa_enc_timestamp(
 pub fn build_preauthenticated_as_req(
     client: Principal,
     service: Principal,
-    mut options: AsReqOptions,
+    mut options: AsReq,
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<BuiltAsReq, Error> {
@@ -3031,7 +2623,7 @@ pub fn build_preauthenticated_as_req(
 #[inline]
 pub fn build_preauthenticated_tgt_as_req(
     client: Principal,
-    options: AsReqOptions,
+    options: AsReq,
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<BuiltAsReq, Error> {
@@ -3047,7 +2639,7 @@ pub fn build_preauthenticated_tgt_as_req(
 pub fn build_tgs_req(
     tgt: &AsRepSession,
     service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
     build_tgs_req_for_realm(tgt, service.realm.clone(), service, options)
 }
@@ -3063,7 +2655,7 @@ pub fn build_tgs_req_for_realm<P>(
     tgt: &AsRepSession,
     kdc_realm: P,
     service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<BuiltTgsReq, Error>
 where
     P: Into<String>,
@@ -3092,7 +2684,7 @@ where
 pub fn build_tgs_req_with_confounder(
     tgt: &AsRepSession,
     service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
     timestamp: SystemTime,
     cusec: u32,
     confounder: &[u8],
@@ -3121,7 +2713,7 @@ pub fn build_tgs_req_with_confounder(
 pub fn build_s4u2self_req(
     service_tgt: &AsRepSession,
     user: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
@@ -3140,7 +2732,7 @@ pub fn build_s4u2self_req(
 pub fn build_s4u2self_req_with_confounder(
     service_tgt: &AsRepSession,
     user: Principal,
-    mut options: TgsReqOptions,
+    mut options: TgsReq,
     timestamp: SystemTime,
     cusec: u32,
     confounder: &[u8],
@@ -3174,7 +2766,7 @@ pub fn build_s4u2proxy_req(
     service_tgt: &AsRepSession,
     evidence_ticket: &TgsRepSession,
     target_service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
@@ -3204,7 +2796,7 @@ pub fn build_s4u2proxy_req_with_confounder(
     service_tgt: &AsRepSession,
     evidence_ticket: &TgsRepSession,
     target_service: Principal,
-    mut options: TgsReqOptions,
+    mut options: TgsReq,
     timestamp: SystemTime,
     cusec: u32,
     confounder: &[u8],
@@ -3218,7 +2810,7 @@ pub fn build_s4u2proxy_req_with_confounder(
     options.kdc_option_bits |= KDC_OPTION_CNAME_IN_ADDL_TKT;
     options
         .additional_tickets
-        .push(ticket::decode_ticket(&evidence_ticket.ticket).map_err(ticket_error)?);
+        .push(ticket::decode(&evidence_ticket.ticket).map_err(ticket_error)?);
     let mut request = build_tgs_req_for_realm_with_confounder(
         service_tgt,
         target_service.realm.clone(),
@@ -3253,7 +2845,7 @@ pub fn build_tgs_req_for_realm_with_confounder<P>(
     tgt: &AsRepSession,
     kdc_realm: P,
     service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
     timestamp: SystemTime,
     cusec: u32,
     confounder: &[u8],
@@ -3293,7 +2885,7 @@ pub fn build_tgs_req_for_realm_with_subkey<R>(
     tgt: &AsRepSession,
     kdc_realm: R,
     service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<TgsFastRequestParts, Error>
 where
     R: Into<String>,
@@ -3361,7 +2953,7 @@ where
         });
     }
     if subkey.value.len() != tgt.session_key.value.len() {
-        return Err(crypto::Error::InvalidKeyLength {
+        return Err(error::Crypto::InvalidKeyLength {
             expected: tgt.session_key.value.len(),
             actual: subkey.value.len(),
         }
@@ -3391,7 +2983,7 @@ where
 #[non_exhaustive]
 pub struct TgsRequestParts<'request> {
     /// The ticket request options.
-    pub options: TgsReqOptions,
+    pub options: TgsReq,
     /// The authenticator timestamp.
     pub timestamp: SystemTime,
     /// The authenticator microseconds.
@@ -3407,7 +2999,7 @@ impl<'request> TgsRequestParts<'request> {
     #[must_use]
     #[inline]
     pub const fn new(
-        options: TgsReqOptions,
+        options: TgsReq,
         confounder: &'request [u8],
         subkey: &'request EncryptionKey,
     ) -> Self {
@@ -3469,10 +3061,9 @@ fn build_tgs_req_for_realm_inner(
     tgt: &AsRepSession,
     kdc_realm: impl Into<String>,
     service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
     authenticator_context: TgsAuthenticatorContext<'_>,
 ) -> Result<(BuiltTgsReq, Vec<u8>), Error> {
-    use ap_req::encode_ap_req;
     let TgsAuthenticatorContext {
         timestamp,
         cusec,
@@ -3484,7 +3075,7 @@ fn build_tgs_req_for_realm_inner(
     }
 
     let kdc_realm_name: String = kdc_realm.into();
-    let ticket = ticket::decode_ticket(&tgt.ticket).map_err(ticket_error)?;
+    let ticket = ticket::decode(&tgt.ticket).map_err(ticket_error)?;
     let till = options
         .now
         .checked_add(options.ticket_lifetime)
@@ -3544,7 +3135,7 @@ fn build_tgs_req_for_realm_inner(
         confounder,
     )
     .map_err(ap_req_error)?;
-    let ap_req_der = encode_ap_req(&ap_req).map_err(ap_req_error)?;
+    let ap_req_der = ap_req::encode(&ap_req).map_err(ap_req_error)?;
     let pa_tgs_req = rasn_kerberos::PaData {
         r#type: PA_TGS_REQ,
         value: ap_req_der.clone().into(),
@@ -3579,12 +3170,12 @@ fn build_tgs_req_for_realm_inner(
 #[inline]
 pub fn build_ap_req_with_confounder(
     service_ticket: &TgsRepSession,
-    options: ApReqOptions,
+    options: ApReq,
     timestamp: SystemTime,
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
-    let ticket = ticket::decode_ticket(&service_ticket.ticket).map_err(ticket_error)?;
+    let ticket = ticket::decode(&service_ticket.ticket).map_err(ticket_error)?;
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(KRB5_PVNO),
         crealm: kerberos_string(&service_ticket.client.realm)?,
@@ -3608,7 +3199,7 @@ pub fn build_ap_req_with_confounder(
         confounder,
     )
     .map_err(ap_req_error)?;
-    let der = ap_req::encode_ap_req(&message).map_err(ap_req_error)?;
+    let der = ap_req::encode(&message).map_err(ap_req_error)?;
     let authenticator_time = timestamp
         .checked_add(Duration::from_micros(cusec.into()))
         .ok_or(Error::TimeOverflow)?;
@@ -3633,10 +3224,7 @@ pub fn build_ap_req_with_confounder(
 /// Returns [`Error::InvalidTgtSession`] when the session is not a TGT, and the
 /// errors of [`build_tgs_req_for_realm`].
 #[inline]
-pub fn build_tgt_renewal_req(
-    tgt: &AsRepSession,
-    options: TgsReqOptions,
-) -> Result<BuiltTgsReq, Error> {
+pub fn build_tgt_renewal_req(tgt: &AsRepSession, options: TgsReq) -> Result<BuiltTgsReq, Error> {
     let realm = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
         service: tgt.service.name(),
     })?;
@@ -3656,7 +3244,7 @@ pub fn build_tgt_renewal_req(
 #[inline]
 pub fn build_tgt_renewal_req_with_confounder(
     tgt: &AsRepSession,
-    options: TgsReqOptions,
+    options: TgsReq,
     timestamp: SystemTime,
     cusec: u32,
     confounder: &[u8],
@@ -3682,7 +3270,7 @@ pub fn build_tgt_renewal_req_with_confounder(
 #[inline]
 pub fn build_ticket_renewal_req(
     ticket: &AsRepSession,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
     build_tgs_req_for_realm(
         ticket,
@@ -3699,7 +3287,7 @@ pub fn build_ticket_renewal_req(
 #[inline]
 pub fn build_ticket_renewal_req_with_confounder(
     ticket: &AsRepSession,
-    options: TgsReqOptions,
+    options: TgsReq,
     timestamp: SystemTime,
     cusec: u32,
     confounder: &[u8],
@@ -3758,7 +3346,7 @@ pub fn s4u2self<T>(
     transport: &mut T,
     service_tgt: &AsRepSession,
     user: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<TgsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3777,7 +3365,7 @@ pub fn s4u2proxy<T>(
     service_tgt: &AsRepSession,
     evidence_ticket: &TgsRepSession,
     target_service: Principal,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<TgsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3794,7 +3382,7 @@ where
 pub fn renew_tgt<T>(
     transport: &mut T,
     tgt: &AsRepSession,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<TgsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3811,7 +3399,7 @@ where
 pub fn renew_ticket<T>(
     transport: &mut T,
     ticket: &AsRepSession,
-    options: TgsReqOptions,
+    options: TgsReq,
 ) -> Result<TgsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3829,7 +3417,7 @@ pub fn login_tgt_with_password<T>(
     transport: &mut T,
     client: Principal,
     password: &[u8],
-    options: AsReqOptions,
+    options: AsReq,
 ) -> Result<AsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3850,7 +3438,7 @@ pub fn login_as_service_with_password<T>(
     client: Principal,
     service: Principal,
     password: &[u8],
-    options: AsReqOptions,
+    options: AsReq,
 ) -> Result<AsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3878,7 +3466,7 @@ pub fn login_tgt_with_keytab<T>(
     transport: &mut T,
     client: Principal,
     keytab: &Keytab,
-    options: AsReqOptions,
+    options: AsReq,
 ) -> Result<AsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3899,7 +3487,7 @@ pub fn login_as_service_with_keytab<T>(
     client: Principal,
     service: Principal,
     keytab: &Keytab,
-    options: AsReqOptions,
+    options: AsReq,
 ) -> Result<AsRepSession, Error>
 where
     T: KdcTransport + ?Sized,
@@ -3924,7 +3512,7 @@ where
 /// Returns [`Error::Kdc`] for a KRB-ERROR reply, [`Error::Decode`] or a
 /// decryption error for a malformed reply, [`Error::EnctypeNotRequested`] for an
 /// enctype the request did not offer, the FAST negotiation errors, and
-/// [`Error::NonceMismatch`], [`Error::ClientPrincipalMismatch`] or
+/// [`Error::NonceMismatch`], [`Error::PrincipalMismatch`] or
 /// [`Error::ServicePrincipalMismatch`] when the reply does not answer the
 /// request.
 #[inline]
@@ -3942,7 +3530,7 @@ pub fn process_as_rep(
 
     let client = principal_from_parts(&kdc_rep.crealm, &kdc_rep.cname)?;
     if !principal_matches(&client, &request.client) {
-        return Err(Error::ClientPrincipalMismatch {
+        return Err(Error::PrincipalMismatch {
             expected: request.client.name(),
             actual: client.name(),
         });
@@ -3975,7 +3563,7 @@ pub fn process_as_rep(
         });
     }
 
-    let ticket = ticket::encode_ticket(&kdc_rep.ticket).map_err(ticket_error)?;
+    let ticket = ticket::encode(&kdc_rep.ticket).map_err(ticket_error)?;
     Ok(AsRepSession {
         client,
         service: enc_part_service,
@@ -4117,7 +3705,7 @@ fn process_tgs_rep_inner(
 
     let client = principal_from_parts(&kdc_rep.crealm, &kdc_rep.cname)?;
     if !principal_matches(&client, &request.client) {
-        return Err(Error::ClientPrincipalMismatch {
+        return Err(Error::PrincipalMismatch {
             expected: request.client.name(),
             actual: client.name(),
         });
@@ -4153,7 +3741,7 @@ fn process_tgs_rep_inner(
         });
     }
 
-    let ticket = ticket::encode_ticket(&kdc_rep.ticket).map_err(ticket_error)?;
+    let ticket = ticket::encode(&kdc_rep.ticket).map_err(ticket_error)?;
     Ok(AsRepSession {
         client,
         service: enc_part_service,
@@ -4186,8 +3774,8 @@ fn process_tgs_rep_inner(
 /// [`Error::InvalidUnsignedInteger`] for invalid fields.
 #[inline]
 pub fn process_kdc_error(bytes: &[u8]) -> Result<KdcError, Error> {
-    let krb_error = krb_error::decode_krb_error(bytes).map_err(krb_error_error)?;
-    let info = krb_error::krb_error_info(&krb_error).map_err(krb_error_error)?;
+    let krb_error = krb_error::decode(bytes).map_err(krb_error_error)?;
+    let info = krb_error::info(&krb_error).map_err(krb_error_error)?;
     let e_data = info.e_data;
     let method_data = krb_error::preauth_method_data(&krb_error, KDC_ERR_PREAUTH_REQUIRED)
         .map_err(krb_error_error)?;
@@ -4307,515 +3895,7 @@ pub fn select_keytab_reply_key(
     Ok((key.clone(), kvno))
 }
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::error_impl_error,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-/// Kerberos client exchange error.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// ASN.1 DER decode failed.
-    #[error("failed to decode {target}: {message}")]
-    Decode {
-        /// Decoded type name.
-        target: &'static str,
-        /// Decoder error text.
-        message: String,
-    },
-
-    /// ASN.1 DER encode failed.
-    #[error("failed to encode {target}: {message}")]
-    Encode {
-        /// Encoded type name.
-        target: &'static str,
-        /// Encoder error text.
-        message: String,
-    },
-
-    /// ASN.1 string value was not valid UTF-8.
-    #[error("invalid Kerberos string: {0}")]
-    InvalidString(#[from] Utf8Error),
-
-    /// A Kerberos string value could not be constructed.
-    #[error("invalid Kerberos string value: {0}")]
-    InvalidKerberosString(String),
-
-    /// A human-readable Kerberos principal name was invalid.
-    #[error("invalid Kerberos principal name {value:?}: {reason}")]
-    InvalidPrincipalName {
-        /// Input principal string.
-        value: String,
-        /// Validation failure.
-        reason: &'static str,
-    },
-
-    /// Message field did not contain the expected value.
-    #[error("invalid {field}: expected {expected}, got {actual}")]
-    InvalidMessage {
-        /// Field name.
-        field: &'static str,
-        /// Expected value.
-        expected: i32,
-        /// Actual value.
-        actual: String,
-    },
-
-    /// Message integer field could not be represented as `u32`.
-    #[error("invalid {field}: expected unsigned 32-bit integer, got {actual}")]
-    InvalidUnsignedInteger {
-        /// Field name.
-        field: &'static str,
-        /// Actual value.
-        actual: String,
-    },
-
-    /// No ticket encryption types were requested.
-    #[error("ticket request must request at least one encryption type")]
-    EmptyEtypes,
-
-    /// The encrypted data etype is not implemented yet.
-    #[error("unsupported encryption type: {0}")]
-    UnsupportedEtype(i32),
-
-    /// A KDC reply used an enctype outside the request's requested list.
-    #[error("KDC reply enctype {0} was not requested")]
-    EnctypeNotRequested(i32),
-
-    /// A KDC reply used an enctype outside the configured permitted list.
-    #[error("KDC reply enctype {0} is not permitted by configuration")]
-    EnctypeNotPermitted(i32),
-
-    /// A key did not match the encrypted KDC reply data etype.
-    #[error(
-        "key etype {key_etype} does not match KDC-REP encrypted data etype {encrypted_data_etype}"
-    )]
-    KeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// KDC-REP encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// A key did not match the encrypted AP-REP data etype.
-    #[error(
-        "key etype {key_etype} does not match AP-REP encrypted data etype {encrypted_data_etype}"
-    )]
-    ApRepKeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// AP-REP encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// A key did not match the encrypted AP-REQ authenticator etype.
-    #[error(
-        "key etype {key_etype} does not match AP-REQ authenticator etype {encrypted_data_etype}"
-    )]
-    ApReqKeyEtypeMismatch {
-        /// Reply key encryption type.
-        key_etype: i32,
-        /// AP-REQ authenticator encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// A key did not match the encrypted ticket data etype.
-    #[error(
-        "key etype {key_etype} does not match Ticket encrypted data etype {encrypted_data_etype}"
-    )]
-    TicketKeyEtypeMismatch {
-        /// Service key encryption type.
-        key_etype: i32,
-        /// Ticket encrypted data encryption type.
-        encrypted_data_etype: i32,
-    },
-
-    /// A successful kpasswd reply did not contain AP-REP.
-    #[error("kpasswd reply does not contain AP-REP")]
-    MissingKpasswdApRep,
-
-    /// A kpasswd AP-REP did not echo the AP-REQ authenticator timestamp.
-    #[error("kpasswd AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
-    KpasswdApRepTimestampMismatch {
-        /// Timestamp supplied by the AP-REQ authenticator.
-        expected: SystemTime,
-        /// Timestamp supplied by AP-REP.
-        actual: SystemTime,
-    },
-
-    /// The KDC-REP client principal did not match the KDC-REQ.
-    #[error("KDC-REP client {actual} does not match requested client {expected}")]
-    ClientPrincipalMismatch {
-        /// Expected request client.
-        expected: String,
-        /// Actual reply client.
-        actual: String,
-    },
-
-    /// The KDC-REP service principal did not match the KDC-REQ.
-    #[error("KDC-REP service {actual} does not match requested service {expected}")]
-    ServicePrincipalMismatch {
-        /// Expected request service.
-        expected: String,
-        /// Actual reply service.
-        actual: String,
-    },
-
-    /// The KDC-REP nonce did not match the KDC-REQ nonce.
-    #[error("KDC-REP nonce {actual} does not match KDC-REQ nonce {expected}")]
-    NonceMismatch {
-        /// Expected request nonce.
-        expected: u32,
-        /// Actual reply nonce.
-        actual: u32,
-    },
-
-    /// The AS-REP did not include the encrypted padata required by FAST negotiation.
-    #[error("KDC did not respond appropriately to FAST negotiation")]
-    InvalidFastNegotiationResponse,
-
-    /// The AS-REP FAST negotiation checksum used an unsupported checksum type.
-    #[error("unsupported Kerberos checksum type: {0}")]
-    UnsupportedChecksumType(i32),
-
-    /// The AS-REP FAST negotiation checksum was invalid.
-    #[error("KDC FAST negotiation response checksum invalid")]
-    FastNegotiationChecksumMismatch,
-
-    /// A TGS referral chain exceeded the configured limit.
-    #[error("TGS referral depth exceeded maximum {max}")]
-    MaxReferralDepth {
-        /// Maximum number of referrals followed.
-        max: usize,
-    },
-
-    /// A TGS referral reply did not contain a usable `krbtgt/<realm>` service.
-    #[error("invalid TGS referral ticket service: {service}")]
-    InvalidReferralTicket {
-        /// Referral ticket service name.
-        service: String,
-    },
-
-    /// A renewal helper expected a `krbtgt/<realm>` TGT session.
-    #[error("expected a TGT session, got service {service}")]
-    InvalidTgtSession {
-        /// Actual session service name.
-        service: String,
-    },
-
-    /// A high-level client operation needs password/keytab credentials.
-    #[cfg(feature = "tokio")]
-    #[error("no password or keytab credentials are configured")]
-    NoClientCredentials,
-
-    /// A configured credential-cache load needs `default_ccache_name`.
-    #[cfg(feature = "tokio")]
-    #[error("config.libdefaults.default_ccache_name is not configured")]
-    NoDefaultCCacheName,
-
-    /// The default client keytab name could not be read from `KRB5_CLIENT_KTNAME`.
-    #[cfg(feature = "tokio")]
-    #[error("default client keytab name could not be read from KRB5_CLIENT_KTNAME: {0}")]
-    DefaultClientKeytabName(env::VarError),
-
-    /// A high-level client operation needs a non-empty client principal name.
-    #[cfg(feature = "tokio")]
-    #[error("client principal name is not configured")]
-    MissingClientName,
-
-    /// A high-level client operation needs a non-empty client realm.
-    #[cfg(feature = "tokio")]
-    #[error("client principal realm is not configured")]
-    MissingClientRealm,
-
-    /// KDC DNS lookup is disabled and no configured KDC exists for the realm.
-    #[cfg(feature = "tokio")]
-    #[error("no configured KDC exists for realm {realm}")]
-    NoConfiguredKdc {
-        /// Realm missing a configured KDC.
-        realm: String,
-    },
-
-    /// A high-level client operation needs a current TGT.
-    #[cfg(feature = "tokio")]
-    #[error("no TGT session is available")]
-    NoTgtSession,
-
-    /// SPNEGO/GSSAPI token processing failed.
-    #[cfg(feature = "spnego")]
-    #[error("SPNEGO error: {0}")]
-    Spnego(#[from] spnego::Error),
-
-    /// Crypto operation failed.
-    #[error("crypto error: {0}")]
-    Crypto(#[from] crypto::Error),
-
-    /// Keytab operation failed.
-    #[error("keytab error: {0}")]
-    Keytab(#[from] keytab::Error),
-
-    /// Configuration parsing or lookup failed.
-    #[error("config error: {0}")]
-    Config(#[from] config::Error),
-
-    /// Credential cache operation failed.
-    #[error("ccache error: {0}")]
-    CCache(#[from] ccache::Error),
-
-    /// kadmin protocol processing failed.
-    #[error("kadmin error: {0}")]
-    Kadmin(#[from] kadmin::Error),
-
-    /// Kerberos message helper failed.
-    #[error("message error: {0}")]
-    Message(#[from] messages::Error),
-
-    /// Random byte generation failed.
-    #[error("random byte generation failed: {0}")]
-    Random(#[from] getrandom::Error),
-
-    /// A Kerberos time could not be represented as a `SystemTime`.
-    #[error("Kerberos time overflows SystemTime")]
-    TimeOverflow,
-
-    /// The KDC returned an application-level error.
-    #[error("KDC returned error code {}", .0.error_code)]
-    Kdc(Box<KdcError>),
-
-    /// No supported preauthentication encryption type was available.
-    #[error("no supported preauthentication encryption type for requested list {requested:?}")]
-    NoSupportedPreauthEtype {
-        /// Requested encryption type ids.
-        requested: Vec<i32>,
-    },
-
-    /// Tokio transport I/O failed.
-    #[cfg(feature = "tokio")]
-    #[error("KDC transport I/O failed: {0}")]
-    Io(#[from] io::Error),
-
-    /// A configured KDC endpoint could not be parsed.
-    #[cfg(feature = "tokio")]
-    #[error("invalid KDC endpoint: {0}")]
-    InvalidKdcEndpoint(String),
-
-    /// DNS resolver construction failed.
-    #[cfg(feature = "tokio")]
-    #[error("DNS resolver configuration failed: {0}")]
-    DnsResolverConfig(String),
-
-    /// DNS SRV KDC lookup failed.
-    #[cfg(feature = "tokio")]
-    #[error("DNS SRV lookup failed for {realm} over {protocol:?}: {message}")]
-    DnsSrvLookup {
-        /// Realm being discovered.
-        realm: String,
-        /// Requested wire protocol.
-        protocol: KdcProtocol,
-        /// Resolver error message.
-        message: String,
-    },
-
-    /// No KDC endpoints were discovered for a realm.
-    #[cfg(feature = "tokio")]
-    #[error("no KDC endpoints discovered for {realm} over {protocol:?}")]
-    NoKdcEndpoints {
-        /// Realm being discovered.
-        realm: String,
-        /// Requested wire protocol.
-        protocol: KdcProtocol,
-    },
-
-    /// All discovered KDC endpoint attempts failed.
-    #[cfg(feature = "tokio")]
-    #[error("all KDC endpoints for {realm} over {protocol:?} failed: {failures:?}")]
-    KdcEndpointFailures {
-        /// Realm being contacted.
-        realm: String,
-        /// Requested wire protocol.
-        protocol: KdcProtocol,
-        /// Per-endpoint failure messages.
-        failures: Vec<String>,
-    },
-
-    /// Tokio transport exchange timed out.
-    #[cfg(feature = "tokio")]
-    #[error("KDC transport timed out after {0:?}")]
-    TransportTimeout(Duration),
-
-    /// UDP cannot carry the encoded request as one datagram.
-    #[cfg(feature = "tokio")]
-    #[error("KDC UDP request length {actual} exceeds datagram limit {limit}")]
-    UdpRequestTooLarge {
-        /// Encoded request byte length.
-        actual: usize,
-        /// Maximum UDP payload length.
-        limit: usize,
-    },
-
-    /// TCP request length could not fit the RFC 4120 length prefix.
-    #[cfg(feature = "tokio")]
-    #[error("KDC TCP request length {actual} exceeds u32::MAX")]
-    TcpRequestTooLarge {
-        /// Encoded request byte length.
-        actual: usize,
-    },
-
-    /// TCP response length exceeded the configured limit.
-    #[cfg(feature = "tokio")]
-    #[error("KDC TCP response length {actual} exceeds configured limit {limit}")]
-    TcpResponseTooLarge {
-        /// Response length from the TCP frame header.
-        actual: u32,
-        /// Maximum accepted response body length.
-        limit: usize,
-    },
-
-    /// KDC returned no bytes.
-    #[cfg(feature = "tokio")]
-    #[error("KDC returned an empty response")]
-    EmptyKdcResponse,
-
-    /// KDC transport failed.
-    #[error("KDC transport failed: {0}")]
-    Transport(String),
-}
+use crate::error::Client as Error;
 
 /// DER-decode `bytes` as `T`, naming `target` in the error.
 ///
@@ -4848,11 +3928,11 @@ where
 }
 
 /// Map an AP-REQ helper error into the client error.
-fn ap_req_error(error: ap_req::Error) -> Error {
+fn ap_req_error(error: error::ApReq) -> Error {
     match error {
-        ap_req::Error::Decode { target, message } => Error::Decode { target, message },
-        ap_req::Error::Encode { target, message } => Error::Encode { target, message },
-        ap_req::Error::InvalidMessage {
+        error::ApReq::Decode { target, message } => Error::Decode { target, message },
+        error::ApReq::Encode { target, message } => Error::Encode { target, message },
+        error::ApReq::InvalidMessage {
             field,
             expected,
             actual,
@@ -4861,25 +3941,25 @@ fn ap_req_error(error: ap_req::Error) -> Error {
             expected,
             actual,
         },
-        ap_req::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        ap_req::Error::KeyEtypeMismatch {
+        error::ApReq::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::ApReq::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::ApReqKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        ap_req::Error::Random(source) => Error::Random(source),
-        ap_req::Error::Crypto(source) => Error::Crypto(source),
+        error::ApReq::Random(source) => Error::Random(source),
+        error::ApReq::Crypto(source) => Error::Crypto(source),
     }
 }
 
 /// Map a KDC-REQ helper error into the client error.
-fn kdc_req_error(error: kdc_req::Error) -> Error {
+fn kdc_req_error(error: error::KdcReq) -> Error {
     match error {
-        kdc_req::Error::Decode { target, message } => Error::Decode { target, message },
-        kdc_req::Error::Encode { target, message } => Error::Encode { target, message },
-        kdc_req::Error::InvalidMessage {
+        error::KdcReq::Decode { target, message } => Error::Decode { target, message },
+        error::KdcReq::Encode { target, message } => Error::Encode { target, message },
+        error::KdcReq::InvalidMessage {
             field,
             expected,
             actual,
@@ -4888,25 +3968,25 @@ fn kdc_req_error(error: kdc_req::Error) -> Error {
             expected,
             actual,
         },
-        kdc_req::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        kdc_req::Error::TicketKeyEtypeMismatch {
+        error::KdcReq::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::KdcReq::TicketKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::TicketKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        kdc_req::Error::Random(source) => Error::Random(source),
-        kdc_req::Error::Crypto(source) => Error::Crypto(source),
+        error::KdcReq::Random(source) => Error::Random(source),
+        error::KdcReq::Crypto(source) => Error::Crypto(source),
     }
 }
 
 /// Map a KRB-ERROR helper error into the client error.
-fn krb_error_error(error: krb_error::Error) -> Error {
+fn krb_error_error(error: error::KrbErrorCodec) -> Error {
     match error {
-        krb_error::Error::Decode { target, message } => Error::Decode { target, message },
-        krb_error::Error::Encode { target, message } => Error::Encode { target, message },
-        krb_error::Error::InvalidMessage {
+        error::KrbErrorCodec::Decode { target, message } => Error::Decode { target, message },
+        error::KrbErrorCodec::Encode { target, message } => Error::Encode { target, message },
+        error::KrbErrorCodec::InvalidMessage {
             field,
             expected,
             actual,
@@ -4915,13 +3995,13 @@ fn krb_error_error(error: krb_error::Error) -> Error {
             expected,
             actual,
         },
-        krb_error::Error::IntegerOutOfRange { field, value } => Error::InvalidUnsignedInteger {
+        error::KrbErrorCodec::IntegerOutOfRange { field, value } => Error::InvalidUnsignedInteger {
             field,
             actual: value,
         },
-        krb_error::Error::TimeOverflow => Error::TimeOverflow,
-        other @ (krb_error::Error::InvalidString(_)
-        | krb_error::Error::KvnoOutOfRange { target: _, kvno: _ }) => Error::Decode {
+        error::KrbErrorCodec::TimeOverflow => Error::TimeOverflow,
+        other @ (error::KrbErrorCodec::InvalidString(_)
+        | error::KrbErrorCodec::KvnoOutOfRange { target: _, kvno: _ }) => Error::Decode {
             target: "KRB-ERROR",
             message: other.to_string(),
         },
@@ -4929,11 +4009,11 @@ fn krb_error_error(error: krb_error::Error) -> Error {
 }
 
 /// Map a ticket helper error into the client error.
-fn ticket_error(error: ticket::Error) -> Error {
+fn ticket_error(error: error::Ticket) -> Error {
     match error {
-        ticket::Error::Decode { target, message } => Error::Decode { target, message },
-        ticket::Error::Encode { target, message } => Error::Encode { target, message },
-        ticket::Error::InvalidMessage {
+        error::Ticket::Decode { target, message } => Error::Decode { target, message },
+        error::Ticket::Encode { target, message } => Error::Encode { target, message },
+        error::Ticket::InvalidMessage {
             field,
             expected,
             actual,
@@ -4942,25 +4022,25 @@ fn ticket_error(error: ticket::Error) -> Error {
             expected,
             actual,
         },
-        ticket::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        ticket::Error::KeyEtypeMismatch {
+        error::Ticket::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::Ticket::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::TicketKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        ticket::Error::Random(source) => Error::Random(source),
-        ticket::Error::Crypto(source) => Error::Crypto(source),
+        error::Ticket::Random(source) => Error::Random(source),
+        error::Ticket::Crypto(source) => Error::Crypto(source),
     }
 }
 
 /// Map a KDC-REP helper error into the client error.
-fn kdc_rep_error(error: kdc_rep::Error) -> Error {
+fn kdc_rep_error(error: error::KdcRep) -> Error {
     match error {
-        kdc_rep::Error::Decode { target, message } => Error::Decode { target, message },
-        kdc_rep::Error::Encode { target, message } => Error::Encode { target, message },
-        kdc_rep::Error::InvalidMessage {
+        error::KdcRep::Decode { target, message } => Error::Decode { target, message },
+        error::KdcRep::Encode { target, message } => Error::Encode { target, message },
+        error::KdcRep::InvalidMessage {
             field,
             expected,
             actual,
@@ -4969,32 +4049,32 @@ fn kdc_rep_error(error: kdc_rep::Error) -> Error {
             expected,
             actual,
         },
-        kdc_rep::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        kdc_rep::Error::KeyEtypeMismatch {
+        error::KdcRep::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::KdcRep::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        kdc_rep::Error::TicketKeyEtypeMismatch {
+        error::KdcRep::TicketKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::TicketKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        kdc_rep::Error::Random(source) => Error::Random(source),
-        kdc_rep::Error::Crypto(source) => Error::Crypto(source),
+        error::KdcRep::Random(source) => Error::Random(source),
+        error::KdcRep::Crypto(source) => Error::Crypto(source),
     }
 }
 
 /// Map an AP-REP helper error into the client error.
-fn ap_rep_error(error: ap_rep::Error) -> Error {
+fn ap_rep_error(error: error::ApRep) -> Error {
     match error {
-        ap_rep::Error::Decode { target, message } => Error::Decode { target, message },
-        ap_rep::Error::Encode { target, message } => Error::Encode { target, message },
-        ap_rep::Error::InvalidMessage {
+        error::ApRep::Decode { target, message } => Error::Decode { target, message },
+        error::ApRep::Encode { target, message } => Error::Encode { target, message },
+        error::ApRep::InvalidMessage {
             field,
             expected,
             actual,
@@ -5003,16 +4083,16 @@ fn ap_rep_error(error: ap_rep::Error) -> Error {
             expected,
             actual,
         },
-        ap_rep::Error::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        ap_rep::Error::KeyEtypeMismatch {
+        error::ApRep::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
+        error::ApRep::KeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         } => Error::ApRepKeyEtypeMismatch {
             key_etype,
             encrypted_data_etype,
         },
-        ap_rep::Error::Random(source) => Error::Random(source),
-        ap_rep::Error::Crypto(source) => Error::Crypto(source),
+        error::ApRep::Random(source) => Error::Random(source),
+        error::ApRep::Crypto(source) => Error::Crypto(source),
     }
 }
 
@@ -5027,7 +4107,7 @@ fn password_preauth_request(
     client: Principal,
     service: Principal,
     password: &[u8],
-    requested: AsReqOptions,
+    requested: AsReq,
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
     let error = process_kdc_error(kdc_error_bytes)?;
@@ -5052,7 +4132,7 @@ fn password_initial_as_req(
     client: Principal,
     service: Principal,
     password: &[u8],
-    requested: AsReqOptions,
+    requested: AsReq,
 ) -> Result<BuiltAsReq, Error> {
     let options = initial_preauth_probe_options(requested);
     if options.assume_preauthentication {
@@ -5101,7 +4181,7 @@ fn keytab_preauth_request(
     client: Principal,
     service: Principal,
     keytab: &Keytab,
-    requested: AsReqOptions,
+    requested: AsReq,
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
     let error = process_kdc_error(kdc_error_bytes)?;
@@ -5126,7 +4206,7 @@ fn keytab_initial_as_req(
     client: Principal,
     service: Principal,
     keytab: &Keytab,
-    requested: AsReqOptions,
+    requested: AsReq,
 ) -> Result<BuiltAsReq, Error> {
     let options = initial_preauth_probe_options(requested);
     if options.assume_preauthentication {
@@ -5169,7 +4249,7 @@ fn assumed_preauth_key_info(requested_etypes: &[i32]) -> Result<PreauthKeyInfo, 
 fn select_assumed_keytab_reply_key(
     keytab: &Keytab,
     client: &Principal,
-    options: &AsReqOptions,
+    options: &AsReq,
 ) -> Result<(EncryptionKey, u32), Error> {
     let components = client
         .components
@@ -5184,7 +4264,7 @@ fn select_assumed_keytab_reply_key(
     {
         match keytab.find_key(&components, &client.realm, 0, etype) {
             Ok((key, kvno)) => return Ok((key.clone(), kvno)),
-            Err(keytab::Error::NoMatchingKey {
+            Err(error::Keytab::NoMatchingKey {
                 principal: _,
                 realm: _,
                 kvno: _,
@@ -5242,7 +4322,7 @@ fn select_keytab_reply_key_for_etype(
 }
 
 /// Add PA-REQ-ENC-PA-REP to the request padata when FAST negotiation is on.
-fn initial_preauth_probe_options(mut options: AsReqOptions) -> AsReqOptions {
+fn initial_preauth_probe_options(mut options: AsReq) -> AsReq {
     if options.fast_negotiation
         && !options
             .padata
@@ -5574,7 +4654,7 @@ fn default_ccache_name(config: &Config) -> Result<String, Error> {
     match env::var(KRB5CCNAME_ENV) {
         Ok(cache_name) => Ok(cache_name),
         Err(env::VarError::NotPresent) => configured_default_ccache_name(config),
-        Err(error) => Err(ccache::Error::DefaultCacheName(error).into()),
+        Err(error) => Err(error::Ccache::DefaultCacheName(error).into()),
     }
 }
 
@@ -5866,9 +4946,10 @@ fn system_time_to_u32_seconds(time: SystemTime) -> Result<u32, Error> {
 mod tests {
     use super::{
         AsRepSession, EncryptionKey, Error, PA_AS_FRESHNESS, PA_FX_COOKIE, Principal, SystemTime,
-        TgsReqOptions, build_tgs_req_for_realm_with_confounder_and_subkey,
-        build_tgs_req_for_realm_with_subkey, crypto, random_nonce,
+        TgsReq, build_tgs_req_for_realm_with_confounder_and_subkey,
+        build_tgs_req_for_realm_with_subkey, random_nonce,
     };
+    use crate::error;
 
     // RFC 6113 section 5.2 registers PA-FX-COOKIE as 133, and RFC 8070
     // registers PA-AS-FRESHNESS as 150.
@@ -5921,7 +5002,7 @@ mod tests {
             &tgt,
             "EXAMPLE.TEST",
             Principal::parse_service("HTTP/host.example.test@EXAMPLE.TEST")?,
-            crate::client::TgsRequestParts::new(TgsReqOptions::new(now, 1), &[], &subkey)
+            crate::client::TgsRequestParts::new(TgsReq::new(now, 1), &[], &subkey)
                 .with_timestamp(now, 0),
         );
         assert!(
@@ -5954,13 +5035,13 @@ mod tests {
             &tgt,
             "EXAMPLE.TEST",
             Principal::parse_service("HTTP/host.example.test@EXAMPLE.TEST")?,
-            crate::client::TgsRequestParts::new(TgsReqOptions::new(now, 1), &[], &subkey)
+            crate::client::TgsRequestParts::new(TgsReq::new(now, 1), &[], &subkey)
                 .with_timestamp(now, 0),
         );
         assert!(
             matches!(
                 result,
-                Err(Error::Crypto(crypto::Error::InvalidKeyLength {
+                Err(Error::Crypto(error::Crypto::InvalidKeyLength {
                     expected: 32,
                     actual: 16,
                 }))
@@ -5982,7 +5063,7 @@ mod tests {
             &tgt,
             "EXAMPLE.TEST",
             Principal::parse_service("HTTP/host.example.test@EXAMPLE.TEST")?,
-            TgsReqOptions::new(SystemTime::now(), 1),
+            TgsReq::new(SystemTime::now(), 1),
         );
         assert!(
             matches!(result, Err(Error::UnsupportedEtype(1_i32))),

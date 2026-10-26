@@ -12,7 +12,10 @@ mod tests {
     use core::error;
 
     use pretty_assertions::assert_eq;
-    use rskrb5_ng::crypto::{Error, KerberosEtype, Rc4HmacEtype};
+    use rskrb5_ng::{
+        crypto::{KerberosEtype, Rc4HmacEtype},
+        error::Crypto as Error,
+    };
 
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
