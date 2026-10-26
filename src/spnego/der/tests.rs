@@ -1,6 +1,8 @@
 //! DER scalar boundary regressions, including the public SPNEGO decoder.
 
-use super::{Error, decode_oid_value, decode_u32, encode_u32};
+use proptest::{arbitrary::any, collection, prop_assert_eq, proptest};
+
+use super::{Error, ObjectIdentifier, decode_oid_value, decode_u32, encode_u32};
 use crate::spnego::{NegState, NegTokenResp};
 
 /// A state above `u32::MAX` must not alias accept-completed through the public decoder.
@@ -78,4 +80,73 @@ fn der_oid_preserves_later_arc_boundaries() -> Result<(), Error> {
     let decoded = decode_oid_value(&[0x2a, 0, 0x8f, 0xff, 0xff, 0xff, 0x7f])?;
     assert_eq!(decoded.arcs(), &[1, 2, 0, u32::MAX]);
     Ok(())
+}
+
+/// Arc two uses the complete first subidentifier, including values above one octet.
+#[test]
+fn der_oid_arc_two_roundtrips_thresholds() -> Result<(), Error> {
+    for second in [0, 39, 40, 47, 48, 100, u32::MAX - 80, u32::MAX] {
+        let mut token = NegTokenResp::accept_completed();
+        token.supported_mech = Some(ObjectIdentifier::from_arcs(vec![2, second, 1])?);
+        assert_eq!(NegTokenResp::decode(&token.encode()?)?, token);
+    }
+    Ok(())
+}
+
+/// The constructor's maximum second arc must also be encodable and decodable.
+#[test]
+fn der_oid_arc_two_maximum_roundtrips() -> Result<(), Error> {
+    let mut token = NegTokenResp::accept_completed();
+    token.supported_mech = Some(ObjectIdentifier::from_arcs(vec![2, u32::MAX])?);
+    assert_eq!(NegTokenResp::decode(&token.encode()?)?, token);
+    Ok(())
+}
+
+/// Known DER content pins the first-subidentifier thresholds independently of the encoder.
+#[test]
+fn der_oid_decodes_first_subidentifier_vectors() -> Result<(), Error> {
+    for (bytes, arcs) in [
+        (&[39][..], [0, 39]),
+        (&[40][..], [1, 0]),
+        (&[79][..], [1, 39]),
+        (&[80][..], [2, 0]),
+        (&[120][..], [2, 40]),
+        (&[0x81, 0x34][..], [2, 100]),
+        (&[0x90, 0x80, 0x80, 0x80, 0x4f][..], [2, u32::MAX]),
+    ] {
+        assert_eq!(decode_oid_value(bytes)?.arcs(), &arcs);
+    }
+    Ok(())
+}
+
+/// First subidentifiers must be minimal, terminated and within the second arc's domain.
+#[test]
+fn der_oid_rejects_malformed_first_subidentifier() {
+    for bytes in [
+        &[0x80, 0][..],
+        &[0x81][..],
+        &[0x90, 0x80, 0x80, 0x80, 0x50][..],
+        &[0x82, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0][..],
+    ] {
+        assert!(matches!(
+            decode_oid_value(bytes),
+            Err(Error::InvalidOidEncoding)
+        ));
+    }
+}
+
+proptest! {
+    /// Every constructor-valid root and u32 arc survives the public SPNEGO codec.
+    #[test]
+    fn der_oid_roundtrip_property(
+        root in 0_u32..=2,
+        second in any::<u32>(),
+        later in collection::vec(any::<u32>(), 0..16),
+    ) {
+        let mut arcs = vec![root, if root < 2 { second.rem_euclid(40) } else { second }];
+        arcs.extend(later);
+        let mut token = NegTokenResp::accept_completed();
+        token.supported_mech = Some(ObjectIdentifier::from_arcs(arcs)?);
+        prop_assert_eq!(NegTokenResp::decode(&token.encode()?)?, token);
+    }
 }
