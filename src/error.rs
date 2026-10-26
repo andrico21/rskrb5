@@ -2037,6 +2037,14 @@ pub enum Spnego {
     /// HTTP header was not a usable `Negotiate` value.
     #[error("invalid Negotiate header")]
     InvalidNegotiateHeader,
+    /// HTTP Negotiate header exceeded the parser's byte limit.
+    #[error("Negotiate header exceeds {maximum} bytes: got {actual}")]
+    NegotiateHeaderTooLong {
+        /// Maximum accepted header value length in bytes.
+        maximum: usize,
+        /// Actual header value length in bytes.
+        actual: usize,
+    },
     /// Base64 decoding failed.
     #[error("base64 decode error: {0}")]
     Base64(base64::DecodeError),

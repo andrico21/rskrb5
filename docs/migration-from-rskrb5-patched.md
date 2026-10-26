@@ -5,6 +5,18 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Non-exhaustive types and constructors
 
+### Bounded HTTP Negotiate headers (upstream issue #9)
+
+`spnego::parse_negotiate_header` now rejects header values longer than 65,536
+bytes with `error::Spnego::NegotiateHeaderTooLong { maximum, actual }` before
+scanning or base64 decoding. The limit includes the scheme and whitespace;
+exactly 65,536 bytes remain eligible for normal parsing. It applies to both
+SPNEGO and raw Kerberos tokens, including acceptor and AP-REP verification
+callers. Smaller malformed headers retain their existing error classifications.
+Public signatures and token encoders are unchanged. This is a local resource
+limit, not a Kerberos protocol maximum; callers needing larger headers must
+account for this compatibility restriction.
+
 ### Unsupported initiator delegation (RSK-622F4664)
 
 Checked SPNEGO initiation now returns `error::Spnego::DelegationRequiresCredential`

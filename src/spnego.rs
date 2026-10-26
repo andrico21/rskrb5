@@ -27,6 +27,16 @@ mod der;
 /// GSS-API object identifiers.
 pub mod oid;
 
+/// HTTP Negotiate header size boundary regressions.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod header_tests;
+
 use self::{
     der::{
         DerReader, TAG_APPLICATION_0, TAG_BIT_STRING, TAG_CONTEXT_0, TAG_CONTEXT_1, TAG_CONTEXT_2,
@@ -65,6 +75,8 @@ pub const HTTP_WWW_AUTHENTICATE: &str = "WWW-Authenticate";
 /// HTTP authentication scheme used by SPNEGO.
 pub const HTTP_NEGOTIATE: &str = "Negotiate";
 
+/// Maximum header value size, including scheme and whitespace, before decoding.
+const MAX_NEGOTIATE_HEADER_LEN: usize = 64 * 1024;
 /// GSS-API context flag: delegation.
 pub const CONTEXT_FLAG_DELEG: u32 = 1;
 /// GSS-API context flag: mutual authentication.
@@ -1739,14 +1751,23 @@ pub fn authorization_header(
 ///
 /// In addition to SPNEGO `NegTokenInit`/`NegTokenResp` values, this accepts
 /// raw KRB5 mech tokens and wraps them in the equivalent SPNEGO shape.
+/// Header values are limited to 64 KiB, including scheme and whitespace.
+/// The byte limit is checked before scanning or allocating decoded token bytes.
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidNegotiateHeader`] when the scheme is not `Negotiate` or the token is
+/// Returns [`Error::NegotiateHeaderTooLong`] when the header exceeds 64 KiB,
+/// [`Error::InvalidNegotiateHeader`] when the scheme is not `Negotiate` or the token is
 /// missing, [`Error::Base64`] when the token is not valid base64, and the errors of
 /// [`Token::decode`] when the bytes are neither a SPNEGO token nor a raw KRB5 mech token.
 #[inline]
 pub fn parse_negotiate_header(header: &str) -> Result<Token, Error> {
+    if header.len() > MAX_NEGOTIATE_HEADER_LEN {
+        return Err(Error::NegotiateHeaderTooLong {
+            maximum: MAX_NEGOTIATE_HEADER_LEN,
+            actual: header.len(),
+        });
+    }
     let mut parts = header.splitn(2, char::is_whitespace);
     let scheme = parts.next().unwrap_or_default();
     let encoded = parts.next().ok_or(Error::InvalidNegotiateHeader)?;
