@@ -776,6 +776,101 @@ mod tests {
         Ok(())
     }
 
+    /// Delegation without a credential must fail for both split and combined flag masks.
+    #[test]
+    fn initiator_rejects_delegation_without_credentials() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        for flags in [
+            vec![spnego::CONTEXT_FLAG_DELEG],
+            vec![spnego::CONTEXT_FLAG_DELEG, CONTEXT_FLAG_INTEG],
+            vec![spnego::CONTEXT_FLAG_DELEG | CONTEXT_FLAG_INTEG],
+        ] {
+            let options = InitiatorContextOptions::new()
+                .with_sequence_number(Some(42))
+                .with_context_flags(flags);
+            let result = spnego::init_sec_context_with_confounder(
+                &session,
+                options,
+                timestamp(1_893_553_447)?,
+                123_456,
+                &decode_hex(AP_REP_CONFOUNDER)?,
+            );
+            assert!(
+                matches!(result, Err(Spnego::DelegationRequiresCredential)),
+                "delegation must not emit an AP-REQ without KRB-CRED"
+            );
+        }
+        Ok(())
+    }
+
+    /// The random builder and authorization-header wrapper must also reject delegation.
+    #[test]
+    fn initiator_wrappers_reject_delegation() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let options = InitiatorContextOptions::new()
+            .with_context_flags(vec![spnego::CONTEXT_FLAG_DELEG | CONTEXT_FLAG_INTEG]);
+        assert!(matches!(
+            spnego::init_sec_context(&session, options.clone()),
+            Err(Spnego::DelegationRequiresCredential)
+        ));
+        assert!(matches!(
+            spnego::authorization_header(&session, options),
+            Err(Spnego::DelegationRequiresCredential)
+        ));
+        Ok(())
+    }
+
+    /// Nondelegating split and combined masks remain acceptable on the wire.
+    #[test]
+    fn initiator_preserves_nondelegating_flag_masks() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        for flags in [
+            vec![],
+            vec![CONTEXT_FLAG_INTEG, CONTEXT_FLAG_CONF],
+            vec![CONTEXT_FLAG_INTEG | CONTEXT_FLAG_CONF],
+        ] {
+            let expected = spnego::authenticator_checksum(&flags);
+            let context = spnego::init_sec_context_with_confounder(
+                &session,
+                InitiatorContextOptions::new()
+                    .with_sequence_number(Some(42))
+                    .with_context_flags(flags),
+                timestamp(1_893_553_447)?,
+                123_456,
+                &decode_hex(AP_REP_CONFOUNDER)?,
+            )?;
+            let authenticator =
+                ap_req::decrypt_ap_req_authenticator(&context.ap_req, &session.session_key, 11)?;
+            assert_eq!(
+                authenticator
+                    .cksum
+                    .context("GSS checksum")?
+                    .checksum
+                    .as_ref(),
+                expected.as_slice()
+            );
+            let accepted = accept_token(&context.spnego_token)?.context("nondelegating context")?;
+            assert_eq!(accepted.ap_req.sequence_number, Some(42));
+        }
+        Ok(())
+    }
+
+    /// The raw prefix never invents delegation fields and merges split flags as a bit mask.
+    #[test]
+    fn authenticator_checksum_delegation_prefix_is_mask_independent() -> Result<(), TestError> {
+        let split =
+            spnego::authenticator_checksum(&[spnego::CONTEXT_FLAG_DELEG, CONTEXT_FLAG_INTEG]);
+        let combined =
+            spnego::authenticator_checksum(&[spnego::CONTEXT_FLAG_DELEG | CONTEXT_FLAG_INTEG]);
+        let mut expected = vec![0x10];
+        expected.extend_from_slice(&[0; 19]);
+        expected.extend_from_slice(&[0x21, 0, 0, 0]);
+        (split.len() == 24).ok_or("delegation prefix must contain exactly 24 bytes")?;
+        assert_eq!(split, expected);
+        assert_eq!(combined, expected);
+        Ok(())
+    }
+
     /// Raw Kerberos headers must pass the same GSS checks as SPNEGO headers.
     #[test]
     fn gss_authenticator_checks_raw_kerberos_headers() -> Result<(), TestError> {

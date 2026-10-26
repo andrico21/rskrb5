@@ -1670,7 +1670,8 @@ pub fn init_sec_context(
 /// [`Error::UnsupportedEtype`], [`Error::Crypto`], [`Error::Random`], [`Error::TimeOverflow`] or
 /// [`Error::Client`] when the AP-REQ cannot be built, and [`Error::InvalidOid`] when the tokens
 /// cannot be encoded. Returns [`Error::MissingAuthenticatorSequence`] when no
-/// explicit sequence number is supplied.
+/// explicit sequence number is supplied. Returns [`Error::DelegationRequiresCredential`]
+/// for delegation requests because this builder has no delegated-credential input.
 #[inline]
 pub fn init_sec_context_with_confounder(
     service_ticket: &TgsRepSession,
@@ -1679,6 +1680,11 @@ pub fn init_sec_context_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<InitiatorContext, Error> {
+    options
+        .context_flags
+        .iter()
+        .all(|flag| flag & CONTEXT_FLAG_DELEG == 0)
+        .ok_or(Error::DelegationRequiresCredential)?;
     let sequence_number = options
         .sequence_number
         .ok_or(Error::MissingAuthenticatorSequence)?;
@@ -1842,16 +1848,18 @@ fn response_token_header(token: &NegTokenResp) -> Result<String, Error> {
 
 #[must_use]
 /// Create a SPNEGO authenticator checksum buffer for GSS context flags.
+///
+/// This low-level helper returns only the 24-byte prefix and ORs all flag masks.
+/// With delegation set, it is not a complete checksum: the caller must append
+/// RFC 4121 DlgOpt=1, the little-endian credential length, and an encrypted KRB-CRED.
+/// Checked context builders reject delegation because they have no credential input.
 #[inline]
 pub fn authenticator_checksum(flags: &[u32]) -> Vec<u8> {
     let context_flags = flags.iter().fold(0_u32, |merged, flag| merged | *flag);
-    let mut checksum = Vec::with_capacity(28);
+    let mut checksum = Vec::with_capacity(24);
     checksum.extend_from_slice(&16_u32.to_le_bytes());
     checksum.extend_from_slice(&[0; 16]);
     checksum.extend_from_slice(&context_flags.to_le_bytes());
-    if flags.contains(&CONTEXT_FLAG_DELEG) {
-        checksum.extend_from_slice(&[0; 4]);
-    }
     checksum
 }
 

@@ -5,6 +5,22 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Non-exhaustive types and constructors
 
+### Unsupported initiator delegation (RSK-622F4664)
+
+Checked SPNEGO initiation now returns `error::Spnego::DelegationRequiresCredential`
+when any context flag mask contains `CONTEXT_FLAG_DELEG`, whether supplied alone,
+split across entries or combined with other flags. These builders have no delegated
+credential input; they no longer emit malformed delegation checksums. Remove the
+request if delegation is not needed; credential forwarding is not implemented.
+Public signatures are unchanged. Nondelegating callers are unaffected.
+
+The low-level `authenticator_checksum` helper returns a 24-byte prefix for every
+flag representation, not a complete delegation checksum. It no longer appends four
+zero bytes for a standalone delegation flag. A caller building delegation manually
+must append DlgOpt=1, a little-endian length and the encrypted KRB-CRED specified by
+RFC 4121 section 4.1.1. Acceptor framing validation is unchanged and does not import
+delegated credentials.
+
 ### Mandatory GSS authenticator fields (RSK-FAF64A85)
 
 `spnego::accept_sec_context_header` (and the HTTP acceptor using it) now checks

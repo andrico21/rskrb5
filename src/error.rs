@@ -1917,6 +1917,9 @@ pub enum Spnego {
     /// The GSS authenticator omitted its mandatory sequence number.
     #[error("GSS authenticator sequence number is required")]
     MissingAuthenticatorSequence,
+    /// Context initiation requested delegation without a delegated-credential input.
+    #[error("GSS delegation requires a delegated credential, which this builder does not accept")]
+    DelegationRequiresCredential,
     /// KRB5 token ID was unknown.
     #[error("unknown KRB5 token ID: {0:02x?}")]
     UnknownKrb5TokenId([u8; 2]),
