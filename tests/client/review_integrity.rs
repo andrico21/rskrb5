@@ -9,9 +9,10 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use super::*;
     use rasn::der;
     use rskrb5_ng::kdc_rep::decrypt_tgs_rep_enc_part;
+
+    use super::*;
 
     /// A negotiated TGS request rejects a missing encrypted request checksum.
     #[test]

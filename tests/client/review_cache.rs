@@ -9,8 +9,9 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use super::*;
     use rasn::der;
+
+    use super::*;
 
     /// A fresh explicit AS login replaces an older but longer-lived TGT.
     #[tokio::test]

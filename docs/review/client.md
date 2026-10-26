@@ -29,3 +29,23 @@ as required by the approved scope. This does not claim cryptographic authenticat
 of the backend ticket's client by the frontend. RFC 4120 §5.4.2 places `cname` and
 `crealm` outside `EncKDCRepPart`; MS-SFU §3.1.5.2 describes S4U2Proxy using the
 additional ticket. Whole-exchange protection remains distinct (RFC 6806 §§3,11).
+
+## Commit ledger
+
+| Item | Commit |
+|---|---|
+| TGS authenticator realm | `4099073` |
+| Preauthentication cookies | `3f89dab` |
+| Initial AS derivation hints | `059e4cf` |
+| Optional FAST advertisement | `67fb182` |
+| TGS request integrity | `2d40eac` |
+| Explicit-login primary TGT | `e6cd148` |
+| INVALID credential usability | `92fca8a` |
+| Structured service identity | `ec68e9a` |
+| Unarmored AS canonicalization | `e9b68c8` |
+| Delegated ticket identity | `30c850d` |
+
+FULL-TEST baseline: 589 passed / 33 result lines (task-28 evidence).
+This lane: 602 passed / 33 result lines; 13 added tests, none removed.
+The unauthenticated string-to-key work-factor cap is the crypto lane's
+RSK-F240C18F item; the initial-AS hint path reuses the common derivation seam.

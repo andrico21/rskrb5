@@ -9,9 +9,10 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use super::*;
     use rasn::der;
     use rskrb5_ng::ap_req::decrypt_ap_req_authenticator;
+
+    use super::*;
 
     /// The client realm survives a referral through a different ticket issuer.
     #[test]

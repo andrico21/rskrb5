@@ -139,10 +139,10 @@ mod harness {
     use rasn::{der, types::Integer};
     #[cfg(feature = "tokio")]
     use rskrb5_ng::ap_rep::encode_build_ap_rep_with_confounder;
-    use rskrb5_ng::ticket::build_ticket_with_confounder;
     use rskrb5_ng::{
         client::{AsRepSession, TgsRepSession, kpasswd::BuiltKpasswdRequest},
         messages::PaForUser,
+        ticket::build_ticket_with_confounder,
     };
     #[cfg(feature = "tokio")]
     use tokio::{
