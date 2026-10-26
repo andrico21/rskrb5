@@ -1983,27 +1983,16 @@ const fn usage_constant(usage: u32, suffix: u8) -> [u8; 5] {
 
 /// Encode the RFC4757 message type for a Kerberos key usage.
 ///
-/// Usages 3 and 9 map to 8 and usage 23 to 13. The value is written seven bits
-/// per byte, low bits first, with the high bit set on each byte that is
-/// followed by another.
-fn rc4_hmac_usage_to_ms_msg_type(usage: u32) -> [u8; 4] {
-    let mut remaining = match usage {
+/// Usages 3 and 9 map to 8 and usage 23 to 13. RFC4757 section 3 encodes the
+/// mapped value as a four-byte little-endian integer.
+const fn rc4_hmac_usage_to_ms_msg_type(usage: u32) -> [u8; 4] {
+    let mapped = match usage {
         3 | 9 => 8,
         23 => 13,
         _ => usage,
     };
 
-    let mut out = [0; 4];
-    for byte in &mut out {
-        let [low_byte, ..] = remaining.to_le_bytes();
-        if remaining < 0x80 {
-            *byte = low_byte;
-            break;
-        }
-        *byte = (low_byte & 0x7f) | 0x80;
-        remaining >>= 7_u32;
-    }
-    out
+    mapped.to_le_bytes()
 }
 
 /// Apply the RC4 keystream for `key` to `input`.
