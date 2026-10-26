@@ -100,6 +100,9 @@ mod review_cookie;
 mod review_integrity;
 #[path = "client/review_salt.rs"]
 mod review_salt;
+#[cfg(feature = "tokio")]
+#[path = "client/review_validity.rs"]
+mod review_validity;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;

@@ -4794,7 +4794,9 @@ fn service_cache_key(service: &Principal) -> String {
 /// Whether a session is inside its start and end time at `now`.
 #[cfg(feature = "tokio")]
 fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
-    session.start_time <= now && now < session.end_time
+    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
+        && session.start_time <= now
+        && now < session.end_time
 }
 
 /// Whether a session is valid or renewable at `now`.
@@ -4849,9 +4851,10 @@ fn session_refresh_delay_at(session: &AsRepSession, now: SystemTime) -> Duration
 /// Whether a session can still be renewed at `now`.
 #[cfg(feature = "tokio")]
 fn session_renewable_at(session: &AsRepSession, now: SystemTime) -> bool {
-    session
-        .renew_till
-        .is_some_and(|renew_till| now < renew_till)
+    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
+        && session
+            .renew_till
+            .is_some_and(|renew_till| now < renew_till)
 }
 
 /// Convert a Kerberos time to a `SystemTime`.
