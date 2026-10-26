@@ -7,6 +7,8 @@ src/der.rs
 src/file_name.rs
 src/http.rs
 src/keytab.rs
+src/pac.rs
+src/pac/**
 src/service.rs
 src/spnego.rs
 src/spnego/**
