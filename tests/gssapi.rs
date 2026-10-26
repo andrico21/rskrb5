@@ -565,6 +565,34 @@ mod tests {
         Ok(())
     }
 
+    /// Pins RFC 4121 body rotation against independently rotated wire bytes.
+    #[test]
+    fn unsealed_wrap_applies_rrc_on_decode_and_encode() -> Result<(), TestError> {
+        let key = session_key()?;
+        let baseline = decode_hex(WRAP_FROM_INITIATOR)?;
+        for rrc in [0_u16, 3, 19] {
+            let mut wire = baseline.clone();
+            wire.get_mut(6..8)
+                .context("RRC field")?
+                .copy_from_slice(&rrc.to_be_bytes());
+            let body = wire.get_mut(16..).context("wrap body")?;
+            let shift = usize::from(rrc)
+                .checked_rem(body.len())
+                .context("nonempty body")?;
+            body.rotate_right(shift);
+            let decoded = WrapToken::decode(&wire, false)?;
+            assert!(decoded.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?);
+            assert_eq!(decoded.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+            assert_eq!(
+                WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key)?
+                    .with_rrc(rrc)
+                    .encode()?,
+                wire
+            );
+        }
+        Ok(())
+    }
+
     fn session_key() -> Result<EncryptionKey, TestError> {
         Ok(EncryptionKey::new(17, decode_hex(SESSION_KEY)?))
     }

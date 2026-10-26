@@ -448,11 +448,12 @@ impl WrapToken {
             });
         }
 
+        let unrotated = rotate_left(body, usize::from(rrc));
         let checksum_len = usize::from(ec);
-        let Some((payload, checksum)) = body
+        let Some((payload, checksum)) = unrotated
             .len()
             .checked_sub(checksum_len)
-            .and_then(|payload_len| body.split_at_checked(payload_len))
+            .and_then(|payload_len| unrotated.split_at_checked(payload_len))
         else {
             return Err(Error::InconsistentWrapChecksumLength {
                 token_len: bytes.len(),
@@ -508,6 +509,11 @@ impl WrapToken {
         bytes.extend_from_slice(&self.header(self.rrc));
         bytes.extend_from_slice(payload);
         bytes.extend_from_slice(checksum);
+        if let Some(body) = bytes.get_mut(GSS_WRAP_HEADER_LEN..)
+            && let Some(shift) = usize::from(self.rrc).checked_rem(body.len())
+        {
+            body.rotate_right(shift);
+        }
         Ok(bytes)
     }
 
