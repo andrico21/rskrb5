@@ -1,9 +1,12 @@
+examples/**
 src/ccache.rs
 src/client.rs
 src/client/**
 src/crypto.rs
 src/der.rs
 src/file_name.rs
+src/http.rs
 src/keytab.rs
+src/service.rs
 src/spnego.rs
 src/spnego/**
