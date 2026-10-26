@@ -3615,9 +3615,6 @@ fn validate_as_rep_encrypted_padata(
         .encrypted_pa_data
         .as_ref()
         .ok_or(Error::InvalidFastNegotiationResponse)?;
-    if encrypted_pa_data.len() < 2 || !padata_contains(encrypted_pa_data, PA_FX_FAST) {
-        return Err(Error::InvalidFastNegotiationResponse);
-    }
     let pa_req_enc_pa_rep = encrypted_pa_data
         .iter()
         .find(|padata| padata.r#type == PA_REQ_ENC_PA_REP)

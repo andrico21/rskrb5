@@ -295,10 +295,9 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that a PA-REQ-ENC-PA-REP checksum without the PA-FX-FAST marker is rejected.
+    /// Request integrity does not require the optional FAST advertisement.
     #[test]
-    fn process_as_rep_requires_fast_marker_with_pa_req_enc_pa_rep_checksum() -> Result<(), TestError>
-    {
+    fn process_as_rep_accepts_checksum_without_fast_marker() -> Result<(), TestError> {
         let request = sample_request_with_pa_req_enc_pa_rep()?;
         let reply_key = reply_key()?;
         let response = synthetic_as_rep_with_reply_key_and_encrypted_padata(
@@ -309,11 +308,8 @@ mod tests {
             Some(vec![pa_req_enc_pa_rep_padata(&request, &reply_key, false)?]),
         )?;
 
-        let error = process_as_rep(&request, &response, &reply_key)
-            .err()
-            .context("missing PA-FX-FAST marker fails")?;
-
-        assert!(matches!(error, Error::InvalidFastNegotiationResponse));
+        let session = process_as_rep(&request, &response, &reply_key)?;
+        assert_eq!(session.client, request.client);
         Ok(())
     }
 
