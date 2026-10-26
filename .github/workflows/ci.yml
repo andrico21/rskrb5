@@ -4,40 +4,36 @@ name: CI
 # workflow's completion and publishes `rskrb5-ng` when a `vN.N.N` tag
 # points at the run's head SHA. Every job's `name:` equals its job id.
 #
-# Lint profile. The crate adopts the strictest-union profile: the core
-# Section 9 `[lints]` tables of the vendored Rust guidelines (identical to
-# rmcp-server-kit@b7f6b66), the core `clippy.toml` sample, rmcp's
-# `rustfmt.toml`, and `.cargo/config.toml` `build.warnings = "deny"`, so
-# rustc warnings fail every job that does not override it explicitly.
+# Lint profile. The crate adopts the core Section 9 `[lints]` tables of the
+# vendored Rust guidelines unchanged, the core `clippy.toml` sample,
+# `rustfmt.toml`, and `.cargo/config.toml` `build.warnings = "deny"`, so rustc
+# warnings fail every job that does not override it explicitly.
 #
 # Toolchains (core Section 12 Version Policy). Rust jobs run on floating
 # `stable` (never pinned, no `rust-toolchain.toml`). The dated
-# `nightly-2026-10-03` (rmcp-server-kit's pin) is used only for rustfmt,
-# rustdoc, clippy on the fuzz crate and the advisory `fuzz` job;
-# `1.99.0` only for the MSRV build.
+# `nightly-2026-10-03` is used only for rustfmt, rustdoc and the fuzz crate
+# (`fuzz_lint.py`, `fuzz-build`, `fuzz`); `1.99.0` only for the MSRV build.
 #
 # Lint gates. There is no baseline: the tree passes the profile outright.
 # `allow_gate.py` rejects any `allow`; `exception_gate.py` admits only the six
 # sanctioned `expect` forms; `profile_eq.py` and `completeness_check.py` hold
 # the profile equal to the vendored core and complete against current stable;
 # `facade_gate.py` and `prose_gate.py` (whole tree) enforce the source rules;
-# `closures` runs strict clippy in every feature closure. See
-# `docs/lint-policy.md`.
+# `feature_closures.py check-ci` holds the `closures` matrix equal to the
+# computed feature closures. See `docs/lint-policy.md`.
 #
 # Vendored guidelines. `docs/rust-guidelines/` is checked against its
 # SHA256SUMS in `docs-validate`; update it only by re-vendoring.
 #
-# Blocking: every lint, test, feature-set, README-command, doc, MSRV,
-# consumer, supply-chain and gate job.
-# Advisory (never a merge gate, per core Section 12 "Recommended"): `geiger`,
-# `rustdoc-nightly-canary`, and the scheduled `mutants` and `fuzz` jobs.
-# GitHub runs scheduled workflows from the default branch; dispatch the
-# advisory pass against the release line with
-# `gh workflow run ci.yml --ref release/0.3.0`.
+# Blocking: every job except the four advisory ones below. Advisory (never a
+# merge gate, per core Section 12 "Recommended"): `geiger`,
+# `rustdoc-nightly-canary`, and the scheduled/dispatch `fuzz` and `mutants`;
+# they are the only jobs allowed to fail.
 
 on:
   push:
-    branches: [main, "release/**"]
+    branches: [main]
+    # Release tags: `release.yml` publishes only from a green run on the tag.
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   pull_request:
   schedule:
@@ -68,49 +64,77 @@ jobs:
       - name: rustfmt (fuzz crate)
         run: cargo +nightly-2026-10-03 fmt --manifest-path fuzz/Cargo.toml -- --check
 
-  clippy:
-    name: clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Clippy (--all-features)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: rustc warnings denied across every target (core Section 12)
-        run: CARGO_BUILD_WARNINGS=deny cargo check --all-targets --all-features --keep-going
-
-  features-matrix:
-    name: features-matrix
+  closures:
+    name: closures
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # K1-K7; K7 is the downstream consumer's feature set.
-        features:
-          - "--all-features"
-          - ""
+        # Every feature closure, as `feature_closures.py list` prints its
+        # canonical arguments; `lint-gates` runs `feature_closures.py check-ci`
+        # so this list cannot drift from Cargo.toml `[features]`.
+        closures:
           - "--no-default-features"
-          - "--features http"
-          - "--features tower"
-          - "--features evaluation"
+          - "--no-default-features --features messages"
+          - "--no-default-features --features serde"
+          - "--no-default-features --features messages,serde"
+          - "--no-default-features --features spnego"
           - "--no-default-features --features tokio"
+          - "--no-default-features --features evaluation"
+          - "--no-default-features --features http"
+          - "--no-default-features --features serde,spnego"
+          - "--no-default-features --features serde,tokio"
+          - "--no-default-features --features spnego,tokio"
+          - "--no-default-features --features evaluation,http"
+          - "--no-default-features --features evaluation,serde"
+          - "--no-default-features --features evaluation,tokio"
+          - "--no-default-features --features http,serde"
+          - "--no-default-features --features http,tokio"
+          - "--no-default-features --features tower"
+          - "--no-default-features --features serde,spnego,tokio"
+          - ""
+          - "--no-default-features --features evaluation,http,serde"
+          - "--no-default-features --features evaluation,http,tokio"
+          - "--no-default-features --features evaluation,tower"
+          - "--no-default-features --features evaluation,serde,tokio"
+          - "--no-default-features --features http,serde,tokio"
+          - "--no-default-features --features serde,tower"
+          - "--no-default-features --features tokio,tower"
+          - "--features evaluation"
+          - "--features http"
+          - "--no-default-features --features evaluation,http,serde,tokio"
+          - "--no-default-features --features evaluation,serde,tower"
+          - "--no-default-features --features evaluation,tokio,tower"
+          - "--no-default-features --features serde,tokio,tower"
+          - "--features evaluation,http"
+          - "--features tower"
+          - "--no-default-features --features evaluation,serde,tokio,tower"
+          - "--all-features"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Build (${{ matrix.features }})
-        run: cargo build ${{ matrix.features }}
-      # The `clippy` job only lints `--all-features`; code under
-      # `cfg(not(feature = ...))` is linted only here.
-      - name: Clippy (${{ matrix.features }})
-        run: cargo clippy --all-targets ${{ matrix.features }} -- -D warnings
-      - name: Test (${{ matrix.features }})
-        run: cargo test ${{ matrix.features }}
+        with:
+          key: closure-${{ strategy.job-index }}
+      - name: Clippy (${{ matrix.closures }})
+        run: cargo clippy --all-targets ${{ matrix.closures }} -- -D warnings
+      - name: Test (${{ matrix.closures }})
+        run: cargo test ${{ matrix.closures }}
+
+  clippy-windows:
+    name: clippy-windows
+    # Code that is dead outside `cfg(unix)` only fails on a Windows target.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Clippy (--all-features, Windows)
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   lib-feature-sets:
     name: lib-feature-sets
@@ -118,10 +142,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Feature sets outside K1-K7 that a path-dependency consumer or the
-        # README can select. `cargo check` keeps the committed
-        # `build.warnings = "deny"`, so an import or helper that is only used
-        # under another feature fails here.
+        # Library-only and binary-only builds a path-dependency consumer or
+        # the README can select. `cargo check` keeps the committed
+        # `build.warnings = "deny"`.
         args:
           - "--lib --no-default-features --features messages"
           - "--lib --no-default-features --features spnego"
@@ -194,12 +217,12 @@ jobs:
       # binaries on the x86_64 runner.
       - name: Install gcc-multilib
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib
-      - name: Check (--all-features, i686)
-        run: cargo check --all-features --target i686-unknown-linux-gnu
       # The ccache count bounds have `target_pointer_width = "32"` arms
       # (`Error::LengthOverflow`) that only run on a 32-bit target.
       - name: ccache tests (--all-features, i686)
         run: cargo test --all-features --target i686-unknown-linux-gnu --test ccache
+      - name: Check (--all-features, i686)
+        run: cargo check --all-features --target i686-unknown-linux-gnu
 
   docs:
     name: docs
@@ -223,7 +246,7 @@ jobs:
     name: msrv
     runs-on: ubuntu-latest
     # Proves compile compatibility with `rust-version = "1.99"`, not lint
-    # cleanliness (lints are enforced on stable by `clippy`).
+    # cleanliness (lints are enforced on stable by `closures`).
     # `--cap-lints=warn` and CARGO_BUILD_WARNINGS=allow neutralise the profile
     # and the committed `build.warnings = "deny"` on the older compiler.
     env:
@@ -377,7 +400,7 @@ jobs:
       - name: Check Markdown links (offline)
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
         with:
-          args: --offline --include-fragments --no-progress README.md RUST_GUIDELINES.md FORK-NOTES.md CHANGELOG.md docs/*.md
+          args: --offline --include-fragments --no-progress README.md RUST_GUIDELINES.md CHANGELOG.md docs/*.md
           fail: true
 
   lint-gates:
@@ -408,6 +431,8 @@ jobs:
         run: python3 scripts/lint-gates/facade_gate.py --enforce
       - name: Whole-tree prose rules
         run: python3 scripts/lint-gates/prose_gate.py --enforce
+      - name: The closures matrix lists every feature closure
+        run: python3 scripts/lint-gates/feature_closures.py check-ci .github/workflows/ci.yml
       - name: Fuzz lint profile
         run: python3 scripts/lint-gates/fuzz_lint.py --enforce
       - name: No lint-migration attributes
@@ -415,17 +440,31 @@ jobs:
           grep -rn lint-migration src tests examples fuzz && exit 1
           test $? -eq 1
 
-  closures:
-    name: closures
+  fuzz-build:
+    name: fuzz-build
     runs-on: ubuntu-latest
+    # The fuzz crate builds rskrb5-ng as a path dependency on nightly, where
+    # the stable profile is not the gate (`closures` is); cap lints there.
+    env:
+      RUSTFLAGS: "--cap-lints=warn"
+      CARGO_BUILD_WARNINGS: allow
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
-          components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Strict clippy in every feature closure
-        run: python3 scripts/lint-gates/feature_closures.py run --clippy-only
+          toolchain: nightly-2026-10-03
+      - name: Install cargo-fuzz
+        run: cargo +nightly-2026-10-03 install cargo-fuzz --locked
+      - name: Build every fuzz target
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets="$(cargo +nightly-2026-10-03 fuzz list)"
+          test -n "$targets"
+          for target in $targets; do
+            echo "--- fuzz build $target"
+            cargo +nightly-2026-10-03 fuzz build "$target"
+          done
 
   package:
     name: package
@@ -438,8 +477,8 @@ jobs:
         run: cargo package --locked
 
   # ---------------------------------------------------------------------------
-  # Advisory jobs (informational, core Section 12 "Recommended" tools). These
-  # four are the only jobs allowed to fail without failing the workflow.
+  # Advisory jobs (informational, core Section 12 "Recommended"). These four
+  # are the only jobs allowed to fail without failing the workflow.
   # ---------------------------------------------------------------------------
 
   geiger:
@@ -473,10 +512,7 @@ jobs:
 
   mutants:
     name: mutants
-    # Scoped to the two smallest patch-dense files first - patch 0002's remote
-    # reply parser and patch 0012's transport - so a run finishes inside the
-    # wall; widen the `-f` list (src/config.rs, src/client.rs) once a green run
-    # shows headroom.
+    # Scoped to two small files so a run finishes inside the wall.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -504,15 +540,14 @@ jobs:
 
   fuzz:
     name: fuzz
-    # Bounded smoke runs of the fork's fuzz targets on arbitrary input:
-    # `kpasswd_reply` (the kadmin frame parsers patch 0002 touches) and
-    # `ccache_parse` (the ccache reader). A crash is a finding (upstream or
-    # patch) and surfaces through the advisory status.
+    # Bounded smoke runs on arbitrary input: `kpasswd_reply` (the kadmin
+    # frame parsers) and `ccache_parse` (the ccache reader). A crash is a
+    # finding and surfaces through the advisory status.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
     # The fuzz crate builds rskrb5-ng as a path dependency, so the profile runs
-    # on nightly; cap it there (lints are enforced on stable by `clippy`).
+    # on nightly; cap it there (lints are enforced on stable by `closures`).
     env:
       RUSTFLAGS: "--cap-lints=warn"
       CARGO_BUILD_WARNINGS: allow

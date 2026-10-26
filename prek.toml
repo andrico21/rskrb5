@@ -1,5 +1,10 @@
 #:schema https://www.schemastore.org/prek.json
 
+# Mirrors the blocking CI jobs that are cheap enough for a hook: `fmt`,
+# `lint-gates`, `deny`, `machete`, `taplo`, `vet`, the guideline checksums of
+# `docs-validate`, the compatibility report of `readme-commands`, and a
+# three-closure smoke of the `closures` matrix (CI runs every closure).
+
 [[repos]]
 repo = "builtin"
 hooks = [
@@ -20,7 +25,7 @@ repo = "local"
 id = "cargo-fmt"
 name = "cargo fmt"
 language = "system"
-entry = "cargo +nightly-2026-10-03 fmt --all -- --check"
+entry = "bash -c 'cargo +nightly-2026-10-03 fmt --all -- --check && cargo +nightly-2026-10-03 fmt --manifest-path fuzz/Cargo.toml -- --check'"
 files = "\\.rs$|Cargo\\.toml$"
 pass_filenames = false
 
@@ -28,8 +33,8 @@ pass_filenames = false
 id = "lint-gates"
 name = "lint gates"
 language = "system"
-entry = "bash -c 'export PYTHONDONTWRITEBYTECODE=1; for s in scripts/lint-gates/*.py; do python3 \"$s\" --self-test || exit 1; done && python3 scripts/lint-gates/allow_gate.py --enforce && python3 scripts/lint-gates/exception_gate.py --enforce && python3 scripts/lint-gates/profile_eq.py --clippy-toml && python3 scripts/lint-gates/completeness_check.py && python3 scripts/lint-gates/facade_gate.py --enforce && python3 scripts/lint-gates/prose_gate.py --enforce && { rg -n lint-migration src tests examples fuzz; test $? -eq 1; }'"
-files = "\\.(rs|toml|py)$"
+entry = "bash -c 'export PYTHONDONTWRITEBYTECODE=1; for s in scripts/lint-gates/*.py; do python3 \"$s\" --self-test || exit 1; done && python3 scripts/lint-gates/allow_gate.py --enforce && python3 scripts/lint-gates/exception_gate.py --enforce && python3 scripts/lint-gates/profile_eq.py --clippy-toml && python3 scripts/lint-gates/completeness_check.py && python3 scripts/lint-gates/facade_gate.py --enforce && python3 scripts/lint-gates/prose_gate.py --enforce && python3 scripts/lint-gates/feature_closures.py check-ci .github/workflows/ci.yml && python3 scripts/lint-gates/fuzz_lint.py --enforce && { rg -n lint-migration src tests examples fuzz; test $? -eq 1; }'"
+files = "\\.(rs|toml|py|yml)$"
 pass_filenames = false
 stages = ["pre-push", "manual"]
 
@@ -74,110 +79,11 @@ pass_filenames = false
 stages = ["pre-push", "manual"]
 
 [[repos.hooks]]
-id = "cargo-clippy"
-name = "cargo clippy"
+id = "closures-smoke"
+name = "strict clippy and tests in three feature closures"
 language = "system"
-entry = "cargo clippy --all-targets --all-features -- -D warnings"
-files = "\\.rs$|Cargo\\.toml$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-check-no-default-features"
-name = "cargo check --no-default-features"
-language = "system"
-entry = "cargo check --no-default-features"
+entry = "bash -c 'set -e; for c in --all-features --no-default-features \"--no-default-features --features tokio\"; do cargo clippy --all-targets $c -- -D warnings; cargo test $c; done'"
 files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-check-lib-messages"
-name = "cargo check --lib --no-default-features --features messages"
-language = "system"
-entry = "cargo check --lib --no-default-features --features messages"
-files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-check-lib-spnego"
-name = "cargo check --lib --no-default-features --features spnego"
-language = "system"
-entry = "cargo check --lib --no-default-features --features spnego"
-files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-check-lib-http"
-name = "cargo check --lib --no-default-features --features http"
-language = "system"
-entry = "cargo check --lib --no-default-features --features http"
-files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-check-lib-evaluation"
-name = "cargo check --lib --no-default-features --features evaluation"
-language = "system"
-entry = "cargo check --lib --no-default-features --features evaluation"
-files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-check-compat-report-bin"
-name = "cargo check --no-default-features --features evaluation --bin rskrb5-ng-compat-report"
-language = "system"
-entry = "cargo check --no-default-features --features evaluation --bin rskrb5-ng-compat-report"
-files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "axum-negotiate-example"
-name = "README axum-negotiate example (--no-default-features --features http)"
-language = "system"
-entry = "cargo build --example axum-negotiate --features http --no-default-features"
-files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-check"
-name = "cargo check"
-language = "system"
-entry = "cargo check"
-files = "\\.rs$|Cargo\\.(toml|lock)$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-test"
-name = "cargo test"
-language = "system"
-entry = "cargo test --all-features"
-files = "\\.rs$|Cargo\\.toml$"
-pass_filenames = false
-stages = ["pre-push", "manual"]
-
-[[repos.hooks]]
-id = "cargo-doc"
-name = "cargo doc"
-language = "system"
-entry = "cargo doc --all-features --no-deps"
-files = "\\.rs$|Cargo\\.toml$|README\\.md$"
-pass_filenames = false
-stages = ["manual"]
-
-[[repos.hooks]]
-id = "cargo-package"
-name = "cargo package"
-language = "system"
-entry = "cargo package --locked --allow-dirty"
-files = "\\.rs$|Cargo\\.(toml|lock)$|README\\.md$|LICENSE|NOTICE"
 pass_filenames = false
 stages = ["pre-push", "manual"]
 
