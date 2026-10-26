@@ -3538,7 +3538,11 @@ pub fn process_as_rep(
 
     let enc_part = kdc_rep::decrypt_as_rep_enc_part(&as_rep, reply_key).map_err(kdc_rep_error)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
-    validate_as_rep_encrypted_padata(request, &enc_part, reply_key)?;
+    validate_reply_encrypted_padata(
+        (&request.der, request.message.0.padata.as_deref()),
+        &enc_part,
+        reply_key,
+    )?;
 
     if enc_part.nonce != request.nonce {
         return Err(Error::NonceMismatch {
@@ -3588,7 +3592,7 @@ pub fn process_as_rep(
     })
 }
 
-/// Verify the FAST negotiation checksum in an AS-REP (RFC 6806).
+/// Verify negotiated AS/TGS request integrity (RFC 6806 section 11).
 ///
 /// The check runs only when the request carried PA-REQ-ENC-PA-REP and the reply
 /// sets the `enc-pa-rep` ticket flag.
@@ -3600,12 +3604,14 @@ pub fn process_as_rep(
 /// checksum type, [`Error::FastNegotiationChecksumMismatch`] when the checksum
 /// does not match the request, and [`Error::Message`] when the checksum does not
 /// decode.
-fn validate_as_rep_encrypted_padata(
-    request: &BuiltAsReq,
+fn validate_reply_encrypted_padata(
+    request: (&[u8], Option<&[rasn_kerberos::PaData]>),
     enc_part: &rasn_kerberos::EncKdcRepPart,
     reply_key: &EncryptionKey,
 ) -> Result<(), Error> {
-    if !as_req_contains_padata(request, PA_REQ_ENC_PA_REP)
+    if !request
+        .1
+        .is_some_and(|data| padata_contains(data, PA_REQ_ENC_PA_REP))
         || !ticket_flags_contain_bits(&enc_part.flags, TICKET_FLAG_ENC_PA_REP)
     {
         return Ok(());
@@ -3624,23 +3630,13 @@ fn validate_as_rep_encrypted_padata(
         .ok_or(Error::UnsupportedChecksumType(checksum.checksum_type))?;
     if !etype.verify_checksum(
         &reply_key.value,
-        &request.der,
+        request.0,
         checksum.checksum.as_ref(),
         AS_REQ_CHECKSUM_USAGE,
     ) {
         return Err(Error::FastNegotiationChecksumMismatch);
     }
     Ok(())
-}
-
-/// Whether the AS-REQ carries padata of `padata_type`.
-fn as_req_contains_padata(request: &BuiltAsReq, padata_type: i32) -> bool {
-    request
-        .message
-        .0
-        .padata
-        .as_ref()
-        .is_some_and(|padata| padata_contains(padata, padata_type))
 }
 
 /// Whether `padata` contains an entry of `padata_type`.
@@ -3711,6 +3707,11 @@ fn process_tgs_rep_inner(
     let enc_part =
         kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key).map_err(kdc_rep_error)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
+    validate_reply_encrypted_padata(
+        (&request.der, request.message.0.padata.as_deref()),
+        &enc_part,
+        tgs_session_key,
+    )?;
 
     if enc_part.nonce != request.nonce {
         return Err(Error::NonceMismatch {
