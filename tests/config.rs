@@ -1,24 +1,69 @@
 //! Configuration parsing, loading and realm resolution tests.
-use core::{error, time::Duration};
-use std::{
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-use pretty_assertions::assert_eq;
-use rskrb5_ng::config::{Config, Error, parse_duration};
 
 #[path = "support/env.rs"]
 mod env;
 
-/// Error type of the `Result`-returning tests.
-type TestError = Box<dyn error::Error>;
-
+/// Configuration parsing, loading and realm resolution tests.
+#[cfg(test)]
 #[expect(
-    clippy::needless_raw_strings,
-    reason = "lint-migration: upstream baseline at ee9cb04"
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-const KRB5_CONF: &str = r#"[libdefaults]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::{error, fmt::Display, time::Duration};
+    use std::{
+        env::{join_paths, split_paths, temp_dir, var_os},
+        fs,
+        path::PathBuf,
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use pretty_assertions::assert_eq;
+    use proptest::{collection, prelude::any, prop_assert_eq, proptest, sample};
+    #[cfg(feature = "serde")]
+    use proptest::{prelude::Strategy, prop_assert};
+    #[cfg(feature = "messages")]
+    use rasn::der;
+    #[cfg(any(feature = "serde", feature = "messages"))]
+    use rskrb5_ng::config::LibDefaults;
+    use rskrb5_ng::config::{Config, Error, parse_duration};
+    #[cfg(feature = "messages")]
+    use rskrb5_ng::{
+        Principal,
+        client::{AsReqOptions, build_tgt_as_req},
+    };
+    #[cfg(feature = "serde")]
+    use serde_json::{Value, json};
+
+    use super::env;
+
+    /// Error type of the `Result`-returning tests.
+    type TestError = Box<dyn error::Error>;
+
+    /// Attaches a description to a failure, as `expect` would, but as an error
+    /// that `?` propagates.
+    trait Context<T> {
+        /// Returns the value, or an error that names `what`.
+        fn context(self, what: &str) -> Result<T, TestError>;
+    }
+
+    impl<T, E: Display> Context<T> for Result<T, E> {
+        fn context(self, what: &str) -> Result<T, TestError> {
+            self.map_err(|cause| format!("{what}: {cause}").into())
+        }
+    }
+
+    impl<T> Context<T> for Option<T> {
+        fn context(self, what: &str) -> Result<T, TestError> {
+            self.ok_or_else(|| what.into())
+        }
+    }
+
+    /// The gokrb5 integration-test `krb5.conf`.
+    const KRB5_CONF: &str = "[libdefaults]
   default_realm = TEST.GOKRB5
   dns_lookup_realm = false
   dns_lookup_kdc = false
@@ -46,13 +91,10 @@ const KRB5_CONF: &str = r#"[libdefaults]
  test.gokrb5 = TEST.GOKRB5
  .resdom.gokrb5 = RESDOM.GOKRB5
  resdom.gokrb5 = RESDOM.GOKRB5
- "#;
+ ";
 
-#[expect(
-    clippy::needless_raw_strings,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-const COMPLEX_KRB5_CONF: &str = r#"
+    /// The gokrb5 config with comments, port-less KDCs, extra sections and a lowercase realm.
+    const COMPLEX_KRB5_CONF: &str = "
 [logging]
  default = FILE:/var/log/kerberos/krb5libs.log
 
@@ -102,18 +144,7 @@ const COMPLEX_KRB5_CONF: &str = r#"
  pam = {
    debug = false
  }
-"#;
-
-/// Property tests for the explicit `permitted_enctypes` serde flag and the
-/// `[domain_realm]` DNS case fold.
-#[cfg(test)]
-mod fork_property_tests {
-    use proptest::{collection, prelude::any, prop_assert_eq, proptest, sample};
-    #[cfg(feature = "serde")]
-    use proptest::{prelude::Strategy, prop_assert};
-    use rskrb5_ng::config::Config;
-    #[cfg(feature = "serde")]
-    use rskrb5_ng::config::LibDefaults;
+";
 
     /// Every supported enctype name, aliases included, with its enctype ID.
     #[cfg(feature = "serde")]
@@ -215,174 +246,126 @@ mod fork_property_tests {
             prop_assert_eq!(config.resolve_realm(&permuted), Some(realm), "{}", permuted);
         }
     }
-}
 
-#[expect(
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn libdefaults_defaults_match_gokrb5() {
-    let config = Config::new();
+    /// Pins the gokrb5 defaults of the DNS lookup, canonicalization and address flags.
+    #[test]
+    fn libdefaults_defaults_match_gokrb5() {
+        let config = Config::new();
 
-    assert!(!config.libdefaults.dns_lookup_kdc);
-    assert!(!config.libdefaults.dns_lookup_realm);
-    assert!(config.libdefaults.dns_canonicalize_hostname);
-    assert!(config.libdefaults.no_addresses);
-}
+        assert!(!config.libdefaults.dns_lookup_kdc);
+        assert!(!config.libdefaults.dns_lookup_realm);
+        assert!(config.libdefaults.dns_canonicalize_hostname);
+        assert!(config.libdefaults.no_addresses);
+    }
 
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn parses_gokrb5_integration_config_fixture() {
-    let config = Config::parse(KRB5_CONF).expect("config parses");
+    /// Pins the libdefaults, KDCs, kpasswd servers and realm mapping of the gokrb5 integration config.
+    #[test]
+    fn parses_gokrb5_integration_config_fixture() -> Result<(), TestError> {
+        let config = Config::parse(KRB5_CONF).context("config parses")?;
 
-    assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-    assert!(!config.libdefaults.dns_lookup_realm);
-    assert!(!config.libdefaults.dns_lookup_kdc);
-    assert!(!config.libdefaults.no_addresses);
-    assert!(config.libdefaults.forwardable);
-    assert_eq!(
-        config.libdefaults.ticket_lifetime,
-        Duration::from_secs(24 * 60 * 60)
-    );
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18]);
-    assert_eq!(config.libdefaults.default_tgs_enctype_ids, [18]);
+        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
+        assert!(!config.libdefaults.dns_lookup_realm);
+        assert!(!config.libdefaults.dns_lookup_kdc);
+        assert!(!config.libdefaults.no_addresses);
+        assert!(config.libdefaults.forwardable);
+        assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(24));
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [18_i32]);
 
-    assert_eq!(config.realms.len(), 2);
-    assert_eq!(
-        config.configured_kdcs("TEST.GOKRB5").expect("KDCs exist"),
-        ["127.0.0.1:88", "127.0.0.2:88"]
-    );
-    assert_eq!(
-        config
-            .configured_kpasswd_servers("TEST.GOKRB5")
-            .expect("kpasswd servers default from admin_server"),
-        ["127.0.0.1:464"]
-    );
-    assert_eq!(
-        config.resolve_realm("host.test.gokrb5"),
-        Some("TEST.GOKRB5")
-    );
-    assert_eq!(
-        config.resolve_realm("resdom.gokrb5."),
-        Some("RESDOM.GOKRB5")
-    );
-}
+        assert_eq!(config.realms.len(), 2);
+        assert_eq!(
+            config
+                .configured_kdcs("TEST.GOKRB5")
+                .context("KDCs exist")?,
+            ["127.0.0.1:88", "127.0.0.2:88"]
+        );
+        assert_eq!(
+            config
+                .configured_kpasswd_servers("TEST.GOKRB5")
+                .context("kpasswd servers default from admin_server")?,
+            ["127.0.0.1:464"]
+        );
+        assert_eq!(
+            config.resolve_realm("host.test.gokrb5"),
+            Some("TEST.GOKRB5")
+        );
+        assert_eq!(
+            config.resolve_realm("resdom.gokrb5."),
+            Some("RESDOM.GOKRB5")
+        );
+        Ok(())
+    }
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn loads_config_file() {
-    let path = temp_file("load");
-    std::fs::write(&path, KRB5_CONF).expect("config fixture writes");
+    /// Pins that a config file loads from a path.
+    #[test]
+    fn loads_config_file() -> Result<(), TestError> {
+        let path = temp_file("load")?;
+        fs::write(&path, KRB5_CONF).context("config fixture writes")?;
 
-    let config = Config::load(&path).expect("config loads");
-    let _ = std::fs::remove_file(&path);
+        let config = Config::load(&path).context("config loads")?;
+        fs::remove_file(&path).context("the test config is removed")?;
 
-    assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-    assert_eq!(
-        config.configured_kdcs("TEST.GOKRB5").expect("KDCs exist"),
-        ["127.0.0.1:88", "127.0.0.2:88"]
-    );
-}
+        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
+        assert_eq!(
+            config
+                .configured_kdcs("TEST.GOKRB5")
+                .context("KDCs exist")?,
+            ["127.0.0.1:88", "127.0.0.2:88"]
+        );
+        Ok(())
+    }
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::let_underscore_must_use,
-    clippy::let_underscore_untyped,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    let_underscore_drop,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn loads_config_path_list_in_order() {
-    let first = temp_file("load-list-first");
-    let second = temp_file("load-list-second");
-    std::fs::write(
-        &first,
-        r#"
+    /// Pins that a path list loads in order, skipping empty paths, with the later file winning.
+    #[test]
+    fn loads_config_path_list_in_order() -> Result<(), TestError> {
+        let first = temp_file("load-list-first")?;
+        let second = temp_file("load-list-second")?;
+        fs::write(
+            &first,
+            "
 [libdefaults]
  default_realm = FIRST.GOKRB5
 
 [domain_realm]
  .first.gokrb5 = FIRST.GOKRB5
-"#,
-    )
-    .expect("first config writes");
-    std::fs::write(
-        &second,
-        r#"
+",
+        )
+        .context("first config writes")?;
+        fs::write(
+            &second,
+            "
 [libdefaults]
  default_realm = SECOND.GOKRB5
 
 [domain_realm]
  .second.gokrb5 = SECOND.GOKRB5
-"#,
-    )
-    .expect("second config writes");
+",
+        )
+        .context("second config writes")?;
 
-    let config = Config::load_paths([first.clone(), PathBuf::new(), second.clone()])
-        .expect("config path list loads");
-    let _ = std::fs::remove_file(&first);
-    let _ = std::fs::remove_file(&second);
+        let config = Config::load_paths([first.clone(), PathBuf::new(), second.clone()])
+            .context("config path list loads")?;
+        fs::remove_file(&first).context("the test config is removed")?;
+        fs::remove_file(&second).context("the test config is removed")?;
 
-    assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
-    assert_eq!(
-        config.resolve_realm("host.first.gokrb5"),
-        Some("FIRST.GOKRB5")
-    );
-    assert_eq!(
-        config.resolve_realm("host.second.gokrb5"),
-        Some("SECOND.GOKRB5")
-    );
-}
+        assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
+        assert_eq!(
+            config.resolve_realm("host.first.gokrb5"),
+            Some("FIRST.GOKRB5")
+        );
+        assert_eq!(
+            config.resolve_realm("host.second.gokrb5"),
+            Some("SECOND.GOKRB5")
+        );
+        Ok(())
+    }
 
-/// Child-process tests of `KRB5_CONFIG` loading.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-mod config_env {
-    use std::env::{join_paths, split_paths, var_os};
-
-    use pretty_assertions::assert_eq;
-
-    use super::*;
-
-    #[expect(
-        clippy::absolute_paths,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::needless_raw_strings,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     /// Pins that `KRB5_CONFIG` path lists load with the later file winning.
     #[test]
     fn loads_config_path_list_from_env() -> Result<(), TestError> {
-        const TEST_PATH: &str = "config_env::loads_config_path_list_from_env";
+        const TEST_PATH: &str = "tests::loads_config_path_list_from_env";
         if !env::in_child(TEST_PATH) {
-            let paths = join_paths([temp_file("load-env-first"), temp_file("load-env-second")])
+            let paths = join_paths([temp_file("load-env-first")?, temp_file("load-env-second")?])
                 .map_err(|cause| format!("config paths join: {cause}"))?;
             env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(&paths))]);
             return Ok(());
@@ -392,208 +375,173 @@ mod config_env {
             split_paths(&paths).collect::<Vec<_>>().try_into().map_err(
                 |listed: Vec<PathBuf>| format!("KRB5_CONFIG lists two paths: {}", listed.len()),
             )?;
-        std::fs::write(
+        fs::write(
             &first,
-            r#"
+            "
 [libdefaults]
  default_realm = FIRST.GOKRB5
-"#,
+",
         )
         .map_err(|cause| format!("first config writes: {cause}"))?;
-        std::fs::write(
+        fs::write(
             &second,
-            r#"
+            "
 [libdefaults]
  default_realm = SECOND.GOKRB5
-"#,
+",
         )
         .map_err(|cause| format!("second config writes: {cause}"))?;
 
         let config = Config::load_from_env()
             .map_err(|cause| format!("config loads from KRB5_CONFIG: {cause}"))?;
-        let _ = std::fs::remove_file(&first);
-        let _ = std::fs::remove_file(&second);
+        fs::remove_file(&first).context("the test config is removed")?;
+        fs::remove_file(&second).context("the test config is removed")?;
 
         assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
         Ok(())
     }
 
-    #[expect(
-        clippy::absolute_paths,
-        clippy::let_underscore_must_use,
-        clippy::let_underscore_untyped,
-        clippy::needless_raw_strings,
-        let_underscore_drop,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     /// Pins that `load_default` and `load_default_or_parse` prefer `KRB5_CONFIG`.
     #[test]
     fn load_default_prefers_krb5_config_env() -> Result<(), TestError> {
-        const TEST_PATH: &str = "config_env::load_default_prefers_krb5_config_env";
+        const TEST_PATH: &str = "tests::load_default_prefers_krb5_config_env";
         if !env::in_child(TEST_PATH) {
-            let path = temp_file("load-default-env");
+            let path = temp_file("load-default-env")?;
             env::run_in_child(TEST_PATH, &[("KRB5_CONFIG", Some(path.as_os_str()))]);
             return Ok(());
         }
         let path = PathBuf::from(var_os("KRB5_CONFIG").ok_or("the parent test sets KRB5_CONFIG")?);
-        std::fs::write(
+        fs::write(
             &path,
-            r#"
+            "
 [libdefaults]
  default_realm = ENV.GOKRB5
-"#,
+",
         )
         .map_err(|cause| format!("env config writes: {cause}"))?;
 
         let config = Config::load_default()
             .map_err(|cause| format!("default config loads from env: {cause}"))?;
         let fallback = Config::load_default_or_parse(
-            r#"
+            "
 [libdefaults]
  default_realm = EMBEDDED.GOKRB5
-"#,
+",
         )
         .map_err(|cause| format!("default-or-embedded config loads from env: {cause}"))?;
-        let _ = std::fs::remove_file(&path);
+        fs::remove_file(&path).context("the test config is removed")?;
 
         assert_eq!(config.libdefaults.default_realm, "ENV.GOKRB5");
         assert_eq!(fallback.libdefaults.default_realm, "ENV.GOKRB5");
         Ok(())
     }
-}
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn rejects_empty_config_path_list() {
-    assert!(matches!(
-        Config::load_paths(Vec::<PathBuf>::new()).expect_err("empty path list rejected"),
-        Error::EmptyConfigPathList
-    ));
-    assert!(matches!(
-        Config::load_paths([PathBuf::new()]).expect_err("empty path rejected"),
-        Error::EmptyConfigPathList
-    ));
-}
+    /// Pins that a path list with no non-empty path is rejected.
+    #[test]
+    fn rejects_empty_config_path_list() -> Result<(), TestError> {
+        assert!(matches!(
+            Config::load_paths(Vec::<PathBuf>::new())
+                .err()
+                .context("empty path list rejected")?,
+            Error::EmptyConfigPathList
+        ));
+        assert!(matches!(
+            Config::load_paths([PathBuf::new()])
+                .err()
+                .context("empty path rejected")?,
+            Error::EmptyConfigPathList
+        ));
+        Ok(())
+    }
 
-/// Child-process test of a missing `KRB5_CONFIG`.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod config_env_missing {
-    use super::*;
-
-    #[expect(
-        clippy::expect_used,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )]
     /// Pins that loading without `KRB5_CONFIG` reports the missing variable.
     #[test]
     fn rejects_missing_config_env() -> Result<(), TestError> {
-        const TEST_PATH: &str = "config_env_missing::rejects_missing_config_env";
+        const TEST_PATH: &str = "tests::rejects_missing_config_env";
         if !env::in_child(TEST_PATH) {
             env::try_run_in_child(TEST_PATH, &[("KRB5_CONFIG", None)])?;
             return Ok(());
         }
         assert!(matches!(
-            Config::load_from_env().expect_err("missing KRB5_CONFIG rejected"),
+            Config::load_from_env()
+                .err()
+                .context("missing KRB5_CONFIG rejected")?,
             Error::DefaultConfigName
         ));
         Ok(())
     }
-}
 
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn parses_complex_gokrb5_config_semantics() {
-    let config = Config::parse(COMPLEX_KRB5_CONF).expect("config parses");
+    /// Pins comments, default ports, kpasswd defaults and realm sections of the complex gokrb5 config.
+    #[test]
+    fn parses_complex_gokrb5_config_semantics() -> Result<(), TestError> {
+        let config = Config::parse(COMPLEX_KRB5_CONF).context("config parses")?;
 
-    assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-    assert_eq!(
-        config.libdefaults.ticket_lifetime,
-        Duration::from_secs(10 * 60 * 60)
-    );
-    assert_eq!(
-        config.libdefaults.default_keytab_name,
-        "FILE:/etc/krb5.keytab"
-    );
-    assert_eq!(
-        config.libdefaults.default_ccache_name,
-        "DIR:/tmp/krb5cc_dir"
-    );
-    assert_eq!(
-        config.libdefaults.default_client_keytab_name,
-        "FILE:/home/gokrb5/client.keytab"
-    );
-    assert_eq!(
-        config.libdefaults.default_tkt_enctypes,
-        ["aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96"]
-    );
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18, 17]);
-    assert_eq!(config.libdefaults.default_tgs_enctype_ids, [18, 17, 23]);
+        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
+        assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(10));
+        assert_eq!(
+            config.libdefaults.default_keytab_name,
+            "FILE:/etc/krb5.keytab"
+        );
+        assert_eq!(
+            config.libdefaults.default_ccache_name,
+            "DIR:/tmp/krb5cc_dir"
+        );
+        assert_eq!(
+            config.libdefaults.default_client_keytab_name,
+            "FILE:/home/gokrb5/client.keytab"
+        );
+        assert_eq!(
+            config.libdefaults.default_tkt_enctypes,
+            ["aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96"]
+        );
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32, 17_i32]);
+        assert_eq!(
+            config.libdefaults.default_tgs_enctype_ids,
+            [18_i32, 17_i32, 23_i32]
+        );
 
-    assert_eq!(config.realms.len(), 3);
-    let test_realm = config.realm("TEST.GOKRB5").expect("TEST realm exists");
-    assert_eq!(test_realm.realm, "TEST.GOKRB5");
-    assert_eq!(test_realm.admin_server, ["10.80.88.88:749"]);
-    assert_eq!(test_realm.kpasswd_server, ["10.80.88.88:464"]);
-    assert_eq!(test_realm.default_domain, "test.gokrb5");
-    assert_eq!(
-        test_realm.kdc,
-        [
-            "10.80.88.88:88",
-            "assume.port.num:88",
-            "some.other.port:1234",
-            "10.80.88.88:88"
-        ]
-    );
+        assert_eq!(config.realms.len(), 3);
+        let test_realm = config.realm("TEST.GOKRB5").context("TEST realm exists")?;
+        assert_eq!(test_realm.realm, "TEST.GOKRB5");
+        assert_eq!(test_realm.admin_server, ["10.80.88.88:749"]);
+        assert_eq!(test_realm.kpasswd_server, ["10.80.88.88:464"]);
+        assert_eq!(test_realm.default_domain, "test.gokrb5");
+        assert_eq!(
+            test_realm.kdc,
+            [
+                "10.80.88.88:88",
+                "assume.port.num:88",
+                "some.other.port:1234",
+                "10.80.88.88:88"
+            ]
+        );
 
-    let example = config.realm("EXAMPLE.COM").expect("example realm exists");
-    assert_eq!(
-        example.kdc,
-        ["kerberos.example.com:88", "kerberos-1.example.com:88"]
-    );
-    assert_eq!(example.admin_server, ["kerberos.example.com"]);
-    assert_eq!(example.kpasswd_server, ["kerberos.example.com:464"]);
+        let example = config
+            .realm("EXAMPLE.COM")
+            .context("example realm exists")?;
+        assert_eq!(
+            example.kdc,
+            ["kerberos.example.com:88", "kerberos-1.example.com:88"]
+        );
+        assert_eq!(example.admin_server, ["kerberos.example.com"]);
+        assert_eq!(example.kpasswd_server, ["kerberos.example.com:464"]);
 
-    assert_eq!(
-        config.domain_realm.get(".test.gokrb5").map(String::as_str),
-        Some("TEST.GOKRB5")
-    );
-    assert_eq!(
-        config.domain_realm.get("test.gokrb5").map(String::as_str),
-        Some("TEST.GOKRB5")
-    );
-}
+        assert_eq!(
+            config.domain_realm.get(".test.gokrb5").map(String::as_str),
+            Some("TEST.GOKRB5")
+        );
+        assert_eq!(
+            config.domain_realm.get("test.gokrb5").map(String::as_str),
+            Some("TEST.GOKRB5")
+        );
+        Ok(())
+    }
 
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn parses_gokrb5_config_without_blank_lines() {
-    let config = Config::parse(
-        r#"[logging]
+    /// Pins that the gokrb5 config without blank lines between sections parses.
+    #[test]
+    fn parses_gokrb5_config_without_blank_lines() -> Result<(), TestError> {
+        let config = Config::parse(
+            "[logging]
  default = FILE:/var/log/kerberos/krb5libs.log
 [libdefaults]
  default_realm = TEST.GOKRB5
@@ -618,38 +566,33 @@ fn parses_gokrb5_config_without_blank_lines() {
 [domain_realm]
  .test.gokrb5 = TEST.GOKRB5
  test.gokrb5 = TEST.GOKRB5
-"#,
-    )
-    .expect("config parses");
+",
+        )
+        .context("config parses")?;
 
-    assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-    assert_eq!(
-        config.libdefaults.ticket_lifetime,
-        Duration::from_secs(10 * 60 * 60)
-    );
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18, 17]);
-    assert_eq!(config.realms.len(), 2);
-    assert_eq!(
-        config.realm("TEST.GOKRB5").expect("TEST realm exists").kdc,
-        ["10.80.88.88:88", "assume.port.num:88"]
-    );
-    assert_eq!(
-        config.resolve_realm("host.test.gokrb5"),
-        Some("TEST.GOKRB5")
-    );
-}
+        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
+        assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(10));
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32, 17_i32]);
+        assert_eq!(config.realms.len(), 2);
+        assert_eq!(
+            config
+                .realm("TEST.GOKRB5")
+                .context("TEST realm exists")?
+                .kdc,
+            ["10.80.88.88:88", "assume.port.num:88"]
+        );
+        assert_eq!(
+            config.resolve_realm("host.test.gokrb5"),
+            Some("TEST.GOKRB5")
+        );
+        Ok(())
+    }
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn parses_gokrb5_config_with_tabs_and_reordered_sections() {
-    let config = Config::parse(
-        r#"[logging]
+    /// Pins that the gokrb5 config with tab indentation and reordered sections parses.
+    #[test]
+    fn parses_gokrb5_config_with_tabs_and_reordered_sections() -> Result<(), TestError> {
+        let config = Config::parse(
+            "[logging]
 	default = FILE:/var/log/kerberos/krb5libs.log
 
 [libdefaults]
@@ -685,95 +628,75 @@ fn parses_gokrb5_config_with_tabs_and_reordered_sections() {
 		kdc = kerberos-1.example.com
 		admin_server = kerberos.example.com
 	}
-"#,
-    )
-    .expect("config parses");
+",
+        )
+        .context("config parses")?;
 
-    assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-    assert_eq!(config.realms.len(), 2);
-    assert_eq!(
-        config
-            .realm("EXAMPLE.COM")
-            .expect("example realm exists")
-            .kdc,
-        ["kerberos.example.com:88", "kerberos-1.example.com:88"]
-    );
-    assert_eq!(
-        config.resolve_realm("hostname1.example.com"),
-        Some("EXAMPLE.COM")
-    );
-}
-
-#[expect(
-    clippy::duration_suboptimal_units,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn duration_formats_match_gokrb5() {
-    let cases = [
-        ("100", Duration::from_secs(100)),
-        ("12:30", Duration::from_secs(12 * 60 * 60 + 30 * 60)),
-        ("12:30:15", Duration::from_secs(12 * 60 * 60 + 30 * 60 + 15)),
-        (
-            "1d12h30m15s",
-            Duration::from_secs(24 * 60 * 60 + 12 * 60 * 60 + 30 * 60 + 15),
-        ),
-        (
-            "1d12h30m",
-            Duration::from_secs(24 * 60 * 60 + 12 * 60 * 60 + 30 * 60),
-        ),
-        ("1d12h", Duration::from_secs(24 * 60 * 60 + 12 * 60 * 60)),
-        ("1d", Duration::from_secs(24 * 60 * 60)),
-    ];
-
-    for (input, expected) in cases {
-        assert_eq!(parse_duration(input).expect("duration parses"), expected);
+        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
+        assert_eq!(config.realms.len(), 2);
+        assert_eq!(
+            config
+                .realm("EXAMPLE.COM")
+                .context("example realm exists")?
+                .kdc,
+            ["kerberos.example.com:88", "kerberos-1.example.com:88"]
+        );
+        assert_eq!(
+            config.resolve_realm("hostname1.example.com"),
+            Some("EXAMPLE.COM")
+        );
+        Ok(())
     }
-}
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn resolve_realm_matches_gokrb5_specificity() {
-    let config = Config::parse(COMPLEX_KRB5_CONF).expect("config parses");
-    assert_eq!(config.resolve_realm("unknown.com"), None);
-    assert_eq!(
-        config.resolve_realm("hostname1.example.com"),
-        Some("EXAMPLE.COM")
-    );
-    assert_eq!(
-        config.resolve_realm("hostname2.example.com"),
-        Some("TEST.GOKRB5")
-    );
-    assert_eq!(
-        config.resolve_realm("one.two.three.example.com"),
-        Some("EXAMPLE.COM")
-    );
-    assert_eq!(config.resolve_realm(".test.gokrb5"), Some("TEST.GOKRB5"));
-    assert_eq!(
-        config.resolve_realm("foo.testlowercase.org"),
-        Some("lowercase.org")
-    );
-}
+    /// Pins the gokrb5 duration formats: seconds, `h:m`, `h:m:s` and `d`/`h`/`m`/`s` units.
+    #[test]
+    fn duration_formats_match_gokrb5() -> Result<(), TestError> {
+        let cases = [
+            ("100", Duration::from_secs(100)),
+            ("12:30", Duration::from_mins(750)),
+            ("12:30:15", Duration::from_secs(45_015)),
+            ("1d12h30m15s", Duration::from_secs(131_415)),
+            ("1d12h30m", Duration::from_mins(2_190)),
+            ("1d12h", Duration::from_hours(36)),
+            ("1d", Duration::from_hours(24)),
+        ];
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() {
-    let config = Config::parse(
-        r#"
+        for (input, expected) in cases {
+            assert_eq!(parse_duration(input).context("duration parses")?, expected);
+        }
+        Ok(())
+    }
+
+    /// Pins gokrb5's most-specific `[domain_realm]` match.
+    #[test]
+    fn resolve_realm_matches_gokrb5_specificity() -> Result<(), TestError> {
+        let config = Config::parse(COMPLEX_KRB5_CONF).context("config parses")?;
+        assert_eq!(config.resolve_realm("unknown.com"), None);
+        assert_eq!(
+            config.resolve_realm("hostname1.example.com"),
+            Some("EXAMPLE.COM")
+        );
+        assert_eq!(
+            config.resolve_realm("hostname2.example.com"),
+            Some("TEST.GOKRB5")
+        );
+        assert_eq!(
+            config.resolve_realm("one.two.three.example.com"),
+            Some("EXAMPLE.COM")
+        );
+        assert_eq!(config.resolve_realm(".test.gokrb5"), Some("TEST.GOKRB5"));
+        assert_eq!(
+            config.resolve_realm("foo.testlowercase.org"),
+            Some("lowercase.org")
+        );
+        Ok(())
+    }
+
+    /// Pins that configured KDCs are returned even when `dns_lookup_kdc` is on.
+    #[test]
+    fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
 [libdefaults]
  dns_lookup_kdc = true
 
@@ -781,195 +704,128 @@ fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() {
  TEST.GOKRB5 = {
   kdc = kdc2b.test.gokrb5:88
  }
-"#,
-    )
-    .expect("config parses");
+",
+        )
+        .context("config parses")?;
 
-    assert!(config.libdefaults.dns_lookup_kdc);
-    assert_eq!(
-        config.configured_kdcs("TEST.GOKRB5").expect("KDCs exist"),
-        ["kdc2b.test.gokrb5:88"]
-    );
-}
+        assert!(config.libdefaults.dns_lookup_kdc);
+        assert_eq!(
+            config
+                .configured_kdcs("TEST.GOKRB5")
+                .context("KDCs exist")?,
+            ["kdc2b.test.gokrb5:88"]
+        );
+        Ok(())
+    }
 
-#[expect(
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn libdefaults_keys_are_case_insensitive_and_extra_addresses_are_comma_separated() {
-    let config = Config::parse(
-        r#"
+    /// Pins case-insensitive `[libdefaults]` keys and comma-separated `extra_addresses` without invalid entries.
+    #[test]
+    fn libdefaults_keys_are_case_insensitive_and_extra_addresses_are_comma_separated()
+    -> Result<(), TestError> {
+        let config = Config::parse(
+            "
 [libdefaults]
  DEFAULT_REALM = TEST.GOKRB5
  EXTRA_ADDRESSES = 127.0.0.1, 127.0.0.2, not-an-ip
  FORWARDABLE = TRUE
-"#,
-    )
-    .expect("config parses");
+",
+        )
+        .context("config parses")?;
 
-    assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-    assert!(config.libdefaults.forwardable);
-    assert_eq!(config.libdefaults.extra_addresses.len(), 2);
-    assert_eq!(
-        config.libdefaults.extra_addresses[0].to_string(),
-        "127.0.0.1"
-    );
-    assert_eq!(
-        config.libdefaults.extra_addresses[1].to_string(),
-        "127.0.0.2"
-    );
-}
+        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
+        assert!(config.libdefaults.forwardable);
+        assert_eq!(config.libdefaults.extra_addresses.len(), 2);
+        assert_eq!(
+            config
+                .libdefaults
+                .extra_addresses
+                .first()
+                .context("a first extra address")?
+                .to_string(),
+            "127.0.0.1"
+        );
+        assert_eq!(
+            config
+                .libdefaults
+                .extra_addresses
+                .get(1)
+                .context("a second extra address")?
+                .to_string(),
+            "127.0.0.2"
+        );
+        Ok(())
+    }
 
-#[expect(
-    clippy::default_numeric_fallback,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn maps_rc4_hmac_enctype_aliases() {
-    let config = Config::parse(
-        r#"
+    /// Pins that the RC4-HMAC enctype aliases map to enctype 23.
+    #[test]
+    fn maps_rc4_hmac_enctype_aliases() -> Result<(), TestError> {
+        let config = Config::parse(
+            "
 [libdefaults]
  default_tkt_enctypes = arcfour-hmac rc4-hmac arcfour-hmac-md5
  default_tgs_enctypes = rc4-hmac
-"#,
-    )
-    .expect("config parses");
-
-    assert_eq!(config.libdefaults.default_tkt_enctype_ids, [23, 23, 23]);
-    assert_eq!(config.libdefaults.default_tgs_enctype_ids, [23]);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
+",
         )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        clippy::unseparated_literal_suffix,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg(feature = "serde")]
-#[test]
-fn config_json_matches_gokrb5_shape() {
-    let mut config = Config::parse(COMPLEX_KRB5_CONF).expect("config parses");
-    config.libdefaults.k5login_directory = "/home/test".to_owned();
+        .context("config parses")?;
 
-    let json = config.json().expect("config JSON renders");
-    let value: serde_json::Value = serde_json::from_str(&json).expect("config JSON parses");
+        assert_eq!(
+            config.libdefaults.default_tkt_enctype_ids,
+            [23_i32, 23_i32, 23_i32]
+        );
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [23_i32]);
+        Ok(())
+    }
 
-    assert!(json.contains(r#""LibDefaults""#));
-    assert!(json.contains(r#""DefaultTGSEnctypes""#));
-    assert!(json.contains(r#""DefaultTktEnctypeIDs""#));
-    assert_eq!(
-        value["LibDefaults"]["Clockskew"],
-        serde_json::json!(300_000_000_000u64)
-    );
-    assert_eq!(
-        value["LibDefaults"]["TicketLifetime"],
-        serde_json::json!(36_000_000_000_000u64)
-    );
-    assert_eq!(
-        value["LibDefaults"]["KDCDefaultOptions"]["Bytes"],
-        serde_json::json!("AAAAEA==")
-    );
-    assert_eq!(
-        value["LibDefaults"]["KDCDefaultOptions"]["BitLength"],
-        serde_json::json!(32)
-    );
-    assert_eq!(
-        value["LibDefaults"]["K5LoginDirectory"],
-        serde_json::json!("/home/test")
-    );
-    assert_eq!(
-        value["Realms"][0]["KPasswdServer"][0],
-        serde_json::json!("10.80.88.88:464")
-    );
-    assert_eq!(value["Realms"][0]["MasterKDC"], serde_json::Value::Null);
-    assert_eq!(
-        value["DomainRealm"]["hostname1.example.com"],
-        serde_json::json!("EXAMPLE.COM")
-    );
-}
+    /// Pins the gokrb5 JSON shape of a config.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn config_json_matches_gokrb5_shape() -> Result<(), TestError> {
+        let mut config = Config::parse(COMPLEX_KRB5_CONF).context("config parses")?;
+        config.libdefaults.k5login_directory = "/home/test".to_owned();
 
-#[expect(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::needless_raw_strings,
-    clippy::tests_outside_test_module,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[test]
-fn rejects_v4_realm_directives() {
-    let err = Config::parse(
-        r#"
+        let json = config.json().context("config JSON renders")?;
+        let value: Value = serde_json::from_str(&json).context("config JSON parses")?;
+
+        assert!(json.contains(r#""LibDefaults""#), "{json}");
+        assert!(json.contains(r#""DefaultTGSEnctypes""#), "{json}");
+        assert!(json.contains(r#""DefaultTktEnctypeIDs""#), "{json}");
+        assert_eq!(
+            *json_at(&value, "/LibDefaults/Clockskew"),
+            json!(300_000_000_000_u64)
+        );
+        assert_eq!(
+            *json_at(&value, "/LibDefaults/TicketLifetime"),
+            json!(36_000_000_000_000_u64)
+        );
+        assert_eq!(
+            *json_at(&value, "/LibDefaults/KDCDefaultOptions/Bytes"),
+            json!("AAAAEA==")
+        );
+        assert_eq!(
+            *json_at(&value, "/LibDefaults/KDCDefaultOptions/BitLength"),
+            json!(32_i32)
+        );
+        assert_eq!(
+            *json_at(&value, "/LibDefaults/K5LoginDirectory"),
+            json!("/home/test")
+        );
+        assert_eq!(
+            *json_at(&value, "/Realms/0/KPasswdServer/0"),
+            json!("10.80.88.88:464")
+        );
+        assert_eq!(*json_at(&value, "/Realms/0/MasterKDC"), Value::Null);
+        assert_eq!(
+            *json_at(&value, "/DomainRealm/hostname1.example.com"),
+            json!("EXAMPLE.COM")
+        );
+        Ok(())
+    }
+
+    /// Pins that Kerberos v4 realm directives are rejected.
+    #[test]
+    fn rejects_v4_realm_directives() -> Result<(), TestError> {
+        let err = Config::parse(
+            "
 [realms]
  TEST.GOKRB5 = {
   kdc = 10.80.88.88:88
@@ -979,54 +835,30 @@ fn rejects_v4_realm_directives() {
    }
   }
  }
-"#,
-    )
-    .expect_err("v4 directives are rejected");
+",
+        )
+        .err()
+        .context("v4 directives are rejected")?;
 
-    assert!(matches!(err, Error::UnsupportedDirective(_)));
-}
+        assert!(matches!(err, Error::UnsupportedDirective(_)));
+        Ok(())
+    }
 
-#[expect(
-    clippy::absolute_paths,
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-fn temp_file(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("current time is after unix epoch")
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "rskrb5-config-{name}-{}-{nanos}",
-        std::process::id()
-    ))
-}
+    /// Returns the JSON value at `pointer`, or `null` when there is none, as
+    /// indexing a [`Value`] would.
+    #[cfg(feature = "serde")]
+    fn json_at<'value>(value: &'value Value, pointer: &str) -> &'value Value {
+        value.pointer(pointer).unwrap_or(&Value::Null)
+    }
 
-/// Fork-authored config tests: `[domain_realm]` precedence and case folding,
-/// the explicit `permitted_enctypes` flag and request-list validation.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod fork_tests {
-    use std::fs;
-
-    use pretty_assertions::assert_eq;
-    #[cfg(feature = "messages")]
-    use rasn::der;
-    #[cfg(any(feature = "serde", feature = "messages"))]
-    use rskrb5_ng::config::LibDefaults;
-    #[cfg(feature = "messages")]
-    use rskrb5_ng::{
-        Principal,
-        client::{AsReqOptions, build_tgt_as_req},
-    };
-
-    use super::*;
+    /// Returns a unique path in the temporary directory for the test `name`.
+    fn temp_file(name: &str) -> Result<PathBuf, TestError> {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("current time is after unix epoch")?
+            .as_nanos();
+        Ok(temp_dir().join(format!("rskrb5-config-{name}-{}-{nanos}", process::id())))
+    }
 
     /// Pins that `[domain_realm]` lookups fold the DNS case of the host name.
     #[test]
@@ -1204,7 +1036,7 @@ mod fork_tests {
             .as_object_mut()
             .ok_or("libdefaults serialize as an object")?
             .remove("permitted_enctypes_explicit");
-        assert_eq!(removed, Some(serde_json::Value::Bool(true)));
+        assert_eq!(removed, Some(Value::Bool(true)));
 
         let decoded: LibDefaults = serde_json::from_value(value)
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
@@ -1426,7 +1258,7 @@ mod fork_tests {
     }
     /// Write `files` (name, body) into a fresh directory and return its path.
     fn include_fixture_dir(name: &str, files: &[(&str, &str)]) -> Result<PathBuf, TestError> {
-        let dir = temp_file(name);
+        let dir = temp_file(name)?;
         fs::create_dir_all(&dir)
             .map_err(|cause| format!("fixture directory is created: {cause}"))?;
         for (file, body) in files {
