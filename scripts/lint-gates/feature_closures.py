@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/feature_closures.py list
+# How to run: python3 scripts/lint-gates/feature_closures.py list
 """Compute Cargo feature closures and canonical build arguments."""
 
 from __future__ import annotations

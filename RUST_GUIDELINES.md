@@ -100,6 +100,5 @@ The core and `http-services.md` are byte-identical to the copies vendored by
 3. Update this index: the pinned commit, its date, and the blob/hash table. Never edit
    the vendored bytes, and never write upstream from this checkout.
 4. If the core's Section 9 profile or `clippy.toml` sample changed, the profile-equality
-   gate (`scripts/lint-ratchet/profile_eq.py`) fails until `Cargo.toml` and `clippy.toml`
-   match the new pin. Follow the toolchain-bump/rebaseline procedure in
-   `docs/lint-baseline.md`.
+   gate (`scripts/lint-gates/profile_eq.py`) fails until `Cargo.toml` and `clippy.toml`
+   match the new pin. Follow the new-stable procedure in `docs/lint-policy.md`.

@@ -4,7 +4,7 @@
 # dependencies = []
 # ///
 # ─── How to run ───
-# python3 scripts/lint-ratchet/common.py --self-test (no installation needed)
+# python3 scripts/lint-gates/common.py --self-test (no installation needed)
 """Shared source helpers; parser API ported from rmcp-server-kit (MIT/Apache-2.0).
 
 The item-scanner adapter imports todo 13's scanner explicitly.
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import fnmatch
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,15 +46,6 @@ def read_source(path: Path) -> tuple[str, str]:
     return text, strip_comments_and_strings(text)
 
 
-def git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["env", "GIT_MASTER=1", "flock", "/tmp/rskrb5-git.lock", "git", *args],
-        cwd=root,
-        check=True,
-        text=True,
-        capture_output=True,
-    ).stdout
-
 
 def selected(path: str, patterns: list[str] | None) -> bool:
     return not patterns or any(fnmatch.fnmatch(path, p) for p in patterns)
@@ -67,17 +57,6 @@ def blank_ranges(text: str, ranges: list[tuple[int, int]]) -> str:
         out[a:b] = [c if c in "\r\n" else " " for c in text[a:b]]
     return "".join(out)
 
-
-def migration_ranges(text: str) -> list[tuple[int, int]]:
-    """Include generated doctest attributes, but not ordinary doc prose."""
-    ranges = {
-        (c.start, c.end)
-        for c in attribute_calls(text)
-        if c.reason.startswith("lint-migration:")
-    }
-    for match in re.finditer(r"(?m)^\s*///\s*#\s*(#!?\[.*lint-migration:.*)$", text):
-        ranges.add((match.start(), match.end()))
-    return sorted(ranges)
 
 
 @dataclass(frozen=True, slots=True)

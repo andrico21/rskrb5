@@ -16,13 +16,13 @@ name: CI
 # rustdoc, clippy on the fuzz crate and the advisory `fuzz` job;
 # `1.99.0` only for the MSRV build.
 #
-# Baseline and ratchet. Upstream diagnostics the profile names are baselined
-# only through generated, item-level `lint-migration:` expect attributes,
-# listed in `scripts/lint-ratchet/baseline.toml`. `baseline_gate.py` enforces
-# that the manifest matches the source and only ever shrinks; `allow_gate.py`
-# rejects any `allow`; `profile_eq.py` and `completeness_check.py` hold the
-# profile equal to the vendored core and complete against current stable.
-# Closure reports and whole-tree prose checks enforce the growing clean-paths list.
+# Lint gates. There is no baseline: the tree passes the profile outright.
+# `allow_gate.py` rejects any `allow`; `exception_gate.py` admits only the six
+# sanctioned `expect` forms; `profile_eq.py` and `completeness_check.py` hold
+# the profile equal to the vendored core and complete against current stable;
+# `facade_gate.py` and `prose_gate.py` (whole tree) enforce the source rules;
+# `closures` runs strict clippy in every feature closure. See
+# `docs/lint-policy.md`.
 #
 # Vendored guidelines. `docs/rust-guidelines/` is checked against its
 # SHA256SUMS in `docs-validate`; update it only by re-vendoring.
@@ -257,7 +257,7 @@ jobs:
       # the candidate version and is published on crates.io; without one (the
       # first rskrb5-ng release) the script prints a notice and exits 0.
       - name: Check release semver (against the latest published rskrb5-ng tag)
-        run: python3 scripts/lint-ratchet/semver_baseline.py
+        run: python3 scripts/lint-gates/semver_baseline.py
 
   publish-dryrun:
     name: publish-dryrun
@@ -387,9 +387,6 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # baseline_gate.py walks the manifest history back to its ratchet base.
-          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: nightly-2026-10-03
@@ -397,46 +394,38 @@ jobs:
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: clippy
-      - name: Run every lint-ratchet self-test
-        run: for s in scripts/lint-ratchet/*.py; do python3 "$s" --self-test || exit 1; done
+      - name: Run every lint gate self-test
+        run: for s in scripts/lint-gates/*.py; do python3 "$s" --self-test || exit 1; done
       - name: Allow gate
-        run: python3 scripts/lint-ratchet/allow_gate.py --enforce
+        run: python3 scripts/lint-gates/allow_gate.py --enforce
+      - name: Exception gate
+        run: python3 scripts/lint-gates/exception_gate.py --enforce
       - name: Profile equality
-        run: python3 scripts/lint-ratchet/profile_eq.py --clippy-toml
+        run: python3 scripts/lint-gates/profile_eq.py --clippy-toml
       - name: Profile completeness against current stable
-        run: python3 scripts/lint-ratchet/completeness_check.py
-      - name: Baseline manifest and ratchet
-        run: python3 scripts/lint-ratchet/baseline_gate.py --enforce
+        run: python3 scripts/lint-gates/completeness_check.py
       - name: Root facade only
-        run: python3 scripts/lint-ratchet/facade_gate.py --enforce
-      - name: Clean-path prose rules
-        run: python3 scripts/lint-ratchet/prose_gate.py --enforce --paths-file scripts/lint-ratchet/clean-paths.txt
-      - name: Clean-path closure lint report
-        run: >-
-          python3 scripts/lint-ratchet/closure_report.py --enforce
-          --paths-file scripts/lint-ratchet/clean-paths.txt
-          --ignore-lints clippy::exhaustive_structs,clippy::exhaustive_enums,clippy::module_name_repetitions,clippy::error_impl_error,clippy::impl_trait_in_params,clippy::needless_pass_by_value,clippy::unnecessary_wraps,clippy::too_many_arguments,clippy::struct_excessive_bools,clippy::struct_field_names,clippy::partial_pub_fields,clippy::same_name_method,clippy::pub_use,clippy::unused_self,clippy::enum_variant_names,clippy::must_use_candidate,clippy::return_self_not_must_use,clippy::missing_const_for_fn
+        run: python3 scripts/lint-gates/facade_gate.py --enforce
+      - name: Whole-tree prose rules
+        run: python3 scripts/lint-gates/prose_gate.py --enforce
       - name: Fuzz lint profile
-        run: python3 scripts/lint-ratchet/fuzz_lint.py --enforce
+        run: python3 scripts/lint-gates/fuzz_lint.py --enforce
+      - name: No lint-migration attributes
+        run: |
+          grep -rn lint-migration src tests examples fuzz && exit 1
+          test $? -eq 1
 
-  clean-paths:
-    name: clean-paths
+  closures:
+    name: closures
     runs-on: ubuntu-latest
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Clean paths have no non-API lint diagnostics in any closure
-        run: >-
-          python3 scripts/lint-ratchet/closure_report.py --enforce --lints-only
-          --paths-file scripts/lint-ratchet/clean-paths.txt
-          --ignore-lints clippy::exhaustive_structs,clippy::exhaustive_enums,clippy::module_name_repetitions,clippy::error_impl_error,clippy::impl_trait_in_params,clippy::needless_pass_by_value,clippy::unnecessary_wraps,clippy::too_many_arguments,clippy::struct_excessive_bools,clippy::struct_field_names,clippy::partial_pub_fields,clippy::same_name_method,clippy::pub_use,clippy::unused_self,clippy::enum_variant_names,clippy::must_use_candidate,clippy::return_self_not_must_use,clippy::missing_const_for_fn
-      - name: Clean paths follow the whole-tree prose rules
-        run: python3 scripts/lint-ratchet/prose_gate.py --enforce --paths-file scripts/lint-ratchet/clean-paths.txt
+      - name: Strict clippy in every feature closure
+        run: python3 scripts/lint-gates/feature_closures.py run --clippy-only
 
   package:
     name: package

@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-# How to run: python3 scripts/lint-ratchet/profile_eq.py --self-test
+# How to run: python3 scripts/lint-gates/profile_eq.py --self-test
 """Semantic profile equality, without deltas (rmcp-server-kit MIT/Apache-2.0 port)."""
 
 from __future__ import annotations
@@ -87,8 +87,8 @@ def self_test() -> int:
         )
         assert check(root, True) == []
         (root / "Cargo.toml").write_text(manifest.replace('"deny"', '"warn"'))
-        (root / "scripts/lint-ratchet").mkdir(parents=True)
-        (root / "scripts/lint-ratchet/profile-deltas.toml").write_text(
+        (root / "scripts/lint-gates").mkdir(parents=True)
+        (root / "scripts/lint-gates/profile-deltas.toml").write_text(
             '[[level]]\nlint = "clippy::unwrap_used"\nlevel = "warn"\n'
         )
         assert any("unwrap_used" in e for e in check(root))
