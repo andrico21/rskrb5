@@ -21,9 +21,12 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_ne};
     use rasn::der;
     use rskrb5_ng::{
-        ap_req::decode as decode_ap_req,
-        client::{AsRepSession, principal::Principal},
+        ap_req::{self, decode as decode_ap_req},
+        client::{
+            AsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal,
+        },
         crypto::AesSha1Etype,
+        error::{Service, Spnego},
         keytab::{EncryptionKey, Keytab},
         service::{ApRepOptions, Validator},
         spnego::{
@@ -286,7 +289,7 @@ mod tests {
     #[test]
     fn validates_service_ap_req_from_spnego_header_and_builds_ap_rep_response()
     -> Result<(), TestError> {
-        let ap_req_token = Krb5MechToken::ap_req(decode_hex(VALID_AP_REQ)?)
+        let ap_req_token = Krb5MechToken::ap_req(gss_ap_req_fixture()?)
             .encode()
             .context("KRB5 AP-REQ token encodes")?;
         let spnego_token = Token::Init(NegTokenInit::krb5(ap_req_token));
@@ -449,6 +452,536 @@ mod tests {
         .with_start_time(timestamp(1_893_553_445)?)
         .with_renew_till(None)
         .with_key_expiration(None))
+    }
+
+    /// The one-shot acceptor must not authenticate a non-first optimistic mechanism.
+    #[test]
+    fn acceptor_rejects_nonfirst_kerberos() -> Result<(), TestError> {
+        for mic in [None, Some(vec![0xde, 0xad])] {
+            let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+            init.mech_types.insert(0, ObjectIdentifier::spnego());
+            init.mech_list_mic = mic;
+            assert!(matches!(
+                accept_token(&Token::Init(init))?,
+                Err(Spnego::NegotiationRequiresState)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Even an optional MIC must not be silently ignored.
+    #[test]
+    fn acceptor_rejects_unverified_mech_list_mic() -> Result<(), TestError> {
+        for mic in [Vec::new(), vec![0xde, 0xad]] {
+            let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+            init.mech_list_mic = Some(mic);
+            assert!(matches!(
+                accept_token(&Token::Init(init))?,
+                Err(Spnego::MechListMicRequiresState)
+            ));
+        }
+        Ok(())
+    }
+
+    /// A continuation cannot prove the original offer to a stateless acceptor.
+    #[test]
+    fn acceptor_rejects_stateless_continuation() -> Result<(), TestError> {
+        let init = acceptor_init(ObjectIdentifier::krb5())?;
+        let mut token = NegTokenResp::accept_completed()
+            .with_response_token(init.mech_token.context("mechanism token")?);
+        for state in [
+            None,
+            Some(NegState::AcceptCompleted),
+            Some(NegState::AcceptIncomplete),
+            Some(NegState::RequestMic),
+            Some(NegState::Reject),
+        ] {
+            token.neg_state = state;
+            assert!(matches!(
+                accept_token(&Token::Resp(token.clone()))?,
+                Err(Spnego::NegotiationRequiresState)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Both supported OIDs must survive selection and the acceptor's reply.
+    #[test]
+    fn acceptor_preserves_selected_kerberos_oid() -> Result<(), TestError> {
+        for oid in [ObjectIdentifier::krb5(), ObjectIdentifier::ms_legacy_krb5()] {
+            let mut init = acceptor_init(oid.clone())?;
+            init.mech_types.push(ObjectIdentifier::spnego());
+            let accepted = accept_token(&Token::Init(init))?.context("accepted Kerberos")?;
+            let header = accepted
+                .ap_rep_response_header_with_confounder(
+                    &decode_hex(AP_REP_CONFOUNDER)?,
+                    &ApRepOptions::default(),
+                )
+                .context("AP-REP response")?;
+            let Token::Resp(response) =
+                spnego::parse_negotiate_header(&header).context("response parses")?
+            else {
+                return Err("expected response".into());
+            };
+            assert_eq!(response.supported_mech, Some(oid.clone()));
+            let krb5 = Krb5MechToken::decode(&response.response_token.context("AP-REP token")?)
+                .context("AP-REP mechanism")?;
+            assert_eq!(krb5.oid, oid);
+        }
+        Ok(())
+    }
+
+    /// Unsupported offers and selections must return the mechanism error, not authenticate.
+    #[test]
+    fn acceptor_rejects_unsupported_mechanisms() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        let unsupported = ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?;
+        init.mech_types = vec![unsupported.clone()];
+        let mut resp = NegTokenResp::accept_completed()
+            .with_response_token(init.mech_token.clone().context("mechanism token")?);
+        resp.supported_mech = Some(unsupported.clone());
+        for token in [Token::Init(init), Token::Resp(resp)] {
+            assert!(
+                matches!(accept_token(&token)?, Err(Spnego::UnsupportedMechanism(oid)) if oid == unsupported)
+            );
+        }
+        Ok(())
+    }
+
+    /// Kerberos aliases remain distinct offered OIDs, not permission to switch silently.
+    #[test]
+    fn acceptor_rejects_optimistic_oid_mismatch() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_types
+            .insert(0, ObjectIdentifier::ms_legacy_krb5());
+        assert!(matches!(
+            accept_token(&Token::Init(init))?,
+            Err(Spnego::OptimisticMechanismMismatch)
+        ));
+        Ok(())
+    }
+
+    /// Raw MS Kerberos headers keep their OID when adapted to the SPNEGO shape.
+    #[test]
+    fn acceptor_accepts_raw_ms_kerberos() -> Result<(), TestError> {
+        let init = acceptor_init(ObjectIdentifier::ms_legacy_krb5())?;
+        let header = format!(
+            "Negotiate {}",
+            base64_encode(&init.mech_token.context("mechanism token")?)
+        );
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("keytab parses")?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
+        assert_eq!(
+            accepted.selected_mechanism,
+            ObjectIdentifier::ms_legacy_krb5()
+        );
+        Ok(())
+    }
+
+    /// Rejected negotiation metadata must not consume a valid AP-REQ in the replay cache.
+    #[test]
+    fn acceptor_rejection_preserves_replay_cache() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_list_mic = Some(vec![0xde, 0xad]);
+        let bad = spnego::negotiate_header(&Token::Init(init.clone()))?;
+        init.mech_list_mic = None;
+        let good = spnego::negotiate_header(&Token::Init(init))?;
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("keytab parses")?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            spnego::accept_sec_context_header(&mut validator, &bad),
+            Err(Spnego::MechListMicRequiresState)
+        ));
+        let accepted = spnego::accept_sec_context_header(&mut validator, &good)?;
+        assert_eq!(accepted.ap_req.client.name(), "testuser1");
+        Ok(())
+    }
+
+    fn acceptor_init(oid: ObjectIdentifier) -> Result<NegTokenInit, TestError> {
+        let mut krb5 = Krb5MechToken::ap_req(gss_ap_req_fixture()?);
+        krb5.oid = oid.clone();
+        let mut init = NegTokenInit::krb5(krb5.encode().context("AP-REQ token")?);
+        init.mech_types = vec![oid];
+        Ok(init)
+    }
+
+    fn accept_token(token: &Token) -> Result<Result<spnego::AcceptedContext, Spnego>, TestError> {
+        let header = spnego::negotiate_header(token).context("header encodes")?;
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("keytab parses")?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        Ok(spnego::accept_sec_context_header(&mut validator, &header))
+    }
+
+    /// Missing GSS fields must not turn ordinary Kerberos into a GSS context.
+    #[test]
+    fn gss_authenticator_requires_checksum() -> Result<(), TestError> {
+        let token = authenticator_token(None, Some(42))?;
+        assert!(matches!(
+            accept_token(&token)?,
+            Err(Spnego::MissingAuthenticatorChecksum)
+        ));
+        Ok(())
+    }
+
+    /// A sequence is mandatory even without the GSS sequencing flag.
+    #[test]
+    fn gss_authenticator_requires_sequence() -> Result<(), TestError> {
+        let token = authenticator_token(Some(gss_checksum(&[])), None)?;
+        assert!(matches!(
+            accept_token(&token)?,
+            Err(Spnego::MissingAuthenticatorSequence)
+        ));
+        Ok(())
+    }
+
+    /// A generic checksum cannot stand in for the GSS checksum type.
+    #[test]
+    fn gss_authenticator_rejects_wrong_checksum_type() -> Result<(), TestError> {
+        let mut checksum = gss_checksum(&[]);
+        checksum.r#type = 1_i32;
+        let token = authenticator_token(Some(checksum), Some(42))?;
+        assert!(matches!(
+            accept_token(&token)?,
+            Err(Spnego::InvalidAuthenticatorChecksum)
+        ));
+        Ok(())
+    }
+
+    /// Every truncation of the mandatory checksum header is rejected.
+    #[test]
+    fn gss_authenticator_rejects_short_checksum() -> Result<(), TestError> {
+        let valid = spnego::authenticator_checksum(&[]);
+        for length in 0..24 {
+            let bytes = valid.get(..length).context("checksum prefix")?;
+            let checksum = rasn_kerberos::Checksum {
+                r#type: 0x8003,
+                checksum: bytes.to_vec().into(),
+            };
+            let token = authenticator_token(Some(checksum), Some(42))?;
+            assert!(
+                matches!(
+                    accept_token(&token)?,
+                    Err(Spnego::InvalidAuthenticatorChecksum)
+                ),
+                "length {length}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Bnd is exactly sixteen bytes, with its length encoded little-endian.
+    #[test]
+    fn gss_authenticator_rejects_invalid_binding_length() -> Result<(), TestError> {
+        for length in [0_u32, 15, 17, 0x1000_0000, u32::MAX] {
+            let mut bytes = length.to_le_bytes().to_vec();
+            bytes.extend_from_slice(&[0; 20]);
+            let checksum = rasn_kerberos::Checksum {
+                r#type: 0x8003,
+                checksum: bytes.into(),
+            };
+            let token = authenticator_token(Some(checksum), Some(42))?;
+            assert!(
+                matches!(
+                    accept_token(&token)?,
+                    Err(Spnego::InvalidAuthenticatorChecksum)
+                ),
+                "Bnd length {length}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Delegation framing must contain option 1 and the declared credential bytes.
+    #[test]
+    fn gss_authenticator_rejects_malformed_delegation() -> Result<(), TestError> {
+        for suffix in [
+            vec![],
+            vec![1, 0, 0],
+            vec![0, 0, 0, 0],
+            vec![1, 0, 1, 0],
+            vec![1, 0, 0, 0],
+            vec![1, 0, 1, 0, 0xff],
+        ] {
+            let mut bytes = spnego::authenticator_checksum(&[]);
+            *bytes.get_mut(20).context("flags byte")? = 1;
+            bytes.extend_from_slice(&suffix);
+            let checksum = rasn_kerberos::Checksum {
+                r#type: 0x8003,
+                checksum: bytes.into(),
+            };
+            let token = authenticator_token(Some(checksum), Some(42))?;
+            assert!(
+                matches!(
+                    accept_token(&token)?,
+                    Err(Spnego::InvalidAuthenticatorChecksum)
+                ),
+                "suffix {suffix:?}"
+            );
+        }
+        Ok(())
+    }
+
+    /// A no-bindings acceptor ignores Bnd, unknown flags and trailing extensions.
+    #[test]
+    fn gss_authenticator_accepts_extensions_and_zero_sequence() -> Result<(), TestError> {
+        let mut bytes = 16_u32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&[0xa5; 16]);
+        bytes.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xde, 0xad]);
+        let checksum = rasn_kerberos::Checksum {
+            r#type: 0x8003,
+            checksum: bytes.into(),
+        };
+        let token = authenticator_token(Some(checksum), Some(0))?;
+        let accepted = accept_token(&token)?.context("GSS context")?;
+        assert_eq!(accepted.ap_req.sequence_number, Some(0));
+        Ok(())
+    }
+
+    /// GSS rejection must precede replay insertion and leave generic Kerberos usable.
+    #[test]
+    fn gss_authenticator_rejection_preserves_generic_validation() -> Result<(), TestError> {
+        let token = authenticator_token(None, None)?;
+        let header = spnego::negotiate_header(&token)?;
+        let bytes = token.krb5_ap_req()?;
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            spnego::accept_sec_context_header(&mut validator, &header),
+            Err(Spnego::MissingAuthenticatorChecksum)
+        ));
+        assert!(
+            validator.replay_cache_mut().is_empty(),
+            "GSS rejection must not record a replay"
+        );
+        let accepted = validator.validate_ap_req(&bytes)?;
+        assert_eq!(accepted.client.name(), "testuser1");
+        assert_eq!(accepted.sequence_number, None);
+        Ok(())
+    }
+
+    /// Deterministic construction must not emit a nonconforming GSS authenticator.
+    #[test]
+    fn gss_authenticator_deterministic_builder_requires_sequence() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let result = spnego::init_sec_context_with_confounder(
+            &session,
+            InitiatorContextOptions::new(),
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        );
+        assert!(matches!(result, Err(Spnego::MissingAuthenticatorSequence)));
+        Ok(())
+    }
+
+    /// Delegation without a credential must fail for both split and combined flag masks.
+    #[test]
+    fn initiator_rejects_delegation_without_credentials() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        for flags in [
+            vec![spnego::CONTEXT_FLAG_DELEG],
+            vec![spnego::CONTEXT_FLAG_DELEG, CONTEXT_FLAG_INTEG],
+            vec![spnego::CONTEXT_FLAG_DELEG | CONTEXT_FLAG_INTEG],
+        ] {
+            let options = InitiatorContextOptions::new()
+                .with_sequence_number(Some(42))
+                .with_context_flags(flags);
+            let result = spnego::init_sec_context_with_confounder(
+                &session,
+                options,
+                timestamp(1_893_553_447)?,
+                123_456,
+                &decode_hex(AP_REP_CONFOUNDER)?,
+            );
+            assert!(
+                matches!(result, Err(Spnego::DelegationRequiresCredential)),
+                "delegation must not emit an AP-REQ without KRB-CRED"
+            );
+        }
+        Ok(())
+    }
+
+    /// The random builder and authorization-header wrapper must also reject delegation.
+    #[test]
+    fn initiator_wrappers_reject_delegation() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let options = InitiatorContextOptions::new()
+            .with_context_flags(vec![spnego::CONTEXT_FLAG_DELEG | CONTEXT_FLAG_INTEG]);
+        assert!(matches!(
+            spnego::init_sec_context(&session, options.clone()),
+            Err(Spnego::DelegationRequiresCredential)
+        ));
+        assert!(matches!(
+            spnego::authorization_header(&session, options),
+            Err(Spnego::DelegationRequiresCredential)
+        ));
+        Ok(())
+    }
+
+    /// Nondelegating split and combined masks remain acceptable on the wire.
+    #[test]
+    fn initiator_preserves_nondelegating_flag_masks() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        for flags in [
+            vec![],
+            vec![CONTEXT_FLAG_INTEG, CONTEXT_FLAG_CONF],
+            vec![CONTEXT_FLAG_INTEG | CONTEXT_FLAG_CONF],
+        ] {
+            let expected = spnego::authenticator_checksum(&flags);
+            let context = spnego::init_sec_context_with_confounder(
+                &session,
+                InitiatorContextOptions::new()
+                    .with_sequence_number(Some(42))
+                    .with_context_flags(flags),
+                timestamp(1_893_553_447)?,
+                123_456,
+                &decode_hex(AP_REP_CONFOUNDER)?,
+            )?;
+            let authenticator =
+                ap_req::decrypt_ap_req_authenticator(&context.ap_req, &session.session_key, 11)?;
+            assert_eq!(
+                authenticator
+                    .cksum
+                    .context("GSS checksum")?
+                    .checksum
+                    .as_ref(),
+                expected.as_slice()
+            );
+            let accepted = accept_token(&context.spnego_token)?.context("nondelegating context")?;
+            assert_eq!(accepted.ap_req.sequence_number, Some(42));
+        }
+        Ok(())
+    }
+
+    /// The raw prefix never invents delegation fields and merges split flags as a bit mask.
+    #[test]
+    fn authenticator_checksum_delegation_prefix_is_mask_independent() -> Result<(), TestError> {
+        let split =
+            spnego::authenticator_checksum(&[spnego::CONTEXT_FLAG_DELEG, CONTEXT_FLAG_INTEG]);
+        let combined =
+            spnego::authenticator_checksum(&[spnego::CONTEXT_FLAG_DELEG | CONTEXT_FLAG_INTEG]);
+        let mut expected = vec![0x10];
+        expected.extend_from_slice(&[0; 19]);
+        expected.extend_from_slice(&[0x21, 0, 0, 0]);
+        (split.len() == 24).ok_or("delegation prefix must contain exactly 24 bytes")?;
+        assert_eq!(split, expected);
+        assert_eq!(combined, expected);
+        Ok(())
+    }
+
+    /// Raw Kerberos headers must pass the same GSS checks as SPNEGO headers.
+    #[test]
+    fn gss_authenticator_checks_raw_kerberos_headers() -> Result<(), TestError> {
+        let Token::Init(init) = authenticator_token(None, Some(42))? else {
+            return Err("expected init".into());
+        };
+        let header = format!(
+            "Negotiate {}",
+            base64_encode(&init.mech_token.context("token")?)
+        );
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            spnego::accept_sec_context_header(&mut validator, &header),
+            Err(Spnego::MissingAuthenticatorChecksum)
+        ));
+        Ok(())
+    }
+
+    /// GSS checks do not replace the authenticator's cryptographic integrity check.
+    #[test]
+    fn gss_authenticator_rejects_corrupted_ciphertext() -> Result<(), TestError> {
+        let token = authenticator_token(Some(gss_checksum(&[])), Some(42))?;
+        let mut ap_req = decode_ap_req(&token.krb5_ap_req()?)?;
+        let mut cipher = ap_req.authenticator.cipher.to_vec();
+        *cipher.first_mut().context("ciphertext")? ^= 1;
+        ap_req.authenticator.cipher = cipher.into();
+        let corrupted = Token::Init(NegTokenInit::krb5(
+            Krb5MechToken::ap_req(ap_req::encode(&ap_req)?).encode()?,
+        ));
+        assert!(matches!(
+            accept_token(&corrupted)?,
+            Err(Spnego::Service(Service::Crypto(_)))
+        ));
+        Ok(())
+    }
+
+    /// Delegation framing permits extension bytes beyond the declared KRB-CRED.
+    #[test]
+    fn gss_authenticator_accepts_delegation_envelope_and_extensions() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let credential = rasn_kerberos::KrbCred {
+            pvno: 5_i32.into(),
+            msg_type: 22_i32.into(),
+            tickets: vec![der::decode(&session.ticket)?],
+            enc_part: rasn_kerberos::EncryptedData {
+                etype: 18,
+                kvno: None,
+                cipher: vec![0; 32].into(),
+            },
+        };
+        let encoded_credential = der::encode(&credential)?;
+        let mut bytes = spnego::authenticator_checksum(&[]);
+        *bytes.get_mut(20).context("flags byte")? = 1;
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&u16::try_from(encoded_credential.len())?.to_le_bytes());
+        bytes.extend_from_slice(&encoded_credential);
+        bytes.extend_from_slice(&[0xde, 0xad]);
+        let token = authenticator_token(
+            Some(rasn_kerberos::Checksum {
+                r#type: 0x8003,
+                checksum: bytes.into(),
+            }),
+            Some(u32::MAX),
+        )?;
+        let accepted = accept_token(&token)?.context("framed delegation")?;
+        assert_eq!(accepted.ap_req.sequence_number, Some(u32::MAX));
+        Ok(())
+    }
+
+    fn gss_checksum(flags: &[u32]) -> rasn_kerberos::Checksum {
+        rasn_kerberos::Checksum {
+            r#type: 0x8003,
+            checksum: spnego::authenticator_checksum(flags).into(),
+        }
+    }
+
+    fn gss_ap_req_fixture() -> Result<Vec<u8>, TestError> {
+        let original = decode_ap_req(&decode_hex(VALID_AP_REQ)?)?;
+        let key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator = ap_req::decrypt_ap_req_authenticator(&original, &key, 11)?;
+        authenticator.cksum = Some(gss_checksum(&[]));
+        authenticator.seq_number = Some(42);
+        let message = ap_req::build_ap_req_with_confounder(
+            original.ticket,
+            original.ap_options,
+            &authenticator,
+            &key,
+            11,
+            original.authenticator.kvno,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        Ok(ap_req::encode(&message)?)
+    }
+
+    fn authenticator_token(
+        checksum: Option<rasn_kerberos::Checksum>,
+        sequence: Option<u32>,
+    ) -> Result<Token, TestError> {
+        let built = build_ap_req_with_confounder(
+            &service_ticket_session_from_valid_ap_req()?,
+            ApReq::new()
+                .with_checksum(checksum)
+                .with_sequence_number(sequence),
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        Ok(Token::Init(NegTokenInit::krb5(
+            Krb5MechToken::ap_req(built.der).encode()?,
+        )))
     }
 
     /// Returns the instant `seconds` after the Unix epoch.

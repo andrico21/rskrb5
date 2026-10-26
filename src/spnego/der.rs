@@ -1,5 +1,14 @@
 use super::{Error, ObjectIdentifier, oid};
 
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests;
+
 /// DER universal tag of a SEQUENCE (constructed).
 pub(super) const TAG_SEQUENCE: u8 = 0x30;
 /// DER universal tag of an OBJECT IDENTIFIER.
@@ -187,59 +196,81 @@ pub(super) fn decode_oid_tlv(tlv: Tlv<'_>) -> Result<ObjectIdentifier, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidOidEncoding`] for empty content, a truncated arc or
-/// an arc wider than 32 bits, and [`Error::InvalidOid`] when the arcs are
-/// invalid.
+/// Returns [`Error::InvalidOidEncoding`] for empty content, a truncated or
+/// nonminimal subidentifier, or an arc wider than 32 bits, and
+/// [`Error::InvalidOid`] when the arcs are invalid.
 fn decode_oid_value(value: &[u8]) -> Result<ObjectIdentifier, Error> {
-    let (&first, mut rest) = value.split_first().ok_or(Error::InvalidOidEncoding)?;
+    let mut rest = value;
+    let first = decode_base128(&mut rest)?;
+    let (root, second) = match first {
+        0..40 => (0, first),
+        40..80 => (1, first.saturating_sub(40)),
+        _ => (2, first.saturating_sub(80)),
+    };
     let mut arcs = vec![
-        u32::from(first.div_euclid(40)),
-        u32::from(first.rem_euclid(40)),
+        root,
+        u32::try_from(second).map_err(|_overflow| Error::InvalidOidEncoding)?,
     ];
     while !rest.is_empty() {
-        let mut arc = 0_u32;
-        loop {
-            let (&byte, tail) = rest.split_first().ok_or(Error::InvalidOidEncoding)?;
-            rest = tail;
-            arc = arc.checked_shl(7).ok_or(Error::InvalidOidEncoding)? | u32::from(byte & 0x7f);
-            if byte & 0x80 == 0 {
-                break;
-            }
-        }
-        arcs.push(arc);
+        arcs.push(
+            u32::try_from(decode_base128(&mut rest)?)
+                .map_err(|_overflow| Error::InvalidOidEncoding)?,
+        );
     }
 
     ObjectIdentifier::from_arcs(arcs)
+}
+
+/// Consume one minimal base-128 subidentifier, allowing the first two arcs to combine.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidOidEncoding`] for truncated, nonminimal or overflowing content.
+fn decode_base128(rest: &mut &[u8]) -> Result<u64, Error> {
+    if rest.first() == Some(&0x80) {
+        return Err(Error::InvalidOidEncoding);
+    }
+    let mut value = 0_u64;
+    loop {
+        let (&byte, tail) = rest.split_first().ok_or(Error::InvalidOidEncoding)?;
+        *rest = tail;
+        value = value
+            .checked_mul(128)
+            .and_then(|base| base.checked_add(u64::from(byte & 0x7f)))
+            .ok_or(Error::InvalidOidEncoding)?;
+        if byte & 0x80 == 0 {
+            return Ok(value);
+        }
+    }
 }
 
 /// Encode an object identifier as a complete OBJECT IDENTIFIER element.
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidOid`] when the arcs are invalid or the first two
-/// arcs do not combine into one 32-bit subidentifier.
+/// Returns [`Error::InvalidOid`] when the arcs are invalid.
 pub(super) fn encode_oid(oid: &ObjectIdentifier) -> Result<Vec<u8>, Error> {
     oid::validate_arcs(oid.arcs())?;
     let [first_arc, second_arc, later_arcs @ ..] = oid.arcs() else {
         return Err(Error::InvalidOid);
     };
-    let first = first_arc
+    let first = u64::from(*first_arc)
         .checked_mul(40)
-        .and_then(|base| base.checked_add(*second_arc))
+        .and_then(|base| base.checked_add(u64::from(*second_arc)))
         .ok_or(Error::InvalidOid)?;
     let mut value = Vec::new();
     encode_base128(first, &mut value);
     for arc in later_arcs {
-        encode_base128(*arc, &mut value);
+        encode_base128(u64::from(*arc), &mut value);
     }
     Ok(encode_tlv(TAG_OBJECT_IDENTIFIER, &value))
 }
 
 /// Append `value` in minimal base-128 form, high groups first, with the
 /// continuation bit set on every group but the last.
-fn encode_base128(value: u32, out: &mut Vec<u8>) {
+fn encode_base128(value: u64, out: &mut Vec<u8>) {
     let mut emitting = false;
-    for shift in [28_u32, 21, 14, 7] {
+    for shift in [63_u32, 56, 49, 42, 35, 28, 21, 14, 7] {
         let [low_byte, ..] = value.wrapping_shr(shift).to_le_bytes();
         let group = low_byte & 0x7f;
         emitting |= group != 0;
@@ -256,7 +287,7 @@ fn encode_base128(value: u32, out: &mut Vec<u8>) {
 /// # Errors
 ///
 /// Returns [`Error::InvalidInteger`] for empty content, more than five
-/// octets, a negative value or a value above `u32::MAX`.
+/// octets, a redundant sign octet, a negative value or a value above `u32::MAX`.
 pub(super) fn decode_u32(bytes: &[u8]) -> Result<u32, Error> {
     let Some((first, _)) = bytes.split_first() else {
         return Err(Error::InvalidInteger);
@@ -264,9 +295,17 @@ pub(super) fn decode_u32(bytes: &[u8]) -> Result<u32, Error> {
     if bytes.len() > 5 || first & 0x80 != 0 {
         return Err(Error::InvalidInteger);
     }
+    if let [0, second, ..] = bytes
+        && second & 0x80 == 0
+    {
+        return Err(Error::InvalidInteger);
+    }
     let mut value = 0_u32;
     for byte in bytes {
-        value = value.checked_shl(8).ok_or(Error::InvalidInteger)? | u32::from(*byte);
+        value = value
+            .checked_mul(256)
+            .and_then(|base| base.checked_add(u32::from(*byte)))
+            .ok_or(Error::InvalidInteger)?;
     }
     Ok(value)
 }

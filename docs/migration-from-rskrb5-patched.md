@@ -5,6 +5,65 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Non-exhaustive types and constructors
 
+### Bounded HTTP Negotiate headers (upstream issue #9)
+
+`spnego::parse_negotiate_header` now rejects header values longer than 65,536
+bytes with `error::Spnego::NegotiateHeaderTooLong { maximum, actual }` before
+scanning or base64 decoding. The limit includes the scheme and whitespace;
+exactly 65,536 bytes remain eligible for normal parsing. It applies to both
+SPNEGO and raw Kerberos tokens, including acceptor and AP-REP verification
+callers. Smaller malformed headers retain their existing error classifications.
+Public signatures and token encoders are unchanged. This is a local resource
+limit, not a Kerberos protocol maximum; callers needing larger headers must
+account for this compatibility restriction.
+
+### Unsupported initiator delegation (RSK-622F4664)
+
+Checked SPNEGO initiation now returns `error::Spnego::DelegationRequiresCredential`
+when any context flag mask contains `CONTEXT_FLAG_DELEG`, whether supplied alone,
+split across entries or combined with other flags. These builders have no delegated
+credential input; they no longer emit malformed delegation checksums. Remove the
+request if delegation is not needed; credential forwarding is not implemented.
+Public signatures are unchanged. Nondelegating callers are unaffected.
+
+The low-level `authenticator_checksum` helper returns a 24-byte prefix for every
+flag representation, not a complete delegation checksum. It no longer appends four
+zero bytes for a standalone delegation flag. A caller building delegation manually
+must append DlgOpt=1, a little-endian length and the encrypted KRB-CRED specified by
+RFC 4121 section 4.1.1. Acceptor framing validation is unchanged and does not import
+delegated credentials.
+
+### Mandatory GSS authenticator fields (RSK-FAF64A85)
+
+`spnego::accept_sec_context_header` (and the HTTP acceptor using it) now checks
+the RFC 4121 section 4.1.1 authenticator checksum type, framing and sequence
+presence before recording a replay. Handle the new `error::Spnego` variants
+`MissingAuthenticatorChecksum`, `InvalidAuthenticatorChecksum` and
+`MissingAuthenticatorSequence`. Generic `service::Validator::validate_ap_req`
+still permits authenticators without these GSS-specific fields.
+
+`init_sec_context_with_confounder` now requires
+`InitiatorContextOptions::with_sequence_number(Some(sequence))`; zero is valid.
+The random `init_sec_context` builder still supplies a sequence when omitted.
+No signatures change. The acceptor still has no channel-binding input, ignores
+unknown flags and extensions, and does not import delegated credentials.
+
+### SPNEGO acceptor negotiation (RSK-C4BE57A0)
+
+`AcceptedContext::selected_mechanism` records the first offered Kerberos OID;
+AP-REP headers preserve it. Both the standard and Microsoft legacy Kerberos
+OIDs are supported, including raw Kerberos headers.
+
+`NegTokenInit::krb5_ap_req`, `Token::krb5_ap_req` and
+`accept_sec_context_header` now fail closed for negotiation shapes the one-shot
+API cannot complete. Handle the new `error::Spnego` variants
+`NegotiationRequiresState`, `MechListMicRequiresState` and
+`OptimisticMechanismMismatch`. Supplied MICs are rejected, not verified;
+mechanism switches and continuations require a future stateful API retaining
+the original offer, GSS context state and final MIC exchange. Unsupported OIDs
+continue to use `UnsupportedMechanism`. Token codecs still permit inspection
+of these messages; successful decoding does not mean successful negotiation.
+
 Public structs and enums are non-exhaustive. Construct values through their
 constructors or builders instead of struct literals. External enum matches
 must handle every known variant explicitly and include a final fallback for

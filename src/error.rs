@@ -1899,6 +1899,27 @@ pub enum Spnego {
     /// The mechanism OID is not a supported Kerberos mechanism.
     #[error("unsupported mechanism OID: {0:?}")]
     UnsupportedMechanism(ObjectIdentifier),
+    /// A mechanism switch or continuation needs retained SPNEGO negotiation state.
+    #[error("SPNEGO mechanism switching and continuation require negotiation state")]
+    NegotiationRequiresState,
+    /// A supplied MIC cannot be verified and answered by the one-shot acceptor.
+    #[error("SPNEGO mechListMIC exchange requires retained GSS and negotiation state")]
+    MechListMicRequiresState,
+    /// The optimistic token is not for the first offered mechanism.
+    #[error("SPNEGO optimistic token mechanism differs from the first offer")]
+    OptimisticMechanismMismatch,
+    /// The GSS authenticator omitted its RFC 4121 checksum.
+    #[error("GSS authenticator checksum is required")]
+    MissingAuthenticatorChecksum,
+    /// The GSS authenticator checksum has an invalid type or structure.
+    #[error("invalid RFC 4121 authenticator checksum")]
+    InvalidAuthenticatorChecksum,
+    /// The GSS authenticator omitted its mandatory sequence number.
+    #[error("GSS authenticator sequence number is required")]
+    MissingAuthenticatorSequence,
+    /// Context initiation requested delegation without a delegated-credential input.
+    #[error("GSS delegation requires a delegated credential, which this builder does not accept")]
+    DelegationRequiresCredential,
     /// KRB5 token ID was unknown.
     #[error("unknown KRB5 token ID: {0:02x?}")]
     UnknownKrb5TokenId([u8; 2]),
@@ -2016,6 +2037,14 @@ pub enum Spnego {
     /// HTTP header was not a usable `Negotiate` value.
     #[error("invalid Negotiate header")]
     InvalidNegotiateHeader,
+    /// HTTP Negotiate header exceeded the parser's byte limit.
+    #[error("Negotiate header exceeds {maximum} bytes: got {actual}")]
+    NegotiateHeaderTooLong {
+        /// Maximum accepted header value length in bytes.
+        maximum: usize,
+        /// Actual header value length in bytes.
+        actual: usize,
+    },
     /// Base64 decoding failed.
     #[error("base64 decode error: {0}")]
     Base64(base64::DecodeError),

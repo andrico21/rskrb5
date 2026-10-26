@@ -5,7 +5,7 @@
 //! NegTokenInit/NegTokenResp negotiation tokens, and HTTP `Negotiate` header
 //! encoding/decoding.
 
-use core::{iter, slice, time::Duration};
+use core::{iter, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose};
@@ -20,10 +20,22 @@ use crate::{
     service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
 };
 
+/// Mandatory RFC 4121 authenticator fields.
+mod authenticator;
 /// Minimal DER reader and writer for the GSS-API and SPNEGO token layer.
 mod der;
 /// GSS-API object identifiers.
 pub mod oid;
+
+/// HTTP Negotiate header size boundary regressions.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod header_tests;
 
 use self::{
     der::{
@@ -63,6 +75,8 @@ pub const HTTP_WWW_AUTHENTICATE: &str = "WWW-Authenticate";
 /// HTTP authentication scheme used by SPNEGO.
 pub const HTTP_NEGOTIATE: &str = "Negotiate";
 
+/// Maximum header value size, including scheme and whitespace, before decoding.
+const MAX_NEGOTIATE_HEADER_LEN: usize = 64 * 1024;
 /// GSS-API context flag: delegation.
 pub const CONTEXT_FLAG_DELEG: u32 = 1;
 /// GSS-API context flag: mutual authentication.
@@ -448,11 +462,12 @@ impl WrapToken {
             });
         }
 
+        let unrotated = rotate_left(body, usize::from(rrc));
         let checksum_len = usize::from(ec);
-        let Some((payload, checksum)) = body
+        let Some((payload, checksum)) = unrotated
             .len()
             .checked_sub(checksum_len)
-            .and_then(|payload_len| body.split_at_checked(payload_len))
+            .and_then(|payload_len| unrotated.split_at_checked(payload_len))
         else {
             return Err(Error::InconsistentWrapChecksumLength {
                 token_len: bytes.len(),
@@ -508,6 +523,11 @@ impl WrapToken {
         bytes.extend_from_slice(&self.header(self.rrc));
         bytes.extend_from_slice(payload);
         bytes.extend_from_slice(checksum);
+        if let Some(body) = bytes.get_mut(GSS_WRAP_HEADER_LEN..)
+            && let Some(shift) = usize::from(self.rrc).checked_rem(body.len())
+        {
+            body.rotate_right(shift);
+        }
         Ok(bytes)
     }
 
@@ -658,11 +678,14 @@ impl WrapToken {
 
     /// Encrypt this token's payload as a sealed RFC4121 Wrap token.
     ///
+    /// The requested EC is a minimum: DES3 filler grows to prevent trailing crypto-system residue.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::GssEncryptedBodyAlreadySet`] when the token already carries an encrypted
     /// body, [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
-    /// unknown key encryption type, and [`Error::Crypto`] when encryption fails.
+    /// unknown key encryption type, [`Error::InvalidGssFiller`] if the required filler exceeds
+    /// the 16-bit EC field, and [`Error::Crypto`] when encryption fails.
     #[inline]
     pub fn encrypt_payload_with_confounder(
         &mut self,
@@ -678,6 +701,16 @@ impl WrapToken {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        match etype {
+            KerberosEtype::Des3CbcSha1Kd(_) => {
+                // DES3's 8-byte confounder and the 16-byte header are already block-aligned.
+                let residue = payload.len().wrapping_add(usize::from(self.ec)) & 7;
+                let extra = u16::try_from(residue.wrapping_neg() & 7)
+                    .map_err(|_error| Error::InvalidGssFiller)?;
+                self.ec = self.ec.checked_add(extra).ok_or(Error::InvalidGssFiller)?;
+            }
+            KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => {}
+        }
         let mut plaintext = Vec::with_capacity(
             payload
                 .len()
@@ -890,7 +923,7 @@ impl Krb5MechToken {
 
         let mut content = DerReader::new(token.value());
         let oid = decode_oid_tlv(content.read_tlv()?)?;
-        if oid != ObjectIdentifier::krb5() {
+        if !oid.is_kerberos_mechanism() {
             return Err(Error::UnsupportedMechanism(oid));
         }
 
@@ -1072,20 +1105,33 @@ impl NegTokenInit {
         }
     }
 
-    /// Return the first KRB5 AP-REQ carried by this token.
+    /// Return the optimistic KRB5 AP-REQ for the first offered mechanism.
+    ///
+    /// This one-shot API cannot retain the mechanism-list transcript, GSS sequence
+    /// state or MIC exchange phase. It rejects mechanism switches and supplied
+    /// MICs rather than returning an AP-REQ with unverified negotiation integrity.
     ///
     /// # Errors
     ///
     /// Returns [`Error::MissingMechTypes`] when no mechanism is offered,
     /// [`Error::UnsupportedMechanism`] when no offered mechanism is Kerberos 5,
+    /// [`Error::NegotiationRequiresState`] when Kerberos is not offered first,
+    /// [`Error::MechListMicRequiresState`] when a MIC is supplied,
+    /// [`Error::OptimisticMechanismMismatch`] when the token OID differs from the first offer,
     /// [`Error::MissingMechToken`] without a mechanism token, the errors of
     /// [`Krb5MechToken::decode`], and [`Error::MissingApReq`] when the mechanism token is not an
     /// AP-REQ.
     #[inline]
     pub fn krb5_ap_req(&self) -> Result<Vec<u8>, Error> {
         ensure_kerberos_mechanism(&self.mech_types)?;
+        if self.mech_list_mic.is_some() {
+            return Err(Error::MechListMicRequiresState);
+        }
         let token = self.mech_token.as_deref().ok_or(Error::MissingMechToken)?;
         let krb5 = Krb5MechToken::decode(token)?;
+        if self.mech_types.first() != Some(&krb5.oid) {
+            return Err(Error::OptimisticMechanismMismatch);
+        }
         if krb5.token_id != Krb5TokenId::ApReq {
             return Err(Error::MissingApReq);
         }
@@ -1322,34 +1368,25 @@ impl Token {
         }
     }
 
-    /// Return the first KRB5 AP-REQ carried by this token.
+    /// Return an optimistic KRB5 AP-REQ without an unfinished MIC exchange.
     ///
     /// # Errors
     ///
     /// For an initial token, returns the errors of [`NegTokenInit::krb5_ap_req`]. For a response
-    /// token, returns [`Error::MissingMechTypes`] without a selected mechanism,
-    /// [`Error::UnsupportedMechanism`] when it is not Kerberos 5, [`Error::MissingMechToken`]
-    /// without a response token, the errors of [`Krb5MechToken::decode`], and
-    /// [`Error::MissingApReq`] when the response token is not an AP-REQ.
+    /// token, returns [`Error::UnsupportedMechanism`] for a non-Kerberos selection,
+    /// or [`Error::NegotiationRequiresState`]: the original offer and MIC exchange
+    /// phase are unavailable, so a continuation cannot establish a context here.
     #[inline]
     pub fn krb5_ap_req(&self) -> Result<Vec<u8>, Error> {
         match self {
             Self::Init(token) => token.krb5_ap_req(),
             Self::Resp(token) => {
-                let mech = token
-                    .supported_mech
-                    .as_ref()
-                    .ok_or(Error::MissingMechTypes)?;
-                ensure_kerberos_mechanism(slice::from_ref(mech))?;
-                let response = token
-                    .response_token
-                    .as_deref()
-                    .ok_or(Error::MissingMechToken)?;
-                let krb5 = Krb5MechToken::decode(response)?;
-                if krb5.token_id != Krb5TokenId::ApReq {
-                    return Err(Error::MissingApReq);
+                if let Some(mech) = &token.supported_mech
+                    && !mech.is_kerberos_mechanism()
+                {
+                    return Err(Error::UnsupportedMechanism(mech.clone()));
                 }
-                Ok(krb5.message)
+                Err(Error::NegotiationRequiresState)
             }
         }
     }
@@ -1368,8 +1405,8 @@ pub struct InitiatorContextOptions {
     /// Optional client sequence number.
     ///
     /// [`init_sec_context`] fills a random gokrb5-compatible sequence number
-    /// when this is absent. [`init_sec_context_with_confounder`] preserves the
-    /// explicit value so tests can remain deterministic.
+    /// when this is absent. [`init_sec_context_with_confounder`] requires an
+    /// explicit value so deterministic construction also conforms to RFC 4121.
     pub sequence_number: Option<u32>,
 }
 
@@ -1532,6 +1569,8 @@ impl InitiatorContext {
 pub struct AcceptedContext {
     /// Validated AP-REQ details.
     pub ap_req: ValidatedApReq,
+    /// Kerberos mechanism selected from the initiator's first offer.
+    pub selected_mechanism: ObjectIdentifier,
 }
 
 impl AcceptedContext {
@@ -1566,17 +1605,31 @@ impl AcceptedContext {
         let ap_rep = self
             .ap_req
             .build_ap_rep_with_confounder(confounder, options)?;
-        let krb5_token = Krb5MechToken::ap_rep(ap_rep).encode()?;
-        response_token_header(&NegTokenResp::accept_completed().with_response_token(krb5_token))
+        let mut krb5_token = Krb5MechToken::ap_rep(ap_rep);
+        krb5_token.oid = self.selected_mechanism.clone();
+        let mut response =
+            NegTokenResp::accept_completed().with_response_token(krb5_token.encode()?);
+        response.supported_mech = Some(self.selected_mechanism.clone());
+        response_token_header(&response)
     }
 }
 
 /// Validate a SPNEGO HTTP `Authorization` header through a service validator.
 ///
+/// Only a first-choice Kerberos optimistic exchange without a `mechListMIC`
+/// is supported. RFC 4178 sections 4-5 require retained negotiation and GSS
+/// context state for mechanism switches and MIC exchanges; those flows fail
+/// closed before AP-REQ validation or replay-cache insertion.
+/// The authenticator must include the RFC 4121 checksum and sequence number.
+/// This no-channel-bindings API ignores initiator bindings and unknown extensions;
+/// it checks delegation framing but does not import delegated credentials.
+///
 /// # Errors
 ///
 /// Returns the errors of [`parse_negotiate_header`] and [`Token::krb5_ap_req`], and
-/// [`Error::Service`] when the validator rejects the AP-REQ.
+/// [`Error::Service`] when the validator rejects the AP-REQ. Missing or malformed
+/// GSS fields return [`Error::MissingAuthenticatorChecksum`],
+/// [`Error::InvalidAuthenticatorChecksum`] or [`Error::MissingAuthenticatorSequence`].
 #[inline]
 pub fn accept_sec_context_header(
     validator: &mut Validator<'_>,
@@ -1584,8 +1637,17 @@ pub fn accept_sec_context_header(
 ) -> Result<AcceptedContext, Error> {
     let token = parse_negotiate_header(header)?;
     let ap_req = token.krb5_ap_req()?;
+    let selected_mechanism = match token {
+        Token::Init(init) => init
+            .mech_types
+            .into_iter()
+            .next()
+            .ok_or(Error::MissingMechTypes)?,
+        Token::Resp(_) => return Err(Error::NegotiationRequiresState),
+    };
     Ok(AcceptedContext {
-        ap_req: validator.validate_ap_req(&ap_req)?,
+        ap_req: validator.validate_ap_req_with_check(&ap_req, authenticator::validate)?,
+        selected_mechanism,
     })
 }
 
@@ -1619,7 +1681,9 @@ pub fn init_sec_context(
 /// Returns [`Error::Decode`], [`Error::Encode`], [`Error::InvalidKerberosString`],
 /// [`Error::UnsupportedEtype`], [`Error::Crypto`], [`Error::Random`], [`Error::TimeOverflow`] or
 /// [`Error::Client`] when the AP-REQ cannot be built, and [`Error::InvalidOid`] when the tokens
-/// cannot be encoded.
+/// cannot be encoded. Returns [`Error::MissingAuthenticatorSequence`] when no
+/// explicit sequence number is supplied. Returns [`Error::DelegationRequiresCredential`]
+/// for delegation requests because this builder has no delegated-credential input.
 #[inline]
 pub fn init_sec_context_with_confounder(
     service_ticket: &TgsRepSession,
@@ -1628,6 +1692,14 @@ pub fn init_sec_context_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<InitiatorContext, Error> {
+    options
+        .context_flags
+        .iter()
+        .all(|flag| flag & CONTEXT_FLAG_DELEG == 0)
+        .ok_or(Error::DelegationRequiresCredential)?;
+    let sequence_number = options
+        .sequence_number
+        .ok_or(Error::MissingAuthenticatorSequence)?;
     let ap_req_options = ApReq::new()
         .with_ap_option_bits(options.ap_option_bits)
         .with_checksum(Some(rasn_kerberos::Checksum {
@@ -1635,7 +1707,7 @@ pub fn init_sec_context_with_confounder(
             checksum: authenticator_checksum(&options.context_flags).into(),
         }))
         .with_subkey(options.subkey.clone())
-        .with_sequence_number(options.sequence_number);
+        .with_sequence_number(Some(sequence_number));
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;
@@ -1679,14 +1751,23 @@ pub fn authorization_header(
 ///
 /// In addition to SPNEGO `NegTokenInit`/`NegTokenResp` values, this accepts
 /// raw KRB5 mech tokens and wraps them in the equivalent SPNEGO shape.
+/// Header values are limited to 64 KiB, including scheme and whitespace.
+/// The byte limit is checked before scanning or allocating decoded token bytes.
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidNegotiateHeader`] when the scheme is not `Negotiate` or the token is
+/// Returns [`Error::NegotiateHeaderTooLong`] when the header exceeds 64 KiB,
+/// [`Error::InvalidNegotiateHeader`] when the scheme is not `Negotiate` or the token is
 /// missing, [`Error::Base64`] when the token is not valid base64, and the errors of
 /// [`Token::decode`] when the bytes are neither a SPNEGO token nor a raw KRB5 mech token.
 #[inline]
 pub fn parse_negotiate_header(header: &str) -> Result<Token, Error> {
+    if header.len() > MAX_NEGOTIATE_HEADER_LEN {
+        return Err(Error::NegotiateHeaderTooLong {
+            maximum: MAX_NEGOTIATE_HEADER_LEN,
+            actual: header.len(),
+        });
+    }
     let mut parts = header.splitn(2, char::is_whitespace);
     let scheme = parts.next().unwrap_or_default();
     let encoded = parts.next().ok_or(Error::InvalidNegotiateHeader)?;
@@ -1723,7 +1804,11 @@ fn raw_krb5_negotiate_token(bytes: &[u8], spnego_error: Error) -> Result<Token, 
         return Err(spnego_error);
     };
     match krb5.token_id {
-        Krb5TokenId::ApReq => Ok(Token::Init(NegTokenInit::krb5(bytes.to_vec()))),
+        Krb5TokenId::ApReq => {
+            let mut init = NegTokenInit::krb5(bytes.to_vec());
+            init.mech_types = vec![krb5.oid];
+            Ok(Token::Init(init))
+        }
         Krb5TokenId::ApRep => Ok(Token::Resp(
             NegTokenResp::accept_completed().with_response_token(bytes.to_vec()),
         )),
@@ -1784,16 +1869,18 @@ fn response_token_header(token: &NegTokenResp) -> Result<String, Error> {
 
 #[must_use]
 /// Create a SPNEGO authenticator checksum buffer for GSS context flags.
+///
+/// This low-level helper returns only the 24-byte prefix and ORs all flag masks.
+/// With delegation set, it is not a complete checksum: the caller must append
+/// RFC 4121 DlgOpt=1, the little-endian credential length, and an encrypted KRB-CRED.
+/// Checked context builders reject delegation because they have no credential input.
 #[inline]
 pub fn authenticator_checksum(flags: &[u32]) -> Vec<u8> {
     let context_flags = flags.iter().fold(0_u32, |merged, flag| merged | *flag);
-    let mut checksum = Vec::with_capacity(28);
+    let mut checksum = Vec::with_capacity(24);
     checksum.extend_from_slice(&16_u32.to_le_bytes());
     checksum.extend_from_slice(&[0; 16]);
     checksum.extend_from_slice(&context_flags.to_le_bytes());
-    if flags.contains(&CONTEXT_FLAG_DELEG) {
-        checksum.extend_from_slice(&[0; 4]);
-    }
     checksum
 }
 
@@ -2152,22 +2239,25 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
     })
 }
 
-/// Check that at least one listed mechanism is Kerberos 5.
+/// Require the first offered mechanism to be Kerberos for optimistic processing.
 ///
 /// # Errors
 ///
 /// Returns [`Error::MissingMechTypes`] for an empty list, and [`Error::UnsupportedMechanism`] with
-/// the first listed OID when none is Kerberos 5.
+/// the first listed OID when none is Kerberos 5. Returns [`Error::NegotiationRequiresState`]
+/// when selecting Kerberos would require a mechanism switch and a MIC exchange.
 fn ensure_kerberos_mechanism(mech_types: &[ObjectIdentifier]) -> Result<(), Error> {
     let Some(first) = mech_types.first() else {
         return Err(Error::MissingMechTypes);
     };
 
-    if mech_types
+    if first.is_kerberos_mechanism() {
+        Ok(())
+    } else if mech_types
         .iter()
         .any(ObjectIdentifier::is_kerberos_mechanism)
     {
-        Ok(())
+        Err(Error::NegotiationRequiresState)
     } else {
         Err(Error::UnsupportedMechanism(first.clone()))
     }
