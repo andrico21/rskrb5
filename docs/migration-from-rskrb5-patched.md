@@ -3,7 +3,7 @@
 The package is now `rskrb5-ng`; Rust imports use `rskrb5_ng`.
 The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
-## Non-exhaustive types and constructors
+## Review backlog behaviour changes
 
 ### Bounded HTTP Negotiate headers (upstream issue #9)
 
@@ -63,6 +63,17 @@ mechanism switches and continuations require a future stateful API retaining
 the original offer, GSS context state and final MIC exchange. Unsupported OIDs
 continue to use `UnsupportedMechanism`. Token codecs still permit inspection
 of these messages; successful decoding does not mean successful negotiation.
+
+### S4U frontend keys (delegated-client-unbound-to-ticket-payload)
+
+S4U exchanges now require frontend long-term keys to validate delegated ticket
+identity. Set `TgsReq::with_delegation_keytab(keytab)` for runtime-neutral or
+transport APIs. High-level keytab-backed clients provide their keys automatically.
+Without keys, reply processing returns `error::Client::DelegationKeyRequired`;
+protected ticket/evidence identity mismatches return `DelegationPrincipalMismatch`.
+`TgsReq` and `BuiltTgsReq` carry optional local-only `delegation_keytab` metadata.
+
+## Non-exhaustive types and constructors
 
 Public structs and enums are non-exhaustive. Construct values through their
 constructors or builders instead of struct literals. External enum matches
@@ -777,11 +788,3 @@ let error = Client::PrincipalMismatch {
 assert!(matches!(error, Client::PrincipalMismatch { .. }));
 # }
 ```
-# S4U frontend keys
-
-S4U exchanges now require frontend long-term keys to validate delegated ticket
-identity. Set `TgsReq::with_delegation_keytab(keytab)` for runtime-neutral or
-transport APIs. High-level keytab-backed clients provide their keys automatically.
-Without keys, reply processing returns `error::Client::DelegationKeyRequired`;
-protected ticket/evidence identity mismatches return `DelegationPrincipalMismatch`.
-`TgsReq` and `BuiltTgsReq` carry optional local-only `delegation_keytab` metadata.
