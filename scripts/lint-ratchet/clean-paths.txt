@@ -30,4 +30,7 @@ src/spnego/**
 src/ticket.rs
 tests/client.rs
 tests/client/**
+tests/client_ad_integration.rs
+tests/client_integration.rs
 tests/client_principal.rs
+tests/client_transport.rs
