@@ -7,6 +7,26 @@ Full red runs and acceptance output: `task-29-rskrb5-ng-own-way.log` in the exec
 | --- | --- | --- | --- | --- |
 | RSK-84FA90AE | fixed | `unsealed_wrap_applies_rrc_on_decode_and_encode`; commit `(RSK-84FA90AE)` | Unsealed Wrap tokens apply RRC modulo body length on encoding and decoding. | N/A |
 | RSK-C4BE57A0 | fixed | `acceptor_rejects_nonfirst_kerberos`, `acceptor_rejects_unverified_mech_list_mic`, `acceptor_rejects_stateless_continuation`, `acceptor_preserves_selected_kerberos_oid`, `acceptor_rejects_unsupported_mechanisms`, `acceptor_rejects_optimistic_oid_mismatch`, `acceptor_accepts_raw_ms_kerberos`, `acceptor_rejection_preserves_replay_cache`; commit `(RSK-C4BE57A0)` | Acceptor scope: accept only first-choice Kerberos OIDs; preserve selection in replies; fail closed on mechanism switches, supplied MICs and stateless continuations. | N/A |
+| RSK-FAF64A85 / run-2 `src/spnego.rs:accept_sec_context_header:mandatory-gss-authenticator-fields` | fixed | `gss_authenticator_requires_checksum`, `gss_authenticator_requires_sequence`, `gss_authenticator_rejects_wrong_checksum_type`, `gss_authenticator_rejects_short_checksum`, `gss_authenticator_rejects_invalid_binding_length`, `gss_authenticator_rejects_malformed_delegation`, `gss_authenticator_rejection_preserves_generic_validation`, `gss_authenticator_deterministic_builder_requires_sequence`; commit `(RSK-FAF64A85)` | GSS acceptance checks RFC 4121 checksum type/framing and requires a sequence before replay insertion; deterministic initiation rejects an omitted sequence. Generic Kerberos validation is unchanged. | N/A |
+
+## RSK-FAF64A85: GSS boundary validation
+
+RFC 4121 section 4.1.1 requires checksum type `0x8003`, a sixteen-byte Bnd
+with little-endian length, context flags and an authenticator sequence number.
+Delegation framing requires option 1, the declared credential bytes and a
+decodable KRB-CRED envelope. Credential import/decryption is not implemented by
+this acceptor; fixing the delegation **builder** remains the separate
+RSK-622F4664 item.
+
+The service validator invokes an internal GSS check after decryption, identity
+and clock checks, but before replay insertion. Ordinary AP-REQ validation does
+not run that check. No second decryption or public result-field change is needed.
+The API supplies no channel bindings, so it ignores Bnd content as permitted by
+section 4.1.1.2; it also ignores unknown flags and trailing extensions. Positive
+controls cover these cases, zero and maximum sequence numbers, and a framed
+delegation envelope. Additional tests cover raw Kerberos headers and corrupted
+authenticator ciphertext. No principal-forgery or channel-binding enforcement
+claim is made.
 
 ## RSK-C4BE57A0: one-shot acceptor limitation
 

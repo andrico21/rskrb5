@@ -583,6 +583,23 @@ impl<'keytab> Validator<'keytab> {
     /// [`Error::ReplayCachePoisoned`].
     #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
+        self.validate_ap_req_with_check(bytes, |_| Ok::<(), Error>(()))
+    }
+
+    /// Apply a protocol-specific authenticator check before committing replay state.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::validate_ap_req`] or the supplied check.
+    pub(crate) fn validate_ap_req_with_check<F, E>(
+        &mut self,
+        bytes: &[u8],
+        check: F,
+    ) -> Result<ValidatedApReq, E>
+    where
+        F: FnOnce(&rasn_kerberos::Authenticator) -> Result<(), E>,
+        E: From<Error>,
+    {
         let ap_req = ap_req::decode(bytes).map_err(ap_req_error)?;
 
         let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
@@ -596,23 +613,28 @@ impl<'keytab> Validator<'keytab> {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        let service_key = self.keytab.find_key(
-            &keytab_refs,
-            &ticket_service.realm,
-            ticket_kvno,
-            ticket_etype,
-        )?;
+        let service_key = self
+            .keytab
+            .find_key(
+                &keytab_refs,
+                &ticket_service.realm,
+                ticket_kvno,
+                ticket_etype,
+            )
+            .map_err(Error::from)?;
 
         let enc_ticket =
             ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key.0).map_err(ticket_error)?;
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         let pac = match &enc_ticket.authorization_data {
-            Some(authorization_data) => pac::find_pac_in_authorization_data(authorization_data)?,
+            Some(authorization_data) => {
+                pac::find_pac_in_authorization_data(authorization_data).map_err(Error::from)?
+            }
             None => None,
         };
         if let Some(ticket_pac) = &pac {
-            ticket_pac.verify(service_key.0)?;
+            ticket_pac.verify(service_key.0).map_err(Error::from)?;
         }
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
@@ -637,7 +659,8 @@ impl<'keytab> Validator<'keytab> {
                     authenticator_client.name(),
                     authenticator_client.realm
                 ),
-            });
+            }
+            .into());
         }
 
         let cusec = integer_to_u32("authenticator.cusec", &authenticator.cusec)?;
@@ -649,8 +672,11 @@ impl<'keytab> Validator<'keytab> {
         if abs_duration(now, authenticator_timestamp) > self.max_clock_skew {
             return Err(Error::ClockSkew {
                 max_clock_skew: self.max_clock_skew,
-            });
+            }
+            .into());
         }
+
+        check(&authenticator)?;
 
         // RFC 4120 section 3.2.3 keys the replay cache on the server name, the
         // client name, the time and the microseconds. Section 6.2 makes the

@@ -20,6 +20,8 @@ use crate::{
     service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
 };
 
+/// Mandatory RFC 4121 authenticator fields.
+mod authenticator;
 /// Minimal DER reader and writer for the GSS-API and SPNEGO token layer.
 mod der;
 /// GSS-API object identifiers.
@@ -1378,8 +1380,8 @@ pub struct InitiatorContextOptions {
     /// Optional client sequence number.
     ///
     /// [`init_sec_context`] fills a random gokrb5-compatible sequence number
-    /// when this is absent. [`init_sec_context_with_confounder`] preserves the
-    /// explicit value so tests can remain deterministic.
+    /// when this is absent. [`init_sec_context_with_confounder`] requires an
+    /// explicit value so deterministic construction also conforms to RFC 4121.
     pub sequence_number: Option<u32>,
 }
 
@@ -1593,11 +1595,16 @@ impl AcceptedContext {
 /// is supported. RFC 4178 sections 4-5 require retained negotiation and GSS
 /// context state for mechanism switches and MIC exchanges; those flows fail
 /// closed before AP-REQ validation or replay-cache insertion.
+/// The authenticator must include the RFC 4121 checksum and sequence number.
+/// This no-channel-bindings API ignores initiator bindings and unknown extensions;
+/// it checks delegation framing but does not import delegated credentials.
 ///
 /// # Errors
 ///
 /// Returns the errors of [`parse_negotiate_header`] and [`Token::krb5_ap_req`], and
-/// [`Error::Service`] when the validator rejects the AP-REQ.
+/// [`Error::Service`] when the validator rejects the AP-REQ. Missing or malformed
+/// GSS fields return [`Error::MissingAuthenticatorChecksum`],
+/// [`Error::InvalidAuthenticatorChecksum`] or [`Error::MissingAuthenticatorSequence`].
 #[inline]
 pub fn accept_sec_context_header(
     validator: &mut Validator<'_>,
@@ -1614,7 +1621,7 @@ pub fn accept_sec_context_header(
         Token::Resp(_) => return Err(Error::NegotiationRequiresState),
     };
     Ok(AcceptedContext {
-        ap_req: validator.validate_ap_req(&ap_req)?,
+        ap_req: validator.validate_ap_req_with_check(&ap_req, authenticator::validate)?,
         selected_mechanism,
     })
 }
@@ -1649,7 +1656,8 @@ pub fn init_sec_context(
 /// Returns [`Error::Decode`], [`Error::Encode`], [`Error::InvalidKerberosString`],
 /// [`Error::UnsupportedEtype`], [`Error::Crypto`], [`Error::Random`], [`Error::TimeOverflow`] or
 /// [`Error::Client`] when the AP-REQ cannot be built, and [`Error::InvalidOid`] when the tokens
-/// cannot be encoded.
+/// cannot be encoded. Returns [`Error::MissingAuthenticatorSequence`] when no
+/// explicit sequence number is supplied.
 #[inline]
 pub fn init_sec_context_with_confounder(
     service_ticket: &TgsRepSession,
@@ -1658,6 +1666,9 @@ pub fn init_sec_context_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<InitiatorContext, Error> {
+    let sequence_number = options
+        .sequence_number
+        .ok_or(Error::MissingAuthenticatorSequence)?;
     let ap_req_options = ApReq::new()
         .with_ap_option_bits(options.ap_option_bits)
         .with_checksum(Some(rasn_kerberos::Checksum {
@@ -1665,7 +1676,7 @@ pub fn init_sec_context_with_confounder(
             checksum: authenticator_checksum(&options.context_flags).into(),
         }))
         .with_subkey(options.subkey.clone())
-        .with_sequence_number(options.sequence_number);
+        .with_sequence_number(Some(sequence_number));
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;

@@ -5,6 +5,21 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Non-exhaustive types and constructors
 
+### Mandatory GSS authenticator fields (RSK-FAF64A85)
+
+`spnego::accept_sec_context_header` (and the HTTP acceptor using it) now checks
+the RFC 4121 section 4.1.1 authenticator checksum type, framing and sequence
+presence before recording a replay. Handle the new `error::Spnego` variants
+`MissingAuthenticatorChecksum`, `InvalidAuthenticatorChecksum` and
+`MissingAuthenticatorSequence`. Generic `service::Validator::validate_ap_req`
+still permits authenticators without these GSS-specific fields.
+
+`init_sec_context_with_confounder` now requires
+`InitiatorContextOptions::with_sequence_number(Some(sequence))`; zero is valid.
+The random `init_sec_context` builder still supplies a sequence when omitted.
+No signatures change. The acceptor still has no channel-binding input, ignores
+unknown flags and extensions, and does not import delegated credentials.
+
 ### SPNEGO acceptor negotiation (RSK-C4BE57A0)
 
 `AcceptedContext::selected_mechanism` records the first offered Kerberos OID;

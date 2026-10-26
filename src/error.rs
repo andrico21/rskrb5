@@ -1908,6 +1908,15 @@ pub enum Spnego {
     /// The optimistic token is not for the first offered mechanism.
     #[error("SPNEGO optimistic token mechanism differs from the first offer")]
     OptimisticMechanismMismatch,
+    /// The GSS authenticator omitted its RFC 4121 checksum.
+    #[error("GSS authenticator checksum is required")]
+    MissingAuthenticatorChecksum,
+    /// The GSS authenticator checksum has an invalid type or structure.
+    #[error("invalid RFC 4121 authenticator checksum")]
+    InvalidAuthenticatorChecksum,
+    /// The GSS authenticator omitted its mandatory sequence number.
+    #[error("GSS authenticator sequence number is required")]
+    MissingAuthenticatorSequence,
     /// KRB5 token ID was unknown.
     #[error("unknown KRB5 token ID: {0:02x?}")]
     UnknownKrb5TokenId([u8; 2]),

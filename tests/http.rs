@@ -59,6 +59,7 @@ mod tests {
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::config::Config;
     use rskrb5_ng::{
+        ap_req,
         client::{AsRepSession, principal::Principal},
         error::Http as HttpError,
         http as krb_http,
@@ -993,7 +994,7 @@ mod tests {
     }
 
     fn valid_authorization_header() -> Result<String, TestError> {
-        let ap_req_token = Krb5MechToken::ap_req(decode_hex(VALID_AP_REQ)?)
+        let ap_req_token = Krb5MechToken::ap_req(gss_ap_req_fixture()?)
             .encode()
             .context("KRB5 AP-REQ token encodes")?;
         let spnego_token = Token::Init(NegTokenInit::krb5(ap_req_token));
@@ -1001,10 +1002,31 @@ mod tests {
     }
 
     fn raw_krb5_authorization_header() -> Result<String, TestError> {
-        let ap_req_token = Krb5MechToken::ap_req(decode_hex(VALID_AP_REQ)?)
+        let ap_req_token = Krb5MechToken::ap_req(gss_ap_req_fixture()?)
             .encode()
             .context("KRB5 AP-REQ token encodes")?;
         Ok(format!("Negotiate {}", base64_encode(&ap_req_token)))
+    }
+
+    fn gss_ap_req_fixture() -> Result<Vec<u8>, TestError> {
+        let original = ap_req::decode(&decode_hex(VALID_AP_REQ)?)?;
+        let key = service_ticket_session_from_valid_ap_req()?.session_key;
+        let mut authenticator = ap_req::decrypt_ap_req_authenticator(&original, &key, 11)?;
+        authenticator.cksum = Some(rasn_kerberos::Checksum {
+            r#type: 0x8003,
+            checksum: spnego::authenticator_checksum(&[]).into(),
+        });
+        authenticator.seq_number = Some(42);
+        let message = ap_req::build_ap_req_with_confounder(
+            original.ticket,
+            original.ap_options,
+            &authenticator,
+            &key,
+            11,
+            original.authenticator.kvno,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        Ok(ap_req::encode(&message)?)
     }
 
     fn initiator_context() -> Result<spnego::InitiatorContext, TestError> {
@@ -1519,7 +1541,7 @@ mod tests {
                 .map_err(|cause| format!("accept-completed header: {cause}"))?,
         )?;
         for options in variants {
-            let context = initiator_context_with_options(options)?;
+            let context = initiator_context_with_options(options.with_sequence_number(Some(42)))?;
             let response = response_with_www_authenticate_body(accept_header.clone(), ());
 
             assert!(
