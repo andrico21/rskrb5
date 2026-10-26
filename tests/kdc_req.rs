@@ -1,1409 +1,307 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! KDC-REQ tests: gokrb5 AS-REQ, TGS-REQ and KDC-REQ-BODY fixtures and request building.
 #![cfg(feature = "messages")]
 
-use pretty_assertions::assert_eq;
-use rasn::types::Integer;
-use rskrb5_ng::kdc_req::{
-    KRB_AS_REQ_MSG_TYPE, KRB_TGS_REQ_MSG_TYPE, build_as_req, build_tgs_req, decode_as_req,
-    decode_kdc_req_body, decode_tgs_req, encode_as_req, encode_build_as_req, encode_build_tgs_req,
-    encode_kdc_req_body, encode_tgs_req,
-};
-
-const KDC_REQ_BODY: &str = "308201A6A007030500FEDCBA90A11A3018A003020101A111300F1B066866747361691B056578747261A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A411180F31393934303631303036303331375AA511180F31393934303631303036303331375AA611180F31393934303631303036303331375AA70302012AA8083006020100020101A920301E300DA003020102A106040412D00023300DA003020102A106040412D00023AA253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
-const KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SECOND_TICKET: &str = "3081FFA007030500FEDCBA98A2101B0E415448454E412E4D49542E454455A511180F31393934303631303036303331375AA70302012AA8083006020100020101AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
-const KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SERVER: &str = "3059A007030500FEDCBA90A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A511180F31393934303631303036303331375AA70302012AA8083006020100020101";
-const AS_REQ: &str = "6A8201E4308201E0A103020105A20302010AA32630243010A10302010DA209040770612D646174613010A10302010DA209040770612D64617461A48201AA308201A6A007030500FEDCBA90A11A3018A003020101A111300F1B066866747361691B056578747261A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A411180F31393934303631303036303331375AA511180F31393934303631303036303331375AA611180F31393934303631303036303331375AA70302012AA8083006020100020101A920301E300DA003020102A106040412D00023300DA003020102A106040412D00023AA253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
-const AS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET: &str = "6A82011430820110A103020105A20302010AA48201023081FFA007030500FEDCBA98A2101B0E415448454E412E4D49542E454455A511180F31393934303631303036303331375AA70302012AA8083006020100020101AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
-const AS_REQ_OPTIONALS_NULL_EXCEPT_SERVER: &str = "6A693067A103020105A20302010AA45B3059A007030500FEDCBA90A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A511180F31393934303631303036303331375AA70302012AA8083006020100020101";
-const TGS_REQ: &str = "6C8201E4308201E0A103020105A20302010CA32630243010A10302010DA209040770612D646174613010A10302010DA209040770612D64617461A48201AA308201A6A007030500FEDCBA90A11A3018A003020101A111300F1B066866747361691B056578747261A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A411180F31393934303631303036303331375AA511180F31393934303631303036303331375AA611180F31393934303631303036303331375AA70302012AA8083006020100020101A920301E300DA003020102A106040412D00023300DA003020102A106040412D00023AA253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
-const TGS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET: &str = "6C82011430820110A103020105A20302010CA48201023081FFA007030500FEDCBA98A2101B0E415448454E412E4D49542E454455A511180F31393934303631303036303331375AA70302012AA8083006020100020101AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
-const TGS_REQ_OPTIONALS_NULL_EXCEPT_SERVER: &str = "6C693067A103020105A20302010CA45B3059A007030500FEDCBA90A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A511180F31393934303631303036303331375AA70302012AA8083006020100020101";
-const TEST_TIME_SECONDS: i64 = 771_228_197;
-
-#[derive(Clone, Copy)]
-enum BodyShape {
-    Full,
-    SecondTicketOnly,
-    ServerOnly,
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// KDC-REQ tests.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn decodes_gokrb5_kdc_req_body_fixtures() {
-    for (fixture, shape) in [
-        (KDC_REQ_BODY, BodyShape::Full),
-        (
-            KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SECOND_TICKET,
-            BodyShape::SecondTicketOnly,
-        ),
-        (
-            KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SERVER,
-            BodyShape::ServerOnly,
-        ),
-    ] {
-        let bytes = decode_hex(fixture);
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::error;
 
-        let body = decode_kdc_req_body(&bytes).expect("KDC-REQ-BODY decodes");
+    use pretty_assertions::assert_eq;
+    use rasn::types::{GeneralString, Integer};
+    use rasn_kerberos::{
+        EncryptedData, HostAddress, KdcOptions, KdcReq, KdcReqBody, PaData, PrincipalName, Ticket,
+    };
+    use rskrb5_ng::kdc_req::{
+        KRB_AS_REQ_MSG_TYPE, KRB_TGS_REQ_MSG_TYPE, build_as_req, build_tgs_req, decode_as_req,
+        decode_kdc_req_body, decode_tgs_req, encode_as_req, encode_build_as_req,
+        encode_build_tgs_req, encode_kdc_req_body, encode_tgs_req,
+    };
 
-        assert_kdc_req_body(&body, shape);
+    /// Error type of the `Result`-returning tests.
+    type TestError = Box<dyn error::Error>;
+
+    /// gokrb5 KDC-REQ-BODY fixture with every optional field set.
+    const KDC_REQ_BODY: &str = "308201A6A007030500FEDCBA90A11A3018A003020101A111300F1B066866747361691B056578747261A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A411180F31393934303631303036303331375AA511180F31393934303631303036303331375AA611180F31393934303631303036303331375AA70302012AA8083006020100020101A920301E300DA003020102A106040412D00023300DA003020102A106040412D00023AA253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
+    /// gokrb5 KDC-REQ-BODY fixture with only the additional tickets set.
+    const KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SECOND_TICKET: &str = "3081FFA007030500FEDCBA98A2101B0E415448454E412E4D49542E454455A511180F31393934303631303036303331375AA70302012AA8083006020100020101AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
+    /// gokrb5 KDC-REQ-BODY fixture with only the server name set.
+    const KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SERVER: &str = "3059A007030500FEDCBA90A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A511180F31393934303631303036303331375AA70302012AA8083006020100020101";
+    /// gokrb5 AS-REQ fixture with every optional field set.
+    const AS_REQ: &str = "6A8201E4308201E0A103020105A20302010AA32630243010A10302010DA209040770612D646174613010A10302010DA209040770612D64617461A48201AA308201A6A007030500FEDCBA90A11A3018A003020101A111300F1B066866747361691B056578747261A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A411180F31393934303631303036303331375AA511180F31393934303631303036303331375AA611180F31393934303631303036303331375AA70302012AA8083006020100020101A920301E300DA003020102A106040412D00023300DA003020102A106040412D00023AA253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
+    /// gokrb5 AS-REQ fixture with only the additional tickets set.
+    const AS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET: &str = "6A82011430820110A103020105A20302010AA48201023081FFA007030500FEDCBA98A2101B0E415448454E412E4D49542E454455A511180F31393934303631303036303331375AA70302012AA8083006020100020101AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
+    /// gokrb5 AS-REQ fixture with only the server name set.
+    const AS_REQ_OPTIONALS_NULL_EXCEPT_SERVER: &str = "6A693067A103020105A20302010AA45B3059A007030500FEDCBA90A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A511180F31393934303631303036303331375AA70302012AA8083006020100020101";
+    /// gokrb5 TGS-REQ fixture with every optional field set.
+    const TGS_REQ: &str = "6C8201E4308201E0A103020105A20302010CA32630243010A10302010DA209040770612D646174613010A10302010DA209040770612D64617461A48201AA308201A6A007030500FEDCBA90A11A3018A003020101A111300F1B066866747361691B056578747261A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A411180F31393934303631303036303331375AA511180F31393934303631303036303331375AA611180F31393934303631303036303331375AA70302012AA8083006020100020101A920301E300DA003020102A106040412D00023300DA003020102A106040412D00023AA253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
+    /// gokrb5 TGS-REQ fixture with only the additional tickets set.
+    const TGS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET: &str = "6C82011430820110A103020105A20302010CA48201023081FFA007030500FEDCBA98A2101B0E415448454E412E4D49542E454455A511180F31393934303631303036303331375AA70302012AA8083006020100020101AB81BF3081BC615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765615C305AA003020105A1101B0E415448454E412E4D49542E454455A21A3018A003020101A111300F1B066866747361691B056578747261A3253023A003020100A103020105A21704156B726241534E2E312074657374206D657373616765";
+    /// gokrb5 TGS-REQ fixture with only the server name set.
+    const TGS_REQ_OPTIONALS_NULL_EXCEPT_SERVER: &str = "6C693067A103020105A20302010CA45B3059A007030500FEDCBA90A2101B0E415448454E412E4D49542E454455A31A3018A003020101A111300F1B066866747361691B056578747261A511180F31393934303631303036303331375AA70302012AA8083006020100020101";
+    /// Timestamp of the gokrb5 fixtures, in seconds since the Unix epoch.
+    const TEST_TIME_SECONDS: i64 = 771_228_197;
+
+    /// Which optional KDC-REQ-BODY fields a fixture carries.
+    #[derive(Clone, Copy)]
+    enum BodyShape {
+        /// Every optional field is present.
+        Full,
+        /// Only the additional tickets are present.
+        SecondTicketOnly,
+        /// Only the server name is present.
+        ServerOnly,
+    }
+
+    /// Pins that the gokrb5 KDC-REQ-BODY fixtures decode to their shapes and re-encode byte for byte.
+    #[test]
+    fn decodes_gokrb5_kdc_req_body_fixtures() -> Result<(), TestError> {
+        for (fixture, shape) in [
+            (KDC_REQ_BODY, BodyShape::Full),
+            (
+                KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SECOND_TICKET,
+                BodyShape::SecondTicketOnly,
+            ),
+            (
+                KDC_REQ_BODY_OPTIONALS_NULL_EXCEPT_SERVER,
+                BodyShape::ServerOnly,
+            ),
+        ] {
+            let bytes = hex::decode(fixture)?;
+
+            let body = decode_kdc_req_body(&bytes)?;
+
+            assert_kdc_req_body(&body, shape)?;
+            assert_eq!(encode_kdc_req_body(&body)?, bytes);
+        }
+        Ok(())
+    }
+
+    /// Pins that the gokrb5 AS-REQ fixtures decode to their shapes and re-encode byte for byte.
+    #[test]
+    fn decodes_gokrb5_as_req_fixtures() -> Result<(), TestError> {
+        for (fixture, shape) in [
+            (AS_REQ, BodyShape::Full),
+            (
+                AS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET,
+                BodyShape::SecondTicketOnly,
+            ),
+            (AS_REQ_OPTIONALS_NULL_EXCEPT_SERVER, BodyShape::ServerOnly),
+        ] {
+            let bytes = hex::decode(fixture)?;
+
+            let as_req = decode_as_req(&bytes)?;
+
+            assert_kdc_req_fields(&as_req.0, KRB_AS_REQ_MSG_TYPE, shape)?;
+            assert_eq!(encode_as_req(&as_req)?, bytes);
+        }
+        Ok(())
+    }
+
+    /// Pins that the gokrb5 TGS-REQ fixtures decode to their shapes and re-encode byte for byte.
+    #[test]
+    fn decodes_gokrb5_tgs_req_fixtures() -> Result<(), TestError> {
+        for (fixture, shape) in [
+            (TGS_REQ, BodyShape::Full),
+            (
+                TGS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET,
+                BodyShape::SecondTicketOnly,
+            ),
+            (TGS_REQ_OPTIONALS_NULL_EXCEPT_SERVER, BodyShape::ServerOnly),
+        ] {
+            let bytes = hex::decode(fixture)?;
+
+            let tgs_req = decode_tgs_req(&bytes)?;
+
+            assert_kdc_req_fields(&tgs_req.0, KRB_TGS_REQ_MSG_TYPE, shape)?;
+            assert_eq!(encode_tgs_req(&tgs_req)?, bytes);
+        }
+        Ok(())
+    }
+
+    /// Pins that an AS-REQ built from a body and pre-authentication data encodes to the gokrb5 fixture.
+    #[test]
+    fn builds_as_req_from_body_and_padata() -> Result<(), TestError> {
+        let body = decode_kdc_req_body(&hex::decode(KDC_REQ_BODY)?)?;
+        let fixture = decode_as_req(&hex::decode(AS_REQ)?)?;
+        let padata = fixture.0.padata.clone();
+
+        let built = build_as_req(body.clone(), padata.clone());
+
+        assert_eq!(built.0.pvno, Integer::from(5_i32));
+        assert_eq!(built.0.msg_type, Integer::from(KRB_AS_REQ_MSG_TYPE));
+        assert_eq!(built.0.padata, padata);
+        assert_eq!(built.0.req_body, body);
+        assert_eq!(encode_as_req(&built)?, hex::decode(AS_REQ)?);
         assert_eq!(
-            encode_kdc_req_body(&body).expect("KDC-REQ-BODY encodes"),
-            bytes,
+            encode_build_as_req(body, fixture.0.padata)?,
+            hex::decode(AS_REQ)?
+        );
+        Ok(())
+    }
+
+    /// Pins that a TGS-REQ built from a body and pre-authentication data encodes to the gokrb5 fixture.
+    #[test]
+    fn builds_tgs_req_from_body_and_padata() -> Result<(), TestError> {
+        let body = decode_kdc_req_body(&hex::decode(KDC_REQ_BODY)?)?;
+        let fixture = decode_tgs_req(&hex::decode(TGS_REQ)?)?;
+        let padata = fixture.0.padata.clone();
+
+        let built = build_tgs_req(body.clone(), padata.clone());
+
+        assert_eq!(built.0.pvno, Integer::from(5_i32));
+        assert_eq!(built.0.msg_type, Integer::from(KRB_TGS_REQ_MSG_TYPE));
+        assert_eq!(built.0.padata, padata);
+        assert_eq!(built.0.req_body, body);
+        assert_eq!(encode_tgs_req(&built)?, hex::decode(TGS_REQ)?);
+        assert_eq!(
+            encode_build_tgs_req(body, fixture.0.padata)?,
+            hex::decode(TGS_REQ)?
+        );
+        Ok(())
+    }
+
+    /// Asserts the KDC-REQ header, pre-authentication data and body of a fixture shape.
+    fn assert_kdc_req_fields(
+        req: &KdcReq,
+        expected_msg_type: i32,
+        expected_shape: BodyShape,
+    ) -> Result<(), TestError> {
+        assert_eq!(req.pvno, Integer::from(5_i32));
+        assert_eq!(req.msg_type, Integer::from(expected_msg_type));
+        match expected_shape {
+            BodyShape::Full => assert_padata(req.padata.as_ref().ok_or("padata")?),
+            BodyShape::SecondTicketOnly | BodyShape::ServerOnly => {
+                assert!(req.padata.is_none(), "padata is absent");
+            }
+        }
+        assert_kdc_req_body(&req.req_body, expected_shape)
+    }
+
+    /// Asserts the KDC-REQ-BODY fields of a fixture shape.
+    fn assert_kdc_req_body(body: &KdcReqBody, expected_shape: BodyShape) -> Result<(), TestError> {
+        let expected_options = match expected_shape {
+            BodyShape::SecondTicketOnly => 0xfedc_ba98,
+            BodyShape::Full | BodyShape::ServerOnly => 0xfedc_ba90,
+        };
+        assert_eq!(kdc_options_to_bits(&body.kdc_options), expected_options);
+        assert_eq!(body.realm.as_bytes(), b"ATHENA.MIT.EDU");
+        assert_eq!(body.till.0.timestamp(), TEST_TIME_SECONDS);
+        assert_eq!(body.nonce, 42);
+        assert_eq!(body.etype, vec![0_i32, 1_i32]);
+
+        match expected_shape {
+            BodyShape::Full => {
+                assert_principal(body.cname.as_ref().ok_or("cname")?);
+                assert_principal(body.sname.as_ref().ok_or("sname")?);
+                assert_eq!(
+                    body.from.as_ref().ok_or("from")?.0.timestamp(),
+                    TEST_TIME_SECONDS,
+                );
+                assert_eq!(
+                    body.rtime.as_ref().ok_or("rtime")?.0.timestamp(),
+                    TEST_TIME_SECONDS,
+                );
+                assert_addresses(body.addresses.as_ref().ok_or("addresses")?)?;
+                assert_encrypted_data(body.enc_authorization_data.as_ref().ok_or("auth data")?);
+                assert_tickets(body.additional_tickets.as_ref().ok_or("tickets")?, 2);
+            }
+            BodyShape::SecondTicketOnly => {
+                assert!(body.cname.is_none(), "cname is absent");
+                assert!(body.sname.is_none(), "sname is absent");
+                assert!(body.from.is_none(), "from is absent");
+                assert!(body.rtime.is_none(), "rtime is absent");
+                assert!(body.addresses.is_none(), "addresses are absent");
+                assert!(
+                    body.enc_authorization_data.is_none(),
+                    "authorization data is absent"
+                );
+                assert_tickets(body.additional_tickets.as_ref().ok_or("tickets")?, 2);
+            }
+            BodyShape::ServerOnly => {
+                assert!(body.cname.is_none(), "cname is absent");
+                assert_principal(body.sname.as_ref().ok_or("sname")?);
+                assert!(body.from.is_none(), "from is absent");
+                assert!(body.rtime.is_none(), "rtime is absent");
+                assert!(body.addresses.is_none(), "addresses are absent");
+                assert!(
+                    body.enc_authorization_data.is_none(),
+                    "authorization data is absent"
+                );
+                assert!(
+                    body.additional_tickets.is_none(),
+                    "additional tickets are absent"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Asserts the two gokrb5 fixture pre-authentication data entries.
+    fn assert_padata(padata: &[PaData]) {
+        assert_eq!(padata.len(), 2);
+        for entry in padata {
+            assert_eq!(entry.r#type, 13_i32);
+            assert_eq!(entry.value.as_ref(), b"pa-data");
+        }
+    }
+
+    /// Asserts the gokrb5 fixture principal name `hftsai/extra`.
+    fn assert_principal(name: &PrincipalName) {
+        assert_eq!(name.r#type, 1_i32);
+        assert_eq!(
+            principal_components(name),
+            vec![b"hftsai".as_slice(), b"extra".as_slice()],
         );
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn decodes_gokrb5_as_req_fixtures() {
-    for (fixture, shape) in [
-        (AS_REQ, BodyShape::Full),
-        (
-            AS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET,
-            BodyShape::SecondTicketOnly,
-        ),
-        (AS_REQ_OPTIONALS_NULL_EXCEPT_SERVER, BodyShape::ServerOnly),
-    ] {
-        let bytes = decode_hex(fixture);
-
-        let as_req = decode_as_req(&bytes).expect("AS-REQ decodes");
-
-        assert_kdc_req_fields(&as_req.0, KRB_AS_REQ_MSG_TYPE, shape);
-        assert_eq!(encode_as_req(&as_req).expect("AS-REQ encodes"), bytes);
-    }
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn decodes_gokrb5_tgs_req_fixtures() {
-    for (fixture, shape) in [
-        (TGS_REQ, BodyShape::Full),
-        (
-            TGS_REQ_OPTIONALS_NULL_EXCEPT_SECOND_TICKET,
-            BodyShape::SecondTicketOnly,
-        ),
-        (TGS_REQ_OPTIONALS_NULL_EXCEPT_SERVER, BodyShape::ServerOnly),
-    ] {
-        let bytes = decode_hex(fixture);
-
-        let tgs_req = decode_tgs_req(&bytes).expect("TGS-REQ decodes");
-
-        assert_kdc_req_fields(&tgs_req.0, KRB_TGS_REQ_MSG_TYPE, shape);
-        assert_eq!(encode_tgs_req(&tgs_req).expect("TGS-REQ encodes"), bytes);
-    }
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn builds_as_req_from_body_and_padata() {
-    let body = decode_kdc_req_body(&decode_hex(KDC_REQ_BODY)).expect("body decodes");
-    let fixture = decode_as_req(&decode_hex(AS_REQ)).expect("AS-REQ decodes");
-    let padata = fixture.0.padata.clone();
-
-    let built = build_as_req(body.clone(), padata.clone());
-
-    assert_eq!(built.0.pvno, Integer::from(5));
-    assert_eq!(built.0.msg_type, Integer::from(KRB_AS_REQ_MSG_TYPE));
-    assert_eq!(built.0.padata, padata);
-    assert_eq!(built.0.req_body, body);
-    assert_eq!(
-        encode_as_req(&built).expect("AS-REQ encodes"),
-        decode_hex(AS_REQ),
-    );
-    assert_eq!(
-        encode_build_as_req(body, fixture.0.padata).expect("AS-REQ builds and encodes"),
-        decode_hex(AS_REQ),
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn builds_tgs_req_from_body_and_padata() {
-    let body = decode_kdc_req_body(&decode_hex(KDC_REQ_BODY)).expect("body decodes");
-    let fixture = decode_tgs_req(&decode_hex(TGS_REQ)).expect("TGS-REQ decodes");
-    let padata = fixture.0.padata.clone();
-
-    let built = build_tgs_req(body.clone(), padata.clone());
-
-    assert_eq!(built.0.pvno, Integer::from(5));
-    assert_eq!(built.0.msg_type, Integer::from(KRB_TGS_REQ_MSG_TYPE));
-    assert_eq!(built.0.padata, padata);
-    assert_eq!(built.0.req_body, body);
-    assert_eq!(
-        encode_tgs_req(&built).expect("TGS-REQ encodes"),
-        decode_hex(TGS_REQ),
-    );
-    assert_eq!(
-        encode_build_tgs_req(body, fixture.0.padata).expect("TGS-REQ builds and encodes"),
-        decode_hex(TGS_REQ),
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_assert_message,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn assert_kdc_req_fields(
-    req: &rasn_kerberos::KdcReq,
-    expected_msg_type: i32,
-    expected_shape: BodyShape,
-) {
-    assert_eq!(req.pvno, Integer::from(5));
-    assert_eq!(req.msg_type, Integer::from(expected_msg_type));
-    match expected_shape {
-        BodyShape::Full => assert_padata(req.padata.as_ref().expect("padata")),
-        BodyShape::SecondTicketOnly | BodyShape::ServerOnly => assert!(req.padata.is_none()),
-    }
-    assert_kdc_req_body(&req.req_body, expected_shape);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_assert_message,
-        clippy::missing_panics_doc,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn assert_kdc_req_body(body: &rasn_kerberos::KdcReqBody, expected_shape: BodyShape) {
-    let expected_options = match expected_shape {
-        BodyShape::SecondTicketOnly => 0xfedc_ba98,
-        BodyShape::Full | BodyShape::ServerOnly => 0xfedc_ba90,
-    };
-    assert_eq!(kdc_options_to_bits(&body.kdc_options), expected_options);
-    assert_eq!(body.realm.as_bytes(), b"ATHENA.MIT.EDU");
-    assert_eq!(body.till.0.timestamp(), TEST_TIME_SECONDS);
-    assert_eq!(body.nonce, 42);
-    assert_eq!(body.etype, vec![0, 1]);
-
-    match expected_shape {
-        BodyShape::Full => {
-            assert_principal(body.cname.as_ref().expect("cname"));
-            assert_principal(body.sname.as_ref().expect("sname"));
-            assert_eq!(
-                body.from.as_ref().expect("from").0.timestamp(),
-                TEST_TIME_SECONDS,
-            );
-            assert_eq!(
-                body.rtime.as_ref().expect("rtime").0.timestamp(),
-                TEST_TIME_SECONDS,
-            );
-            assert_addresses(body.addresses.as_ref().expect("addresses"));
-            assert_encrypted_data(body.enc_authorization_data.as_ref().expect("auth data"));
-            assert_tickets(body.additional_tickets.as_ref().expect("tickets"), 2);
+    /// Asserts the two gokrb5 fixture host addresses.
+    fn assert_addresses(addresses: &[HostAddress]) -> Result<(), TestError> {
+        assert_eq!(addresses.len(), 2);
+        let expected_address = hex::decode("12d00023")?;
+        for address in addresses {
+            assert_eq!(address.addr_type, 2_i32);
+            assert_eq!(address.address.as_ref(), expected_address);
         }
-        BodyShape::SecondTicketOnly => {
-            assert!(body.cname.is_none());
-            assert!(body.sname.is_none());
-            assert!(body.from.is_none());
-            assert!(body.rtime.is_none());
-            assert!(body.addresses.is_none());
-            assert!(body.enc_authorization_data.is_none());
-            assert_tickets(body.additional_tickets.as_ref().expect("tickets"), 2);
-        }
-        BodyShape::ServerOnly => {
-            assert!(body.cname.is_none());
-            assert_principal(body.sname.as_ref().expect("sname"));
-            assert!(body.from.is_none());
-            assert!(body.rtime.is_none());
-            assert!(body.addresses.is_none());
-            assert!(body.enc_authorization_data.is_none());
-            assert!(body.additional_tickets.is_none());
+        Ok(())
+    }
+
+    /// Asserts the gokrb5 fixture encrypted data.
+    fn assert_encrypted_data(encrypted_data: &EncryptedData) {
+        assert_eq!(encrypted_data.etype, 0_i32);
+        assert_eq!(encrypted_data.kvno, Some(5));
+        assert_eq!(encrypted_data.cipher.as_ref(), b"krbASN.1 test message");
+    }
+
+    /// Asserts `expected_count` gokrb5 fixture tickets.
+    fn assert_tickets(tickets: &[Ticket], expected_count: usize) {
+        assert_eq!(tickets.len(), expected_count);
+        for ticket in tickets {
+            assert_eq!(ticket.tkt_vno, Integer::from(5_i32));
+            assert_eq!(ticket.realm.as_bytes(), b"ATHENA.MIT.EDU");
+            assert_principal(&ticket.sname);
+            assert_encrypted_data(&ticket.enc_part);
         }
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn assert_padata(padata: &[rasn_kerberos::PaData]) {
-    assert_eq!(padata.len(), 2);
-    for entry in padata {
-        assert_eq!(entry.r#type, 13);
-        assert_eq!(entry.value.as_ref(), b"pa-data");
+    /// Returns the name components of a principal name as byte slices.
+    fn principal_components(name: &PrincipalName) -> Vec<&[u8]> {
+        name.string.iter().map(GeneralString::as_bytes).collect()
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn assert_principal(name: &rasn_kerberos::PrincipalName) {
-    assert_eq!(name.r#type, 1);
-    assert_eq!(
-        principal_components(name),
-        vec![b"hftsai".as_slice(), b"extra".as_slice()],
-    );
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn assert_addresses(addresses: &[rasn_kerberos::HostAddress]) {
-    assert_eq!(addresses.len(), 2);
-    for address in addresses {
-        assert_eq!(address.addr_type, 2);
-        assert_eq!(address.address.as_ref(), decode_hex("12d00023"));
-    }
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn assert_encrypted_data(encrypted_data: &rasn_kerberos::EncryptedData) {
-    assert_eq!(encrypted_data.etype, 0);
-    assert_eq!(encrypted_data.kvno, Some(5));
-    assert_eq!(encrypted_data.cipher.as_ref(), b"krbASN.1 test message");
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn assert_tickets(tickets: &[rasn_kerberos::Ticket], expected_count: usize) {
-    assert_eq!(tickets.len(), expected_count);
-    for ticket in tickets {
-        assert_eq!(ticket.tkt_vno, Integer::from(5));
-        assert_eq!(ticket.realm.as_bytes(), b"ATHENA.MIT.EDU");
-        assert_principal(&ticket.sname);
-        assert_encrypted_data(&ticket.enc_part);
-    }
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::redundant_closure_for_method_calls,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn principal_components(name: &rasn_kerberos::PrincipalName) -> Vec<&[u8]> {
-    name.string
-        .iter()
-        .map(|component| component.as_bytes())
-        .collect()
-}
-
-fn kdc_options_to_bits(flags: &rasn_kerberos::KdcOptions) -> u32 {
-    let raw = flags.0.as_raw_slice();
-    u32::from_be_bytes([
-        raw.first().copied().unwrap_or_default(),
-        raw.get(1).copied().unwrap_or_default(),
-        raw.get(2).copied().unwrap_or_default(),
-        raw.get(3).copied().unwrap_or_default(),
-    ])
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::integer_division_remainder_used,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn decode_hex(input: &str) -> Vec<u8> {
-    assert_eq!(input.len() % 2, 0, "hex input has even length");
-    input
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|chunk| {
-            let high = decode_hex_digit(chunk[0]);
-            let low = decode_hex_digit(chunk[1]);
-            (high << 4) | low
-        })
-        .collect()
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn decode_hex_digit(byte: u8) -> u8 {
-    match byte {
-        b'0'..=b'9' => byte - b'0',
-        b'a'..=b'f' => byte - b'a' + 10,
-        b'A'..=b'F' => byte - b'A' + 10,
-        _ => panic!("invalid hex byte: {byte}"),
+    /// Returns the first 32 KDC option bits as a big-endian integer; missing bytes read as zero.
+    fn kdc_options_to_bits(flags: &KdcOptions) -> u32 {
+        let raw = flags.0.as_raw_slice();
+        u32::from_be_bytes([
+            raw.first().copied().unwrap_or_default(),
+            raw.get(1).copied().unwrap_or_default(),
+            raw.get(2).copied().unwrap_or_default(),
+            raw.get(3).copied().unwrap_or_default(),
+        ])
     }
 }

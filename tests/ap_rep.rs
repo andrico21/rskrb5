@@ -1,939 +1,186 @@
-#![expect(missing_docs, reason = "lint-migration: upstream baseline at ee9cb04")]
+//! AP-REP tests: gokrb5 fixture round-trips and encrypted-part building and decryption.
 #![cfg(feature = "messages")]
 
-use pretty_assertions::assert_eq;
-use rasn::types::Integer;
-use rskrb5_ng::{
-    ap_rep::{
-        AP_REP_ENCPART_USAGE, Error, KRB_AP_REP_MSG_TYPE, build_ap_rep,
-        build_ap_rep_with_confounder, decode_ap_rep, decode_enc_ap_rep_part,
-        decrypt_ap_rep_enc_part, encode_ap_rep, encode_build_ap_rep_with_confounder,
-    },
-    crypto::KerberosEtype,
-    keytab::EncryptionKey,
-};
-
-const MARSHALLED_AP_REP: &str = concat!(
-    "6F333031A003020105A10302010FA2253023A003020100A103020105A217",
-    "04156B726241534E2E312074657374206D657373616765",
-);
-const MARSHALLED_ENC_AP_REP_PART: &str = concat!(
-    "7B363034A011180F31393934303631303036303331375AA105020301E240",
-    "A2133011A003020101A10A04083132333435363738A303020111",
-);
-const MARSHALLED_ENC_AP_REP_PART_OPTIONALS_NULL: &str =
-    "7B1C301AA011180F31393934303631303036303331375AA105020301E240";
-const TEST_TIME_SECONDS: i64 = 771_228_197;
-const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
+/// AP-REP tests.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
 )]
-#[test]
-fn decodes_gokrb5_ap_rep_fixture() {
-    let bytes = decode_hex(MARSHALLED_AP_REP);
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::error;
 
-    let ap_rep = decode_ap_rep(&bytes).expect("AP-REP decodes");
-
-    assert_eq!(ap_rep.pvno, Integer::from(5));
-    assert_eq!(ap_rep.msg_type, Integer::from(KRB_AP_REP_MSG_TYPE));
-    assert_eq!(ap_rep.enc_part.etype, 0);
-    assert_eq!(ap_rep.enc_part.kvno, Some(5));
-    assert_eq!(ap_rep.enc_part.cipher.as_ref(), b"krbASN.1 test message");
-    assert_eq!(encode_ap_rep(&ap_rep).expect("AP-REP encodes"), bytes);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn decodes_gokrb5_enc_ap_rep_part_fixture() {
-    let enc_part = decode_enc_ap_rep_part(&decode_hex(MARSHALLED_ENC_AP_REP_PART))
-        .expect("EncAPRepPart decodes");
-
-    assert_eq!(enc_part.ctime.0.timestamp(), TEST_TIME_SECONDS);
-    assert_eq!(enc_part.cusec, Integer::from(123_456));
-    let subkey = enc_part.subkey.as_ref().expect("subkey");
-    assert_eq!(subkey.r#type, 1);
-    assert_eq!(subkey.value.as_ref(), b"12345678");
-    assert_eq!(enc_part.seq_number, Some(17));
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn decodes_gokrb5_enc_ap_rep_part_optionals_null_fixture() {
-    let enc_part = decode_enc_ap_rep_part(&decode_hex(MARSHALLED_ENC_AP_REP_PART_OPTIONALS_NULL))
-        .expect("EncAPRepPart decodes");
-
-    assert_eq!(enc_part.ctime.0.timestamp(), TEST_TIME_SECONDS);
-    assert_eq!(enc_part.cusec, Integer::from(123_456));
-    assert!(enc_part.subkey.is_none());
-    assert!(enc_part.seq_number.is_none());
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn builds_and_decrypts_ap_rep_with_explicit_confounder() {
-    let enc_part = decode_enc_ap_rep_part(&decode_hex(MARSHALLED_ENC_AP_REP_PART))
-        .expect("EncAPRepPart decodes");
-    let key = reply_key();
-    let etype = KerberosEtype::from_etype_id(key.etype).expect("AES256 etype");
-    let confounder = vec![0x55; etype.confounder_len()];
-
-    let ap_rep =
-        build_ap_rep_with_confounder(&enc_part, &key, Some(7), &confounder).expect("AP-REP builds");
-
-    assert_eq!(ap_rep.pvno, Integer::from(5));
-    assert_eq!(ap_rep.msg_type, Integer::from(KRB_AP_REP_MSG_TYPE));
-    assert_eq!(ap_rep.enc_part.etype, key.etype);
-    assert_eq!(ap_rep.enc_part.kvno, Some(7));
-    let decrypted = decrypt_ap_rep_enc_part(&ap_rep, &key).expect("AP-REP decrypts");
-    assert_eq!(decrypted, enc_part);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn encodes_built_ap_rep_with_explicit_confounder() {
-    let enc_part = decode_enc_ap_rep_part(&decode_hex(MARSHALLED_ENC_AP_REP_PART_OPTIONALS_NULL))
-        .expect("EncAPRepPart decodes");
-    let key = reply_key();
-    let etype = KerberosEtype::from_etype_id(key.etype).expect("AES256 etype");
-    let confounder = vec![0x33; etype.confounder_len()];
-
-    let encoded = encode_build_ap_rep_with_confounder(&enc_part, &key, None, &confounder)
-        .expect("AP-REP encodes");
-    let decoded = decode_ap_rep(&encoded).expect("encoded AP-REP decodes");
-
-    assert_eq!(decoded.enc_part.etype, key.etype);
-    assert!(decoded.enc_part.kvno.is_none());
-    let decrypted = decrypt_ap_rep_enc_part(&decoded, &key).expect("AP-REP decrypts");
-    assert_eq!(decrypted, enc_part);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn builds_and_decrypts_ap_rep_with_random_confounder() {
-    let enc_part = decode_enc_ap_rep_part(&decode_hex(MARSHALLED_ENC_AP_REP_PART))
-        .expect("EncAPRepPart decodes");
-    let key = reply_key();
-
-    let ap_rep = build_ap_rep(&enc_part, &key, None).expect("AP-REP builds");
-
-    assert_eq!(ap_rep.enc_part.etype, key.etype);
-    let decrypted = decrypt_ap_rep_enc_part(&ap_rep, &key).expect("AP-REP decrypts");
-    assert_eq!(decrypted, enc_part);
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::expect_used,
-        clippy::missing_panics_doc,
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn rejects_ap_rep_key_etype_mismatch() {
-    let enc_part = decode_enc_ap_rep_part(&decode_hex(MARSHALLED_ENC_AP_REP_PART))
-        .expect("EncAPRepPart decodes");
-    let key = reply_key();
-    let etype = KerberosEtype::from_etype_id(key.etype).expect("AES256 etype");
-    let confounder = vec![0x55; etype.confounder_len()];
-    let ap_rep =
-        build_ap_rep_with_confounder(&enc_part, &key, None, &confounder).expect("AP-REP builds");
-    let wrong_key = EncryptionKey {
-        etype: 17,
-        value: vec![0; 16],
+    use pretty_assertions::assert_eq;
+    use rasn::types::Integer;
+    use rskrb5_ng::{
+        ap_rep::{
+            AP_REP_ENCPART_USAGE, Error, KRB_AP_REP_MSG_TYPE, build_ap_rep,
+            build_ap_rep_with_confounder, decode_ap_rep, decode_enc_ap_rep_part,
+            decrypt_ap_rep_enc_part, encode_ap_rep, encode_build_ap_rep_with_confounder,
+        },
+        crypto::KerberosEtype,
+        keytab::EncryptionKey,
     };
 
-    let error =
-        decrypt_ap_rep_enc_part(&ap_rep, &wrong_key).expect_err("wrong etype key is rejected");
+    /// Error type of the `Result`-returning tests.
+    type TestError = Box<dyn error::Error>;
 
-    assert!(matches!(
-        error,
-        Error::KeyEtypeMismatch {
-            key_etype: 17,
-            encrypted_data_etype: 18,
-        }
-    ));
-}
+    /// gokrb5 AP-REP fixture.
+    const MARSHALLED_AP_REP: &str = concat!(
+        "6F333031A003020105A10302010FA2253023A003020100A103020105A217",
+        "04156B726241534E2E312074657374206D657373616765",
+    );
+    /// gokrb5 `EncAPRepPart` fixture with every optional field set.
+    const MARSHALLED_ENC_AP_REP_PART: &str = concat!(
+        "7B363034A011180F31393934303631303036303331375AA105020301E240",
+        "A2133011A003020101A10A04083132333435363738A303020111",
+    );
+    /// gokrb5 `EncAPRepPart` fixture without optional fields.
+    const MARSHALLED_ENC_AP_REP_PART_OPTIONALS_NULL: &str =
+        "7B1C301AA011180F31393934303631303036303331375AA105020301E240";
+    /// Timestamp of the gokrb5 fixtures, in seconds since the Unix epoch.
+    const TEST_TIME_SECONDS: i64 = 771_228_197;
+    /// AES256 reply key used to encrypt the AP-REP parts.
+    const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::tests_outside_test_module,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[test]
-fn exposes_ap_rep_key_usage_constant() {
-    assert_eq!(AP_REP_ENCPART_USAGE, 12);
-}
+    /// Pins that the gokrb5 AP-REP fixture decodes to the expected fields and re-encodes byte for byte.
+    #[test]
+    fn decodes_gokrb5_ap_rep_fixture() -> Result<(), TestError> {
+        let bytes = hex::decode(MARSHALLED_AP_REP)?;
 
-fn reply_key() -> EncryptionKey {
-    EncryptionKey {
-        etype: 18,
-        value: decode_hex(REPLY_KEY),
+        let ap_rep = decode_ap_rep(&bytes)?;
+
+        assert_eq!(ap_rep.pvno, Integer::from(5_i32));
+        assert_eq!(ap_rep.msg_type, Integer::from(KRB_AP_REP_MSG_TYPE));
+        assert_eq!(ap_rep.enc_part.etype, 0_i32);
+        assert_eq!(ap_rep.enc_part.kvno, Some(5));
+        assert_eq!(ap_rep.enc_part.cipher.as_ref(), b"krbASN.1 test message");
+        assert_eq!(encode_ap_rep(&ap_rep)?, bytes);
+        Ok(())
     }
-}
 
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::integer_division_remainder_used,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn decode_hex(input: &str) -> Vec<u8> {
-    assert_eq!(input.len() % 2, 0, "hex input has even length");
-    input
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|chunk| {
-            let high = decode_hex_digit(chunk[0]);
-            let low = decode_hex_digit(chunk[1]);
-            (high << 4) | low
+    /// Pins that the gokrb5 `EncAPRepPart` fixture decodes to the expected fields.
+    #[test]
+    fn decodes_gokrb5_enc_ap_rep_part_fixture() -> Result<(), TestError> {
+        let enc_part = decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART)?)?;
+
+        assert_eq!(enc_part.ctime.0.timestamp(), TEST_TIME_SECONDS);
+        assert_eq!(enc_part.cusec, Integer::from(123_456_i32));
+        let subkey = enc_part.subkey.as_ref().ok_or("subkey")?;
+        assert_eq!(subkey.r#type, 1_i32);
+        assert_eq!(subkey.value.as_ref(), b"12345678");
+        assert_eq!(enc_part.seq_number, Some(17));
+        Ok(())
+    }
+
+    /// Pins that the gokrb5 `EncAPRepPart` fixture without optional fields decodes.
+    #[test]
+    fn decodes_gokrb5_enc_ap_rep_part_optionals_null_fixture() -> Result<(), TestError> {
+        let enc_part =
+            decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART_OPTIONALS_NULL)?)?;
+
+        assert_eq!(enc_part.ctime.0.timestamp(), TEST_TIME_SECONDS);
+        assert_eq!(enc_part.cusec, Integer::from(123_456_i32));
+        assert!(enc_part.subkey.is_none(), "subkey is absent");
+        assert!(enc_part.seq_number.is_none(), "sequence number is absent");
+        Ok(())
+    }
+
+    /// Pins that an AP-REP built with an explicit confounder decrypts back to its encrypted part.
+    #[test]
+    fn builds_and_decrypts_ap_rep_with_explicit_confounder() -> Result<(), TestError> {
+        let enc_part = decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART)?)?;
+        let key = reply_key()?;
+        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let confounder = vec![0x55; etype.confounder_len()];
+
+        let ap_rep = build_ap_rep_with_confounder(&enc_part, &key, Some(7), &confounder)?;
+
+        assert_eq!(ap_rep.pvno, Integer::from(5_i32));
+        assert_eq!(ap_rep.msg_type, Integer::from(KRB_AP_REP_MSG_TYPE));
+        assert_eq!(ap_rep.enc_part.etype, key.etype);
+        assert_eq!(ap_rep.enc_part.kvno, Some(7));
+        let decrypted = decrypt_ap_rep_enc_part(&ap_rep, &key)?;
+        assert_eq!(decrypted, enc_part);
+        Ok(())
+    }
+
+    /// Pins that an encoded AP-REP built with an explicit confounder decodes and decrypts.
+    #[test]
+    fn encodes_built_ap_rep_with_explicit_confounder() -> Result<(), TestError> {
+        let enc_part =
+            decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART_OPTIONALS_NULL)?)?;
+        let key = reply_key()?;
+        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let confounder = vec![0x33; etype.confounder_len()];
+
+        let encoded = encode_build_ap_rep_with_confounder(&enc_part, &key, None, &confounder)?;
+        let decoded = decode_ap_rep(&encoded)?;
+
+        assert_eq!(decoded.enc_part.etype, key.etype);
+        assert!(decoded.enc_part.kvno.is_none(), "kvno is absent");
+        let decrypted = decrypt_ap_rep_enc_part(&decoded, &key)?;
+        assert_eq!(decrypted, enc_part);
+        Ok(())
+    }
+
+    /// Pins that an AP-REP built with a random confounder decrypts back to its encrypted part.
+    #[test]
+    fn builds_and_decrypts_ap_rep_with_random_confounder() -> Result<(), TestError> {
+        let enc_part = decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART)?)?;
+        let key = reply_key()?;
+
+        let ap_rep = build_ap_rep(&enc_part, &key, None)?;
+
+        assert_eq!(ap_rep.enc_part.etype, key.etype);
+        let decrypted = decrypt_ap_rep_enc_part(&ap_rep, &key)?;
+        assert_eq!(decrypted, enc_part);
+        Ok(())
+    }
+
+    /// Pins that decrypting with a key of another etype is rejected.
+    #[test]
+    fn rejects_ap_rep_key_etype_mismatch() -> Result<(), TestError> {
+        let enc_part = decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART)?)?;
+        let key = reply_key()?;
+        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let confounder = vec![0x55; etype.confounder_len()];
+        let ap_rep = build_ap_rep_with_confounder(&enc_part, &key, None, &confounder)?;
+        let wrong_key = EncryptionKey {
+            etype: 17,
+            value: vec![0; 16],
+        };
+
+        let error = decrypt_ap_rep_enc_part(&ap_rep, &wrong_key)
+            .err()
+            .ok_or("wrong etype key is rejected")?;
+
+        assert!(
+            matches!(
+                error,
+                Error::KeyEtypeMismatch {
+                    key_etype: 17_i32,
+                    encrypted_data_etype: 18_i32,
+                }
+            ),
+            "{error:?}"
+        );
+        Ok(())
+    }
+
+    /// Pins the AP-REP encrypted-part key usage number.
+    #[test]
+    fn exposes_ap_rep_key_usage_constant() {
+        assert_eq!(AP_REP_ENCPART_USAGE, 12);
+    }
+
+    /// Returns the AES256 reply key.
+    fn reply_key() -> Result<EncryptionKey, TestError> {
+        Ok(EncryptionKey {
+            etype: 18,
+            value: hex::decode(REPLY_KEY)?,
         })
-        .collect()
-}
-
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::arithmetic_side_effects,
-        clippy::missing_panics_doc,
-        clippy::panic,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-fn decode_hex_digit(byte: u8) -> u8 {
-    match byte {
-        b'0'..=b'9' => byte - b'0',
-        b'a'..=b'f' => byte - b'a' + 10,
-        b'A'..=b'F' => byte - b'A' + 10,
-        _ => panic!("invalid hex byte: {byte}"),
     }
 }
