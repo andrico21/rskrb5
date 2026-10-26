@@ -1,461 +1,36 @@
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::indexing_slicing,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Strip zero padding that follows one complete top-level DER value.
+///
+/// Decrypted Kerberos parts can carry zero bytes up to the cipher block size.
+/// When `bytes` starts with a complete DER value followed only by zero bytes,
+/// this returns just that value. Any other input, including malformed DER and
+/// non-zero trailing bytes, is returned unchanged so the strict decoder
+/// reports the real error.
 pub(crate) fn trim_zero_padded_der(bytes: &[u8]) -> &[u8] {
     let Some(end) = top_level_der_end(bytes) else {
         return bytes;
     };
-    if bytes[end..].iter().all(|byte| *byte == 0) {
-        &bytes[..end]
+    if let Some((value, padding)) = bytes.split_at_checked(end)
+        && padding.iter().all(|byte| *byte == 0)
+    {
+        value
     } else {
         bytes
     }
 }
 
-#[expect(
-    unused_qualifications,
-    reason = "lint-migration: upstream baseline at ee9cb04"
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            test
-        )
-    ),
-    expect(
-        clippy::absolute_paths,
-        clippy::arithmetic_side_effects,
-        clippy::default_numeric_fallback,
-        clippy::indexing_slicing,
-        clippy::std_instead_of_core,
-        clippy::unseparated_literal_suffix,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
-#[cfg_attr(
-    any(
-        all(
-            feature = "default",
-            feature = "evaluation",
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            feature = "evaluation",
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            feature = "tower",
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            feature = "http",
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            feature = "default",
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            feature = "serde",
-            feature = "spnego",
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        ),
-        all(
-            not(feature = "default"),
-            not(feature = "evaluation"),
-            not(feature = "http"),
-            feature = "messages",
-            not(feature = "serde"),
-            not(feature = "spnego"),
-            feature = "tokio",
-            not(feature = "tower"),
-            not(test)
-        )
-    ),
-    expect(
-        clippy::missing_docs_in_private_items,
-        reason = "lint-migration: upstream baseline at ee9cb04"
-    )
-)]
+/// Return the end offset of the first top-level DER value in `bytes`.
+///
+/// Returns `None` when `bytes` is empty, the identifier or length octets are
+/// truncated, the length is indefinite or wider than `usize`, or the value
+/// runs past the end of the input.
 fn top_level_der_end(bytes: &[u8]) -> Option<usize> {
-    if bytes.is_empty() {
-        return None;
-    }
+    let (identifier, _) = bytes.split_first()?;
 
-    let mut offset = 1;
-    if bytes[0] & 0x1f == 0x1f {
+    let mut offset: usize = 1;
+    if identifier & 0x1f == 0x1f {
         loop {
             let byte = *bytes.get(offset)?;
-            offset += 1;
+            offset = offset.checked_add(1)?;
             if byte & 0x80 == 0 {
                 break;
             }
@@ -463,19 +38,20 @@ fn top_level_der_end(bytes: &[u8]) -> Option<usize> {
     }
 
     let first_len = *bytes.get(offset)?;
-    offset += 1;
+    offset = offset.checked_add(1)?;
     let len = if first_len & 0x80 == 0 {
         usize::from(first_len)
     } else {
         let count = usize::from(first_len & 0x7f);
-        if count == 0 || count > std::mem::size_of::<usize>() {
+        if count == 0 || count > size_of::<usize>() {
             return None;
         }
-        let len_bytes = bytes.get(offset..offset.checked_add(count)?)?;
-        offset += count;
-        let mut len = 0usize;
+        let len_end = offset.checked_add(count)?;
+        let len_bytes = bytes.get(offset..len_end)?;
+        offset = len_end;
+        let mut len = 0_usize;
         for byte in len_bytes {
-            len = (len << 8) | usize::from(*byte);
+            len = (len << 8_u32) | usize::from(*byte);
         }
         len
     };
@@ -485,55 +61,35 @@ fn top_level_der_end(bytes: &[u8]) -> Option<usize> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
 mod tests {
     use super::trim_zero_padded_der;
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// A value with no trailing bytes is returned unchanged.
     #[test]
     fn leaves_exact_der_unchanged() {
         let bytes = [0x30, 0x03, 0x04, 0x01, 0x00];
         assert_eq!(trim_zero_padded_der(&bytes), bytes);
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Zero bytes after a complete top-level value are stripped.
     #[test]
     fn trims_only_zero_bytes_after_top_level_der_value() {
         let bytes = [0x30, 0x03, 0x04, 0x01, 0x00, 0x00, 0x00];
         assert_eq!(trim_zero_padded_der(&bytes), [0x30, 0x03, 0x04, 0x01, 0x00]);
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Non-zero trailing bytes are kept so the strict decoder rejects them.
     #[test]
     fn leaves_nonzero_trailing_bytes_for_strict_decoder_errors() {
         let bytes = [0x30, 0x03, 0x04, 0x01, 0x00, 0x01];
         assert_eq!(trim_zero_padded_der(&bytes), bytes);
     }
 
-    #[cfg_attr(
-        test,
-        expect(
-            clippy::missing_panics_doc,
-            reason = "lint-migration: upstream baseline at ee9cb04"
-        )
-    )]
+    /// Truncated DER is returned unchanged.
     #[test]
     fn leaves_malformed_der_unchanged() {
         let bytes = [0x30, 0x81];

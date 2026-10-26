@@ -1,3 +1,6 @@
 src/client.rs
 src/client/**
 src/crypto.rs
+src/der.rs
+src/spnego.rs
+src/spnego/**
