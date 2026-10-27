@@ -264,6 +264,25 @@ mod tests {
         Ok(())
     }
 
+    /// Explicit lists reject an unknown entry even when other entries work.
+    #[test]
+    fn unsupported_explicit_enctype_names_are_rejected() -> Result<(), TestError> {
+        for key in [
+            "default_tkt_enctypes",
+            "default_tgs_enctypes",
+            "permitted_enctypes",
+        ] {
+            let input = format!("[libdefaults]\n {key} = aes256-cts typo-enctype\n");
+            let error = Config::parse(&input)
+                .err()
+                .ok_or("unknown entry was accepted")?;
+            let message = error.to_string();
+            assert!(message.contains(key), "{message}");
+            assert!(message.contains("typo-enctype"), "{message}");
+        }
+        Ok(())
+    }
+
     /// Pins the gokrb5 defaults of the DNS lookup, canonicalization and address flags.
     #[test]
     fn libdefaults_defaults_match_gokrb5() {
@@ -1392,14 +1411,17 @@ mod tests {
             assert!(
                 matches!(
                     &error,
-                    Error::NoPermittedEnctypes { names: configured }
-                        if configured.join(" ") == names
+                    Error::UnsupportedEnctype { key: "permitted_enctypes", enctype }
+                        if names.split_whitespace().any(|name| name == enctype)
                 ),
                 "unexpected error for {names}: {error:?}"
             );
             let message = error.to_string();
             assert!(message.contains("permitted_enctypes"), "{message}");
-            assert!(message.contains(names), "{message}");
+            assert!(
+                names.split_whitespace().any(|name| message.contains(name)),
+                "{message}"
+            );
         }
         Ok(())
     }

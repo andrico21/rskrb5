@@ -15,6 +15,10 @@ and policy. Replace the three `with_*_enctype_ids` builders with their
 the compatibility JSON snapshot derives IDs on demand. Empty request lists no
 longer substitute an unrelated built-in policy.
 
+Explicit enctype lists now return `error::Config::UnsupportedEnctype { key,
+enctype }` for unsupported names instead of silently removing them. This also
+applies when supported entries accompany the rejected name.
+
 ### Explicit transport DNS configuration
 
 `client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications

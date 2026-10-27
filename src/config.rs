@@ -1007,11 +1007,13 @@ impl LibDefaults {
                 "default_keytab_name" => value.clone_into(&mut self.default_keytab_name),
                 "default_realm" => value.clone_into(&mut self.default_realm),
                 "default_tgs_enctypes" => {
-                    self.default_tgs_enctypes = parse_words(value);
+                    self.default_tgs_enctypes =
+                        parse_explicit_enctypes(value, "default_tgs_enctypes")?;
                     enctypes.tgs_explicit = true;
                 }
                 "default_tkt_enctypes" => {
-                    self.default_tkt_enctypes = parse_words(value);
+                    self.default_tkt_enctypes =
+                        parse_explicit_enctypes(value, "default_tkt_enctypes")?;
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
@@ -1038,7 +1040,7 @@ impl LibDefaults {
                     self.no_addresses = Toggle::from_bool(parse_boolean(value)?);
                 }
                 "permitted_enctypes" => {
-                    self.permitted_enctypes = parse_words(value);
+                    self.permitted_enctypes = parse_explicit_enctypes(value, "permitted_enctypes")?;
                     self.permitted_enctypes_explicit = Toggle::Enabled;
                 }
                 "preferred_preauth_types" => {
@@ -1488,6 +1490,23 @@ pub fn parse_boolean(value: &str) -> Result<bool, Error> {
         "0" | "f" | "false" | "n" | "no" => Ok(false),
         _ => Err(Error::InvalidBoolean(value.to_owned())),
     }
+}
+
+/// Parses an explicit policy without silently dropping unsupported entries.
+///
+/// # Errors
+/// Returns [`Error::UnsupportedEnctype`] naming the first unsupported entry.
+fn parse_explicit_enctypes(value: &str, key: &'static str) -> Result<Vec<String>, Error> {
+    let names = parse_words(value);
+    for name in &names {
+        if supported_enctype_id(name).is_none() {
+            return Err(Error::UnsupportedEnctype {
+                key,
+                enctype: name.clone(),
+            });
+        }
+    }
+    Ok(names)
 }
 
 #[must_use]
