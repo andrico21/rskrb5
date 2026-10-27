@@ -1603,6 +1603,9 @@ pub enum Pac {
     /// NTLM supplemental credential version was not zero.
     #[error("invalid NTLM supplemental credential version: {0}")]
     InvalidNtlmSupplementalCredentialVersion(u32),
+    /// Neither LM nor NT hash has a validity flag (MS-PAC 2.6.4).
+    #[error("NTLM supplemental credential has no hash validity flag")]
+    MissingNtlmValidityFlag,
     /// Validated supplemental credential storage could not be reserved.
     #[error("PAC supplemental credential allocation failed")]
     CredentialAllocation,

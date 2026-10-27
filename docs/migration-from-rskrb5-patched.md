@@ -5,6 +5,14 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### NTLM supplemental validity masks
+
+`NTLM_SUPPLEMENTAL_CRED_LMOWF` and `NTLM_SUPPLEMENTAL_CRED_NTOWF` now hold
+numeric masks 1 and 2, not the erroneous indices 31 and 30. Test these masks
+directly against the decoded flags. Reserved bits are ignored when receiving
+credentials; records with neither validity bit return
+`error::Pac::MissingNtlmValidityFlag` as required by MS-PAC 2.6.4.
+
 ### Bounded supplemental credential allocation
 
 Credential data rejects counts above 1,000,000 or whose 16-byte fixed

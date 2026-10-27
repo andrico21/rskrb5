@@ -106,10 +106,10 @@ const NANOS_PER_WINDOWS_TICK: u64 = 100;
 /// Seconds from 1601-01-01 (the `FILETIME` epoch) to 1970-01-01 UTC.
 const WINDOWS_TO_UNIX_SECONDS: u64 = 11_644_473_600;
 
-/// NTLM supplemental credential LM OWF flag index.
-pub const NTLM_SUPPLEMENTAL_CRED_LMOWF: u32 = 31;
-/// NTLM supplemental credential NT OWF flag index.
-pub const NTLM_SUPPLEMENTAL_CRED_NTOWF: u32 = 30;
+/// NTLM supplemental credential LM OWF numeric mask.
+pub const NTLM_SUPPLEMENTAL_CRED_LMOWF: u32 = 1;
+/// NTLM supplemental credential NT OWF numeric mask.
+pub const NTLM_SUPPLEMENTAL_CRED_NTOWF: u32 = 2;
 
 /// Parsed PAC container and selected processed buffers.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -799,6 +799,8 @@ impl NtlmSupplementalCredential {
             return Err(Error::InvalidNtlmSupplementalCredentialVersion(version));
         }
         let flags = reader.read_u32()?;
+        (flags & (NTLM_SUPPLEMENTAL_CRED_LMOWF | NTLM_SUPPLEMENTAL_CRED_NTOWF) != 0)
+            .ok_or(Error::MissingNtlmValidityFlag)?;
         let lm_password = if ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF) {
             Some(reader.read_array()?)
         } else {
@@ -1769,17 +1771,9 @@ fn kerberos_etype_for_checksum_type(signature_type: u32) -> Option<KerberosEtype
     KerberosEtype::from_checksum_type_id(signature_type.try_into().ok()?)
 }
 
-/// Whether MS-PAC flag number `flag` is set in an NTLM supplemental
-/// credential `Flags` value; out-of-range flag numbers are never set.
+/// Whether the numeric NTLM validity mask is set; reserved bits are ignored.
 const fn ntlm_supplemental_flag_set(flags: u32, flag: u32) -> bool {
-    // MS-PAC numbers flag bits from the most significant bit of each byte of
-    // the little-endian `Flags` field, so flag 31 is bit 0 of byte 3.
-    let byte_index = flag.div_euclid(8);
-    let bit_from_msb = flag.rem_euclid(8);
-    let position = byte_index
-        .saturating_mul(8)
-        .saturating_add(7_u32.saturating_sub(bit_from_msb));
-    matches!(flags.checked_shr(position), Some(shifted) if (shifted & 1) != 0)
+    flags & flag != 0
 }
 
 /// Returns `bytes[offset..offset + len]` of the named `target`.

@@ -11,6 +11,8 @@ mod pac_authorization;
 mod pac_claim_limits;
 #[path = "support/pac_credential_counts.rs"]
 mod pac_credential_counts;
+#[path = "support/pac_ntlm.rs"]
+mod pac_ntlm;
 #[path = "support/pac_trust.rs"]
 mod pac_trust;
 
@@ -878,7 +880,7 @@ mod tests {
         let ntlm = NtlmSupplementalCredential::parse(&credential.credentials)
             .context("NTLM supplemental credential parses")?;
         assert_eq!(ntlm.version, 0);
-        assert_eq!(ntlm.flags, 0x0300_0000);
+        assert_eq!(ntlm.flags, 3);
         assert!(ntlm.has_lm_password());
         assert!(ntlm.has_nt_password());
         assert_eq!(ntlm.lm_password, Some([0x11; 16]));
@@ -946,7 +948,7 @@ mod tests {
     fn ntlm_supplemental_credential_bytes() -> Vec<u8> {
         let mut bytes = Vec::new();
         push_u32(&mut bytes, 0);
-        push_u32(&mut bytes, 0x0300_0000);
+        push_u32(&mut bytes, 3);
         bytes.extend_from_slice(&[0x11; 16]);
         bytes.extend_from_slice(&[0x22; 16]);
         bytes

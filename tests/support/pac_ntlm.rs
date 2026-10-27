@@ -1,0 +1,55 @@
+//! MS-PAC NTLM supplemental credential wire regressions.
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use rskrb5_ng::{error::Pac as PacError, pac::NtlmSupplementalCredential};
+
+    use crate::context::{Context as _, TestError};
+
+    /// Pins numeric low-bit validity masks and ignored reserved bits.
+    #[test]
+    fn ntlm_uses_low_bit_validity_masks() -> Result<(), TestError> {
+        // Given: valid low-bit combinations, optionally with reserved high bits.
+        for flags in [1_u32, 2, 3, 0x8000_0001, 0x8000_0002, 0xffff_ffff] {
+            let bytes = wire(flags);
+            // When: flags are decoded from their little-endian wire representation.
+            let credential =
+                NtlmSupplementalCredential::parse(&bytes).context("valid flags parse")?;
+            // Then: only low bits determine validity, regardless of reserved bits.
+            assert_eq!(credential.has_lm_password(), (flags & 1) != 0);
+            assert_eq!(credential.has_nt_password(), (flags & 2) != 0);
+        }
+        Ok(())
+    }
+
+    /// Pins the requirement that at least one hash validity flag is present.
+    #[test]
+    fn ntlm_rejects_flags_without_valid_hash() -> Result<(), TestError> {
+        // Given: no validity bit, including the formerly recognized high bits.
+        for flags in [0_u32, 0x0300_0000, 0xffff_fffc] {
+            let bytes = wire(flags);
+            // When: the record is parsed.
+            let error = NtlmSupplementalCredential::parse(&bytes)
+                .err()
+                .context("missing validity flags rejected")?;
+            // Then: reserved bits cannot make an empty credential valid.
+            assert!(matches!(error, PacError::MissingNtlmValidityFlag));
+        }
+        Ok(())
+    }
+
+    /// Encodes the fixed 40-byte structure with distinct LM and NT slot markers.
+    fn wire(flags: u32) -> Vec<u8> {
+        let mut bytes = 0_u32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&flags.to_le_bytes());
+        bytes.extend_from_slice(&[0x11; 16]);
+        bytes.extend_from_slice(&[0x22; 16]);
+        bytes
+    }
+}
