@@ -1,0 +1,6 @@
+[libdefaults]
+ default_realm = CLIENT.REALM
+
+[domain_realm]
+ .example.com = SUFFIX.REALM
+ example.org = BARE.REALM

@@ -1,0 +1,2 @@
+[libdefaults]
+ kdc_timesync = 1
