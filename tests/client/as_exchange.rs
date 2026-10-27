@@ -542,6 +542,7 @@ mod tests {
             "
 [libdefaults]
  default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+ allow_des3 = true
 ",
         )?;
 
@@ -560,6 +561,7 @@ mod tests {
             "
 [libdefaults]
  default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
+ allow_des3 = true
  permitted_enctypes = aes256-cts-hmac-sha1-96
 ",
         ) else {

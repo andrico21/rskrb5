@@ -27,19 +27,12 @@ const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &["C:\\ProgramData\\MIT\\Kerberos
 #[cfg(not(any(target_family = "unix", target_family = "windows")))]
 const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &[];
 
-// gokrb5 also lists des3-cbc-sha1 here, as its unimplemented etype 7. MIT
-// spells enctype 16 that way, so keeping the name would add DES3 to every
-// default request list.
 /// The enctype names every default request and permitted list starts from.
 const DEFAULT_ENCTYPES: &[&str] = &[
+    "aes256-cts-hmac-sha384-192",
+    "aes128-cts-hmac-sha256-128",
     "aes256-cts-hmac-sha1-96",
     "aes128-cts-hmac-sha1-96",
-    "arcfour-hmac-md5",
-    "camellia256-cts-cmac",
-    "camellia128-cts-cmac",
-    "des-cbc-crc",
-    "des-cbc-md5",
-    "des-cbc-md4",
 ];
 
 /// The default `preferred_preauth_types`, most preferred first.
@@ -558,6 +551,12 @@ impl From<Toggle> for bool {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct LibDefaults {
+    /// Permit explicitly configured RC4 (23/24); disabled by default.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub allow_rc4: Toggle,
+    /// Permit explicitly configured DES3 (16); disabled by default.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub allow_des3: Toggle,
     /// Whether weak crypto names are retained before supported enctype
     /// filtering.
     pub allow_weak_crypto: Toggle,
@@ -714,19 +713,13 @@ impl LibDefaults {
     #[must_use]
     #[inline]
     pub fn default_tgs_enctype_ids(&self) -> Vec<i32> {
-        parse_supported_enctype_ids(
-            &self.default_tgs_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        )
+        self.effective_enctype_ids(&self.default_tgs_enctypes)
     }
     /// Derives supported ticket enctype IDs from the current names and policy.
     #[must_use]
     #[inline]
     pub fn default_tkt_enctype_ids(&self) -> Vec<i32> {
-        parse_supported_enctype_ids(
-            &self.default_tkt_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        )
+        self.effective_enctype_ids(&self.default_tkt_enctypes)
     }
     /// Sets `dns_canonicalize_hostname`, preserving the other fields.
     #[must_use]
@@ -816,10 +809,7 @@ impl LibDefaults {
     #[must_use]
     #[inline]
     pub fn permitted_enctype_ids(&self) -> Vec<i32> {
-        parse_supported_enctype_ids(
-            &self.permitted_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        )
+        self.effective_enctype_ids(&self.permitted_enctypes)
     }
     /// Sets `permitted_enctypes_explicit`, preserving the other fields.
     #[must_use]
@@ -935,6 +925,8 @@ impl LibDefaults {
             uid.unwrap_or_else(|| Self::FALLBACK_UID.to_owned())
         );
         Self {
+            allow_rc4: Toggle::Disabled,
+            allow_des3: Toggle::Disabled,
             allow_weak_crypto: Toggle::Disabled,
             canonicalize: Toggle::Disabled,
             ccache_type: 4,
@@ -994,6 +986,8 @@ impl LibDefaults {
             }
 
             match key {
+                "allow_rc4" => self.allow_rc4 = Toggle::from_bool(parse_boolean(value)?),
+                "allow_des3" => self.allow_des3 = Toggle::from_bool(parse_boolean(value)?),
                 "allow_weak_crypto" => {
                     self.allow_weak_crypto = Toggle::from_bool(parse_boolean(value)?);
                 }
@@ -1083,6 +1077,34 @@ impl LibDefaults {
     /// naming the first explicit request list and enctype outside the
     /// allowlist.
     fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
+        for (explicit, key, names) in [
+            (
+                enctypes.tkt_explicit,
+                "default_tkt_enctypes",
+                &self.default_tkt_enctypes,
+            ),
+            (
+                enctypes.tgs_explicit,
+                "default_tgs_enctypes",
+                &self.default_tgs_enctypes,
+            ),
+            (
+                self.permitted_enctypes_explicit.is_enabled(),
+                "permitted_enctypes",
+                &self.permitted_enctypes,
+            ),
+        ] {
+            if explicit {
+                for name in names {
+                    if !self.enctype_enabled(name) {
+                        return Err(Error::EnctypeDisabled {
+                            key,
+                            enctype: name.clone(),
+                        });
+                    }
+                }
+            }
+        }
         if !self.permitted_enctypes_explicit.is_enabled() {
             return Ok(());
         }
@@ -1121,6 +1143,24 @@ impl LibDefaults {
             }
         }
         Ok(())
+    }
+    /// Whether both family policy and weak-crypto policy permit this name.
+    fn enctype_enabled(&self, name: &str) -> bool {
+        let family_enabled = match supported_enctype_id(name) {
+            Some(23_i32 | 24_i32) => self.allow_rc4.is_enabled(),
+            Some(16_i32) => self.allow_des3.is_enabled(),
+            Some(_) | None => true,
+        };
+        family_enabled && (self.allow_weak_crypto.is_enabled() || !is_weak_enctype(name))
+    }
+
+    /// Derives implemented IDs with the current independent policy switches.
+    fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32> {
+        names
+            .iter()
+            .filter(|name| self.enctype_enabled(name))
+            .filter_map(|name| supported_enctype_id(name))
+            .collect()
     }
 }
 
@@ -2023,6 +2063,7 @@ fn supported_enctype_id(value: &str) -> Option<i32> {
         "aes256-cts-hmac-sha384-192" | "aes256-sha2" => 20,
         "des3-cbc-sha1" | "des3-hmac-sha1" | "des3-cbc-sha1-kd" => 16,
         "arcfour-hmac" | "rc4-hmac" | "arcfour-hmac-md5" => 23,
+        "arcfour-hmac-exp" | "rc4-hmac-exp" | "arcfour-hmac-md5-exp" => 24,
         _ => return None,
     })
 }

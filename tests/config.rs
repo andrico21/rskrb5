@@ -203,7 +203,7 @@ mod tests {
             let names: Vec<&str> = enctypes.iter().map(|entry| entry.0).collect();
             let expected_ids: Vec<i32> = enctypes.iter().map(|entry| entry.1).collect();
             let config = Config::parse(&format!(
-                "[libdefaults]\n permitted_enctypes = {}\n",
+                "[libdefaults]\n allow_rc4 = true\n allow_des3 = true\n permitted_enctypes = {}\n",
                 names.join(" ")
             ))?;
             prop_assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled(), "parsed list is explicit");
@@ -279,6 +279,56 @@ mod tests {
             let message = error.to_string();
             assert!(message.contains(key), "{message}");
             assert!(message.contains("typo-enctype"), "{message}");
+        }
+        Ok(())
+    }
+
+    /// Deprecated families require their own flag, not just weak-crypto opt-in.
+    #[test]
+    fn deprecated_enctypes_require_explicit_family_opt_in() -> Result<(), TestError> {
+        for name in [
+            "rc4-hmac",
+            "arcfour-hmac-md5",
+            "rc4-hmac-exp",
+            "des3-cbc-sha1-kd",
+        ] {
+            for key in [
+                "default_tkt_enctypes",
+                "default_tgs_enctypes",
+                "permitted_enctypes",
+            ] {
+                let input = format!("[libdefaults]\n allow_weak_crypto = true\n {key} = {name}\n");
+                let error = Config::parse(&input)
+                    .err()
+                    .ok_or("deprecated enctype was accepted")?;
+                assert!(error.to_string().contains(name));
+            }
+        }
+        Ok(())
+    }
+
+    /// Config-derived wire defaults must not advertise deprecated families.
+    #[cfg(feature = "messages")]
+    #[test]
+    fn default_wire_enctypes_are_aes_only() -> Result<(), TestError> {
+        assert_eq!(
+            encoded_as_req_etypes(&LibDefaults::new())?,
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
+        );
+        Ok(())
+    }
+
+    /// Later sections enable only the explicitly opted-in deprecated family.
+    #[test]
+    fn deprecated_family_flags_apply_after_all_sections() -> Result<(), TestError> {
+        for (name, flag, id) in [
+            ("rc4-hmac", "allow_rc4", 23_i32),
+            ("des3-cbc-sha1-kd", "allow_des3", 16_i32),
+        ] {
+            let config = Config::parse(&format!(
+                "[libdefaults]\n default_tkt_enctypes = {name}\n[libdefaults]\n {flag} = true\n"
+            ))?;
+            assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![id]);
         }
         Ok(())
     }
@@ -536,7 +586,7 @@ mod tests {
         );
         assert_eq!(
             config.libdefaults.default_tgs_enctype_ids(),
-            [18_i32, 17_i32, 23_i32]
+            [20_i32, 19_i32, 18_i32, 17_i32]
         );
 
         assert_eq!(config.realms.len(), 3);
@@ -873,6 +923,7 @@ mod tests {
 [libdefaults]
  default_tkt_enctypes = arcfour-hmac rc4-hmac arcfour-hmac-md5
  default_tgs_enctypes = rc4-hmac
+ allow_rc4 = true
 ",
         )
         .context("config parses")?;
@@ -1224,7 +1275,7 @@ mod tests {
         assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled());
         assert_eq!(
             config.libdefaults.default_tkt_enctype_ids(),
-            vec![18_i32, 17_i32, 23_i32]
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
         );
         #[cfg(feature = "messages")]
         assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
@@ -1439,7 +1490,8 @@ mod tests {
                 let config = Config::parse(&format!(
                     "
 [libdefaults]
- allow_weak_crypto = {allow_weak_crypto}
+  allow_weak_crypto = {allow_weak_crypto}
+  allow_des3 = true
  default_tkt_enctypes = {name}
  permitted_enctypes = {name}
 "
@@ -1468,15 +1520,15 @@ mod tests {
 
         assert_eq!(
             defaults.default_tkt_enctype_ids(),
-            vec![18_i32, 17_i32, 23_i32]
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
         );
         assert_eq!(
             defaults.default_tgs_enctype_ids(),
-            vec![18_i32, 17_i32, 23_i32]
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
         );
         assert_eq!(
             defaults.permitted_enctype_ids(),
-            vec![18_i32, 17_i32, 23_i32]
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
         );
     }
 }

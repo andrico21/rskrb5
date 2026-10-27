@@ -923,6 +923,7 @@ mod tests {
 [libdefaults]
  dns_lookup_kdc = false
  permitted_enctypes = des3-cbc-sha1-kd
+ allow_des3 = true
 
 [realms]
  TEST.GOKRB5 = {{
@@ -972,6 +973,7 @@ mod tests {
 [libdefaults]
  dns_lookup_kdc = false
  permitted_enctypes = des3-cbc-sha1-kd
+ allow_des3 = true
 
 [realms]
  TEST.GOKRB5 = {{

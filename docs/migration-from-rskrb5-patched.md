@@ -19,6 +19,13 @@ Explicit enctype lists now return `error::Config::UnsupportedEnctype { key,
 enctype }` for unsupported names instead of silently removing them. This also
 applies when supported entries accompany the rejected name.
 
+Defaults now advertise only AES (20, 19, 18, 17). Set `[libdefaults] allow_rc4`
+or `allow_des3` explicitly to true before configuring RC4 or DES3 names; both
+are disabled by default, independently of `allow_weak_crypto`. Disabled names
+return `error::Config::EnctypeDisabled { key, enctype }`. Export RC4 additionally
+requires `allow_weak_crypto`. The flags are public `Toggle` fields and serde
+defaults missing flags to false. Policy is evaluated after all sections/includes.
+
 ### Explicit transport DNS configuration
 
 `client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications
