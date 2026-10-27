@@ -697,6 +697,73 @@ mod tests {
 
     /// Pins that configured KDCs are returned even when `dns_lookup_kdc` is on.
     #[test]
+    fn repeated_realms_preserve_configured_endpoints() -> Result<(), TestError> {
+        // Given distinct sections, plus later relations for the first realm.
+        let input = "[libdefaults]\n dns_lookup_kdc = true\n\
+            [realms]\n A = {\n kdc = first.example*\n admin_server = admin.example\n default_domain = old.example\n }\n\
+            [realms]\n B = {\n kdc = other.example\n }\n\
+            A = {\n kdc = ignored.example\n kpasswd_server = password.example\n default_domain = new.example\n }\n";
+
+        // When the sections compose.
+        let config = Config::parse(input)?;
+
+        // Then unrelated realms, final relations and later scalar values survive.
+        assert_eq!(config.configured_kdcs("A")?, ["first.example:88"]);
+        assert_eq!(config.configured_kdcs("B")?, ["other.example:88"]);
+        assert_eq!(
+            config.configured_kpasswd_servers("A")?,
+            ["password.example"]
+        );
+        assert_eq!(
+            config.realm("A").context("realm A exists")?.default_domain,
+            "new.example"
+        );
+        Ok(())
+    }
+
+    /// Path lists and includes have the same realm composition as inline sections.
+    #[test]
+    fn repeated_realms_compose_across_files() -> Result<(), TestError> {
+        // Given two files with separate realms and an appended relation.
+        let dir = include_fixture_dir(
+            "realm-compose",
+            &[
+                ("a.conf", "[realms]\n A = {\n kdc = first.example\n }\n"),
+                (
+                    "b.conf",
+                    "[realms]\n B = {\n kdc = other.example\n }\n A = {\n kdc = second.example\n }\n",
+                ),
+            ],
+        )?;
+        let first = dir.join("a.conf");
+        let second = dir.join("b.conf");
+
+        // When loading a path list or expanding includes.
+        let results = [
+            Config::load_paths([&first, &second]),
+            Config::parse(&format!(
+                "include {}\ninclude {}\n",
+                first.display(),
+                second.display()
+            )),
+        ];
+        fs::remove_dir_all(dir)?;
+
+        // Then configured routes retain their complete ordered relations.
+        for result in results {
+            let config = result?;
+            assert_eq!(
+                config.configured_kdcs("A")?,
+                ["first.example:88", "second.example:88"]
+            );
+            assert_eq!(config.configured_kdcs("B")?, ["other.example:88"]);
+            assert_eq!(config.realms.len(), 2);
+        }
+        Ok(())
+    }
+
+    /// Pins that configured KDCs are returned even when `dns_lookup_kdc` is on.
+    #[test]
     fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() -> Result<(), TestError> {
         let config = Config::parse(
             "

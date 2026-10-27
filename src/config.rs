@@ -359,6 +359,7 @@ impl Config {
             .expand(text, 0)?;
         let mut config = seed();
         let mut enctypes = EnctypeParseState::default();
+        let mut realm_lines = Vec::new();
         let mut current = SectionKind::Unknown;
         let mut lines = Vec::new();
 
@@ -372,6 +373,9 @@ impl Config {
             }
 
             if let Some(section) = SectionKind::parse(cleaned) {
+                if current == SectionKind::Realms {
+                    realm_lines.append(&mut lines);
+                }
                 apply_section(&mut config, current, &lines, &mut enctypes)?;
                 current = section;
                 lines.clear();
@@ -386,7 +390,11 @@ impl Config {
             }
         }
 
+        if current == SectionKind::Realms {
+            realm_lines.append(&mut lines);
+        }
         apply_section(&mut config, current, &lines, &mut enctypes)?;
+        config.realms = parse_realms(&realm_lines)?;
         config.libdefaults.validate_explicit_enctypes(enctypes)?;
         Ok(config)
     }
@@ -1315,12 +1323,8 @@ fn apply_section(
 ) -> Result<(), Error> {
     match section {
         SectionKind::LibDefaults => config.libdefaults.parse_lines(lines, enctypes),
-        SectionKind::Realms => {
-            config.realms = parse_realms(lines)?;
-            Ok(())
-        }
         SectionKind::DomainRealm => parse_domain_realm(&mut config.domain_realm, lines),
-        SectionKind::Unknown => Ok(()),
+        SectionKind::Realms | SectionKind::Unknown => Ok(()),
     }
 }
 
@@ -1378,7 +1382,7 @@ fn parse_domain_realm(
 /// closes a brace it never opened or is never closed, and the
 /// [`Realm::parse`] errors of each block.
 fn parse_realms(lines: &[Line]) -> Result<Vec<Realm>, Error> {
-    let mut realms = Vec::new();
+    let mut blocks: Vec<(String, Vec<Line>)> = Vec::new();
     let mut remaining = lines.iter();
 
     while let Some(line) = remaining.next() {
@@ -1422,10 +1426,17 @@ fn parse_realms(lines: &[Line]) -> Result<Vec<Realm>, Error> {
             )));
         }
 
-        realms.push(Realm::parse(name, &block)?);
+        if let Some((_, relations)) = blocks.iter_mut().find(|(realm, _)| realm == name) {
+            relations.extend(block);
+        } else {
+            blocks.push((name.to_owned(), block));
+        }
     }
 
-    Ok(realms)
+    blocks
+        .into_iter()
+        .map(|(name, relations)| Realm::parse(&name, &relations))
+        .collect()
 }
 
 /// The number of `{` in `value` minus the number of `}`.
