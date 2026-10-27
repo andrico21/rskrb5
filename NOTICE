@@ -5,3 +5,5 @@ gokrb5 is Copyright (c) its contributors and is licensed under Apache-2.0.
 
 This repository currently contains only compatibility-spike code and does not
 include copied gokrb5 implementation source.
+
+rskrb5-ng modifies rskrb5: its changes are the commits after 6f4abc9 in https://github.com/andrico21/rskrb5-ng, described in PROVENANCE.md.

@@ -1,201 +1,99 @@
-# `rskrb5-patched` - a temporary fork of `rskrb5`
+# Provenance
 
-This branch (`release/0.3.0`, pushed to `andrico21/rskrb5`) is the source of
-the crates.io crate **`rskrb5-patched` 0.3.0**: upstream `rskrb5` `main` at
-`6f4abc9` plus the changes below. It exists only so consumers can depend on a
-registry version that carries them - every code change is filed or planned
-upstream.
-It is not affiliated with the upstream author, and it leaves consumers'
-dependency graphs when upstream ships the same fixes.
+This file records where `rskrb5-ng` comes from, what was published under
+earlier names, which upstream contributions were filed along the way, and how
+the upstream work is attributed. The facts below were checked against git,
+the crates.io API and the GitHub API on 2026-10-27.
 
-Upstream: <https://github.com/clelange/rskrb5>. The fork's `main` carries
-upstream's history plus this repository's two workflow files
-(`.github/workflows/ci.yml`, `release.yml`); only `release/*` branches carry
-changes.
+## Origin
 
-## Releases
+`rskrb5-ng` starts from [`clelange/rskrb5`](https://github.com/clelange/rskrb5)
+`main` at commit `6f4abc9` (2026-07-08), a pure-Rust Kerberos 5 port of
+[`gokrb5`](https://github.com/jcmturner/gokrb5) v8 by Clemens Lange. Upstream
+is licensed Apache-2.0, and so is this crate. Upstream published `rskrb5`
+0.1.0 and 0.2.0 on crates.io; the tags `v0.1.0` (`203f78a`) and `v0.2.0`
+(`a17d210`) in this repository are upstream's.
 
-Cut through GitHub Actions, gated on CI: land the release commit on a
-`release/*` branch, wait for CI to go green, then push the tag (`v0.3.0`) at
-the same SHA. The `Release` workflow verifies the tag against the crate
-version, dry-runs, publishes `rskrb5-patched` with the repository's
-`CARGO_REGISTRY_TOKEN` secret, and opens the GitHub release. A re-run of CI on
-the same SHA is the manual recovery path.
+Everything after `6f4abc9` on `main` is this repository's work. It is
+developed independently: upstream changes aren't tracked or merged, and the
+repository `andrico21/rskrb5-ng` is a standalone repository, no longer in the
+fork network of `clelange/rskrb5`.
 
-This branch is the 0.3.0 release commit (version bumped; `0.2.1` and `0.2.2`
-remain published): pushing `v0.3.0` at its tip is the publish step. 0.3.0 is a
-breaking release (new error variants, a second type parameter on
-`NegotiateHttpError`, new public struct fields; see `CHANGELOG.md`).
-`docs/fix-plans/` holds the detailed plans for the audit findings it closes.
+## Names and releases
 
-Before tagging, confirm the lockfile is current: `cargo update --dry-run` on
-the tag commit must print `Locking 0 packages`. If it locks anything, refresh
-the lockfile (`cargo update`, bumping the matching `supply-chain/config.toml`
-exemption so `cargo vet --locked` passes), commit, and wait for CI again.
+| Version | Crate | Commit | Published | Notes |
+|---|---|---|---|---|
+| 0.2.1 | `rskrb5-patched` | `f441b11` (tag `v0.2.1`) | 2026-10-06 | upstream plus the patches listed under 0.2.1 in `CHANGELOG.md` (PRs #15 to #18, issues #10 to #14) |
+| 0.2.2 | `rskrb5-patched` | `58b27bb` (tag `v0.2.2`) | 2026-10-23 | adds the replay, authenticator-realm and TCP transport fixes |
+| 0.3.0 | `rskrb5-ng` | not tagged | not published | this crate |
 
-To publish, tag the CI-green tip of `release/0.3.0`:
+The `rskrb5-patched` crate was a stopgap: it carried fixes that were waiting
+for upstream review, under a different package name so consumers could depend
+on a registry version. It kept the library name `rskrb5`.
 
-```sh
-git tag v0.3.0 <sha> && git push origin v0.3.0
-```
+A 0.3.0 of `rskrb5-patched` was prepared on the branch `release/0.3.0` but
+never published. That branch was merged into `main` and is kept as the tag
+`archive/release/0.3.0`. Its content then became `rskrb5-ng` 0.3.0: the
+package was renamed to `rskrb5-ng` and the library to `rskrb5_ng`, the GitHub
+repository `andrico21/rskrb5` was renamed to `andrico21/rskrb5-ng` (GitHub
+redirects the old URL) and detached from the fork network, and the code went
+through the full lint profile, the API pass, the review backlog and the fuzz
+work listed in [`CHANGELOG.md`](CHANGELOG.md). Code moving from
+`rskrb5-patched` follows
+[`docs/migration-from-rskrb5-patched.md`](docs/migration-from-rskrb5-patched.md).
 
-The plan that prepared this release deliberately does NOT run that command:
-it stops with `release/0.3.0` pushed and CI green, and the tag is the
-maintainer's step.
+The branch ledger [`docs/maintenance/branches.md`](docs/maintenance/branches.md)
+lists every ref, the `archive/*` tags of the deleted release branches and the
+frozen pull-request head branches.
 
-## CI
+## Upstream contributions (historical)
 
-`.github/workflows/ci.yml` runs on floating `stable` (no toolchain pin, per
-the core Version Policy). `nightly-2026-10-03` is used only for rustfmt, the
-second rustdoc run, the fork-lines gate's formatting and fuzz; `1.99.0` only
-for the MSRV build. Blocking jobs: `fmt`, `clippy`, `features-matrix` (K1 to
-K7), `lib-feature-sets` (`cargo check --lib` without default features for
-`messages`, `spnego`, `http` and `evaluation`, plus the compatibility-report
-binary), `readme-commands` (the README `axum-negotiate` build and the
-compatibility-report diff), `test` (Linux, macOS, Windows; at least 32
-`test result: ok` lines), `i686` (check plus the ccache tests), `docs`,
-`msrv`, `semver-checks`, `publish-dryrun`, `consumer`, `deny`, `audit`, `vet`,
-`machete`, `taplo`, `docs-validate`, `lint-gates`, `fork-lines` and
-`package`. Advisory (`continue-on-error`): `geiger`, `rustdoc-nightly-canary`,
-`mutants` and `fuzz`. The prek hooks in `prek.toml` mirror the fast gates for
-pre-push.
+These pull requests and issues were filed against `clelange/rskrb5` while
+`rskrb5-patched` existed. They are a historical record: this project doesn't
+maintain them, and their head branches stay frozen in this repository. The
+state column is what `gh pr view`/`gh issue list -R clelange/rskrb5` reported
+on 2026-10-27.
 
-`mutants` and `fuzz` run only on `schedule` and `workflow_dispatch`. GitHub
-fires `schedule` only on the default branch `main`, whose fuzz crate is the
-0.2.0-era package with the `kpasswd_reply` target alone. So the release line's
-fuzzing (`kpasswd_reply` and `ccache_parse`, 300 s each) and mutants run on
-dispatch, once per release candidate before tagging:
+| Upstream | Head branch here | Subject | State |
+|---|---|---|---|
+| [PR #15](https://github.com/clelange/rskrb5/pull/15) | `rust-1-98-clippy-drift` | clippy lints reported by Rust 1.98 | open |
+| [PR #16](https://github.com/clelange/rskrb5/pull/16) | `hex-dev-dependency` | `hex` as a dev-dependency (issue #12) | open |
+| [PR #17](https://github.com/clelange/rskrb5/pull/17) | `export-padata-constants` | export `PA_FX_COOKIE`, `PA_AS_FRESHNESS`, `random_nonce` (issue #14) | open |
+| [PR #18](https://github.com/clelange/rskrb5/pull/18) | `kpasswd-verbatim-result-bytes` | kpasswd result bytes kept as received (issue #2) | open |
+| [PR #20](https://github.com/clelange/rskrb5/pull/20) | `fix/service-replay-name-type` | AP-REQ replay identity over the advisory name-type | open |
+| [PR #21](https://github.com/clelange/rskrb5/pull/21) | `fix/service-authenticator-realm` | authenticator client realm bound to the ticket realm | open |
+| [PR #22](https://github.com/clelange/rskrb5/pull/22) | `fix/ccache-count-bounds` | ccache record counts bounded by the input | open |
+| [PR #23](https://github.com/clelange/rskrb5/pull/23) | `fix/kadmin-unsigned-success` | kpasswd success needs authenticated provenance | open |
+| [PR #24](https://github.com/clelange/rskrb5/pull/24) | `fix/config-clockskew-handoff` | `[libdefaults] clockskew` on the config-driven acceptors | open |
+| [PR #25](https://github.com/clelange/rskrb5/pull/25) | `fix/host-case-spn` | host-based SPNs fold the host to lower case | open |
+| [PR #26](https://github.com/clelange/rskrb5/pull/26) | `fix/domain-realm-normalization` | `[domain_realm]` case folding and bare tags | open |
+| [PR #27](https://github.com/clelange/rskrb5/pull/27) | `fix/enctype-policy` | reply enctypes bound to the request; `permitted_enctypes` enforced | open |
+| [PR #28](https://github.com/clelange/rskrb5/pull/28) | `fix/client-renewal-series` | TGT refresh band, renewal pacing and AS recovery | open |
+| [PR #29](https://github.com/clelange/rskrb5/pull/29) | `fix/mutual-auth-classification` | requested mutual authentication fails closed | open |
+| [Gittingc0dez/rskrb5#1](https://github.com/Gittingc0dez/rskrb5/pull/1) | `fix/tcp-preauth-pinning` | `Auto`-fallback pinning, stacked on third-party PR [#19](https://github.com/clelange/rskrb5/pull/19) | open |
 
-```sh
-gh workflow run CI -R andrico21/rskrb5 --ref release/0.3.0
-gh run list -R andrico21/rskrb5 -w CI -b release/0.3.0 -e workflow_dispatch -L 1
-```
+Issues filed: [#1](https://github.com/clelange/rskrb5/issues/1) to
+[#14](https://github.com/clelange/rskrb5/issues/14), all open on 2026-10-27.
+Their resolution in this crate is indexed in
+[`docs/review/README.md`](docs/review/README.md) (keys `upstream issue #N`).
 
-## Lint profile
+The TCP transport change of 0.2.2 imported the two commits of the third-party
+upstream PR #19, opened by Gittingc0dez, with their authorship preserved
+(`c0b79fe` and `c339e07`, author MynameizEchelon).
 
-The crate builds under the strictest lint profile of the vendored Rust
-guidelines (core Section 9, equal to rmcp-server-kit `b7f6b66`), with no
-`allow` attributes and no baseline: the whole tree passes the profile in every
-feature closure. [`docs/lint-policy.md`](docs/lint-policy.md) describes the
-profile, the six sanctioned exceptions, the gates and the procedure for a new
-stable. The transition record (every authorized rewrite of upstream lines and
-how the release line diverged from each upstream PR branch) is
-`docs/lint-baseline.md` at commit `856da18`.
+## Attribution and licensing
 
-Known item: `client::build_tgs_req_for_realm_with_confounder_and_subkey`
-(fork commit `782dcb8`, issue #13) carries the only `deliberate:`
-expectation without an upstream PR number, for `clippy::too_many_arguments`.
-It goes away when the TGS subkey PR is filed and the API is settled upstream.
+`rskrb5-ng` is a derivative work of `rskrb5` under the Apache License 2.0.
+Following its section 4:
 
-## Dependencies held back
+- [`LICENSE`](LICENSE) is the Apache License 2.0 text, as upstream ships it
+  (section 4(a)).
+- Files changed here carry no per-file notices; the modifications are the
+  commits on `main` after `6f4abc9`, summarized in
+  [`CHANGELOG.md`](CHANGELOG.md) and in this file (section 4(b)).
+- Upstream's copyright and attribution notices are kept (section 4(c)).
+- [`NOTICE`](NOTICE) keeps upstream's text unchanged and adds one line for
+  the rskrb5-ng modifications (section 4(d)).
 
-None. `rust-version = "1.99"` and the lockfile holds the latest Rust
-1.99-compatible versions, and every direct dependency is on its latest major
-version (`cargo outdated --root-deps-only --exit-code 1` exits 0). The 0.3
-line moved `base64` to 0.23, `getrandom` to 0.4, `picky-krb` (optional,
-`evaluation`) to 0.13, `rasn`/`rasn-kerberos` to 0.29, `compcol` to 0.7, dev
-`toml` to 1.1, and `pbkdf2` from the `=0.13.0-rc.10` pre-release pin to the
-stable 0.13.0.
-
-## Upgrading from 0.2
-
-- **Toolchain:** `rust-version = "1.99"` (was 1.88).
-- **New enum variants** on exhaustive enums, so exhaustive `match`es need new
-  arms: `client::Error::{EnctypeNotRequested, EnctypeNotPermitted}`,
-  `config::Error::{EnctypeNotPermitted, NoPermittedEnctypes}`,
-  `kadmin::Error::UnauthenticatedSuccess` and
-  `http::NegotiateHttpError::MutualAuthenticationNotProven`.
-  `NegotiateHttpError<E>` becomes `NegotiateHttpError<E, B>`, where `B` is the
-  response body type carried by the new variant.
-- **New public fields:** `LibDefaults.permitted_enctypes_explicit` and
-  `InitiatorContext.context_flags`. Struct literals must name them
-  (`LibDefaults` also accepts `..Default::default()`). Programmatic configs
-  that want the allowlist enforced set `permitted_enctypes_explicit`; with the
-  flag set, an empty `permitted_enctype_ids` permits no enctype (requests
-  fail with `EmptyEtypes`, session keys with `EnctypeNotPermitted`).
-- **Fork-only API tightened by the lint pass:** `client::TgsFastRequestParts`
-  is `#[non_exhaustive]`, and the two `build_tgs_req_for_realm_with_*subkey`
-  functions take a generic `R: Into<String>` realm instead of
-  `impl Into<String>`. Ordinary calls compile unchanged; a turbofish now sees
-   the type parameter.
-- **Authorized upstream-line lint rewrites (exception (p)):**
-  `DEFAULT_TICKET_LIFETIME` (`src/client.rs`) and `ticket_lifetime`
-  (`src/config.rs`) use `Duration::from_hours(24)`;
-  `DEFAULT_MAX_CLOCK_SKEW` (`src/service.rs`) uses `Duration::from_mins(5)`.
-  `keytab::Error::NoMatchingKey` patterns use explicit `field: _` bindings;
-  redundant qualification prefixes are dropped in `src/client.rs` and
-  `src/client/kpasswd.rs` (13 upstream lines each), and `std::io::ErrorKind`
-  becomes `io::ErrorKind` in `src/client.rs` and `src/ccache.rs`.
-  `Config::resolve_realm` gains `#[must_use]` and `#[inline]`, and its
-  parameter is renamed `domain_name` to `dns_name`. The rename is
-  source-compatible for callers; discarding the return value may now warn
-  (or fail with warnings denied). `Config::json` returns
-  `Result<String, serde_json::Error>` instead of the fully qualified
-  `std::result::Result<…>` (same type), gains `#[inline]` and an `# Errors`
-  section, and drops its 5 `lint-migration:` expectations (shrink only).
-  These rewrites preserve runtime behavior;
-  the exact authorization record is in `docs/lint-baseline.md` at `856da18`.
-- **Behaviour changes:**
-  - a config whose explicit `default_tkt_enctypes` or `default_tgs_enctypes`
-    names an enctype outside an explicit `permitted_enctypes` fails to parse
-    with `config::Error::EnctypeNotPermitted`, instead of being narrowed;
-  - an explicit `permitted_enctypes` that resolves to no supported enctype
-    fails to parse with `config::Error::NoPermittedEnctypes`, instead of
-    meaning "no policy";
-  - `des3-cbc-sha1` and `des3-hmac-sha1` mean enctype 16 (MIT), so an
-    explicit list naming them now requests DES3 (subject to
-    `allow_weak_crypto` and `permitted_enctypes`) instead of dropping it;
-  - a KDC reply or session key outside the requested (or explicitly
-    permitted) enctypes is rejected;
-  - an unsigned kpasswd success is rejected and the stored password kept;
-  - host-based SPNs carry a lower-cased host;
-  - the HTTP send wrappers return an error when requested mutual
-    authentication isn't proven;
-  - renewal pacing, AS recovery and `[domain_realm]` matching change as listed
-    in `CHANGELOG.md`.
-- **Path-dependency consumers** (such as `kpasswd-rs`'s vendor tree) compile
-  this crate with its own `[lints]` table and no lint cap. That build is
-  verified warning-free, with warnings denied, for
-  `default-features = false, features = ["tokio"]` and for the default
-  features (CI job `consumer`). Every other feature closure also lints and
-  tests clean; see `docs/lint-policy.md`.
-
-## What it changes
-
-| Change | Upstream, 2026-10-24 |
-|---|---|
-| Clippy lints reported by Rust 1.98 (so the other changes can pass CI) | **PR [#15](https://github.com/clelange/rskrb5/pull/15)** open |
-| `hex` as a dev-dependency so the crate's own integration tests build | issue #12 - **PR [#16](https://github.com/clelange/rskrb5/pull/16)** open |
-| `PA_FX_COOKIE`, `PA_AS_FRESHNESS` and `random_nonce` exported | issue #14 - **PR [#17](https://github.com/clelange/rskrb5/pull/17)** open |
-| `ChangePasswordResult` and `PasswordChangeFailed` carry the result bytes as received (`text_raw`) instead of `String::from_utf8_lossy`, with the test fixtures completed | issue #2 - **PR [#18](https://github.com/clelange/rskrb5/pull/18)** open |
-| `Config`/`LibDefaults` constructors that read no environment (`new_without_env`, `parse_without_env`) | issue #10 - PR to follow |
-| `include`/`includedir` in `krb5.conf`, with depth/count/byte bounds and named errors; cycle detection for root files and directories; the scan cap enforced while scanning; non-UTF-8 `.conf` names read, MIT-style | issue #11 - PR to follow |
-| The TGS-REQ builder returns the AP-REQ bytes and the authenticator subkey (RFC 6113 implicit FAST armor inputs) | issue #13 - PR to follow |
-| TCP framing and preauth connection reuse: record mark + body written as one segment, `TCP_NODELAY`, pinned stream for the second AS phase (imported from PR [#19](https://github.com/clelange/rskrb5/pull/19)'s branch), plus an `Auto`-fallback pinning extension | **PR [#19](https://github.com/clelange/rskrb5/pull/19)** open (Tcp path); extension stacked as [Gittingc0dez/rskrb5#1](https://github.com/Gittingc0dez/rskrb5/pull/1) |
-| AP-REQ replay identity canonicalized over the advisory name-type; a name-type-only replay is rejected (RFC 4120 section 3.2.3/6.2) | **PR [#20](https://github.com/clelange/rskrb5/pull/20)** open |
-| Authenticator client realm bound to the ticket realm; `ValidatedApReq.client` is ticket-derived (intentional gokrb5 divergence, `docs/gokrb5-parity.md`) | **PR [#21](https://github.com/clelange/rskrb5/pull/21)** open |
-| AP-REQ replay cache also indexes a digest of the authenticator ciphertext, so an authenticator re-presented under a rewritten cleartext ticket `sname` (for example a keytab alias sharing the service key) is rejected | **PR [#20](https://github.com/clelange/rskrb5/pull/20)** open, updated with this commit |
-| Ccache record counts bounded against the remaining input before reserving, so a malformed cache returns `Truncated` instead of aborting on a huge allocation | **PR [#22](https://github.com/clelange/rskrb5/pull/22)** open |
-| kpasswd success accepted only with authenticated provenance: an unsigned KRB-ERROR code 0 is rejected (`kadmin::Error::UnauthenticatedSuccess`) and the stored password is kept | **PR [#23](https://github.com/clelange/rskrb5/pull/23)** open |
-| `[libdefaults] clockskew` applied on the `Config`-driven acceptors (`ServiceValidator`, `NegotiateLayer`); plain constructors keep 300 s | **PR [#24](https://github.com/clelange/rskrb5/pull/24)** open |
-| Host-based service principals fold the DNS host component to lower case (RFC 4120 section 6.2.1), so host-case variants share one SPN and one cached ticket | **PR [#25](https://github.com/clelange/rskrb5/pull/25)** open |
-| `[domain_realm]` lookups fold DNS case, and a bare tag covers its subdomains (MIT krb5.conf(5)) | **PR [#26](https://github.com/clelange/rskrb5/pull/26)** open |
-| AS/TGS reply and session-key enctypes bound to the requested list (`EnctypeNotRequested`); an explicit `permitted_enctypes` narrows requests and rejects out-of-list session keys (`EnctypeNotPermitted`), an explicit request list outside it is a parse error, and an explicit allowlist with no supported enctype fails closed (`NoPermittedEnctypes`); MIT's `des3-cbc-sha1`/`des3-hmac-sha1` names mean enctype 16; the explicit flag survives serde and include expansion | **PR [#27](https://github.com/clelange/rskrb5/pull/27)** open |
-| Renewal series: refresh band from the current ticket life, auto-renewal paced when a refresh makes no progress, and AS recovery when a cached TGT is expired or its renewal is refused | **PR [#28](https://github.com/clelange/rskrb5/pull/28)** open |
-| Requested mutual authentication fails closed in the response classifier and in the send wrappers (`NegotiateHttpError::MutualAuthenticationNotProven`) | **PR [#29](https://github.com/clelange/rskrb5/pull/29)** open |
-| Lockfile refreshed to the latest Rust 1.99-compatible versions | fork only (lockfile) |
-
-The measurements and the acceptance procedure live in the consumer repository
-(`kpasswd-rs`: `VENDORING.md`).
-
-## Retirement
-
-When an upstream release carries these fixes, `rskrb5-patched` 0.2.1, 0.2.2
-and 0.3.0 are yanked (`cargo yank --version 0.3.0 rskrb5-patched`, likewise for
-0.2.2 and 0.2.1) and consumers move back to `rskrb5`. No further versions are
-planned.
-
-## Licensing
-
-Apache-2.0, as upstream. `LICENSE` and `NOTICE` are retained; the modifications
-are the changes above (Apache-2.0 section 4(b)).
+`rskrb5` credits gokrb5 (Copyright its contributors, Apache-2.0) in its
+`NOTICE`; that credit is kept as written.
