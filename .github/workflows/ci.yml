@@ -221,6 +221,8 @@ jobs:
       # (`Error::LengthOverflow`) that only run on a 32-bit target.
       - name: ccache tests (--all-features, i686)
         run: cargo test --all-features --target i686-unknown-linux-gnu --test ccache
+      - name: DES3 tests (--no-default-features, i686)
+        run: cargo test --no-default-features --target i686-unknown-linux-gnu --test crypto_des3
       - name: Check (--all-features, i686)
         run: cargo check --all-features --target i686-unknown-linux-gnu
 

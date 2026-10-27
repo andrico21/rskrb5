@@ -13,7 +13,15 @@ Commit subjects identify their item without self-referential hashes.
 
 ## Remaining work
 
-- RSK-B51C2C85: verify existing n-fold arithmetic repair on i686; add CI coverage.
+- RSK-B51C2C85: **blocked native validation**, not dismissed. The multiply-before-divide
+  LCM was removed by `0fdca8f`; current code divides byte lengths before checked
+  capacity multiplication. `des3_large_salt_preserves_password_dependence` probes
+  the reported 3,195,661-byte input against an all-one fold oracle and a changed
+  password. The i686 job now runs `crypto_des3` after its existing multilib install.
+  Local target Clippy passes, but native red/probe runs cannot link because the
+  host lacks 32-bit C startup objects and libc. Install `gcc-multilib`, rerun the
+  historical arithmetic scratch red and current native probe, then record a
+  disposition. No passing native test or new production fix is claimed.
 - RSK-CE4ACA12: authenticate AES-SHA2 ciphertext before decrypting.
 - RSK-8F3B02EE: reject oversized RFC 3961 derivation constants.
 - RSK-911A31CB: measure/probe the already hoisted CBC cipher setup.
