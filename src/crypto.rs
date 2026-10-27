@@ -608,7 +608,7 @@ impl AesSha2Etype {
         Ok(encrypted)
     }
 
-    /// Decrypt a Kerberos message and verify its RFC8009 integrity hash.
+    /// Authenticate a Kerberos message before decrypting it, per RFC8009 section 5.
     ///
     /// # Errors
     ///
@@ -629,15 +629,14 @@ impl AesSha2Etype {
             self.hmac_len(),
             self.hmac_len().saturating_add(Self::confounder_len()),
         )?;
-        let encryption_key = self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
-        let plain = self.decrypt_data(&encryption_key, encrypted)?;
-
-        let message = strip_confounder(&plain, Self::confounder_len())?;
-
         let expected = self.integrity_hash(protocol_key, usage, encrypted)?;
         if !constant_time_eq(&expected, mac) {
             return Err(Error::IntegrityCheckFailed);
         }
+
+        let encryption_key = self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
+        let plain = self.decrypt_data(&encryption_key, encrypted)?;
+        let message = strip_confounder(&plain, Self::confounder_len())?;
 
         Ok(message.to_vec())
     }
@@ -1712,6 +1711,9 @@ fn aes_cts_encrypt(key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), E
 /// AES block, and [`Error::InvalidKeyLength`] when `key` is neither 16 nor 32
 /// bytes long.
 fn aes_cts_decrypt(key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
+    #[cfg(test)]
+    tests::AES_DECRYPTIONS.with(|calls| calls.set(calls.get().saturating_add(1)));
+
     if ciphertext.len() < AES_BLOCK_SIZE {
         return Err(Error::CiphertextTooShort {
             minimum: AES_BLOCK_SIZE,
@@ -2197,4 +2199,67 @@ fn hex_encode(bytes: &[u8]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::{cell::Cell, error::Error};
+
+    use super::{AesSha2Etype, Error as CryptoError};
+
+    std::thread_local! {
+        /// Raw AES decryption entries on this test thread, isolated from parallel tests.
+        pub(super) static AES_DECRYPTIONS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Invalid SHA2 tags must be rejected before the raw AES decrypt boundary.
+    #[test]
+    fn sha2_rejects_bad_tag_before_any_decryption() -> Result<(), Box<dyn Error>> {
+        // Given structurally valid messages with a changed authentication tag.
+        for etype in [AesSha2Etype::Aes128, AesSha2Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            let mut ciphertext = etype.encrypt_message_with_confounder(
+                &key,
+                b"authenticated message",
+                2,
+                &[0x24; 16],
+            )?;
+            *ciphertext.last_mut().ok_or("message has a tag")? ^= 1;
+            AES_DECRYPTIONS.set(0);
+            // When the real message-decryption entry point processes the bad tag.
+            let result = etype.decrypt_message(&key, &ciphertext, 2);
+            // Then integrity fails without entering raw AES decryption.
+            assert_eq!(result, Err(CryptoError::IntegrityCheckFailed));
+            assert_eq!(AES_DECRYPTIONS.get(), 0, "unauthenticated AES decryption");
+        }
+        Ok(())
+    }
+
+    /// Valid tags reach the observed raw decrypt boundary and release the message.
+    #[test]
+    fn sha2_valid_tag_reaches_decryption() -> Result<(), Box<dyn Error>> {
+        // Given valid ciphertext for both SHA2 encryption types.
+        for etype in [AesSha2Etype::Aes128, AesSha2Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            let ciphertext = etype.encrypt_message_with_confounder(
+                &key,
+                b"authenticated message",
+                2,
+                &[0x24; 16],
+            )?;
+            AES_DECRYPTIONS.set(0);
+            // When the real entry point verifies and decrypts the message.
+            let plaintext = etype.decrypt_message(&key, &ciphertext, 2)?;
+            // Then the observer is live and the original message is recovered.
+            assert_eq!(AES_DECRYPTIONS.get(), 1);
+            assert_eq!(plaintext, b"authenticated message");
+        }
+        Ok(())
+    }
 }
