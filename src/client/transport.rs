@@ -740,23 +740,16 @@ impl Tokio {
     ) -> Result<Vec<u8>, Error> {
         let mut failures = Vec::new();
         for endpoint in endpoints {
-            let result = match endpoint.protocol {
-                KdcProtocol::Tcp => {
-                    self.with_transport_timeout(async {
-                        let mut stream =
-                            Self::connect_tcp((endpoint.host.as_str(), endpoint.port)).await?;
-                        self.exchange_tcp_framed(&mut stream, request, TcpFraming::Kpasswd)
-                            .await
-                    })
-                    .await
-                }
-                KdcProtocol::Udp | KdcProtocol::Auto => {
-                    self.send_udp((endpoint.host.as_str(), endpoint.port), request)
-                        .await
-                }
-            };
+            let result = self
+                .send_password_once(
+                    endpoint.protocol,
+                    (endpoint.host.as_str(), endpoint.port),
+                    request,
+                )
+                .await;
             match result {
                 Ok(response) => return Ok(response),
+                Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
                 Err(error) => failures.push(error.to_string()),
             }
         }
@@ -765,6 +758,87 @@ impl Tokio {
             protocol,
             failures,
         })
+    }
+
+    /// Send one password mutation, marking the outcome unknown before possible delivery.
+    ///
+    /// # Errors
+    /// Returns preparation errors before a send, or `KpasswdOutcomeUnknown` afterward.
+    ///
+    /// # Cancel safety
+    /// NOT cancel-safe: a cancelled send or reply wait may already have committed.
+    async fn send_password_once<A>(
+        &self,
+        protocol: KdcProtocol,
+        addr: A,
+        request: &[u8],
+    ) -> Result<Vec<u8>, Error>
+    where
+        A: ToSocketAddrs + Clone,
+    {
+        match protocol {
+            KdcProtocol::Tcp => {
+                let _length = tcp_request_length(request.len(), TcpFraming::Kpasswd)?;
+                let mut stream = self.with_transport_timeout(Self::connect_tcp(addr)).await?;
+                self.with_transport_timeout(self.exchange_tcp_framed(
+                    &mut stream,
+                    request,
+                    TcpFraming::Kpasswd,
+                ))
+                .await
+                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
+            }
+            KdcProtocol::Udp | KdcProtocol::Auto => {
+                if request.len() > MAX_UDP_DATAGRAM {
+                    return Err(Error::UdpRequestTooLarge {
+                        actual: request.len(),
+                        limit: MAX_UDP_DATAGRAM,
+                    });
+                }
+                let socket = self
+                    .with_transport_timeout(async {
+                        let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
+                        for candidate in lookup_host(addr).await? {
+                            let wildcard = if candidate.is_ipv4() {
+                                "0.0.0.0:0"
+                            } else {
+                                "[::]:0"
+                            };
+                            let result = async {
+                                let socket = UdpSocket::bind(wildcard).await?;
+                                socket.connect(candidate).await?;
+                                Ok::<_, io::Error>(socket)
+                            }
+                            .await;
+                            match result {
+                                Ok(socket) => return Ok(socket),
+                                Err(error) => last_error = error,
+                            }
+                        }
+                        Err(Error::Io(last_error))
+                    })
+                    .await?;
+                self.with_transport_timeout(async {
+                    let _: usize = socket.send(request).await?;
+                    let mut response = vec![
+                        0;
+                        self.udp_response_limit
+                            .min(usize::from(u16::MAX))
+                            .saturating_add(1)
+                    ];
+                    let length = socket.recv(&mut response).await?;
+                    if length > self.udp_response_limit {
+                        return Err(Error::UdpResponseTooLarge {
+                            limit: self.udp_response_limit,
+                        });
+                    }
+                    response.truncate(length);
+                    non_empty_kdc_response(response)
+                })
+                .await
+                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
+            }
+        }
     }
 
     /// Send to configured KDC endpoints using KDC framing.
@@ -793,8 +867,8 @@ impl Tokio {
     /// Returns the discovery errors of [`Self::discover_kpasswd_servers`],
     /// [`Error::NoKdcEndpoints`] when no endpoint is available, and
     /// [`Error::KdcEndpointFailures`] when every endpoint fails.
-    /// [`KdcProtocol::Auto`] retries over the other protocol after a failure of
-    /// the first and returns the errors of that retry.
+    /// Failover is permitted only before possible delivery. Later failures return
+    /// [`Error::KpasswdOutcomeUnknown`] without resending the mutation.
     ///
     /// # Cancel safety
     ///
@@ -873,17 +947,7 @@ impl Tokio {
         A: ToSocketAddrs + Clone,
     {
         let frame = request.encode()?;
-        let response = match protocol {
-            KdcProtocol::Tcp => {
-                self.with_transport_timeout(async {
-                    let mut stream = Self::connect_tcp(addr).await?;
-                    self.exchange_tcp_framed(&mut stream, &frame, TcpFraming::Kpasswd)
-                        .await
-                })
-                .await?
-            }
-            KdcProtocol::Udp | KdcProtocol::Auto => self.send_udp(addr, &frame).await?,
-        };
+        let response = self.send_password_once(protocol, addr, &frame).await?;
         Ok(kadmin::Reply::parse(&response)?)
     }
 
@@ -2141,8 +2205,7 @@ impl Tokio {
     }
 
     /// Send to a realm's kpasswd servers over the protocol
-    /// `udp_preference_limit` selects, retrying over the other one after a
-    /// failure or, from UDP, after `KRB_ERR_RESPONSE_TOO_BIG`.
+    /// `udp_preference_limit` selects, retrying only before possible delivery.
     ///
     /// # Errors
     ///
@@ -2172,14 +2235,8 @@ impl Tokio {
             .send_to_kpasswd_realm_explicit(config, first, realm, request)
             .await
         {
-            Ok(response)
-                if first == KdcProtocol::Udp
-                    && kdc_error_code(&response) == Some(KRB_ERR_RESPONSE_TOO_BIG) =>
-            {
-                self.send_to_kpasswd_realm_explicit(config, second, realm, request)
-                    .await
-            }
             Ok(response) => Ok(response),
+            Err(error @ Error::KpasswdOutcomeUnknown(_)) => Err(error),
             Err(_) => {
                 self.send_to_kpasswd_realm_explicit(config, second, realm, request)
                     .await

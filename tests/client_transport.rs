@@ -68,6 +68,80 @@ mod tests {
     /// Error type of these tests; `Send` so stub KDC tasks can return it.
     type TestError = Box<dyn Error + Send + Sync>;
 
+    /// A possibly committed TCP mutation must not be delivered to a second endpoint.
+    #[test]
+    fn kpasswd_lost_reply_does_not_retry_endpoint() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let first = TcpListener::bind("127.0.0.1:0").await?;
+            let second = TcpListener::bind("127.0.0.1:0").await?;
+            let config = config_with_kpasswd_servers(
+                [
+                    first.local_addr()?.to_string(),
+                    second.local_addr()?.to_string(),
+                ],
+                1,
+            )?;
+            let committed = tokio::spawn(async move {
+                let (request, socket) = read_tcp_request(&first).await?;
+                drop(socket);
+                Ok::<_, io::Error>(request)
+            });
+            let duplicate = tokio::spawn(async move {
+                match timeout(Duration::from_millis(250), read_tcp_request(&second)).await {
+                    Ok(Ok((_, mut socket))) => {
+                        write_tcp_response(&mut socket, b"duplicate").await?;
+                        Ok::<_, io::Error>(true)
+                    }
+                    Ok(Err(error)) => Err(error),
+                    Err(_elapsed) => Ok(false),
+                }
+            });
+            let result = Tokio::new()
+                .with_timeout(Duration::from_secs(1))
+                .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"mutation")
+                .await;
+            assert_eq!(committed.await??, b"mutation");
+            assert!(
+                !duplicate.await??,
+                "a possibly committed mutation was delivered twice"
+            );
+            assert!(
+                matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))),
+                "lost reply must be outcome unknown"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Auto password exchanges never resend a delivered UDP mutation over TCP.
+    #[test]
+    fn kpasswd_udp_timeout_does_not_retry_tcp() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let (udp, tcp) = bind_udp_and_tcp_pair().await?;
+            let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
+            let received = tokio::spawn(async move {
+                let mut bytes = [0; 64];
+                let (length, _) = udp.recv_from(&mut bytes).await?;
+                let duplicate = timeout(Duration::from_millis(250), tcp.accept())
+                    .await
+                    .is_ok();
+                Ok::<_, io::Error>((length, duplicate))
+            });
+            let result = Tokio::new()
+                .with_timeout(Duration::from_millis(50))
+                .send_to_kpasswd_realm(&config, KdcProtocol::Auto, "TEST.GOKRB5", b"mutation")
+                .await;
+            let (length, duplicate) = received.await??;
+            assert_eq!(length, 8);
+            assert!(
+                !duplicate,
+                "delivered UDP mutation must not be retried over TCP"
+            );
+            assert!(matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))));
+            Ok::<_, TestError>(())
+        })
+    }
+
     /// KDC reserved high bits are rejected independently of the allocation cap.
     #[test]
     fn kdc_tcp_rejects_reserved_bit_before_body_read() -> Result<(), TestError> {

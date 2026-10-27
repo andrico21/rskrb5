@@ -20,6 +20,12 @@ KDC TCP framing rejects the reserved high bit with `Client::TcpReservedBitSet`;
 outgoing KDC lengths above 31 bits return `Client::TcpRequestTooLarge`.
 Kpasswd TCP retains RFC 3244's separate unsigned length rules.
 
+Password transport no longer retries after a send may have started. Such I/O
+failures, response errors and timeouts return `Client::KpasswdOutcomeUnknown`.
+Configured Auto chooses its initial protocol from `udp_preference_limit` and
+only fails over before possible delivery; direct-address Auto uses UDP once.
+Do not treat an unknown outcome as a failed mutation or blindly retry it.
+
 UDP response limits now reject oversized responses with the new
 `Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
 
