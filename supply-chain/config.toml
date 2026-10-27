@@ -493,7 +493,7 @@ version = "2.3.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.picky-asn1]]
-version = "0.10.1"
+version = "0.10.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.picky-asn1-der]]
@@ -505,7 +505,7 @@ version = "0.15.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.picky-krb]]
-version = "0.13.0"
+version = "0.13.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project-lite]]
