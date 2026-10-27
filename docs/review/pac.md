@@ -14,6 +14,8 @@ Full commands, red runs and scratch failure QA are recorded in
 
 ## Traversal policy and trust boundary
 
+| RSK-59B45280 | fixed | `ntlm_reads_nt_from_its_fixed_slot`, `ntlm_rejects_truncated_fixed_slots`; commit suffix `(RSK-59B45280)` | Both 16-byte NTLM hash slots are consumed unconditionally; validity flags govern exposure only. NT-only credentials now read the NT slot, and all validity combinations require the complete 40-byte structure (MS-PAC 2.6.4). | N/A |
+
 | RSK-8BA3D269 | fixed | `ntlm_uses_low_bit_validity_masks`, `ntlm_rejects_flags_without_valid_hash`; commit suffix `(RSK-8BA3D269)` | NTLM validity uses numeric LM=1 and NT=2 masks. Reserved bits are ignored on receipt; neither validity flag returns `Pac::MissingNtlmValidityFlag` (MS-PAC 2.6.4). Public constants now hold numeric masks rather than incorrect bit indices. | N/A |
 
 | RSK-DB101DC5 | fixed | `credentials_accepts_conformant_single_entry`, `credentials_rejects_mismatched_conformant_count`; corrected direct/encrypted fixture coverage; commit suffix `(RSK-DB101DC5)` | PAC_CREDENTIAL_DATA consumes and correlates the NDR32 conformant maximum count before CredentialCount (MS-PAC 2.6.2, DCE C706 structures containing arrays). Local credential fixtures now include both words and eight-byte serialization padding. | N/A |
@@ -32,6 +34,6 @@ key decryption, as recorded by the audit lead. No service call-site edit is need
 
 ## Remaining work
 
-Five other todo-32 items remain pending. Final full STRICT, WIN-CLIPPY,
+Four other todo-32 items remain pending. Final full STRICT, WIN-CLIPPY,
 FULL-TEST, DOCTEST, DOCS, NIGHTLY-FMT, GATES and exact doc-ID acceptance are
 deferred until all items are complete, as required by the lane instructions.

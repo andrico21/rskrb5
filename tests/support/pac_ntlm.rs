@@ -44,6 +44,46 @@ mod tests {
         Ok(())
     }
 
+    /// Pins NT-only validity to the second fixed hash slot.
+    #[test]
+    fn ntlm_reads_nt_from_its_fixed_slot() -> Result<(), TestError> {
+        // Given: NT-only validity and different LM/NT wire slots.
+        let bytes = wire(2);
+        // When: the NT-only credential is parsed.
+        let credential =
+            NtlmSupplementalCredential::parse(&bytes).context("NT-only record parses")?;
+        // Then: the invalid LM slot is consumed but never exposed as NT.
+        assert_eq!(credential.nt_password, Some([0x22; 16]));
+        assert_eq!(credential.lm_password, None);
+        Ok(())
+    }
+
+    /// Pins both fixed slots as required even if one hash is not valid.
+    #[test]
+    fn ntlm_rejects_truncated_fixed_slots() -> Result<(), TestError> {
+        // Given: every nonempty validity combination and truncations within both slots.
+        for flags in [1_u32, 2, 3] {
+            let bytes = wire(flags);
+            for len in [8, 23, 24, 39] {
+                let truncated = bytes.get(..len).context("truncated prefix")?;
+                // When: a short fixed-width record is parsed.
+                let error = NtlmSupplementalCredential::parse(truncated)
+                    .err()
+                    .context("both fixed slots required")?;
+                // Then: invalid-member flags do not excuse missing wire bytes.
+                assert!(matches!(
+                    error,
+                    PacError::Truncated {
+                        offset: _,
+                        needed: _,
+                        remaining: _
+                    }
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Encodes the fixed 40-byte structure with distinct LM and NT slot markers.
     fn wire(flags: u32) -> Vec<u8> {
         let mut bytes = 0_u32.to_le_bytes().to_vec();

@@ -801,16 +801,12 @@ impl NtlmSupplementalCredential {
         let flags = reader.read_u32()?;
         (flags & (NTLM_SUPPLEMENTAL_CRED_LMOWF | NTLM_SUPPLEMENTAL_CRED_NTOWF) != 0)
             .ok_or(Error::MissingNtlmValidityFlag)?;
-        let lm_password = if ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF) {
-            Some(reader.read_array()?)
-        } else {
-            None
-        };
-        let nt_password = if ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF) {
-            Some(reader.read_array()?)
-        } else {
-            None
-        };
+        let lm_slot = reader.read_array()?;
+        let nt_slot = reader.read_array()?;
+        let lm_password =
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF).then_some(lm_slot);
+        let nt_password =
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF).then_some(nt_slot);
 
         Ok(Self {
             version,
