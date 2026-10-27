@@ -135,6 +135,7 @@ const fn process_identity() -> Result<(u32, u32), Error> {
 ///
 /// Returns filesystem errors from staging, writing, syncing or renaming.
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    reject_symlink(path)?;
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -157,10 +158,43 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
+        reject_symlink(path)?;
         fs::rename(&temporary, path)
     })();
     if result.is_err() {
         fs::remove_file(temporary)?;
     }
     result
+}
+
+/// Reject only a final-component symlink; parent aliases remain supported.
+///
+/// # Errors
+///
+/// Returns `InvalidInput` for a symlink and propagates metadata errors except
+/// an absent final entry, which is admissible for exclusive creation.
+pub(crate) fn reject_symlink(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "credential destination is a symlink",
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+/// Initialize a missing DIR primary without following or replacing an entry.
+///
+/// # Errors
+///
+/// Returns an open or write error, including `AlreadyExists` for any existing
+/// entry (dangling symlinks included).
+pub(crate) fn create_primary(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut options = OpenOptions::new();
+    let _: &mut OpenOptions = options.write(true).create_new(true);
+    #[cfg(unix)]
+    let _: &mut OpenOptions = options.mode(0o600);
+    options.open(path)?.write_all(bytes)
 }

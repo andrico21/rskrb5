@@ -175,6 +175,57 @@ mod tests {
         Ok(())
     }
 
+    /// Symlinked final destinations and dangling DIR primaries are rejected.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_cache_destinations_and_primary() -> Result<(), TestError> {
+        use std::{
+            fs::{read, remove_dir_all},
+            os::unix::fs::symlink,
+        };
+        // Given a private tree with a linked cache and dangling primary.
+        let directory = temp_file("symlink")?;
+        create_dir_all(&directory)?;
+        let target = directory.join("outside");
+        write(&target, b"unchanged")?;
+        let link = directory.join("tktLINK");
+        symlink(&target, &link)?;
+        symlink(directory.join("missing"), directory.join("primary"))?;
+        let cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+
+        // When saving through links or resolving a dangling primary.
+        let saved = cache.save(&link);
+        let resolved = CCache::file_path_from_cache_name(&format!("DIR:{}", directory.display()));
+
+        // Then neither operation accepts the symlink or touches its referent.
+        assert!(matches!(saved, Err(Error::Io(_))));
+        assert!(matches!(resolved, Err(Error::Io(_))));
+        assert_eq!(read(&target)?, b"unchanged");
+        assert!(!directory.join("missing").exists());
+        remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// Parent-directory links remain supported, including macOS temporary paths.
+    #[cfg(unix)]
+    #[test]
+    fn saves_cache_through_symlinked_parent() -> Result<(), TestError> {
+        use std::{fs::remove_dir_all, os::unix::fs::symlink};
+        // Given a linked parent directory and regular final destination.
+        let directory = temp_file("linked-parent")?;
+        create_dir_all(directory.join("actual"))?;
+        symlink(directory.join("actual"), directory.join("alias"))?;
+        let cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+
+        // When saving through the directory alias.
+        cache.save(directory.join("alias/tkt"))?;
+
+        // Then the real cache is readable from the actual parent.
+        assert_eq!(CCache::load(directory.join("actual/tkt"))?, cache);
+        remove_dir_all(directory)?;
+        Ok(())
+    }
+
     /// Pins that a ccache saved under the `KRB5CCNAME` file name loads back unchanged.
     #[test]
     fn saves_and_loads_ccache_from_env() -> Result<(), TestError> {

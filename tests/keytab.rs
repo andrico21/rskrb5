@@ -224,6 +224,33 @@ mod tests {
         Ok(())
     }
 
+    /// Keytab saves reject final symlinks without replacing their referents.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_keytab_destination() -> Result<(), TestError> {
+        use std::{
+            fs::{create_dir_all, read, remove_dir_all, write},
+            os::unix::fs::symlink,
+        };
+        // Given a symlink to a dummy file in the test tree.
+        let directory = temp_file("symlink")?;
+        create_dir_all(&directory)?;
+        let target = directory.join("outside");
+        write(&target, b"unchanged")?;
+        let link = directory.join("keytab");
+        symlink(&target, &link)?;
+        let keytab = Keytab::parse(&hex::decode(KTUTIL_USER_KEYTAB)?)?;
+
+        // When saving through the final symlink.
+        let result = keytab.save(&link);
+
+        // Then reject the link and preserve the original referent.
+        assert!(result.is_err());
+        assert_eq!(read(target)?, b"unchanged");
+        remove_dir_all(directory)?;
+        Ok(())
+    }
+
     /// Pins that a keytab saved under the `KRB5_KTNAME` file name loads back unchanged.
     #[test]
     fn saves_and_loads_keytab_from_env() -> Result<(), TestError> {

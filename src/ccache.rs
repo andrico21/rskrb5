@@ -633,10 +633,11 @@ fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     let collection =
         PathBuf::from(file_name::expand_path_tokens(directory).map_err(file_name_error)?);
     let primary_path = collection.join(DIR_PRIMARY_FILE);
+    file_name::reject_symlink(&primary_path)?;
     let primary = match fs::read_to_string(&primary_path) {
         Ok(contents) => parse_dir_primary_name(&contents)?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::write(
+            file_name::create_primary(
                 &primary_path,
                 format!("{DIR_DEFAULT_PRIMARY_CACHE}\n").as_bytes(),
             )?;
