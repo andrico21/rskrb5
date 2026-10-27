@@ -6,8 +6,8 @@ use rasn::{
 };
 
 use crate::{
-    ap_rep, ap_req, crypto::KerberosEtype, error, keytab::EncryptionKey, krb_error, krb_priv,
-    krb_priv::EncKrbPrivPartOptions,
+    ap_rep, ap_req, crypto::KerberosEtype, der::decode_complete, error, keytab::EncryptionKey,
+    krb_error, krb_priv, krb_priv::EncKrbPrivPartOptions,
 };
 
 /// Password-change request protocol version (`0xff80`).
@@ -840,9 +840,9 @@ fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
+    decode_complete(bytes).map_err(|source| Error::Decode {
         target,
-        message: source.to_string(),
+        message: source,
     })
 }
 
@@ -1030,6 +1030,9 @@ fn parse_header(bytes: &[u8]) -> Result<Frame<'_>, Error> {
     let message_length = u16::from_be_bytes([length_high, length_low]);
     let frame_len = usize::from(message_length);
     if frame_len < HEADER_LEN {
+        return Err(Error::InvalidMessageLength(message_length));
+    }
+    if frame_len < bytes.len() {
         return Err(Error::InvalidMessageLength(message_length));
     }
     let Some(body) = bytes.get(HEADER_LEN..frame_len) else {

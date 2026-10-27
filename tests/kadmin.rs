@@ -757,6 +757,24 @@ mod tests {
         Ok(())
     }
 
+    /// Rejects extra bytes beyond a complete framed request or reply.
+    #[test]
+    fn kpasswd_rejects_complete_frame_suffix() -> Result<(), TestError> {
+        // Given complete frames followed by a second, unchecked value.
+        let mut request = decode_hex(MARSHALLED_KPASSWD_REQ)?;
+        let mut reply = decode_hex(MARSHALLED_KPASSWD_REP)?;
+        request.extend_from_slice(&[0x05, 0]);
+        reply.extend_from_slice(&[0x05, 0]);
+        // When each whole-frame boundary parses, then both reject the suffix.
+        let _request_error = Request::parse(&request)
+            .err()
+            .context("request suffix rejected")?;
+        let _reply_error = Reply::parse(&reply)
+            .err()
+            .context("reply suffix rejected")?;
+        Ok(())
+    }
+
     /// Pins that a KRB-ERROR reply with an AP-REP and KRB-PRIV cannot be encoded.
     #[test]
     fn kpasswd_reply_rejects_mixed_error_payloads() -> Result<(), TestError> {

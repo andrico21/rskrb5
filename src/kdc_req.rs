@@ -2,7 +2,9 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{error::Ticket as TicketError, ticket::validate as validate_ticket};
+use crate::{
+    der::decode_complete, error::Ticket as TicketError, ticket::validate as validate_ticket,
+};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -198,9 +200,9 @@ fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
+    decode_complete(bytes).map_err(|source| Error::Decode {
         target,
-        message: source.to_string(),
+        message: source,
     })
 }
 

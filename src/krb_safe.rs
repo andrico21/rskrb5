@@ -2,7 +2,7 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
+use crate::{crypto::KerberosEtype, der::decode_complete, keytab::EncryptionKey};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -150,9 +150,9 @@ fn decode_der<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
+    decode_complete(bytes).map_err(|source| Error::Decode {
         target,
-        message: source.to_string(),
+        message: source,
     })
 }
 
