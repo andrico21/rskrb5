@@ -1939,17 +1939,17 @@ impl Tokio {
         let resolve_targets = self.dns_server.is_some();
         let mut endpoints = Vec::with_capacity(records.len());
         for (_, _, target, port) in records {
-            let host = if resolve_targets {
+            let hosts = if resolve_targets {
                 resolve_dns_endpoint_host(&resolver, realm, protocol, &target).await?
             } else {
-                target
+                vec![target]
             };
-            endpoints.push(KdcEndpoint {
+            endpoints.extend(hosts.into_iter().map(|host| KdcEndpoint {
                 protocol,
                 host,
                 port,
                 source: KdcEndpointSource::DnsSrv,
-            });
+            }));
         }
 
         Ok(endpoints)
@@ -2250,7 +2250,7 @@ fn dns_resolver(server: Option<(IpAddr, u16)>) -> Result<TokioResolver, Error> {
         .map_err(|source| Error::DnsResolverConfig(source.to_string()))
 }
 
-/// Resolve an SRV target to its first IP address; IP literals pass through.
+/// Resolve every address of an SRV target; IP literals pass through.
 ///
 /// # Errors
 ///
@@ -2267,9 +2267,9 @@ async fn resolve_dns_endpoint_host(
     realm: &str,
     protocol: KdcProtocol,
     target: &str,
-) -> Result<String, Error> {
+) -> Result<Vec<String>, Error> {
     if target.parse::<IpAddr>().is_ok() {
-        return Ok(target.to_owned());
+        return Ok(vec![target.to_owned()]);
     }
 
     let lookup_name = if target.ends_with('.') {
@@ -2285,15 +2285,15 @@ async fn resolve_dns_endpoint_host(
             protocol,
             message: format!("target {target}: {source}"),
         })?;
-    lookup
-        .iter()
-        .next()
-        .map(|ip| ip.to_string())
-        .ok_or_else(|| Error::DnsSrvLookup {
+    let hosts: Vec<_> = lookup.iter().map(|ip| ip.to_string()).collect();
+    if hosts.is_empty() {
+        return Err(Error::DnsSrvLookup {
             realm: realm.to_owned(),
             protocol,
             message: format!("target {target}: no address records found"),
-        })
+        });
+    }
+    Ok(hosts)
 }
 
 /// Parse an `ip` or `ip:port` DNS server literal, defaulting to port 53.

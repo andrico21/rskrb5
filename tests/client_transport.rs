@@ -114,6 +114,32 @@ mod tests {
         })
     }
 
+    /// Explicit DNS discovery retains all addresses of a password service target.
+    #[test]
+    fn kpasswd_dns_retains_all_target_addresses() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = socket.local_addr()?;
+            let task = tokio::spawn(dns_admin_fixture(
+                socket,
+                Some(Name::from_ascii("multiple.test.gokrb5.")?),
+            ));
+            let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
+            let result = Tokio::new()
+                .with_dns_server(&server.to_string())?
+                .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                .await;
+            task.abort();
+            let mut authorities = result?
+                .iter()
+                .map(KdcEndpoint::authority)
+                .collect::<Vec<_>>();
+            authorities.sort();
+            assert_eq!(authorities, ["127.0.0.1:1464", "127.0.0.2:1464"]);
+            Ok::<_, TestError>(())
+        })
+    }
+
     /// Serve selected kpasswd records and a conventional administration service.
     async fn dns_admin_fixture(socket: UdpSocket, kpasswd: Option<Name>) -> Result<(), TestError> {
         loop {
@@ -145,6 +171,13 @@ mod tests {
                 ));
             }
             if query.query_type() == RecordType::A {
+                if query.name().to_utf8().starts_with("multiple.") {
+                    response.answers.push(Record::from_rdata(
+                        query.name().clone(),
+                        60,
+                        RData::A(A::new(127, 0, 0, 2)),
+                    ));
+                }
                 response.answers.push(Record::from_rdata(
                     query.name().clone(),
                     60,
