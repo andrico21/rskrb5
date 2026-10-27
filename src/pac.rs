@@ -6,7 +6,10 @@
 
 use alloc::fmt;
 use core::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use compcol::{
     Algorithm, lznt1::Lznt1, vec::decompress_to_vec_capped, xpress::Xpress,
@@ -975,21 +978,25 @@ impl DeviceInfo {
     #[inline]
     pub fn group_membership_sids(&self) -> Vec<String> {
         let mut sids = Vec::new();
+        let mut seen = HashSet::new();
         if let Some(account_domain_sid) = &self.account_domain_id {
             for group in &self.account_group_ids {
-                sids.push(format!("{account_domain_sid}-{}", group.relative_id));
+                let sid = format!("{account_domain_sid}-{}", group.relative_id);
+                if seen.insert(sid.clone()) {
+                    sids.push(sid);
+                }
             }
         }
         for extra_sid in &self.extra_sids {
             let sid = extra_sid.sid.to_string();
-            if !sids.iter().any(|existing| existing == &sid) {
+            if seen.insert(sid.clone()) {
                 sids.push(sid);
             }
         }
         for domain_group in &self.domain_group {
             for group in &domain_group.group_ids {
                 let sid = format!("{}-{}", domain_group.domain_id, group.relative_id);
-                if !sids.iter().any(|existing| existing == &sid) {
+                if seen.insert(sid.clone()) {
                     sids.push(sid);
                 }
             }
@@ -1667,21 +1674,25 @@ impl KerbValidationInfo {
     #[inline]
     pub fn group_membership_sids(&self) -> Vec<String> {
         let mut sids = Vec::new();
+        let mut seen = HashSet::new();
         if let Some(domain_sid) = &self.logon_domain_id {
             for group in &self.group_ids {
-                sids.push(format!("{domain_sid}-{}", group.relative_id));
+                let sid = format!("{domain_sid}-{}", group.relative_id);
+                if seen.insert(sid.clone()) {
+                    sids.push(sid);
+                }
             }
         }
         for extra_sid in &self.extra_sids {
             let sid = extra_sid.sid.to_string();
-            if !sids.iter().any(|existing| existing == &sid) {
+            if seen.insert(sid.clone()) {
                 sids.push(sid);
             }
         }
         if let Some(resource_domain_sid) = &self.resource_group_domain_sid {
             for group in &self.resource_group_ids {
                 let sid = format!("{resource_domain_sid}-{}", group.relative_id);
-                if !sids.iter().any(|existing| existing == &sid) {
+                if seen.insert(sid.clone()) {
                     sids.push(sid);
                 }
             }

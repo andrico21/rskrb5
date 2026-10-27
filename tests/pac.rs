@@ -676,6 +676,44 @@ mod tests {
         Ok(())
     }
 
+    /// Pins first-seen SID order with duplicates in the initial user group source.
+    #[test]
+    fn sid_summary_deduplicates_initial_user_groups() -> Result<(), TestError> {
+        // Given: a valid user PAC with the first domain group repeated.
+        let mut pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?)
+            .context("PAC parses")?;
+        let info = pac
+            .kerb_validation_info
+            .as_mut()
+            .context("validation info")?;
+        let expected = info.group_membership_sids();
+        let first = *info.group_ids.first().context("first group")?;
+        info.group_ids.insert(0, first);
+        // When: summary SIDs are derived.
+        let actual = info.group_membership_sids();
+        // Then: duplicates do not alter the stable first-seen sequence.
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    /// Pins the same duplicate policy for initial device groups and later sources.
+    #[test]
+    fn sid_summary_deduplicates_initial_device_groups() -> Result<(), TestError> {
+        // Given: the existing device fixture with its first group repeated.
+        let mut info = DeviceInfo::parse(&device_info_bytes()?).context("device parses")?;
+        let expected = info.group_membership_sids();
+        let first = *info
+            .account_group_ids
+            .first()
+            .context("first device group")?;
+        info.account_group_ids.insert(0, first);
+        // When: summary SIDs are derived.
+        let actual = info.group_membership_sids();
+        // Then: initial and later sources use one duplicate policy.
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
     /// Pins that the PAC is found inside AD-IF-RELEVANT authorization data.
     #[test]
     fn extracts_pac_from_if_relevant_authorization_data() -> Result<(), TestError> {

@@ -15,6 +15,8 @@ Full commands, red runs and scratch failure QA are recorded in
 
 ## Traversal policy and trust boundary
 
+| RSK-D33671B2 | fixed | `sid_summary_deduplicates_initial_user_groups`, `sid_summary_deduplicates_initial_device_groups`; existing cross-source vectors; commit suffix for this item | Both SID summaries use a membership HashSet alongside ordered output. Every source, including initial groups, follows first-seen deduplication rather than quadratic output scans. | N/A |
+
 | RSK-6A286805 | fixed | `ndr_rejects_underdeclared_object_length`; all existing NDR fixtures; commit suffix for this item | Serialized PAC NDR object length must equal the complete supplied object extent and include eight-byte serialization padding. No fields can be consumed beyond the declared extent. Common-header field names now match type serialization version 1. | N/A |
 
 | RSK-5E15962F | fixed | `ntlm_debug_redacts_hash_material`; commit suffix for this item | Decrypted scratch and package bytes have Zeroizing owners; NTLM hash slots have Drop erasure and redacted diagnostics. Credential container Debug delegates only to redacted package entries. | N/A |
