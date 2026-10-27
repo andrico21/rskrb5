@@ -1,7 +1,26 @@
 # Configuration and enctype review dispositions
 
 Commands, initial red runs and fix-reversal QA are recorded in
-`task-36-rskrb5-ng-own-way.log`. Acceptance is pending until all rows are done.
+`task-36-rskrb5-ng-own-way.log`.
+
+## Acceptance receipt
+
+Verified implementation tip: `40360cf` on `work/r-config-enctype`.
+The item commits are `808ebcd`, `9007c1d`, `d0d38e1`, `71016e2`, and `40360cf`
+in table order. Each fixed item has a recorded pre-fix failure and scratch
+fix-reversal failure (exit 101).
+
+Final acceptance: STRICT (36 closures, 72 commands), WIN-CLIPPY, FULL-TEST,
+DOCTEST, DOCS (stable and nightly), NIGHTLY-FMT, GATES, and exact-once IDs all
+exited 0. FULL-TEST: 35 successful result lines, 777 passed tests. Nine tests
+were added (six config regressions and three guard tests); the inferred handoff
+total is 768, not a separately executed baseline FULL-TEST in this session.
+Changed Rust files have clean LSP error diagnostics.
+
+Ownership exceptions are call-site migrations in `tests/client/as_exchange.rs`,
+`tests/client/tgs_exchange.rs`, and `tests/client_ad_integration.rs`, the required
+public-API migration guide, and config-domain variants in `src/error.rs`.
+No merge or push was performed; the branch and worktree are retained.
 
 | ID | Status | Tests / commit | Behaviour change for CHANGELOG | Dismissal evidence |
 |---|---|---|---|---|
