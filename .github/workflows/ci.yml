@@ -1,8 +1,10 @@
 name: CI
 
-# CI and the release gate: `release.yml` triggers on this
-# workflow's completion and publishes `rskrb5-ng` when a `vN.N.N` tag
-# points at the run's head SHA. Every job's `name:` equals its job id.
+# CI and the release gate: `release.yml` triggers on this workflow's
+# completion. Its secret-free `find-tag` job looks for a `vN.N.N` tag at the
+# run's head SHA; only then does its `publish` job run, in the reviewed
+# `release` environment and only for a tagged commit on `main`. Every job's
+# `name:` equals its job id.
 #
 # Lint profile. The crate adopts the core Section 9 `[lints]` tables of the
 # vendored Rust guidelines unchanged, the core `clippy.toml` sample,
@@ -33,7 +35,8 @@ name: CI
 on:
   push:
     branches: [main]
-    # Release tags: `release.yml` publishes only from a green run on the tag.
+    # Release tags (`v*`, creatable by repository admins only, per the tag
+    # ruleset): `release.yml` publishes only from a green run on the tag.
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   pull_request:
   schedule:

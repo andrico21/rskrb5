@@ -1,6 +1,9 @@
-//! Checks of the gokrb5 parity manifest in `docs/gokrb5-parity.toml`.
+//! Checks of the gokrb5 parity manifest in `docs/gokrb5-parity.toml` and of the
+//! repository tooling it cites: the release and CI workflows and the fixture runner.
+//! The tooling files are excluded from the package, so these tests read them from
+//! the repository checkout at run time.
 
-/// gokrb5 parity manifest tests.
+/// gokrb5 parity manifest and repository tooling tests.
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
@@ -13,6 +16,7 @@ mod tests {
 
     use alloc::collections::BTreeSet;
     use core::error;
+    use std::{fs, path::Path};
 
     use toml::{Table, Value};
 
@@ -233,6 +237,126 @@ mod tests {
             .and_then(Value::as_array)
             .ok_or("gate has next array")?;
         assert!(!next.is_empty(), "gate {id} should list next work");
+        Ok(())
+    }
+
+    /// Reads a repository file that the package excludes, relative to the manifest directory.
+    fn repository_file(relative: &str) -> Result<String, TestError> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
+        Ok(fs::read_to_string(&path)
+            .map_err(|error| format!("read {}: {error}", path.display()))?)
+    }
+
+    /// Splits the `jobs:` section of a workflow into (job id, job body) pairs in file order.
+    fn workflow_jobs(workflow: &str) -> Vec<(String, String)> {
+        let mut jobs: Vec<(String, String)> = Vec::new();
+        let mut in_jobs = false;
+        for line in workflow.lines() {
+            if !line.is_empty() && !line.starts_with([' ', '#']) {
+                in_jobs = line == "jobs:";
+                continue;
+            }
+            if !in_jobs {
+                continue;
+            }
+            if let Some(key) = line
+                .strip_prefix("  ")
+                .and_then(|rest| rest.strip_suffix(':'))
+                && !key.starts_with([' ', '#'])
+            {
+                jobs.push((key.to_owned(), String::new()));
+            } else if let Some((_, body)) = jobs.last_mut() {
+                body.push_str(line);
+                body.push('\n');
+            } else {
+                // A comment or blank line before the first job belongs to no job.
+            }
+        }
+        jobs
+    }
+
+    /// Returns the body of job `id` in `jobs`.
+    fn job<'jobs>(jobs: &'jobs [(String, String)], id: &str) -> Result<&'jobs str, TestError> {
+        jobs.iter()
+            .find(|(name, _)| name == id)
+            .map(|(_, body)| body.as_str())
+            .ok_or_else(|| -> TestError { format!("workflow has no job {id}").into() })
+    }
+
+    /// Jobs of `.github/workflows/release.yml`.
+    fn release_jobs() -> Result<Vec<(String, String)>, TestError> {
+        Ok(workflow_jobs(&repository_file(
+            ".github/workflows/release.yml",
+        )?))
+    }
+
+    /// The tag lookup holds no secret and waits for no environment, so every green
+    /// CI run reports its tag state without an approval prompt.
+    #[test]
+    fn release_find_tag_job_holds_no_secret_and_reports_untagged_runs() -> Result<(), TestError> {
+        let jobs = release_jobs()?;
+        let find_tag = job(&jobs, "find-tag")?;
+        assert!(
+            !find_tag.contains("secrets."),
+            "find-tag must not read a secret"
+        );
+        assert!(
+            !find_tag.contains("environment:"),
+            "find-tag must not wait for an environment"
+        );
+        assert!(
+            find_tag.contains("No vN.N.N tag points at"),
+            "find-tag must report a run without a release tag"
+        );
+        assert!(
+            find_tag.contains("tag: ${{ steps."),
+            "find-tag must output the tag it found"
+        );
+        assert!(
+            find_tag.contains("grep -E '^v[0-9]+"),
+            "find-tag must accept only v-prefixed tags, the names the tag ruleset protects"
+        );
+        Ok(())
+    }
+
+    /// Publishing needs a tag found by `find-tag`, the reviewed `release` environment
+    /// and a tagged commit that is on `main`.
+    #[test]
+    fn release_publish_job_requires_tag_environment_and_main_ancestry() -> Result<(), TestError> {
+        let jobs = release_jobs()?;
+        let publish = job(&jobs, "publish")?;
+        for required in [
+            "needs: find-tag",
+            "if: needs.find-tag.outputs.tag != ''",
+            "environment: release",
+            "git merge-base --is-ancestor",
+            "origin/main",
+        ] {
+            assert!(publish.contains(required), "publish job lacks `{required}`");
+        }
+        Ok(())
+    }
+
+    /// The registry token reaches only the reviewed publish job, and its upload step
+    /// does not build the tagged tree (the token-free dry run verified it).
+    #[test]
+    fn release_registry_token_reaches_only_the_publish_upload() -> Result<(), TestError> {
+        let jobs = release_jobs()?;
+        let holders: Vec<&str> = jobs
+            .iter()
+            .filter(|(_, body)| body.contains("CARGO_REGISTRY_TOKEN"))
+            .map(|(id, _)| id.as_str())
+            .collect();
+        assert_eq!(
+            holders,
+            ["publish"],
+            "only the publish job may reference the registry token"
+        );
+        let publish = job(&jobs, "publish")?;
+        assert!(
+            publish.contains("cargo publish --locked --no-verify"),
+            "the token-holding upload must not run the tagged tree's build scripts"
+        );
         Ok(())
     }
 }
