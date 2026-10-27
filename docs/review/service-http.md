@@ -6,6 +6,7 @@ are in `task-30-rskrb5-ng-own-way.log` in the execution evidence.
 
 | ID | Status | Tests and commit | Behaviour change for CHANGELOG | Dismissal evidence |
 | --- | --- | --- | --- | --- |
+| RSK-D1D6BDC3 / lead `mandatory-authorization-data-discarded` | fixed | `authdata_rejects_ticket_critical_elements`, `authdata_rejects_authenticator_critical_elements`, `authdata_rejects_critical_sibling_after_verified_pac`, `authdata_accepts_optional_unknown_elements`, `authdata_rejects_mandatory_inside_optional_wrapper`, `authdata_rejects_unsupported_and_or_inside_optional_wrapper`, `authdata_enforces_depth_and_byte_limits`; commit suffix `(RSK-D1D6BDC3)` | Validate all ticket/authenticator authorization restrictions before success, independently of first-PAC extraction. Reject unknown critical elements and unsupported AD-KDCIssued/AD-AND-OR; interpret AD-IF-RELEVANT and AD-MANDATORY-FOR-KDC nesting with eight-wrapper/1 MiB decoded-payload limits (RFC 4120 §5.2.6). | N/A |
 | RSK-3E3C2278 / lead `unchecked-cross-realm-transit` | fixed | `transit_rejects_unchecked_cross_realm_paths`, `transit_preserves_same_realm_and_kdc_checked_paths`, `transit_policy_explicitly_accepts_only_matching_paths`, `transit_policy_rejects_mismatching_paths`; commit suffix `(RSK-3E3C2278)` | Reject unchecked cross-realm paths unless an explicit caller `TransitValidator` approves endpoint realms and raw transit encoding, including direct paths and unknown encodings (RFC 4120 §§2.7, 3.3.3.2). | N/A |
 | RSK-39F18D3B | fixed | `service_rejects_nested_ticket_version`, `service_rejects_nested_authenticator_version`, `authenticator_decoder_rejects_nested_version`, `ticket_decryptor_rejects_nested_version`; commit subject suffix `(RSK-39F18D3B)` | Shared ticket decryption rejects `tkt-vno != 5`; shared authenticator decoding rejects `authenticator-vno != 5` with existing typed `InvalidMessage` errors (RFC 4120 §§5.3, 5.5.1). Service rejection occurs before replay admission. | N/A |
 
@@ -13,7 +14,6 @@ are in `task-30-rskrb5-ng-own-way.log` in the execution evidence.
 
 | Item | Progress | Next action or decision |
 | --- | --- | --- |
-| Mandatory authorization data / `mandatory-authorization-data-discarded` | remaining | Validate ticket and authenticator restrictions independently of first-PAC extraction; test critical siblings and unsupported containers. |
 | Replay retention / `ReplayCache:indefinite-entry-retention` | remaining | Owner chose option A: cache-owned fixed maximum skew, named rejection of wider validators, fail-closed clock rollback, and capacity admission. Document the contract in this ledger and migration guide. |
 | Authenticator microseconds domain | remaining | Enforce 0..=999999 before timestamp/replay processing and AP-REP construction/verification. |
 | Fractional KerberosTime | remaining | Reject fractions at ticket, authenticator and AP-REP semantic boundaries and construction inputs. |

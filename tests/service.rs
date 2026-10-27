@@ -1,6 +1,8 @@
 //! Service AP-REQ validation, AP-REP, replay cache and keytab loading tests against the gokrb5 vectors.
 #![cfg(feature = "messages")]
 
+extern crate alloc;
+
 #[path = "support/context.rs"]
 mod context;
 #[path = "support/env.rs"]
@@ -17,13 +19,13 @@ mod pac_ad_win2k;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use alloc::sync::Arc;
     use core::time::Duration;
     use std::{
         env::{temp_dir, var},
         fs,
         path::PathBuf,
         process,
-        sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -1507,6 +1509,192 @@ mod tests {
         )?
         .into();
         reencrypt_authenticator(&mut request, client_realm, 1)?;
+        Ok(der::encode(&request)?)
+    }
+
+    /// Unknown critical ticket restrictions and unsupported mandatory containers fail closed.
+    #[test]
+    fn authdata_rejects_ticket_critical_elements() -> Result<(), TestError> {
+        for kind in [-233_i32, 4_i32, 5_i32, 8_i32] {
+            let keytab = http_keytab()?;
+            let bytes = authdata_ap_req(Some(authorization_element(kind, Vec::new())), None)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            let error = validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("critical restriction rejected")?;
+            assert!(matches!(
+                error,
+                Error::UnsupportedAuthorizationData { kind: _ }
+                    | Error::Decode {
+                        target: "AuthorizationData",
+                        message: _
+                    }
+            ));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// Authenticator restrictions receive the same criticality checks as ticket restrictions.
+    #[test]
+    fn authdata_rejects_authenticator_critical_elements() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let bytes = authdata_ap_req(None, Some(authorization_element(-233, Vec::new())))?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("authenticator restriction rejected")?,
+            Error::UnsupportedAuthorizationData { kind: -233_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Optional unknown elements inside AD-IF-RELEVANT do not become mandatory.
+    #[test]
+    fn authdata_accepts_optional_unknown_elements() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let nested = authorization_element(-233, Vec::new());
+        let bytes = authdata_ap_req(Some(authorization_element(1, der::encode(&nested)?)), None)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert_eq!(
+            validator.validate_ap_req(&bytes)?.client.realm,
+            "TEST.GOKRB5"
+        );
+        Ok(())
+    }
+
+    /// A valid PAC must not stop validation of a subsequent critical sibling.
+    #[test]
+    fn authdata_rejects_critical_sibling_after_verified_pac() -> Result<(), TestError> {
+        let keytab = syshttp_keytab()?;
+        let (key, _) = keytab.find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)?;
+        let mut request: rasn_kerberos::ApReq = der::decode(&ap_req_with_pac()?)?;
+        let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+        ticket
+            .authorization_data
+            .as_mut()
+            .context("PAC data exists")?
+            .push(rasn_kerberos::AuthorizationDataValue {
+                r#type: -233,
+                data: Vec::new().into(),
+            });
+        request.ticket.enc_part.cipher = encrypt_message(
+            key,
+            &der::encode(&ticket)?,
+            KDC_REP_TICKET_USAGE_FOR_TEST,
+            PAC_TICKET_CONFOUNDER,
+        )?
+        .into();
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&der::encode(&request)?)
+                .err()
+                .context("critical sibling rejected")?,
+            Error::UnsupportedAuthorizationData { kind: -233_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Mandatory wrapper contents restore criticality inside an optional wrapper.
+    #[test]
+    fn authdata_rejects_mandatory_inside_optional_wrapper() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let critical = authorization_element(-233, Vec::new());
+        let mandatory = authorization_element(8, der::encode(&critical)?);
+        let bytes = authdata_ap_req(
+            Some(authorization_element(1, der::encode(&mandatory)?)),
+            None,
+        )?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("mandatory restriction rejected")?,
+            Error::UnsupportedAuthorizationData { kind: -233_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Unsupported AND-OR semantics cannot be bypassed by AD-IF-RELEVANT.
+    #[test]
+    fn authdata_rejects_unsupported_and_or_inside_optional_wrapper() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let nested = authorization_element(5, Vec::new());
+        let bytes = authdata_ap_req(Some(authorization_element(1, der::encode(&nested)?)), None)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("AND-OR rejected")?,
+            Error::UnsupportedAuthorizationData { kind: 5_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Wrapper traversal rejects excess depth and decoded bytes before PAC processing.
+    #[test]
+    fn authdata_enforces_depth_and_byte_limits() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let mut nested = authorization_element(-233, Vec::new());
+        for _ in 0_u8..9 {
+            nested = authorization_element(1, der::encode(&nested)?);
+        }
+        for data in [nested, authorization_element(-233, vec![0_u8; 0x0010_0001])] {
+            let bytes = authdata_ap_req(Some(data), None)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert!(matches!(
+                validator
+                    .validate_ap_req(&bytes)
+                    .err()
+                    .context("resource limit enforced")?,
+                Error::AuthorizationDataLimit
+            ));
+        }
+        Ok(())
+    }
+
+    /// Wraps one authorization-data element for policy fixtures.
+    fn authorization_element(kind: i32, data: Vec<u8>) -> rasn_kerberos::AuthorizationData {
+        vec![rasn_kerberos::AuthorizationDataValue {
+            r#type: kind,
+            data: data.into(),
+        }]
+    }
+
+    /// Re-encrypts both fixture parts with independently selected authorization data.
+    fn authdata_ap_req(
+        ticket_data: Option<rasn_kerberos::AuthorizationData>,
+        authenticator_data: Option<rasn_kerberos::AuthorizationData>,
+    ) -> Result<Vec<u8>, TestError> {
+        let keytab = http_keytab()?;
+        let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+        let mut request = valid_ap_req_struct()?;
+        let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+        ticket.authorization_data = ticket_data;
+        request.ticket.enc_part.cipher = encrypt_message(
+            key,
+            &der::encode(&ticket)?,
+            KDC_REP_TICKET_USAGE_FOR_TEST,
+            PAC_TICKET_CONFOUNDER,
+        )?
+        .into();
+        let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator =
+            decrypt_ap_req_authenticator(&request, &session, AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST)?;
+        authenticator.authorization_data = authenticator_data;
+        request.authenticator.cipher = encrypt_message(
+            &session,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
         Ok(der::encode(&request)?)
     }
 

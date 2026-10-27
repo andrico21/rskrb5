@@ -1716,6 +1716,15 @@ pub enum Pac {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Service {
+    /// An authorization-data restriction cannot be safely interpreted.
+    #[error("unsupported mandatory authorization data type {kind}")]
+    UnsupportedAuthorizationData {
+        /// Authorization-data type identifier.
+        kind: i32,
+    },
+    /// Authorization-data wrappers exceed the service's depth or decoded-byte budget.
+    #[error("authorization data exceeds the service validation limit")]
+    AuthorizationDataLimit,
     /// Cross-realm transit was neither KDC-checked nor explicitly trusted locally.
     #[error("cross-realm transit policy rejected the ticket")]
     TransitPolicyRejected,

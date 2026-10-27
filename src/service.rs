@@ -15,7 +15,7 @@ use std::{
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use rasn::types::Integer;
+use rasn::{der, types::Integer};
 use sha2::{Digest as _, Sha256};
 
 use crate::{
@@ -657,21 +657,15 @@ impl<'keytab> Validator<'keytab> {
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         self.validate_transit(&ticket_service, &enc_ticket)?;
-        let pac = match &enc_ticket.authorization_data {
-            Some(authorization_data) => {
-                pac::find_pac_in_authorization_data(authorization_data).map_err(Error::from)?
-            }
-            None => None,
-        };
-        if let Some(ticket_pac) = &pac {
-            ticket_pac.verify(service_key.0).map_err(Error::from)?;
-        }
+        let pac = verified_ticket_pac(enc_ticket.authorization_data.as_ref(), service_key.0)?;
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
         let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
         let authenticator =
             ap_req::decrypt_ap_req_authenticator(&ap_req, &session_key, authenticator_usage)
                 .map_err(ap_req_error)?;
+
+        validate_authorization_data(authenticator.authorization_data.as_ref(), false)?;
 
         let ticket_client = principal_from_parts(&enc_ticket.crealm, &enc_ticket.cname)?;
         let authenticator_client =
@@ -955,6 +949,109 @@ impl Validator<'static> {
 }
 
 use crate::error::Service as Error;
+
+/// Authorization-data interpretation context, including wrapper criticality.
+#[derive(Clone, Copy)]
+struct AuthorizationScope {
+    /// AD-IF-RELEVANT makes unknown direct children optional.
+    critical: bool,
+    /// Only ticket PACs are authenticated by the existing PAC verification path.
+    ticket: bool,
+    /// Maximum nesting is eight wrappers, independently of DER validity.
+    depth: usize,
+}
+
+/// Validate every restriction independently of first-PAC extraction (RFC 4120 section 5.2.6).
+///
+/// # Errors
+///
+/// Returns [`Error::UnsupportedAuthorizationData`] for uninterpreted mandatory
+/// semantics, [`Error::AuthorizationDataLimit`] for excess depth/decoded bytes,
+/// and [`Error::Decode`] for malformed known wrappers.
+fn validate_authorization_data(
+    data: Option<&rasn_kerberos::AuthorizationData>,
+    ticket: bool,
+) -> Result<(), Error> {
+    if let Some(elements) = data {
+        validate_authorization_elements(
+            elements,
+            AuthorizationScope {
+                critical: true,
+                ticket,
+                depth: 0,
+            },
+            &mut 0x0010_0000,
+        )?;
+    }
+    Ok(())
+}
+
+/// Interpret wrapper criticality with a shared decoded-byte budget.
+///
+/// # Errors
+///
+/// Returns the errors documented by [`validate_authorization_data`].
+fn validate_authorization_elements(
+    data: &rasn_kerberos::AuthorizationData,
+    scope: AuthorizationScope,
+    remaining: &mut usize,
+) -> Result<(), Error> {
+    for entry in data {
+        *remaining = remaining
+            .checked_sub(entry.data.len())
+            .ok_or(Error::AuthorizationDataLimit)?;
+        match entry.r#type {
+            pac::AD_IF_RELEVANT | 8_i32 => {
+                if scope.depth >= 8 {
+                    return Err(Error::AuthorizationDataLimit);
+                }
+                let nested = der::decode::<rasn_kerberos::AuthorizationData>(entry.data.as_ref())
+                    .map_err(|source| Error::Decode {
+                    target: "AuthorizationData",
+                    message: source.to_string(),
+                })?;
+                validate_authorization_elements(
+                    &nested,
+                    AuthorizationScope {
+                        critical: entry.r#type == 8_i32,
+                        ticket: scope.ticket,
+                        depth: scope.depth.saturating_add(1),
+                    },
+                    remaining,
+                )?;
+            }
+            pac::AD_WIN2K_PAC if scope.ticket => {}
+            4_i32 | 5_i32 => {
+                return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
+            }
+            _ if scope.critical => {
+                return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Validate every ticket restriction before extracting and verifying its first PAC.
+///
+/// # Errors
+///
+/// Returns authorization-policy errors or [`Error::Pac`] for PAC parsing/checksum failures.
+fn verified_ticket_pac(
+    data: Option<&rasn_kerberos::AuthorizationData>,
+    key: &EncryptionKey,
+) -> Result<Option<Pac>, Error> {
+    validate_authorization_data(data, true)?;
+    let Some(elements) = data else {
+        return Ok(None);
+    };
+    let pac = pac::find_pac_in_authorization_data(elements)?;
+    if let Some(value) = &pac {
+        value.verify(key)?;
+    }
+    Ok(pac)
+}
 
 /// RFC 4120 section 3.2.3 replay-cache key of one authenticator.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

@@ -5,6 +5,22 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Mandatory authorization-data policy (RSK-D1D6BDC3)
+
+Service acceptance now scans all ticket and authenticator authorization data,
+independently of first-PAC extraction, before replay admission. Unknown critical
+elements return `error::Service::UnsupportedAuthorizationData { kind }`.
+AD-IF-RELEVANT permits unknown direct children; AD-MANDATORY-FOR-KDC contents
+are interpreted with criticality restored. Unsupported AD-KDCIssued and
+AD-AND-OR containers fail closed, including inside optional wrappers. Ticket
+PACs retain their existing server-checksum verification; authenticator PACs
+are not treated as KDC-authenticated authorization evidence.
+
+Policy traversal is limited to eight wrappers and 1,048,576 cumulative payload
+bytes (including decoded nested payloads), returning `AuthorizationDataLimit`.
+Malformed known wrappers return the existing `Service::Decode` classification.
+These service-only bounds do not change the standalone PAC extraction API.
+
 ### Explicit unchecked cross-realm transit policy (RSK-3E3C2278)
 
 The service validator now rejects cross-realm tickets lacking
