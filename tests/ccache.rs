@@ -642,6 +642,59 @@ mod tests {
         Ok(())
     }
 
+    /// Name-type hints do not create a second credential for the same identity.
+    #[test]
+    fn upsert_replaces_principal_identity_despite_name_type() -> Result<(), TestError> {
+        // Given a cached service ticket and replacement hints for each principal.
+        for (client_type, server_type) in [(0_i32, 1_i32), (1_i32, 2_i32), (0_i32, 2_i32)] {
+            let mut cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+            let mut replacement = cache
+                .get_entry(&["HTTP", "host.test.gokrb5"])
+                .context("service ticket exists")?
+                .clone();
+            replacement.client.name_type = client_type;
+            replacement.server.name_type = server_type;
+            replacement.ticket = b"replacement ticket".to_vec();
+
+            // When upserting the replacement.
+            let previous = cache.upsert_credential(replacement.clone());
+
+            // Then lookup observes the new ticket, without a duplicate entry.
+            assert!(previous.is_some());
+            assert_eq!(cache.credentials().len(), 3);
+            assert_eq!(
+                cache.get_entry(&["HTTP", "host.test.gokrb5"]),
+                Some(&replacement)
+            );
+        }
+        Ok(())
+    }
+
+    /// Realms and component boundaries remain significant for replacement.
+    #[test]
+    fn upsert_preserves_distinct_principal_identities() -> Result<(), TestError> {
+        // Given credentials that differ in a client realm or server components.
+        let mut cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+        let original = cache
+            .get_entry(&["HTTP", "host.test.gokrb5"])
+            .context("service ticket exists")?
+            .clone();
+        let mut other_client = original.clone();
+        other_client.client.realm = "OTHER.REALM".to_owned();
+        let mut other_server = original;
+        other_server.server.components = vec!["HTTP/host.test.gokrb5".to_owned()];
+
+        // When inserting the distinct identities.
+        let replaced_client = cache.upsert_credential(other_client);
+        let replaced_server = cache.upsert_credential(other_server);
+
+        // Then neither replaces an existing record.
+        assert!(replaced_client.is_none());
+        assert!(replaced_server.is_none());
+        assert_eq!(cache.credentials().len(), 5);
+        Ok(())
+    }
+
     /// Pins the errors for empty, misversioned, truncated and negative-count ccaches.
     #[test]
     fn rejects_invalid_ccache_inputs() -> Result<(), TestError> {

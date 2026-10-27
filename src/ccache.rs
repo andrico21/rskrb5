@@ -385,12 +385,15 @@ impl CCache {
         &mut self.credentials
     }
 
-    /// Insert a credential, replacing an existing credential for the same
-    /// exact client and server principals.
+    /// Insert a credential, replacing the same client and server identities.
+    ///
+    /// Realm and name components define identity; name-type hints do not
+    /// (RFC 4120 §6.2). Replacement preserves the new credential's hints.
     #[inline]
     pub fn upsert_credential(&mut self, credential: Credential) -> Option<Credential> {
         if let Some(existing) = self.credentials.iter_mut().find(|existing| {
-            existing.client == credential.client && existing.server == credential.server
+            same_principal_identity(&existing.client, &credential.client)
+                && same_principal_identity(&existing.server, &credential.server)
         }) {
             Some(mem::replace(existing, credential))
         } else {
