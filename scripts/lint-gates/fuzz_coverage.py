@@ -22,7 +22,9 @@ Two checks, both reading the inventory table of `docs/review/fuzz.md`
   `<Type>::` brackets removed), equals the row's qualified name, the record's
   defining file is the row's source file, and its execution count is above
   zero. Another type's method of the same name never matches. `--record
-  FILE` saves the matched symbol, file and count of every mapping.
+  FILE` saves the matched symbol, file and count of every mapping;
+  `--source-root` names the checkout the binaries were built from when it
+  differs from `--root`.
 """
 
 from __future__ import annotations
@@ -487,6 +489,11 @@ def main() -> int:
     parser.add_argument("--export", type=Path, metavar="DIR")
     parser.add_argument("--coverage-target-dir", type=Path)
     parser.add_argument("--record", type=Path)
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        help="checkout the coverage binaries were built from (default: --root)",
+    )
     args = parser.parse_args()
     if args.self_test:
         return self_test()
@@ -506,7 +513,9 @@ def main() -> int:
         ):
             path = args.coverage / f"{target}.json"
             if path.exists():
-                indexes[target] = coverage_index(json.loads(path.read_text()), root)
+                indexes[target] = coverage_index(
+                    json.loads(path.read_text()), args.source_root or root
+                )
         coverage_errors, records = check_coverage(rows, indexes)
         errors += coverage_errors
         print(f"coverage: {len(records)} mappings proved")
