@@ -5,6 +5,19 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Bounded AES password derivation (RSK-F240C18F)
+
+`crypto::s2kparams_to_iterations` and both AES families' `string_to_key` now
+reject counts above 16,777,216 (2^24) with
+`error::Crypto::IterationCountTooHigh { maximum, actual }`. The limit is
+inclusive, fixed locally, and not a Kerberos protocol maximum. Excessive counts
+are rejected, never clamped. Zero retains `UnsupportedIterationCountZero`.
+The common client password-reply-key path propagates the new error before
+PBKDF2, including for unauthenticated ETYPE-INFO2 hints. Deployments with larger
+work factors must adjust their KDC policy to use this bounded path.
+Public signatures are unchanged; direct `string_to_pbkdf2` remains a trusted,
+caller-controlled primitive and must not receive unchecked peer work factors.
+
 ### Bounded HTTP Negotiate headers (upstream issue #9)
 
 `spnego::parse_negotiate_header` now rejects header values longer than 65,536

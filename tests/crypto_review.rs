@@ -13,13 +13,72 @@ mod tests {
     use hmac::{Hmac, KeyInit as _, Mac as _};
     use md5::{Digest as _, Md5};
     use rskrb5_ng::{
-        crypto::{AesSha2Etype, Rc4HmacEtype},
+        crypto::{AesSha1Etype, AesSha2Etype, Rc4HmacEtype, s2kparams_to_iterations},
         error::Crypto,
     };
     use sha2::{Sha256, Sha384};
 
     /// Regression test error.
     type TestError = Box<dyn Error>;
+
+    /// Peer iteration hints above the local work ceiling are rejected without deriving.
+    #[test]
+    fn s2kparams_rejects_excessive_iterations() {
+        // Given counts above the inclusive 2^24 work ceiling.
+        for params in ["01000001", "ffffffff"] {
+            // When the peer's work factor is parsed.
+            let result = s2kparams_to_iterations(params);
+            // Then it is rejected before any PBKDF2 operation.
+            assert!(
+                matches!(
+                    result,
+                    Err(Crypto::IterationCountTooHigh {
+                        maximum: 0x0100_0000,
+                        actual: 0x0100_0001 | u32::MAX,
+                    })
+                ),
+                "excessive peer work factor accepted"
+            );
+        }
+    }
+
+    /// The work ceiling is inclusive and preserves standard iteration counts.
+    #[test]
+    fn s2kparams_accepts_iteration_policy_boundaries() {
+        // Given admissible boundary and default counts.
+        for (params, count) in [
+            ("00000001", 1),
+            ("00001000", 4096),
+            ("00008000", 0x8000),
+            ("01000000", 0x0100_0000),
+        ] {
+            // When the count is parsed without deriving a password key.
+            let actual = s2kparams_to_iterations(params);
+            // Then the exact count is preserved, not silently clamped.
+            assert_eq!(actual, Ok(count));
+        }
+    }
+
+    /// All four AES string-to-key entry points reject excessive peer work factors.
+    #[test]
+    fn aes_password_derivation_rejects_excessive_iterations() {
+        // Given a count just beyond the inclusive local ceiling.
+        let expected = Err(Crypto::IterationCountTooHigh {
+            maximum: 0x0100_0000,
+            actual: 0x0100_0001,
+        });
+        // When each AES family derives a password key with that hint.
+        let results = [
+            AesSha1Etype::Aes128.string_to_key(b"password", b"salt", "01000001"),
+            AesSha1Etype::Aes256.string_to_key(b"password", b"salt", "01000001"),
+            AesSha2Etype::Aes128.string_to_key(b"password", b"salt", "01000001"),
+            AesSha2Etype::Aes256.string_to_key(b"password", b"salt", "01000001"),
+        ];
+        // Then all reject rather than allocating and running PBKDF2.
+        for result in results {
+            assert_eq!(result, expected);
+        }
+    }
 
     /// The SHA-256 PRF accepts empty context as defined by RFC 8009 sections 3 and 5.
     #[test]

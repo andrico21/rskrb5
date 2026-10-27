@@ -50,6 +50,8 @@ const HMAC_MD5_SIZE: usize = 16;
 const DEFAULT_RFC3962_S2KPARAMS: &str = "00001000";
 /// RFC8009 default string-to-key parameters: 32768 iterations.
 const DEFAULT_RFC8009_S2KPARAMS: &str = "00008000";
+/// Local AES password-derivation work ceiling, inclusive; not a protocol maximum.
+const MAX_S2K_ITERATIONS: u32 = 1 << 24;
 /// DES3 string-to-key parameters, which RFC3961 requires to be empty.
 const DEFAULT_DES3_S2KPARAMS: &str = "";
 /// RC4-HMAC string-to-key parameters, which RFC4757 ignores.
@@ -136,6 +138,9 @@ impl AesSha1Etype {
 
     #[must_use]
     /// Derive the PBKDF2 intermediate key for RFC3962 string-to-key.
+    ///
+    /// This low-level primitive accepts a trusted caller-selected work factor.
+    /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
         let mut out = vec![0; self.key_len()];
@@ -152,7 +157,8 @@ impl AesSha1Etype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidS2kParamsLength`], [`Error::InvalidS2kParamsHex`] or
-    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`.
+    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`, or
+    /// [`Error::IterationCountTooHigh`] when the count exceeds 2^24.
     #[inline]
     pub fn string_to_key(
         self,
@@ -449,6 +455,9 @@ impl AesSha2Etype {
 
     #[must_use]
     /// Derive the PBKDF2 intermediate key for RFC8009 string-to-key.
+    ///
+    /// This low-level primitive accepts a trusted caller-selected work factor.
+    /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
         let mut out = vec![0; self.key_len()];
@@ -467,7 +476,8 @@ impl AesSha2Etype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidS2kParamsLength`], [`Error::InvalidS2kParamsHex`] or
-    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`.
+    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`, or
+    /// [`Error::IterationCountTooHigh`] when the count exceeds 2^24.
     #[inline]
     pub fn string_to_key(
         self,
@@ -1516,11 +1526,16 @@ pub fn iterations_to_s2kparams(iterations: u32) -> String {
 
 /// Parse RFC3962 string-to-key parameters into an iteration count.
 ///
+/// Counts above 2^24 are rejected before password derivation, including
+/// unauthenticated ETYPE-INFO2 hints. This is a local resource policy, not an
+/// RFC3962 maximum; counts at the limit are preserved without clamping.
+///
 /// # Errors
 ///
 /// Returns [`Error::InvalidS2kParamsLength`] unless `s2kparams` has eight
 /// characters, [`Error::InvalidS2kParamsHex`] for a non-hex character, and
-/// [`Error::UnsupportedIterationCountZero`] for the RFC3962 zero value.
+/// [`Error::UnsupportedIterationCountZero`] for the RFC3962 zero value, or
+/// [`Error::IterationCountTooHigh`] for counts above the local 2^24 ceiling.
 #[inline]
 pub fn s2kparams_to_iterations(s2kparams: &str) -> Result<u32, Error> {
     if s2kparams.len() != 8 {
@@ -1538,6 +1553,12 @@ pub fn s2kparams_to_iterations(s2kparams: &str) -> Result<u32, Error> {
     let iterations = u32::from_be_bytes(bytes);
     if iterations == 0 {
         return Err(Error::UnsupportedIterationCountZero);
+    }
+    if iterations > MAX_S2K_ITERATIONS {
+        return Err(Error::IterationCountTooHigh {
+            maximum: MAX_S2K_ITERATIONS,
+            actual: iterations,
+        });
     }
     Ok(iterations)
 }
