@@ -88,6 +88,28 @@ represent cross-realm transit. Reject unknown encodings unless your implementati
 understands them. The library does not decode or implicitly trust transit paths.
 Same-realm tickets and KDC-checked cross-realm tickets are unaffected.
 
+### RFC3961 derivation constant bounds (RSK-8F3B02EE)
+
+AES-SHA1 `derive_random` and `derive_key` now reject constants longer than
+16 bytes; DES3 rejects constants longer than 8 bytes. Handle the new
+`error::Crypto::DerivationConstantTooLong { maximum, actual }` variant.
+The limits are inclusive cipher-block bounds from RFC3961 section 5.1;
+constants are not silently reduced. Empty constants still return `EmptyUsage`.
+Signatures, generic `nfold`, and SHA2 PRF contexts/derivation labels are unchanged.
+
+### Bounded AES password derivation (RSK-F240C18F)
+
+`crypto::s2kparams_to_iterations` and both AES families' `string_to_key` now
+reject counts above 16,777,216 (2^24) with
+`error::Crypto::IterationCountTooHigh { maximum, actual }`. The limit is
+inclusive, fixed locally, and not a Kerberos protocol maximum. Excessive counts
+are rejected, never clamped. Zero retains `UnsupportedIterationCountZero`.
+The common client password-reply-key path propagates the new error before
+PBKDF2, including for unauthenticated ETYPE-INFO2 hints. Deployments with larger
+work factors must adjust their KDC policy to use this bounded path.
+Public signatures are unchanged; direct `string_to_pbkdf2` remains a trusted,
+caller-controlled primitive and must not receive unchecked peer work factors.
+
 ### Bounded HTTP Negotiate headers (upstream issue #9)
 
 `spnego::parse_negotiate_header` now rejects header values longer than 65,536

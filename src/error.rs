@@ -769,6 +769,14 @@ pub enum Crypto {
     /// RFC3962's zero iteration value means 2^32 iterations and is not run.
     #[error("s2kparams iteration count zero is not supported")]
     UnsupportedIterationCountZero,
+    /// The peer's password-derivation work factor exceeds the local resource policy.
+    #[error("s2kparams iteration count {actual} exceeds maximum {maximum}")]
+    IterationCountTooHigh {
+        /// Inclusive local work ceiling.
+        maximum: u32,
+        /// Requested iteration count.
+        actual: u32,
+    },
     /// RC4-HMAC string-to-key requires a UTF-8 password byte string.
     #[error("RC4-HMAC string-to-key secret must be valid UTF-8")]
     InvalidStringToKeySecret,
@@ -789,6 +797,14 @@ pub enum Crypto {
     /// The n-fold usage constant was empty.
     #[error("key usage constant must not be empty")]
     EmptyUsage,
+    /// An RFC3961 derivation constant exceeds the cipher block size.
+    #[error("derivation constant length {actual} exceeds maximum {maximum}")]
+    DerivationConstantTooLong {
+        /// Cipher block size in bytes.
+        maximum: usize,
+        /// Supplied constant length in bytes.
+        actual: usize,
+    },
     /// The n-fold output size was not a positive whole number of bytes.
     #[error("invalid n-fold output bit count: {0}")]
     InvalidNfoldOutputBits(usize),

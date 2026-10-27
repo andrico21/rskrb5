@@ -13,12 +13,35 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use rskrb5_ng::{
-        crypto::{Des3CbcSha1KdEtype, KerberosEtype},
+        crypto::{Des3CbcSha1KdEtype, KerberosEtype, nfold},
         error::Crypto as Error,
     };
 
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
+
+    /// Large salts retain their n-fold contribution and password dependence on i686.
+    #[test]
+    fn des3_large_salt_preserves_password_dependence() -> Result<(), TestError> {
+        // Given the reported length whose unreduced bit product overflows u32.
+        let input_len = 3_195_661_usize;
+        assert!(
+            u64::try_from(input_len)?
+                .checked_mul(8 * 168)
+                .ok_or("product")?
+                > u64::from(u32::MAX)
+        );
+        let salt = vec![0xff; input_len.checked_sub(1).ok_or("salt length")?];
+        let input = vec![0xff; input_len];
+        // When n-fold and DES3 derivation consume the large input.
+        let folded = nfold(&input, 168)?;
+        let first = Des3CbcSha1KdEtype::string_to_key(&[0xff], &salt, "")?;
+        let second = Des3CbcSha1KdEtype::string_to_key(&[0xfe], &salt, "")?;
+        // Then all-one rotations fold to all ones and changing the password changes the key.
+        assert_eq!(folded, vec![0xff; 21]);
+        assert_ne!(first, second);
+        Ok(())
+    }
 
     /// A derive-random / derive-key vector.
     struct Des3DeriveVector {

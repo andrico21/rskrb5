@@ -6,8 +6,16 @@
 //! `des3-cbc-sha1-kd`, and RFC4757 `arcfour-hmac-md5` / `rc4-hmac`,
 //! matching the gokrb5 v8 surface used by key derivation, checksums, and
 //! encrypted message handling.
+//!
+//! Internal password, derived-key and plaintext scratch has value-attached
+//! zeroization on ordinary drop. Returned `Vec<u8>` keys/plaintext transfer
+//! cleanup responsibility to the caller. Abort skips destructors; dependency
+//! cipher/hash state and compiler-created register/spill copies are not covered.
 
-use core::mem;
+use core::{
+    mem,
+    ops::{Deref, DerefMut},
+};
 
 use aes::cipher::{
     BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength, Key, KeyInit, consts::U16,
@@ -19,6 +27,52 @@ use md5::Md5;
 use rc4::{Rc4, StreamCipher as _};
 use sha1::Sha1;
 use sha2::{Sha256, Sha384};
+use zeroize::{Zeroize as _, Zeroizing};
+
+/// Internal byte-buffer owner, erased on ordinary drop.
+struct SecretScratch(Zeroizing<Vec<u8>>);
+
+impl SecretScratch {
+    /// Adopt scratch storage without copying it.
+    fn new(value: Vec<u8>) -> Self {
+        Self(Zeroizing::new(value))
+    }
+
+    /// Transfer the allocation to a caller that assumes cleanup responsibility.
+    fn into_vec(mut self) -> Vec<u8> {
+        mem::take(&mut *self.0)
+    }
+}
+
+impl Deref for SecretScratch {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SecretScratch {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for SecretScratch {
+    /// Erase live bytes; the Zeroizing field also erases spare capacity on drop.
+    fn drop(&mut self) {
+        let bytes = self.0.as_mut_slice();
+        bytes.zeroize();
+        #[cfg(test)]
+        {
+            assert!(
+                bytes.iter().all(|byte| *byte == 0),
+                "scratch erasure failed"
+            );
+            tests::ERASED_SCRATCH_BYTES
+                .with(|count| count.set(count.get().saturating_add(bytes.len())));
+        }
+    }
+}
 
 /// AES block size in bytes.
 const AES_BLOCK_SIZE: usize = 16;
@@ -50,6 +104,8 @@ const HMAC_MD5_SIZE: usize = 16;
 const DEFAULT_RFC3962_S2KPARAMS: &str = "00001000";
 /// RFC8009 default string-to-key parameters: 32768 iterations.
 const DEFAULT_RFC8009_S2KPARAMS: &str = "00008000";
+/// Local AES password-derivation work ceiling, inclusive; not a protocol maximum.
+const MAX_S2K_ITERATIONS: u32 = 1 << 24;
 /// DES3 string-to-key parameters, which RFC3961 requires to be empty.
 const DEFAULT_DES3_S2KPARAMS: &str = "";
 /// RC4-HMAC string-to-key parameters, which RFC4757 ignores.
@@ -136,11 +192,14 @@ impl AesSha1Etype {
 
     #[must_use]
     /// Derive the PBKDF2 intermediate key for RFC3962 string-to-key.
+    ///
+    /// This low-level primitive accepts a trusted caller-selected work factor.
+    /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
-        let mut out = vec![0; self.key_len()];
+        let mut out = SecretScratch::new(vec![0; self.key_len()]);
         pbkdf2::pbkdf2_hmac::<Sha1>(secret, salt, iterations, &mut out);
-        out
+        out.into_vec()
     }
 
     /// Derive an AES protocol key from a password and salt.
@@ -152,7 +211,8 @@ impl AesSha1Etype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidS2kParamsLength`], [`Error::InvalidS2kParamsHex`] or
-    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`.
+    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`, or
+    /// [`Error::IterationCountTooHigh`] when the count exceeds 2^24.
     #[inline]
     pub fn string_to_key(
         self,
@@ -161,7 +221,7 @@ impl AesSha1Etype {
         s2kparams: &str,
     ) -> Result<Vec<u8>, Error> {
         let iterations = s2kparams_to_iterations(s2kparams)?;
-        let tkey = self.string_to_pbkdf2(secret, salt, iterations);
+        let tkey = SecretScratch::new(self.string_to_pbkdf2(secret, salt, iterations));
         self.derive_key(&tkey, KERBEROS_CONSTANT)
     }
 
@@ -170,7 +230,8 @@ impl AesSha1Etype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 16 bytes.
     #[inline]
     pub fn derive_key(self, protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
         self.validate_key(protocol_key)?;
@@ -180,10 +241,13 @@ impl AesSha1Etype {
 
     /// RFC3961 DR function for AES.
     ///
+    /// Constants must contain 1..=16 bytes (RFC3961 section 5.1).
+    ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 16 bytes.
     #[inline]
     pub fn derive_random(self, protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
         self.validate_key(protocol_key)?;
@@ -191,20 +255,29 @@ impl AesSha1Etype {
             return Err(Error::EmptyUsage);
         }
 
+        if usage.len() > AES_BLOCK_SIZE {
+            return Err(Error::DerivationConstantTooLong {
+                maximum: AES_BLOCK_SIZE,
+                actual: usage.len(),
+            });
+        }
         let folded_usage = nfold(usage, AES_BLOCK_SIZE * 8)?;
-        let mut out = Vec::with_capacity(self.key_len());
-        let (_, mut block) = self.encrypt_data(protocol_key, &folded_usage)?;
+        let mut out = SecretScratch::new(Vec::with_capacity(self.key_len()));
+        let (initial_iv, initial_block) = self.encrypt_data(protocol_key, &folded_usage)?;
+        let _initial_iv = SecretScratch::new(initial_iv);
+        let mut block = SecretScratch::new(initial_block);
 
         while out.len() < self.key_len() {
             let remaining = self.key_len().saturating_sub(out.len());
             out.extend(block.iter().take(remaining));
             if out.len() < self.key_len() {
-                let (_, next) = self.encrypt_data(protocol_key, &block)?;
-                block = next;
+                let (next_iv, next) = self.encrypt_data(protocol_key, &block)?;
+                let _next_iv = SecretScratch::new(next_iv);
+                block = SecretScratch::new(next);
             }
         }
 
-        Ok(out)
+        Ok(out.into_vec())
     }
 
     /// Calculate the keyed checksum for message bytes and a Kerberos key usage.
@@ -214,7 +287,7 @@ impl AesSha1Etype {
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long.
     #[inline]
     pub fn checksum(self, protocol_key: &[u8], data: &[u8], usage: u32) -> Result<Vec<u8>, Error> {
-        let key = self.derive_key(protocol_key, &usage_constant(usage, 0x99))?;
+        let key = SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x99))?);
         Ok(hmac_sha1_96(&key, data))
     }
 
@@ -285,11 +358,13 @@ impl AesSha1Etype {
             });
         }
 
-        let plain = [confounder, message].concat();
+        let plain = SecretScratch::new([confounder, message].concat());
 
-        let encryption_key = self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
+        let encryption_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
         let (_, mut encrypted) = self.encrypt_data(&encryption_key, &plain)?;
-        let integrity_key = self.derive_key(protocol_key, &usage_constant(usage, 0x55))?;
+        let integrity_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x55))?);
         encrypted.extend_from_slice(&hmac_sha1_96(&integrity_key, &plain));
         Ok(encrypted)
     }
@@ -315,13 +390,15 @@ impl AesSha1Etype {
             Self::hmac_len(),
             Self::hmac_len().saturating_add(Self::confounder_len()),
         )?;
-        let encryption_key = self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
-        let plain = self.decrypt_data(&encryption_key, encrypted)?;
+        let encryption_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
+        let plain = SecretScratch::new(self.decrypt_data(&encryption_key, encrypted)?);
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
-        let integrity_key = self.derive_key(protocol_key, &usage_constant(usage, 0x55))?;
-        let expected = hmac_sha1_96(&integrity_key, &plain);
+        let integrity_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x55))?);
+        let expected = SecretScratch::new(hmac_sha1_96(&integrity_key, &plain));
         if !constant_time_eq(&expected, mac) {
             return Err(Error::IntegrityCheckFailed);
         }
@@ -449,14 +526,17 @@ impl AesSha2Etype {
 
     #[must_use]
     /// Derive the PBKDF2 intermediate key for RFC8009 string-to-key.
+    ///
+    /// This low-level primitive accepts a trusted caller-selected work factor.
+    /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
-        let mut out = vec![0; self.key_len()];
+        let mut out = SecretScratch::new(vec![0; self.key_len()]);
         match self {
             Self::Aes128 => pbkdf2::pbkdf2_hmac::<Sha256>(secret, salt, iterations, &mut out),
             Self::Aes256 => pbkdf2::pbkdf2_hmac::<Sha384>(secret, salt, iterations, &mut out),
         }
-        out
+        out.into_vec()
     }
 
     /// Derive an AES protocol key from a password and salt.
@@ -467,7 +547,8 @@ impl AesSha2Etype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidS2kParamsLength`], [`Error::InvalidS2kParamsHex`] or
-    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`.
+    /// [`Error::UnsupportedIterationCountZero`] for unusable `s2kparams`, or
+    /// [`Error::IterationCountTooHigh`] when the count exceeds 2^24.
     #[inline]
     pub fn string_to_key(
         self,
@@ -477,7 +558,7 @@ impl AesSha2Etype {
     ) -> Result<Vec<u8>, Error> {
         let iterations = s2kparams_to_iterations(s2kparams)?;
         let saltp = self.saltp(salt);
-        let tkey = self.string_to_pbkdf2(secret, &saltp, iterations);
+        let tkey = SecretScratch::new(self.string_to_pbkdf2(secret, &saltp, iterations));
         self.derive_key(&tkey, KERBEROS_CONSTANT)
     }
 
@@ -497,20 +578,19 @@ impl AesSha2Etype {
         Ok(self.kdf_hmac_sha2(protocol_key, label, &[], self.derive_key_len(label)))
     }
 
-    /// RFC8009 PRF derivation.
+    /// RFC8009 PRF derivation over an application octet-string context.
+    ///
+    /// The context may be empty (RFC8009 sections 3 and 5); unlike an RFC3961
+    /// derivation constant, it is not constrained by the cipher block size.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long.
     #[inline]
-    pub fn derive_random(self, protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
+    pub fn derive_random(self, protocol_key: &[u8], context: &[u8]) -> Result<Vec<u8>, Error> {
         self.validate_protocol_key(protocol_key)?;
-        if usage.is_empty() {
-            return Err(Error::EmptyUsage);
-        }
 
-        Ok(self.kdf_hmac_sha2(protocol_key, b"prf", usage, self.hash_len()))
+        Ok(self.kdf_hmac_sha2(protocol_key, b"prf", context, self.hash_len()))
     }
 
     /// Calculate the keyed checksum for message bytes and a Kerberos key usage.
@@ -520,7 +600,7 @@ impl AesSha2Etype {
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long.
     #[inline]
     pub fn checksum(self, protocol_key: &[u8], data: &[u8], usage: u32) -> Result<Vec<u8>, Error> {
-        let key = self.derive_key(protocol_key, &usage_constant(usage, 0x99))?;
+        let key = SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x99))?);
         Ok(self.truncated_hmac(&key, data))
     }
 
@@ -590,16 +670,17 @@ impl AesSha2Etype {
             });
         }
 
-        let plain = [confounder, message].concat();
+        let plain = SecretScratch::new([confounder, message].concat());
 
-        let encryption_key = self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
+        let encryption_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
         let (_, mut encrypted) = self.encrypt_data(&encryption_key, &plain)?;
         let mac = self.integrity_hash(protocol_key, usage, &encrypted)?;
         encrypted.extend_from_slice(&mac);
         Ok(encrypted)
     }
 
-    /// Decrypt a Kerberos message and verify its RFC8009 integrity hash.
+    /// Authenticate a Kerberos message before decrypting it, per RFC8009 section 5.
     ///
     /// # Errors
     ///
@@ -620,15 +701,15 @@ impl AesSha2Etype {
             self.hmac_len(),
             self.hmac_len().saturating_add(Self::confounder_len()),
         )?;
-        let encryption_key = self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
-        let plain = self.decrypt_data(&encryption_key, encrypted)?;
-
-        let message = strip_confounder(&plain, Self::confounder_len())?;
-
-        let expected = self.integrity_hash(protocol_key, usage, encrypted)?;
+        let expected = SecretScratch::new(self.integrity_hash(protocol_key, usage, encrypted)?);
         if !constant_time_eq(&expected, mac) {
             return Err(Error::IntegrityCheckFailed);
         }
+
+        let encryption_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
+        let plain = SecretScratch::new(self.decrypt_data(&encryption_key, encrypted)?);
+        let message = strip_confounder(&plain, Self::confounder_len())?;
 
         Ok(message.to_vec())
     }
@@ -671,8 +752,9 @@ impl AesSha2Etype {
         let output_bits = u32::try_from(output_len)
             .unwrap_or(u32::MAX)
             .saturating_mul(8);
-        let mut input =
-            Vec::with_capacity(label.len().saturating_add(context.len()).saturating_add(9));
+        let mut input = SecretScratch::new(Vec::with_capacity(
+            label.len().saturating_add(context.len()).saturating_add(9),
+        ));
         input.extend_from_slice(&1_u32.to_be_bytes());
         input.extend_from_slice(label);
         input.push(0);
@@ -683,6 +765,9 @@ impl AesSha2Etype {
             Self::Aes128 => hmac_sha256(protocol_key, &input),
             Self::Aes256 => hmac_sha384(protocol_key, &input),
         };
+        if let Some(discarded) = output.get_mut(output_len..) {
+            discarded.zeroize();
+        }
         output.truncate(output_len);
         output
     }
@@ -699,7 +784,8 @@ impl AesSha2Etype {
         usage: u32,
         encrypted: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let integrity_key = self.derive_key(protocol_key, &usage_constant(usage, 0x55))?;
+        let integrity_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x55))?);
         let data = [ZERO_AES_IV.as_slice(), encrypted].concat();
         Ok(self.truncated_hmac(&integrity_key, &data))
     }
@@ -710,6 +796,9 @@ impl AesSha2Etype {
             Self::Aes128 => hmac_sha256(key, data),
             Self::Aes256 => hmac_sha384(key, data),
         };
+        if let Some(discarded) = mac.get_mut(self.hmac_len()..) {
+            discarded.zeroize();
+        }
         mac.truncate(self.hmac_len());
         mac
     }
@@ -834,10 +923,10 @@ impl Des3CbcSha1KdEtype {
             return Err(Error::NonEmptyDes3S2kParams);
         }
 
-        let input = [secret, salt].concat();
+        let input = SecretScratch::new([secret, salt].concat());
 
-        let folded = nfold(&input, DES3_SEED_SIZE * 8)?;
-        let tkey = Self::random_to_key(&folded)?;
+        let folded = SecretScratch::new(nfold(&input, DES3_SEED_SIZE * 8)?);
+        let tkey = SecretScratch::new(Self::random_to_key(&folded)?);
         Self::derive_key(&tkey, KERBEROS_CONSTANT)
     }
 
@@ -856,19 +945,23 @@ impl Des3CbcSha1KdEtype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 8 bytes.
     #[inline]
     pub fn derive_key(protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
-        let random = Self::derive_random(protocol_key, usage)?;
+        let random = SecretScratch::new(Self::derive_random(protocol_key, usage)?);
         Self::random_to_key(&random)
     }
 
     /// RFC3961 DR function for DES3.
     ///
+    /// Constants must contain 1..=8 bytes (RFC3961 section 5.1).
+    ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 8 bytes.
     #[inline]
     pub fn derive_random(protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
         Self::validate_key(protocol_key)?;
@@ -876,20 +969,29 @@ impl Des3CbcSha1KdEtype {
             return Err(Error::EmptyUsage);
         }
 
+        if usage.len() > DES3_BLOCK_SIZE {
+            return Err(Error::DerivationConstantTooLong {
+                maximum: DES3_BLOCK_SIZE,
+                actual: usage.len(),
+            });
+        }
         let folded_usage = nfold(usage, DES3_BLOCK_SIZE * 8)?;
-        let mut out = Vec::with_capacity(DES3_SEED_SIZE);
-        let (_, mut block) = Self::encrypt_data(protocol_key, &folded_usage)?;
+        let mut out = SecretScratch::new(Vec::with_capacity(DES3_SEED_SIZE));
+        let (initial_iv, initial_block) = Self::encrypt_data(protocol_key, &folded_usage)?;
+        let _initial_iv = SecretScratch::new(initial_iv);
+        let mut block = SecretScratch::new(initial_block);
 
         while out.len() < DES3_SEED_SIZE {
             let remaining = DES3_SEED_SIZE.saturating_sub(out.len());
             out.extend(block.iter().take(remaining));
             if out.len() < DES3_SEED_SIZE {
-                let (_, next) = Self::encrypt_data(protocol_key, &block)?;
-                block = next;
+                let (next_iv, next) = Self::encrypt_data(protocol_key, &block)?;
+                let _next_iv = SecretScratch::new(next_iv);
+                block = SecretScratch::new(next);
             }
         }
 
-        Ok(out)
+        Ok(out.into_vec())
     }
 
     /// Calculate the keyed checksum for message bytes and a Kerberos key usage.
@@ -899,7 +1001,10 @@ impl Des3CbcSha1KdEtype {
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long.
     #[inline]
     pub fn checksum(protocol_key: &[u8], data: &[u8], usage: u32) -> Result<Vec<u8>, Error> {
-        let key = Self::derive_key(protocol_key, &usage_constant(usage, 0x99))?;
+        let key = SecretScratch::new(Self::derive_key(
+            protocol_key,
+            &usage_constant(usage, 0x99),
+        )?);
         Ok(hmac_sha1(&key, data))
     }
 
@@ -963,12 +1068,18 @@ impl Des3CbcSha1KdEtype {
             });
         }
 
-        let mut plain = [confounder, message].concat();
+        let mut plain = SecretScratch::new([confounder, message].concat());
         zero_pad(&mut plain, DES3_BLOCK_SIZE);
 
-        let encryption_key = Self::derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
+        let encryption_key = SecretScratch::new(Self::derive_key(
+            protocol_key,
+            &usage_constant(usage, 0xaa),
+        )?);
         let (_, mut encrypted) = Self::encrypt_data(&encryption_key, &plain)?;
-        let integrity_key = Self::derive_key(protocol_key, &usage_constant(usage, 0x55))?;
+        let integrity_key = SecretScratch::new(Self::derive_key(
+            protocol_key,
+            &usage_constant(usage, 0x55),
+        )?);
         encrypted.extend_from_slice(&hmac_sha1(&integrity_key, &plain));
         Ok(encrypted)
     }
@@ -996,13 +1107,19 @@ impl Des3CbcSha1KdEtype {
             Self::hmac_len(),
             Self::hmac_len().saturating_add(Self::confounder_len()),
         )?;
-        let encryption_key = Self::derive_key(protocol_key, &usage_constant(usage, 0xaa))?;
-        let plain = Self::decrypt_data(&encryption_key, encrypted)?;
+        let encryption_key = SecretScratch::new(Self::derive_key(
+            protocol_key,
+            &usage_constant(usage, 0xaa),
+        )?);
+        let plain = SecretScratch::new(Self::decrypt_data(&encryption_key, encrypted)?);
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
-        let integrity_key = Self::derive_key(protocol_key, &usage_constant(usage, 0x55))?;
-        let expected = hmac_sha1(&integrity_key, &plain);
+        let integrity_key = SecretScratch::new(Self::derive_key(
+            protocol_key,
+            &usage_constant(usage, 0x55),
+        )?);
+        let expected = SecretScratch::new(hmac_sha1(&integrity_key, &plain));
         if !constant_time_eq(&expected, mac) {
             return Err(Error::IntegrityCheckFailed);
         }
@@ -1121,18 +1238,24 @@ impl Rc4HmacEtype {
         let Ok(password) = str::from_utf8(secret) else {
             return Err(Error::InvalidStringToKeySecret);
         };
-        let mut utf16le = Vec::with_capacity(password.len().saturating_mul(2));
+        let mut utf16le = SecretScratch::new(Vec::with_capacity(password.len().saturating_mul(2)));
         for unit in password.encode_utf16() {
             utf16le.extend_from_slice(&unit.to_le_bytes());
         }
-        Ok(Md4::digest(&utf16le).to_vec())
+        let mut digest = Md4::digest(utf16le.as_slice());
+        let out = digest.to_vec();
+        digest.as_mut_slice().zeroize();
+        Ok(out)
     }
 
     #[must_use]
     /// Convert random bytes into an RC4-HMAC key.
     #[inline]
     pub fn random_to_key(bytes: &[u8]) -> Vec<u8> {
-        Md4::digest(bytes).to_vec()
+        let mut digest = Md4::digest(bytes);
+        let out = digest.to_vec();
+        digest.as_mut_slice().zeroize();
+        out
     }
 
     /// Derive a usage-specific key from a protocol key.
@@ -1216,11 +1339,14 @@ impl Rc4HmacEtype {
             });
         }
 
-        let plain = [confounder, message].concat();
+        let plain = SecretScratch::new([confounder, message].concat());
 
-        let usage_key = hmac_md5(protocol_key, &rc4_hmac_usage_to_ms_msg_type(usage));
+        let usage_key = SecretScratch::new(hmac_md5(
+            protocol_key,
+            &rc4_hmac_usage_to_ms_msg_type(usage),
+        ));
         let checksum = hmac_md5(&usage_key, &plain);
-        let encryption_key = hmac_md5(&usage_key, &checksum);
+        let encryption_key = SecretScratch::new(hmac_md5(&usage_key, &checksum));
         let encrypted = rc4_hmac_crypt(&encryption_key, &plain)?;
 
         Ok([checksum, encrypted].concat())
@@ -1251,13 +1377,16 @@ impl Rc4HmacEtype {
                 actual: ciphertext.len(),
             });
         };
-        let usage_key = hmac_md5(protocol_key, &rc4_hmac_usage_to_ms_msg_type(usage));
-        let encryption_key = hmac_md5(&usage_key, checksum);
-        let plain = rc4_hmac_crypt(&encryption_key, encrypted)?;
+        let usage_key = SecretScratch::new(hmac_md5(
+            protocol_key,
+            &rc4_hmac_usage_to_ms_msg_type(usage),
+        ));
+        let encryption_key = SecretScratch::new(hmac_md5(&usage_key, checksum));
+        let plain = SecretScratch::new(rc4_hmac_crypt(&encryption_key, encrypted)?);
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
-        let expected = hmac_md5(&usage_key, &plain);
+        let expected = SecretScratch::new(hmac_md5(&usage_key, &plain));
         if !constant_time_eq(&expected, checksum) {
             return Err(Error::IntegrityCheckFailed);
         }
@@ -1517,11 +1646,16 @@ pub fn iterations_to_s2kparams(iterations: u32) -> String {
 
 /// Parse RFC3962 string-to-key parameters into an iteration count.
 ///
+/// Counts above 2^24 are rejected before password derivation, including
+/// unauthenticated ETYPE-INFO2 hints. This is a local resource policy, not an
+/// RFC3962 maximum; counts at the limit are preserved without clamping.
+///
 /// # Errors
 ///
 /// Returns [`Error::InvalidS2kParamsLength`] unless `s2kparams` has eight
 /// characters, [`Error::InvalidS2kParamsHex`] for a non-hex character, and
-/// [`Error::UnsupportedIterationCountZero`] for the RFC3962 zero value.
+/// [`Error::UnsupportedIterationCountZero`] for the RFC3962 zero value, or
+/// [`Error::IterationCountTooHigh`] for counts above the local 2^24 ceiling.
 #[inline]
 pub fn s2kparams_to_iterations(s2kparams: &str) -> Result<u32, Error> {
     if s2kparams.len() != 8 {
@@ -1540,6 +1674,12 @@ pub fn s2kparams_to_iterations(s2kparams: &str) -> Result<u32, Error> {
     if iterations == 0 {
         return Err(Error::UnsupportedIterationCountZero);
     }
+    if iterations > MAX_S2K_ITERATIONS {
+        return Err(Error::IterationCountTooHigh {
+            maximum: MAX_S2K_ITERATIONS,
+            actual: iterations,
+        });
+    }
     Ok(iterations)
 }
 
@@ -1551,11 +1691,13 @@ pub fn s2kparams_to_iterations(s2kparams: &str) -> Result<u32, Error> {
 /// key lengths because PA-FOR-USER signs with the TGT session key directly.
 #[inline]
 pub fn kerb_checksum_hmac_md5(protocol_key: &[u8], data: &[u8], usage: u32) -> Vec<u8> {
-    let signing_key = hmac_md5(protocol_key, RC4_HMAC_SIGNATURE_KEY);
+    let signing_key = SecretScratch::new(hmac_md5(protocol_key, RC4_HMAC_SIGNATURE_KEY));
     let msg_type = rc4_hmac_usage_to_ms_msg_type(usage);
-    let md5_input = [msg_type.as_slice(), data].concat();
-    let digest = Md5::digest(&md5_input);
-    hmac_md5(&signing_key, &digest)
+    let md5_input = SecretScratch::new([msg_type.as_slice(), data].concat());
+    let mut digest = Md5::digest(md5_input.as_slice());
+    let out = hmac_md5(&signing_key, &digest);
+    digest.as_mut_slice().zeroize();
+    out
 }
 
 /// RFC3961 n-fold operation.
@@ -1583,15 +1725,19 @@ pub fn nfold(input: &[u8], output_bits: usize) -> Result<Vec<u8>, Error> {
     let replicate = output_len
         .checked_div(gcd(output_len, input.len()))
         .ok_or(too_large)?;
-    let mut sum_bytes = Vec::with_capacity(input.len().checked_mul(replicate).ok_or(too_large)?);
+    let mut sum_bytes = SecretScratch::new(Vec::with_capacity(
+        input.len().checked_mul(replicate).ok_or(too_large)?,
+    ));
 
     for step in 0..replicate {
-        sum_bytes.extend_from_slice(&rotate_right(input, step.saturating_mul(13)));
+        let rotated = SecretScratch::new(rotate_right(input, step.saturating_mul(13)));
+        sum_bytes.extend_from_slice(&rotated);
     }
 
     let mut folded = vec![0; output_len];
     for chunk in sum_bytes.chunks_exact(output_len) {
-        folded = ones_complement_addition(&folded, chunk);
+        let previous = SecretScratch::new(folded);
+        folded = ones_complement_addition(&previous, chunk);
     }
 
     Ok(folded)
@@ -1646,6 +1792,9 @@ fn keyed_cipher<C>(key: &[u8]) -> Result<C, Error>
 where
     C: KeyInit,
 {
+    #[cfg(test)]
+    tests::CIPHER_SETUPS.with(|calls| calls.set(calls.get().saturating_add(1)));
+
     C::new_from_slice(key).map_err(|InvalidLength| Error::InvalidKeyLength {
         expected: C::key_size(),
         actual: key.len(),
@@ -1667,7 +1816,7 @@ fn aes_cts_encrypt(key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), E
         return Err(Error::EmptyPlaintext);
     }
 
-    let mut padded = plaintext.to_vec();
+    let mut padded = SecretScratch::new(plaintext.to_vec());
     zero_pad(&mut padded, AES_BLOCK_SIZE);
 
     // CTS is CBC over the zero-padded input with the last two output blocks
@@ -1692,6 +1841,9 @@ fn aes_cts_encrypt(key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), E
 /// AES block, and [`Error::InvalidKeyLength`] when `key` is neither 16 nor 32
 /// bytes long.
 fn aes_cts_decrypt(key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
+    #[cfg(test)]
+    tests::AES_DECRYPTIONS.with(|calls| calls.set(calls.get().saturating_add(1)));
+
     if ciphertext.len() < AES_BLOCK_SIZE {
         return Err(Error::CiphertextTooShort {
             minimum: AES_BLOCK_SIZE,
@@ -1720,23 +1872,32 @@ where
         return cbc_decrypt(cipher, &ZERO_AES_IV, &swapped);
     };
 
-    let mut plaintext = cbc_decrypt(cipher, &ZERO_AES_IV, regular_blocks.as_flattened());
+    let mut plaintext = SecretScratch::new(cbc_decrypt(
+        cipher,
+        &ZERO_AES_IV,
+        regular_blocks.as_flattened(),
+    ));
     let chain_iv = regular_blocks.last().copied().unwrap_or(ZERO_AES_IV);
 
     // The penultimate block decrypts to the last plaintext block XOR the last
     // ciphertext block; its tail is the ciphertext the sender stole.
-    let mut completed_last_cipher = *penultimate_cipher;
-    cipher.decrypt_block((&mut completed_last_cipher).into());
-    copy_prefix(&mut completed_last_cipher, last_partial);
+    let mut completed_last_cipher = Zeroizing::new(*penultimate_cipher);
+    cipher.decrypt_block((&mut *completed_last_cipher).into());
+    copy_prefix(&mut *completed_last_cipher, last_partial);
 
-    plaintext.extend_from_slice(&cbc_decrypt(cipher, &chain_iv, &completed_last_cipher));
-    plaintext.extend_from_slice(&cbc_decrypt(
+    let last_plain = SecretScratch::new(cbc_decrypt(cipher, &chain_iv, &*completed_last_cipher));
+    plaintext.extend_from_slice(&last_plain);
+    let tail_plain = SecretScratch::new(cbc_decrypt(
         cipher,
         &completed_last_cipher,
         penultimate_cipher,
     ));
+    plaintext.extend_from_slice(&tail_plain);
+    if let Some(discarded) = plaintext.get_mut(ciphertext.len()..) {
+        discarded.zeroize();
+    }
     plaintext.truncate(ciphertext.len());
-    plaintext
+    plaintext.into_vec()
 }
 
 /// CBC-encrypt the whole AES blocks of `plaintext` with a zero IV.
@@ -1752,16 +1913,16 @@ where
         "CBC input must be a whole number of AES blocks"
     );
 
-    let mut previous = ZERO_AES_IV;
+    let mut previous = Zeroizing::new(ZERO_AES_IV);
     let mut out = Vec::with_capacity(plaintext.len());
     for chunk in plaintext.as_chunks::<AES_BLOCK_SIZE>().0 {
-        let mut block = *chunk;
-        xor_in_place(&mut block, &previous);
-        cipher.encrypt_block((&mut block).into());
-        previous = block;
-        out.extend_from_slice(&block);
+        let mut block = Zeroizing::new(*chunk);
+        xor_in_place(&mut *block, &*previous);
+        cipher.encrypt_block((&mut *block).into());
+        *previous = *block;
+        out.extend_from_slice(&*block);
     }
-    (out, previous)
+    (out, *previous)
 }
 
 /// CBC-decrypt the whole AES blocks of `ciphertext`, chaining from `iv`.
@@ -1776,14 +1937,14 @@ where
         "CBC input must be a whole number of AES blocks"
     );
 
-    let mut previous = *iv;
+    let mut previous = Zeroizing::new(*iv);
     let mut out = Vec::with_capacity(ciphertext.len());
     for chunk in ciphertext.as_chunks::<AES_BLOCK_SIZE>().0 {
-        let mut block = *chunk;
-        cipher.decrypt_block((&mut block).into());
-        xor_in_place(&mut block, &previous);
-        previous = *chunk;
-        out.extend_from_slice(&block);
+        let mut block = Zeroizing::new(*chunk);
+        cipher.decrypt_block((&mut *block).into());
+        xor_in_place(&mut *block, &*previous);
+        *previous = *chunk;
+        out.extend_from_slice(&*block);
     }
     out
 }
@@ -1818,17 +1979,17 @@ fn des3_cbc_encrypt(key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), 
     }
 
     let cipher = keyed_cipher::<TdesEde3>(key)?;
-    let mut padded = plaintext.to_vec();
+    let mut padded = SecretScratch::new(plaintext.to_vec());
     zero_pad(&mut padded, DES3_BLOCK_SIZE);
 
-    let mut previous = [0; DES3_BLOCK_SIZE];
+    let mut previous = Zeroizing::new([0; DES3_BLOCK_SIZE]);
     let mut out = Vec::with_capacity(padded.len());
     for chunk in padded.as_chunks::<DES3_BLOCK_SIZE>().0 {
-        let mut block = *chunk;
-        xor_in_place(&mut block, &previous);
-        cipher.encrypt_block((&mut block).into());
-        previous = block;
-        out.extend_from_slice(&block);
+        let mut block = Zeroizing::new(*chunk);
+        xor_in_place(&mut *block, &*previous);
+        cipher.encrypt_block((&mut *block).into());
+        *previous = *block;
+        out.extend_from_slice(&*block);
     }
 
     Ok((previous.to_vec(), out))
@@ -1856,14 +2017,14 @@ fn des3_cbc_decrypt(key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
     }
 
     let cipher = keyed_cipher::<TdesEde3>(key)?;
-    let mut previous = [0; DES3_BLOCK_SIZE];
+    let mut previous = Zeroizing::new([0; DES3_BLOCK_SIZE]);
     let mut out = Vec::with_capacity(ciphertext.len());
     for chunk in ciphertext.as_chunks::<DES3_BLOCK_SIZE>().0 {
-        let mut block = *chunk;
-        cipher.decrypt_block((&mut block).into());
-        xor_in_place(&mut block, &previous);
-        previous = *chunk;
-        out.extend_from_slice(&block);
+        let mut block = Zeroizing::new(*chunk);
+        cipher.decrypt_block((&mut *block).into());
+        xor_in_place(&mut *block, &*previous);
+        *previous = *chunk;
+        out.extend_from_slice(&*block);
     }
 
     Ok(out)
@@ -1885,9 +2046,9 @@ fn des3_random_to_key(bytes: &[u8]) -> Result<Vec<u8>, Error> {
 
     let mut key = Vec::with_capacity(DES3_KEY_SIZE);
     for seed in bytes.as_chunks::<DES3_SEED_CHUNK_SIZE>().0 {
-        let mut block = des3_stretch_56_bits(*seed);
+        let mut block = Zeroizing::new(des3_stretch_56_bits(*seed));
         des3_fix_weak_key(&mut block);
-        key.extend_from_slice(&block);
+        key.extend_from_slice(&*block);
     }
     Ok(key)
 }
@@ -1983,27 +2144,16 @@ const fn usage_constant(usage: u32, suffix: u8) -> [u8; 5] {
 
 /// Encode the RFC4757 message type for a Kerberos key usage.
 ///
-/// Usages 3 and 9 map to 8 and usage 23 to 13. The value is written seven bits
-/// per byte, low bits first, with the high bit set on each byte that is
-/// followed by another.
-fn rc4_hmac_usage_to_ms_msg_type(usage: u32) -> [u8; 4] {
-    let mut remaining = match usage {
+/// Usages 3 and 9 map to 8 and usage 23 to 13. RFC4757 section 3 encodes the
+/// mapped value as a four-byte little-endian integer.
+const fn rc4_hmac_usage_to_ms_msg_type(usage: u32) -> [u8; 4] {
+    let mapped = match usage {
         3 | 9 => 8,
         23 => 13,
         _ => usage,
     };
 
-    let mut out = [0; 4];
-    for byte in &mut out {
-        let [low_byte, ..] = remaining.to_le_bytes();
-        if remaining < 0x80 {
-            *byte = low_byte;
-            break;
-        }
-        *byte = (low_byte & 0x7f) | 0x80;
-        remaining >>= 7_u32;
-    }
-    out
+    mapped.to_le_bytes()
 }
 
 /// Apply the RC4 keystream for `key` to `input`.
@@ -2034,19 +2184,28 @@ where
 {
     let mut block_key = Key::<M>::default();
     if key.len() > block_key.len() {
-        copy_prefix(&mut block_key, &H::digest(key));
+        let mut digest = H::digest(key);
+        copy_prefix(&mut block_key, &digest);
+        digest.as_mut_slice().zeroize();
     } else {
         copy_prefix(&mut block_key, key);
     }
 
     let mut mac = <M as KeyInit>::new(&block_key);
+    block_key.as_mut_slice().zeroize();
     mac.update(data);
-    mac.finalize().into_bytes().to_vec()
+    let mut digest = mac.finalize().into_bytes();
+    let out = digest.to_vec();
+    digest.as_mut_slice().zeroize();
+    out
 }
 
 /// HMAC-SHA1 of `data` truncated to 96 bits.
 fn hmac_sha1_96(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut mac = hmac_sha1(key, data);
+    if let Some(discarded) = mac.get_mut(HMAC_SHA1_96_SIZE..) {
+        discarded.zeroize();
+    }
     mac.truncate(HMAC_SHA1_96_SIZE);
     mac
 }
@@ -2117,11 +2276,12 @@ fn ones_complement_addition(left: &[u8], right: &[u8]) -> Vec<u8> {
     }
 
     if carry == 1 {
-        let mut carry_array = vec![0; left.len()];
+        let mut carry_array = SecretScratch::new(vec![0; left.len()]);
         if let Some(last) = carry_array.last_mut() {
             *last = 1;
         }
-        return ones_complement_addition(&out, &carry_array);
+        let previous = SecretScratch::new(out);
+        return ones_complement_addition(&previous, &carry_array);
     }
 
     out
@@ -2188,4 +2348,165 @@ fn hex_encode(bytes: &[u8]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::{cell::Cell, error::Error};
+
+    use super::{AesSha2Etype, Des3CbcSha1KdEtype, Error as CryptoError, KerberosEtype};
+
+    std::thread_local! {
+        /// Bytes witnessed erased before their scratch allocation is released.
+        pub(super) static ERASED_SCRATCH_BYTES: Cell<usize> = const { Cell::new(0) };
+        /// Raw AES decryption entries on this test thread, isolated from parallel tests.
+        pub(super) static AES_DECRYPTIONS: Cell<usize> = const { Cell::new(0) };
+        /// Cipher-constructor entries on this thread, independent of parallel tests.
+        pub(super) static CIPHER_SETUPS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Each password representation and derivation path drops zeroizing scratch.
+    #[test]
+    fn password_derivation_erases_scratch() -> Result<(), Box<dyn Error>> {
+        // Given all supported string-to-key families and a small work factor.
+        for etype in [17_i32, 18_i32, 19_i32, 20_i32, 16_i32, 23_i32] {
+            ERASED_SCRATCH_BYTES.set(0);
+            // When the real password derivation completes.
+            let key = KerberosEtype::from_etype_id(etype)
+                .ok_or("supported etype")?
+                .string_to_key(
+                    b"secret password",
+                    b"salt",
+                    if etype == 16_i32 { "" } else { "00000001" },
+                )?;
+            // Then scratch bytes were erased while the returned key remains usable.
+            assert!(
+                ERASED_SCRATCH_BYTES.get() > 0,
+                "password scratch bypassed cleanup for {etype}"
+            );
+            assert!(!key.is_empty(), "derived key is present");
+        }
+        Ok(())
+    }
+
+    /// Legacy plaintext-MAC paths erase decrypted scratch when integrity fails.
+    #[test]
+    fn integrity_failure_erases_scratch() -> Result<(), Box<dyn Error>> {
+        // Given ciphertexts with invalid tags, constructed before observation starts.
+        for etype in [17_i32, 18_i32, 19_i32, 20_i32, 16_i32, 23_i32] {
+            let family = KerberosEtype::from_etype_id(etype).ok_or("supported etype")?;
+            let key = vec![0x42; family.key_len()];
+            let confounder = vec![0x24; family.confounder_len()];
+            let mut ciphertext = family.encrypt_message_with_confounder(
+                &key,
+                b"secret plaintext",
+                2,
+                &confounder,
+            )?;
+            *ciphertext.last_mut().ok_or("ciphertext has bytes")? ^= 1;
+            ERASED_SCRATCH_BYTES.set(0);
+            // When message integrity verification fails.
+            let result = family.decrypt_message(&key, &ciphertext, 2);
+            // Then owned scratch is erased on the error return.
+            assert_eq!(result, Err(CryptoError::IntegrityCheckFailed));
+            assert!(
+                ERASED_SCRATCH_BYTES.get() > 0,
+                "error scratch bypassed cleanup for {etype}"
+            );
+        }
+        Ok(())
+    }
+
+    /// AES raw encryption and decryption each construct one schedule regardless of blocks.
+    #[test]
+    fn aes_cipher_setup_is_once_per_raw_operation() -> Result<(), Box<dyn Error>> {
+        // Given one-block, multiblock and CTS-tail input lengths.
+        for etype in [AesSha2Etype::Aes128, AesSha2Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            for length in [16, 32, 33, 4096, 4097] {
+                let plaintext = vec![0x24; length];
+                CIPHER_SETUPS.set(0);
+                // When raw encryption and decryption process those blocks.
+                let (_, encrypted) = etype.encrypt_data(&key, &plaintext)?;
+                let encrypt_setups = CIPHER_SETUPS.replace(0);
+                let decrypted = etype.decrypt_data(&key, &encrypted)?;
+                // Then each operation performs one setup, not one setup per block.
+                assert_eq!(encrypt_setups, 1, "AES encryption setup count");
+                assert_eq!(CIPHER_SETUPS.get(), 1, "AES decryption setup count");
+                assert_eq!(decrypted, plaintext);
+            }
+        }
+        Ok(())
+    }
+
+    /// DES3 raw encryption and decryption each construct one schedule regardless of blocks.
+    #[test]
+    fn des3_cipher_setup_is_once_per_raw_operation() -> Result<(), Box<dyn Error>> {
+        // Given one-block and multiblock DES3 inputs.
+        let key = [0x42; 24];
+        for length in [8, 16, 4096] {
+            let plaintext = vec![0x24; length];
+            CIPHER_SETUPS.set(0);
+            // When raw encryption and decryption process those blocks.
+            let (_, encrypted) = Des3CbcSha1KdEtype::encrypt_data(&key, &plaintext)?;
+            let encrypt_setups = CIPHER_SETUPS.replace(0);
+            let decrypted = Des3CbcSha1KdEtype::decrypt_data(&key, &encrypted)?;
+            // Then each operation performs one setup and preserves the payload.
+            assert_eq!(encrypt_setups, 1, "DES3 encryption setup count");
+            assert_eq!(CIPHER_SETUPS.get(), 1, "DES3 decryption setup count");
+            assert_eq!(decrypted, plaintext);
+        }
+        Ok(())
+    }
+
+    /// Invalid SHA2 tags must be rejected before the raw AES decrypt boundary.
+    #[test]
+    fn sha2_rejects_bad_tag_before_any_decryption() -> Result<(), Box<dyn Error>> {
+        // Given structurally valid messages with a changed authentication tag.
+        for etype in [AesSha2Etype::Aes128, AesSha2Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            let mut ciphertext = etype.encrypt_message_with_confounder(
+                &key,
+                b"authenticated message",
+                2,
+                &[0x24; 16],
+            )?;
+            *ciphertext.last_mut().ok_or("message has a tag")? ^= 1;
+            AES_DECRYPTIONS.set(0);
+            // When the real message-decryption entry point processes the bad tag.
+            let result = etype.decrypt_message(&key, &ciphertext, 2);
+            // Then integrity fails without entering raw AES decryption.
+            assert_eq!(result, Err(CryptoError::IntegrityCheckFailed));
+            assert_eq!(AES_DECRYPTIONS.get(), 0, "unauthenticated AES decryption");
+        }
+        Ok(())
+    }
+
+    /// Valid tags reach the observed raw decrypt boundary and release the message.
+    #[test]
+    fn sha2_valid_tag_reaches_decryption() -> Result<(), Box<dyn Error>> {
+        // Given valid ciphertext for both SHA2 encryption types.
+        for etype in [AesSha2Etype::Aes128, AesSha2Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            let ciphertext = etype.encrypt_message_with_confounder(
+                &key,
+                b"authenticated message",
+                2,
+                &[0x24; 16],
+            )?;
+            AES_DECRYPTIONS.set(0);
+            // When the real entry point verifies and decrypts the message.
+            let plaintext = etype.decrypt_message(&key, &ciphertext, 2)?;
+            // Then the observer is live and the original message is recovered.
+            assert_eq!(AES_DECRYPTIONS.get(), 1);
+            assert_eq!(plaintext, b"authenticated message");
+        }
+        Ok(())
+    }
 }
