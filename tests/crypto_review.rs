@@ -13,13 +13,108 @@ mod tests {
     use hmac::{Hmac, KeyInit as _, Mac as _};
     use md5::{Digest as _, Md5};
     use rskrb5_ng::{
-        crypto::{AesSha1Etype, AesSha2Etype, Rc4HmacEtype, s2kparams_to_iterations},
+        crypto::{
+            AesSha1Etype, AesSha2Etype, Des3CbcSha1KdEtype, Rc4HmacEtype, nfold,
+            s2kparams_to_iterations,
+        },
         error::Crypto,
     };
     use sha2::{Sha256, Sha384};
 
     /// Regression test error.
     type TestError = Box<dyn Error>;
+
+    /// RFC3961 AES DR and DK reject constants beyond a single cipher block.
+    #[test]
+    fn aes_rfc3961_rejects_oversized_constants() {
+        // Given constants just beyond the block size and a formerly colliding zero pair.
+        for etype in [AesSha1Etype::Aes128, AesSha1Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            for length in [17, 32] {
+                let constant = vec![0; length];
+                // When either public derivation entry point receives the constant.
+                let results = [
+                    etype.derive_random(&key, &constant),
+                    etype.derive_key(&key, &constant),
+                ];
+                // Then neither reduces the oversized constant into an accepted block.
+                for result in results {
+                    assert_eq!(
+                        result,
+                        Err(Crypto::DerivationConstantTooLong {
+                            maximum: 16,
+                            actual: length,
+                        })
+                    );
+                }
+            }
+        }
+    }
+
+    /// RFC3961 DES3 DR and DK reject constants beyond a single cipher block.
+    #[test]
+    fn des3_rfc3961_rejects_oversized_constants() {
+        // Given a valid DES3 key and constants exceeding eight bytes.
+        let key = [0x42; 24];
+        for length in [9, 16] {
+            let constant = vec![0; length];
+            // When either public derivation entry point receives the constant.
+            let results = [
+                Des3CbcSha1KdEtype::derive_random(&key, &constant),
+                Des3CbcSha1KdEtype::derive_key(&key, &constant),
+            ];
+            // Then neither accepts an out-of-domain derivation constant.
+            for result in results {
+                assert_eq!(
+                    result,
+                    Err(Crypto::DerivationConstantTooLong {
+                        maximum: 8,
+                        actual: length,
+                    })
+                );
+            }
+        }
+    }
+
+    /// Full-block RFC3961 constants and unrestricted SHA2 contexts remain accepted.
+    #[test]
+    fn rfc3961_constant_boundaries_preserve_other_primitives() -> Result<(), TestError> {
+        // Given exact-block constants and an input longer than either cipher block.
+        let large = [0x24; 33];
+        // When valid boundaries and independent primitives are evaluated.
+        for etype in [AesSha1Etype::Aes128, AesSha1Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            assert_eq!(etype.derive_random(&key, &[0; 16])?.len(), etype.key_len());
+            assert_eq!(etype.derive_key(&key, &[0; 16])?.len(), etype.key_len());
+            assert_eq!(etype.derive_random(&key, b""), Err(Crypto::EmptyUsage));
+        }
+        let key = [0x42; 24];
+        assert_eq!(Des3CbcSha1KdEtype::derive_random(&key, &[0; 8])?.len(), 21);
+        assert_eq!(Des3CbcSha1KdEtype::derive_key(&key, &[0; 8])?.len(), 24);
+        assert_eq!(
+            Des3CbcSha1KdEtype::derive_random(&key, b""),
+            Err(Crypto::EmptyUsage)
+        );
+        // Then SHA2 contexts/labels and generic n-fold retain their distinct domains.
+        assert_eq!(
+            AesSha2Etype::Aes128
+                .derive_random(&[0x42; 16], &large)?
+                .len(),
+            32
+        );
+        assert_eq!(
+            AesSha2Etype::Aes256
+                .derive_random(&[0x42; 32], &large)?
+                .len(),
+            48
+        );
+        assert_eq!(
+            AesSha2Etype::Aes128.derive_key(&[0x42; 16], &large)?.len(),
+            16
+        );
+        assert_eq!(nfold(&large, 64)?.len(), 8);
+        Ok(())
+    }
 
     /// Peer iteration hints above the local work ceiling are rejected without deriving.
     #[test]

@@ -797,6 +797,14 @@ pub enum Crypto {
     /// The n-fold usage constant was empty.
     #[error("key usage constant must not be empty")]
     EmptyUsage,
+    /// An RFC3961 derivation constant exceeds the cipher block size.
+    #[error("derivation constant length {actual} exceeds maximum {maximum}")]
+    DerivationConstantTooLong {
+        /// Cipher block size in bytes.
+        maximum: usize,
+        /// Supplied constant length in bytes.
+        actual: usize,
+    },
     /// The n-fold output size was not a positive whole number of bytes.
     #[error("invalid n-fold output bit count: {0}")]
     InvalidNfoldOutputBits(usize),

@@ -5,6 +5,15 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### RFC3961 derivation constant bounds (RSK-8F3B02EE)
+
+AES-SHA1 `derive_random` and `derive_key` now reject constants longer than
+16 bytes; DES3 rejects constants longer than 8 bytes. Handle the new
+`error::Crypto::DerivationConstantTooLong { maximum, actual }` variant.
+The limits are inclusive cipher-block bounds from RFC3961 section 5.1;
+constants are not silently reduced. Empty constants still return `EmptyUsage`.
+Signatures, generic `nfold`, and SHA2 PRF contexts/derivation labels are unchanged.
+
 ### Bounded AES password derivation (RSK-F240C18F)
 
 `crypto::s2kparams_to_iterations` and both AES families' `string_to_key` now

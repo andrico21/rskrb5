@@ -176,7 +176,8 @@ impl AesSha1Etype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 16 bytes.
     #[inline]
     pub fn derive_key(self, protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
         self.validate_key(protocol_key)?;
@@ -186,10 +187,13 @@ impl AesSha1Etype {
 
     /// RFC3961 DR function for AES.
     ///
+    /// Constants must contain 1..=16 bytes (RFC3961 section 5.1).
+    ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 16 bytes.
     #[inline]
     pub fn derive_random(self, protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
         self.validate_key(protocol_key)?;
@@ -197,6 +201,12 @@ impl AesSha1Etype {
             return Err(Error::EmptyUsage);
         }
 
+        if usage.len() > AES_BLOCK_SIZE {
+            return Err(Error::DerivationConstantTooLong {
+                maximum: AES_BLOCK_SIZE,
+                actual: usage.len(),
+            });
+        }
         let folded_usage = nfold(usage, AES_BLOCK_SIZE * 8)?;
         let mut out = Vec::with_capacity(self.key_len());
         let (_, mut block) = self.encrypt_data(protocol_key, &folded_usage)?;
@@ -864,7 +874,8 @@ impl Des3CbcSha1KdEtype {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 8 bytes.
     #[inline]
     pub fn derive_key(protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
         let random = Self::derive_random(protocol_key, usage)?;
@@ -873,10 +884,13 @@ impl Des3CbcSha1KdEtype {
 
     /// RFC3961 DR function for DES3.
     ///
+    /// Constants must contain 1..=8 bytes (RFC3961 section 5.1).
+    ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeyLength`] when `protocol_key` is not [`Self::key_len`] bytes long,
-    /// and [`Error::EmptyUsage`] when `usage` is empty.
+    /// [`Error::EmptyUsage`] when `usage` is empty, or
+    /// [`Error::DerivationConstantTooLong`] when `usage` exceeds 8 bytes.
     #[inline]
     pub fn derive_random(protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error> {
         Self::validate_key(protocol_key)?;
@@ -884,6 +898,12 @@ impl Des3CbcSha1KdEtype {
             return Err(Error::EmptyUsage);
         }
 
+        if usage.len() > DES3_BLOCK_SIZE {
+            return Err(Error::DerivationConstantTooLong {
+                maximum: DES3_BLOCK_SIZE,
+                actual: usage.len(),
+            });
+        }
         let folded_usage = nfold(usage, DES3_BLOCK_SIZE * 8)?;
         let mut out = Vec::with_capacity(DES3_SEED_SIZE);
         let (_, mut block) = Self::encrypt_data(protocol_key, &folded_usage)?;
