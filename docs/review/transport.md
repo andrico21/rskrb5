@@ -1,8 +1,10 @@
 # Transport review dispositions
 
-This lane is in progress. Each completed row identifies the atomic commit by
-its subject suffix. Full red/green output and exit codes are recorded in the
-task-35 execution evidence; final acceptance is deferred until all items finish.
+All eleven dispositions are implemented. Each row identifies its atomic commit
+by subject suffix. Red/green runs, independent scratch fix-reversal failures,
+and final acceptance at `cb2651a` are recorded in the task-35 execution evidence.
+STRICT (all 36 closures), Windows Clippy, full tests, doctests, stable/nightly
+rustdoc, nightly formatting, lint gates and exact-once ID validation passed.
 
 | ID | Status | Tests / commit | Behaviour change for CHANGELOG | Dismissal evidence |
 |---|---|---|---|---|
