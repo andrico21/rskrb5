@@ -52,6 +52,15 @@ const DEFAULT_MAX_REFERRALS: usize = 5;
 #[cfg(feature = "tokio")]
 const TCP_RECORD_MARK_LEN: usize = 4;
 
+/// TCP length rules belong to the service, not to the underlying stream.
+#[derive(Clone, Copy)]
+enum TcpFraming {
+    /// RFC 4120 reserves the high bit for KDC messages.
+    Kdc,
+    /// RFC 3244 uses its own unsigned length field.
+    Kpasswd,
+}
+
 /// KDC wire protocol for Tokio transport operations.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -388,11 +397,24 @@ impl Tokio {
     /// partial record written to or unread from the stream. Discard the stream
     /// then instead of reusing it.
     async fn exchange_tcp(&self, stream: &mut TcpStream, request: &[u8]) -> Result<Vec<u8>, Error> {
-        let Ok(request_len) = u32::try_from(request.len()) else {
-            return Err(Error::TcpRequestTooLarge {
-                actual: request.len(),
-            });
-        };
+        self.exchange_tcp_framed(stream, request, TcpFraming::Kdc)
+            .await
+    }
+
+    /// Exchange one bounded TCP record using the service's length rules.
+    ///
+    /// # Errors
+    /// Returns I/O, length, reserved-bit or empty-response errors.
+    ///
+    /// # Cancel safety
+    /// NOT cancel-safe for the stream: discard it after a cancelled exchange.
+    async fn exchange_tcp_framed(
+        &self,
+        stream: &mut TcpStream,
+        request: &[u8],
+        framing: TcpFraming,
+    ) -> Result<Vec<u8>, Error> {
+        let request_len = tcp_request_length(request.len(), framing)?;
         let mut framed = Vec::with_capacity(request.len().saturating_add(TCP_RECORD_MARK_LEN));
         framed.extend_from_slice(&request_len.to_be_bytes());
         framed.extend_from_slice(request);
@@ -401,6 +423,7 @@ impl Tokio {
         let mut header = [0; TCP_RECORD_MARK_LEN];
         let _: usize = stream.read_exact(&mut header).await?;
         let response_len = u32::from_be_bytes(header);
+        validate_tcp_length(response_len, framing)?;
         let Some(response_len_usize) = usize::try_from(response_len)
             .ok()
             .filter(|len| *len <= self.tcp_response_limit)
@@ -701,19 +724,56 @@ impl Tokio {
             .await
     }
 
-    /// Send to a realm's KDCs over one explicit protocol.
+    /// Send to password endpoints with RFC 3244 framing.
     ///
     /// # Errors
-    ///
-    /// Returns the discovery errors of [`Self::discover_kdcs`],
-    /// [`Error::NoKdcEndpoints`] when no endpoint is available, and
-    /// [`Error::KdcEndpointFailures`] when every endpoint fails.
+    /// Returns endpoint failures when no exchange succeeds.
     ///
     /// # Cancel safety
+    /// NOT cancel-safe: a delivered password request may already have committed.
+    async fn send_to_password_endpoints(
+        &self,
+        realm: &str,
+        protocol: KdcProtocol,
+        endpoints: Vec<KdcEndpoint>,
+        request: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let mut failures = Vec::new();
+        for endpoint in endpoints {
+            let result = match endpoint.protocol {
+                KdcProtocol::Tcp => {
+                    self.with_transport_timeout(async {
+                        let mut stream =
+                            Self::connect_tcp((endpoint.host.as_str(), endpoint.port)).await?;
+                        self.exchange_tcp_framed(&mut stream, request, TcpFraming::Kpasswd)
+                            .await
+                    })
+                    .await
+                }
+                KdcProtocol::Udp | KdcProtocol::Auto => {
+                    self.send_udp((endpoint.host.as_str(), endpoint.port), request)
+                        .await
+                }
+            };
+            match result {
+                Ok(response) => return Ok(response),
+                Err(error) => failures.push(error.to_string()),
+            }
+        }
+        Err(Error::KdcEndpointFailures {
+            realm: realm.to_owned(),
+            protocol,
+            failures,
+        })
+    }
+
+    /// Send to configured KDC endpoints using KDC framing.
     ///
-    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
-    /// future closes any socket it opened and abandons the request, which the
-    /// caller can send again.
+    /// # Errors
+    /// Returns discovery errors or failures from all endpoints.
+    ///
+    /// # Cancel safety
+    /// cancel-safe: no client state is changed and sockets close on cancellation.
     async fn send_to_realm_explicit(
         &self,
         config: &Config,
@@ -784,7 +844,7 @@ impl Tokio {
         let endpoints = self
             .discover_kpasswd_servers(config, realm, protocol)
             .await?;
-        self.send_to_endpoints(realm, protocol, endpoints, request)
+        self.send_to_password_endpoints(realm, protocol, endpoints, request)
             .await
     }
 
@@ -813,7 +873,17 @@ impl Tokio {
         A: ToSocketAddrs + Clone,
     {
         let frame = request.encode()?;
-        let response = self.send(protocol, addr, &frame).await?;
+        let response = match protocol {
+            KdcProtocol::Tcp => {
+                self.with_transport_timeout(async {
+                    let mut stream = Self::connect_tcp(addr).await?;
+                    self.exchange_tcp_framed(&mut stream, &frame, TcpFraming::Kpasswd)
+                        .await
+                })
+                .await?
+            }
+            KdcProtocol::Udp | KdcProtocol::Auto => self.send_udp(addr, &frame).await?,
+        };
         Ok(kadmin::Reply::parse(&response)?)
     }
 
@@ -2139,6 +2209,29 @@ impl Tokio {
     }
 }
 
+/// Validate the reserved bit only for RFC 4120 KDC records.
+///
+/// # Errors
+/// Returns the named reserved-bit error for KDC frames.
+const fn validate_tcp_length(length: u32, framing: TcpFraming) -> Result<(), Error> {
+    match framing {
+        TcpFraming::Kdc if length & 0x8000_0000 != 0 => Err(Error::TcpReservedBitSet),
+        TcpFraming::Kdc | TcpFraming::Kpasswd => Ok(()),
+    }
+}
+
+/// Convert an outgoing length according to the service's framing rules.
+///
+/// # Errors
+/// Returns a request-size error if the service's record mark cannot represent it.
+fn tcp_request_length(length: usize, framing: TcpFraming) -> Result<u32, Error> {
+    let value =
+        u32::try_from(length).map_err(|_overflow| Error::TcpRequestTooLarge { actual: length })?;
+    validate_tcp_length(value, framing)
+        .map_err(|_reserved| Error::TcpRequestTooLarge { actual: length })?;
+    Ok(value)
+}
+
 /// Select without replacement within ascending priorities using RFC 2782 draws.
 ///
 /// # Errors
@@ -2412,6 +2505,26 @@ mod tests {
     use core::net::IpAddr;
 
     use super::parse_dns_server;
+
+    /// Numeric framing boundaries are tested without allocating multi-gigabyte requests.
+    #[test]
+    fn tcp_lengths_are_service_specific() -> Result<(), super::Error> {
+        assert_eq!(
+            super::tcp_request_length(0x7FFF_FFFF, super::TcpFraming::Kdc)?,
+            0x7FFF_FFFF
+        );
+        assert!(
+            super::tcp_request_length(0x8000_0000, super::TcpFraming::Kdc)
+                .err()
+                .is_some()
+        );
+        assert_eq!(
+            super::tcp_request_length(0x8000_0000, super::TcpFraming::Kpasswd)?,
+            0x8000_0000
+        );
+        super::validate_tcp_length(u32::MAX, super::TcpFraming::Kpasswd)?;
+        Ok(())
+    }
 
     /// A zero draw selects zero-weight records before weighted peers at equal priority.
     #[test]

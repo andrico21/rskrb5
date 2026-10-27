@@ -581,9 +581,13 @@ pub enum Client {
         /// Maximum accepted response byte length.
         limit: usize,
     },
-    /// TCP request length could not fit the RFC 4120 length prefix.
+    /// KDC TCP frame has the RFC 4120 reserved high bit set.
     #[cfg(feature = "tokio")]
-    #[error("KDC TCP request length {actual} exceeds u32::MAX")]
+    #[error("KDC TCP frame has its reserved high bit set")]
+    TcpReservedBitSet,
+    /// TCP request length could not fit the service's length prefix.
+    #[cfg(feature = "tokio")]
+    #[error("TCP request length {actual} exceeds the service framing limit")]
     TcpRequestTooLarge {
         /// Encoded request byte length.
         actual: usize,

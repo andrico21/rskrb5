@@ -16,6 +16,10 @@ input returns `Client::DnsResolverConfig`.
 A root SRV target now returns `Client::DnsServiceUnavailable { service, realm }`
 instead of allowing administration-service fallback.
 
+KDC TCP framing rejects the reserved high bit with `Client::TcpReservedBitSet`;
+outgoing KDC lengths above 31 bits return `Client::TcpRequestTooLarge`.
+Kpasswd TCP retains RFC 3244's separate unsigned length rules.
+
 UDP response limits now reject oversized responses with the new
 `Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
 

@@ -68,6 +68,42 @@ mod tests {
     /// Error type of these tests; `Send` so stub KDC tasks can return it.
     type TestError = Box<dyn Error + Send + Sync>;
 
+    /// KDC reserved high bits are rejected independently of the allocation cap.
+    #[test]
+    fn kdc_tcp_rejects_reserved_bit_before_body_read() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let task = tokio::spawn(async move {
+                let (_, mut socket) = read_tcp_request(&listener).await?;
+                socket.write_all(&0x8000_0000_u32.to_be_bytes()).await?;
+                Ok::<_, io::Error>(())
+            });
+            let error = Tokio::new()
+                .with_tcp_response_limit(0)
+                .send_tcp(addr, b"request")
+                .await
+                .err()
+                .ok_or("reserved bit rejected")?;
+            task.await??;
+            assert!(
+                !matches!(
+                    error,
+                    ClientError::TcpResponseTooLarge {
+                        actual: _,
+                        limit: _
+                    }
+                ),
+                "reserved bit must be a protocol error, not an allocation limit"
+            );
+            assert!(
+                !matches!(error, ClientError::Io(_)),
+                "reject before reading body"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
     /// Administration DNS fallback supplies hosts but never its service port.
     #[test]
     fn kpasswd_dns_admin_fallback_uses_port_464() -> Result<(), TestError> {
