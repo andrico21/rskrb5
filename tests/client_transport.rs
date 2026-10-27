@@ -77,6 +77,32 @@ mod tests {
         Ok(())
     }
 
+    /// Administrative IPv6 authorities supply a complete host, never the administration port.
+    #[test]
+    fn kpasswd_admin_fallback_preserves_ipv6() -> Result<(), TestError> {
+        // Given bracketed, bare IPv6 and hostname administration endpoints.
+        let config = Config::parse(
+            "[libdefaults]\n dns_lookup_kdc = false\n[realms]\n TEST.GOKRB5 = {\n admin_server = [2001:db8::1]:749\n admin_server = 2001:db8::1:2\n admin_server = admin.example:1749\n }\n",
+        )?;
+        // When password-change discovery derives its configuration fallback.
+        let endpoints = runtime()?.block_on(Tokio::new().discover_kpasswd_servers(
+            &config,
+            "TEST.GOKRB5",
+            KdcProtocol::Tcp,
+        ))?;
+        // Then every complete host is retained with the password-change port.
+        let authorities: Vec<_> = endpoints.iter().map(KdcEndpoint::authority).collect();
+        assert_eq!(
+            authorities,
+            [
+                "[2001:db8::1]:464",
+                "[2001:db8::1:2]:464",
+                "admin.example:464"
+            ]
+        );
+        Ok(())
+    }
+
     /// Pins that a UDP send transmits the raw request datagram and returns the reply datagram.
     #[test]
     fn tokio_transport_sends_udp_datagram() -> Result<(), TestError> {

@@ -1221,8 +1221,22 @@ impl Realm {
                 .admin_server
                 .iter()
                 .map(|admin| {
-                    let host = admin.split(':').next().unwrap_or(admin);
-                    format!("{host}:464")
+                    if let Ok(address) = admin.parse::<core::net::SocketAddr>() {
+                        return core::net::SocketAddr::new(address.ip(), 464).to_string();
+                    }
+                    if let Ok(address) = admin.parse::<IpAddr>() {
+                        return core::net::SocketAddr::new(address, 464).to_string();
+                    }
+                    let host = admin.strip_circumfix('[', ']').unwrap_or_else(|| {
+                        admin
+                            .split_once(':')
+                            .map_or(admin.as_str(), |(host, _)| host)
+                    });
+                    if host.contains(':') {
+                        format!("[{host}]:464")
+                    } else {
+                        format!("{host}:464")
+                    }
                 })
                 .collect();
         }
