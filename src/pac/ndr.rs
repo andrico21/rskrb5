@@ -260,7 +260,7 @@ pub(super) fn read_counted_supplemental_credentials(
         supplemental_credentials.push(SecpkgSupplementalCredential {
             package_name,
             credential_size,
-            credentials: credential_bytes,
+            credentials: credential_bytes.into(),
         });
     }
     Ok(supplemental_credentials)

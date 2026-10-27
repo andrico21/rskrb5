@@ -12,11 +12,13 @@ use compcol::{
     Algorithm, lznt1::Lznt1, vec::decompress_to_vec_capped, xpress::Xpress,
     xpress_huffman::XpressHuffman,
 };
+use zeroize::Zeroizing;
 
 use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
 #[cfg(feature = "messages")]
 mod authorization;
+mod credential_secrets;
 mod ndr;
 mod reader;
 
@@ -708,11 +710,11 @@ impl CredentialsInfo {
         }
         let etype = KerberosEtype::from_etype_id(encryption_type)
             .ok_or(Error::UnsupportedEncryptionType(encryption_type))?;
-        let plaintext = etype.decrypt_message(
+        let plaintext = Zeroizing::new(etype.decrypt_message(
             &key.value,
             &self.encrypted_credential_data,
             PAC_CREDENTIALS_KEY_USAGE,
-        )?;
+        )?);
         CredentialData::parse(&plaintext)
     }
 }
@@ -759,7 +761,7 @@ impl CredentialData {
 }
 
 /// Supplemental credential package entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct SecpkgSupplementalCredential {
     /// Supplemental credential package name.
@@ -767,11 +769,11 @@ pub struct SecpkgSupplementalCredential {
     /// Credential byte length.
     pub credential_size: u32,
     /// Package-specific credential bytes.
-    pub credentials: Vec<u8>,
+    pub credentials: Zeroizing<Vec<u8>>,
 }
 
 /// NTLM supplemental credential data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NtlmSupplementalCredential {
     /// NTLM supplemental credential version. The Microsoft format requires zero.
@@ -801,12 +803,12 @@ impl NtlmSupplementalCredential {
         let flags = reader.read_u32()?;
         (flags & (NTLM_SUPPLEMENTAL_CRED_LMOWF | NTLM_SUPPLEMENTAL_CRED_NTOWF) != 0)
             .ok_or(Error::MissingNtlmValidityFlag)?;
-        let lm_slot = reader.read_array()?;
-        let nt_slot = reader.read_array()?;
+        let lm_slot = Zeroizing::new(reader.read_array()?);
+        let nt_slot = Zeroizing::new(reader.read_array()?);
         let lm_password =
-            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF).then_some(lm_slot);
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF).then_some(*lm_slot);
         let nt_password =
-            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF).then_some(nt_slot);
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF).then_some(*nt_slot);
 
         Ok(Self {
             version,

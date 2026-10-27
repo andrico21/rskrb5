@@ -84,6 +84,20 @@ mod tests {
         Ok(())
     }
 
+    /// Pins redaction without treating Debug's full layout as a stable format.
+    #[test]
+    fn ntlm_debug_redacts_hash_material() -> Result<(), TestError> {
+        // Given: hash slots carrying recognizable marker bytes.
+        let credential = NtlmSupplementalCredential::parse(&wire(3)).context("NTLM parses")?;
+        // When: callers render public diagnostics.
+        let rendered = format!("{credential:?}");
+        // Then: neither hash marker leaks and redaction is explicit.
+        assert!(!rendered.contains("17, 17"));
+        assert!(!rendered.contains("34, 34"));
+        assert!(rendered.contains("REDACTED"));
+        Ok(())
+    }
+
     /// Encodes the fixed 40-byte structure with distinct LM and NT slot markers.
     fn wire(flags: u32) -> Vec<u8> {
         let mut bytes = 0_u32.to_le_bytes().to_vec();

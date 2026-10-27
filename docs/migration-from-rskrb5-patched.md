@@ -5,6 +5,17 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Decrypted PAC credential ownership
+
+`SecpkgSupplementalCredential::credentials` is now `Zeroizing<Vec<u8>>`.
+Borrow it as a slice for intentional access; avoid extracting a nonzeroizing copy.
+Decryption scratch is zeroizing even on parse errors. NTLM credentials erase
+their owned optional hashes on Drop and redact Debug, as do package entries.
+Their array field types are unchanged, but moving fields out of a Drop type is
+restricted; borrow them instead. Copies deliberately made by callers, borrowed
+parser inputs, dependency-internal state and compiler/register copies are outside
+this guarantee. Abort does not run Drop.
+
 ### Boolean claim values
 
 Boolean claim arrays are decoded as aligned ULONG64 values, not bytes.
