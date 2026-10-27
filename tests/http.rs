@@ -1047,6 +1047,18 @@ mod tests {
         Ok(())
     }
 
+    /// Challenge and reject response bodies contain no internal parser or validation detail.
+    #[test]
+    fn rejection_helpers_have_opaque_bodies() -> Result<(), TestError> {
+        let challenge: Response<String> = krb_http::challenge_response();
+        let reject: Response<String> = krb_http::reject_response()?;
+        assert_eq!(challenge.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(reject.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(challenge.body(), "");
+        assert_eq!(reject.body(), "");
+        Ok(())
+    }
+
     fn valid_authorization_header() -> Result<String, TestError> {
         let ap_req_token = Krb5MechToken::ap_req(gss_ap_req_fixture()?)
             .encode()
