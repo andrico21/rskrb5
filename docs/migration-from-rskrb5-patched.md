@@ -5,6 +5,15 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Bounded claims output
+
+`ClaimsSetMetadata::decoded_claims_set_bytes` rejects declared output lengths
+or stored payloads above 1 MiB with `error::Pac::ClaimsOutputLimit` before
+framing, decompression or copying. The cap applies to mutable metadata and to
+uncompressed claims too. At most one client and one device claims buffer are
+processed, bounding total decoded claims output to 2 MiB per PAC. Existing
+decompressed-size correlation remains unchanged; no output is clamped.
+
 ### Bounded public PAC lookup
 
 `pac::find_pac_in_authorization_data` now rejects more than eight nested

@@ -1099,6 +1099,10 @@ impl ClaimsSetMetadata {
 
     /// Decode the nested claims set bytes, decompressing when required.
     ///
+    /// Output is limited to 1 MiB independently of producer metadata, including
+    /// uncompressed copies. PAC processing handles at most one client and one
+    /// device claims buffer, so their combined decoded output is at most 2 MiB.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::UnsupportedClaimsCompressionFormat`] for an unknown format,
@@ -1107,6 +1111,9 @@ impl ClaimsSetMetadata {
     /// when the output size differs from `uncompressed_claims_set_size`.
     #[inline]
     pub fn decoded_claims_set_bytes(&self) -> Result<Vec<u8>, Error> {
+        (self.uncompressed_claims_set_size <= 0x0010_0000
+            && self.claims_set_bytes.len() <= 0x0010_0000)
+            .ok_or(Error::ClaimsOutputLimit)?;
         match self.compression_format {
             CLAIMS_COMPRESSION_FORMAT_NONE => Ok(self.claims_set_bytes.clone()),
             CLAIMS_COMPRESSION_FORMAT_LZNT1 => decompress_claims_set_bytes::<Lznt1>(

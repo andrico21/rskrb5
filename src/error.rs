@@ -1552,6 +1552,9 @@ pub enum Pac {
     /// A claims compression format is not supported.
     #[error("unsupported PAC claims compression format: {0}")]
     UnsupportedClaimsCompressionFormat(u16),
+    /// Claims decoding would exceed the independent 1 MiB output ceiling.
+    #[error("PAC claims output exceeds the 1 MiB limit")]
+    ClaimsOutputLimit,
     /// PAC claims decompression failed.
     #[error("PAC claims decompression failed for format {compression_format}: {message}")]
     ClaimsDecompression {

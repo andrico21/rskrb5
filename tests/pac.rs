@@ -7,6 +7,8 @@ mod context;
 mod pac_ad_win2k;
 #[path = "support/pac_authorization.rs"]
 mod pac_authorization;
+#[path = "support/pac_claim_limits.rs"]
+mod pac_claim_limits;
 #[path = "support/pac_trust.rs"]
 mod pac_trust;
 
