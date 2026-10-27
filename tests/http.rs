@@ -64,7 +64,7 @@ mod tests {
         error::Http as HttpError,
         http as krb_http,
         keytab::{EncryptionKey, Keytab},
-        service::{ApRepOptions, Validator},
+        service::{ApRepOptions, ReplayCache, SharedReplayCache, Validator},
         spnego::{
             self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit, Token,
         },
@@ -1648,9 +1648,13 @@ mod tests {
         authorization: &str,
     ) -> Result<String, TestError> {
         let keytab = keytab()?;
+        let wide_skew = Duration::from_hours(100 * 365 * 24);
         let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(Duration::from_hours(100 * 365 * 24));
+            .with_max_clock_skew(wide_skew)
+            .with_shared_replay_cache(SharedReplayCache::from_cache(ReplayCache::with_limits(
+                wide_skew, 16,
+            )));
         let accepted = spnego::accept_sec_context_header(&mut validator, authorization)
             .map_err(|cause| format!("wrapper Authorization header validates: {cause}"))?;
         Ok(accepted

@@ -5,6 +5,29 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Bounded replay-cache lifecycle (RSK-7D80FA41)
+
+`ReplayCache::new`/`default` now own an immutable 300-second skew ceiling and
+65,536-record capacity. Use `ReplayCache::with_limits(max_clock_skew, capacity)`
+and `SharedReplayCache::from_cache` for an explicitly different policy. A validator
+whose skew exceeds the cache ceiling fails admission with
+`Service::ReplayCacheSkewExceeded`; `with_max_clock_skew` does not widen a cache.
+This also applies to the shared cache created by a Tower layer.
+
+Each insert prunes records presented more than twice the cache skew ago, then
+checks replay and capacity atomically under the shared lock. Twice-skew retention
+covers authenticators first accepted up to one skew window in the future. Equality
+at the expiry boundary stays live. Backward validation time returns
+`ReplayCacheClockRollback` until time catches up to the high-water mark; even
+explicit `clear` does not reset that mark. Full capacity returns
+`ReplayCacheCapacityExceeded`, never evicting live replay evidence.
+
+Explicit `clear`/`clear_older_than*` remain administrative overrides that can erase
+live replay protection. Do not schedule aggressive pruning; automatic admission
+now maintains expiry. Replace caches only with service downtime lasting at least
+the replay window; creating a fresh cache or restarting still loses in-memory
+evidence. Capacity bounds records, not principal-string bytes or allocator RSS.
+
 ### Mandatory authorization-data policy (RSK-D1D6BDC3)
 
 Service acceptance now scans all ticket and authenticator authorization data,

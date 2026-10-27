@@ -241,8 +241,14 @@ pub struct VerifiedApRep {
 }
 
 /// In-memory AP-REQ replay cache.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ReplayCache {
+    /// Immutable skew ceiling for every validator using this cache.
+    max_clock_skew: Duration,
+    /// Maximum live records; admission never evicts a live replay record.
+    capacity: usize,
+    /// Latest admission time, preserved even by explicit clearing.
+    watermark: Option<SystemTime>,
     /// RFC 4120 replay keys of the accepted authenticators, each with the
     /// time it was presented.
     entries: HashMap<ReplayKey, SystemTime>,
@@ -252,7 +258,31 @@ pub struct ReplayCache {
     authenticators: HashMap<[u8; 32], SystemTime>,
 }
 
+impl Default for ReplayCache {
+    #[inline]
+    fn default() -> Self {
+        Self::with_limits(DEFAULT_MAX_CLOCK_SKEW, 0x0001_0000)
+    }
+}
+
 impl ReplayCache {
+    /// Create an empty cache with immutable skew and live-entry admission limits.
+    ///
+    /// Validators exceeding `max_clock_skew` are rejected on admission. Zero
+    /// capacity rejects all new records. Expiry retains twice the skew from
+    /// presentation, covering authenticators first accepted in the future.
+    #[must_use]
+    #[inline]
+    pub fn with_limits(max_clock_skew: Duration, capacity: usize) -> Self {
+        Self {
+            max_clock_skew,
+            capacity,
+            watermark: None,
+            entries: HashMap::new(),
+            authenticators: HashMap::new(),
+        }
+    }
+
     #[must_use]
     /// Create an empty replay cache.
     #[inline]
@@ -308,23 +338,46 @@ impl ReplayCache {
     /// Returns `false`, recording nothing, when either the RFC 4120 replay key
     /// or the authenticator digest was already seen; `true` once both are
     /// recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCacheSkewExceeded`], [`Error::ReplayCacheClockRollback`]
+    /// or [`Error::ReplayCacheCapacityExceeded`] when cache policy rejects admission.
     fn insert(
         &mut self,
         key: ReplayKey,
         authenticator_digest: [u8; 32],
         presented_at: SystemTime,
-    ) -> bool {
+        validator_skew: Duration,
+    ) -> Result<bool, Error> {
+        if validator_skew > self.max_clock_skew {
+            return Err(Error::ReplayCacheSkewExceeded {
+                maximum: self.max_clock_skew,
+                requested: validator_skew,
+            });
+        }
+        if self.watermark.is_some_and(|latest| presented_at < latest) {
+            return Err(Error::ReplayCacheClockRollback);
+        }
+        self.watermark = Some(presented_at);
+        let retention = self.max_clock_skew.saturating_mul(2);
+        let _: usize = self.clear_older_than_at(retention, presented_at);
         if self.entries.contains_key(&key)
             || self.authenticators.contains_key(&authenticator_digest)
         {
-            return false;
+            return Ok(false);
+        }
+        if self.entries.len() >= self.capacity {
+            return Err(Error::ReplayCacheCapacityExceeded {
+                capacity: self.capacity,
+            });
         }
         // Both lookups above missed, so neither insert replaces an entry.
         let _: Option<SystemTime> = self.entries.insert(key, presented_at);
         let _: Option<SystemTime> = self
             .authenticators
             .insert(authenticator_digest, presented_at);
-        true
+        Ok(true)
     }
 }
 
@@ -415,8 +468,11 @@ impl SharedReplayCache {
         key: ReplayKey,
         authenticator_digest: [u8; 32],
         presented_at: SystemTime,
+        validator_skew: Duration,
     ) -> Result<bool, Error> {
-        self.with_cache_mut(|cache| cache.insert(key, authenticator_digest, presented_at))
+        self.with_cache_mut(|cache| {
+            cache.insert(key, authenticator_digest, presented_at, validator_skew)
+        })?
     }
 
     /// Run `read` on the shared cache under its lock.
@@ -790,10 +846,10 @@ impl<'keytab> Validator<'keytab> {
         now: SystemTime,
     ) -> Result<(), Error> {
         let inserted = if let Some(replay_cache) = &self.shared_replay_cache {
-            replay_cache.insert(replay_key, authenticator_digest, now)?
+            replay_cache.insert(replay_key, authenticator_digest, now, self.max_clock_skew)?
         } else {
             self.replay_cache
-                .insert(replay_key, authenticator_digest, now)
+                .insert(replay_key, authenticator_digest, now, self.max_clock_skew)?
         };
         if inserted { Ok(()) } else { Err(Error::Replay) }
     }

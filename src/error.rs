@@ -1716,6 +1716,23 @@ pub enum Pac {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Service {
+    /// Validator skew exceeds the replay cache's immutable policy.
+    #[error("validator skew {requested:?} exceeds replay cache maximum {maximum:?}")]
+    ReplayCacheSkewExceeded {
+        /// Cache-owned maximum skew.
+        maximum: Duration,
+        /// Validator's requested acceptance skew.
+        requested: Duration,
+    },
+    /// Validation time moved behind the cache's admission high-water mark.
+    #[error("replay cache clock moved backwards")]
+    ReplayCacheClockRollback,
+    /// All replay-cache slots contain live records.
+    #[error("replay cache capacity {capacity} exhausted")]
+    ReplayCacheCapacityExceeded {
+        /// Immutable maximum number of live records.
+        capacity: usize,
+    },
     /// An authorization-data restriction cannot be safely interpreted.
     #[error("unsupported mandatory authorization data type {kind}")]
     UnsupportedAuthorizationData {

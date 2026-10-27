@@ -44,7 +44,8 @@ mod tests {
         keytab::{EncryptionKey, Keytab},
         pac,
         service::{
-            ApRepOptions, Principal, SharedReplayCache, TransitValidator, ValidatedApReq, Validator,
+            ApRepOptions, Principal, ReplayCache, SharedReplayCache, TransitValidator,
+            ValidatedApReq, Validator,
         },
         ticket::decrypt_ticket_enc_part,
     };
@@ -1688,6 +1689,121 @@ mod tests {
         let mut authenticator =
             decrypt_ap_req_authenticator(&request, &session, AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST)?;
         authenticator.authorization_data = authenticator_data;
+        request.authenticator.cipher = encrypt_message(
+            &session,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
+        Ok(der::encode(&request)?)
+    }
+
+    /// Automatic admission expires records only after their entire replayability window.
+    #[test]
+    fn replay_lifecycle_automatically_expires_old_records() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let first = decode_hex(VALID_AP_REQ)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        drop(validator.validate_ap_req(&first)?);
+        let second = replay_request_at(1_893_554_048)?;
+        validator = validator.with_now(timestamp(1_893_554_048)?);
+        drop(validator.validate_ap_req(&second)?);
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+        Ok(())
+    }
+
+    /// Moving the validation clock backwards fails closed even for a fresh distinct token.
+    #[test]
+    fn replay_lifecycle_rejects_clock_rollback() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_448)?);
+        drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
+        validator = validator.with_now(timestamp(1_893_553_447)?);
+        let error = validator
+            .validate_ap_req(&replay_request_at(1_893_553_447)?)
+            .err()
+            .context("rollback rejected")?;
+        assert!(matches!(error, Error::ReplayCacheClockRollback));
+        Ok(())
+    }
+
+    /// Full capacity rejects admission rather than evicting an active replay record.
+    #[test]
+    fn replay_lifecycle_capacity_preserves_live_records() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let cache =
+            SharedReplayCache::from_cache(ReplayCache::with_limits(Duration::from_secs(300), 1));
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_shared_replay_cache(cache);
+        drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&replay_request_at(1_893_553_447)?)
+                .err()
+                .context("capacity rejects new record")?,
+            Error::ReplayCacheCapacityExceeded { capacity: 1_usize }
+        ));
+        assert!(matches!(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
+                .err()
+                .context("live record retained")?,
+            Error::Replay
+        ));
+        Ok(())
+    }
+
+    /// A shared cache rejects newly attached validators with a wider skew ceiling.
+    #[test]
+    fn replay_lifecycle_rejects_wider_shared_skew() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let cache = SharedReplayCache::new();
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_max_clock_skew(Duration::from_secs(301))
+            .with_shared_replay_cache(cache.clone());
+        assert!(matches!(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
+                .err()
+                .context("wider skew rejected")?,
+            Error::ReplayCacheSkewExceeded {
+                maximum: _,
+                requested: _
+            }
+        ));
+        assert_eq!(cache.len()?, 0);
+        Ok(())
+    }
+
+    /// Future authenticators remain replay-protected across the full two-sided skew window.
+    #[test]
+    fn replay_lifecycle_preserves_future_authenticators() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let bytes = replay_request_at(1_893_553_747)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_448)?);
+        drop(validator.validate_ap_req(&bytes)?);
+        validator = validator.with_now(timestamp(1_893_554_047)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("future authenticator remains replay")?,
+            Error::Replay
+        ));
+        Ok(())
+    }
+
+    /// Rebuilds an authenticator with a different second and deterministic encryption.
+    fn replay_request_at(seconds: u64) -> Result<Vec<u8>, TestError> {
+        let mut request = valid_ap_req_struct()?;
+        let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator =
+            decrypt_ap_req_authenticator(&request, &session, AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST)?;
+        authenticator.ctime = kerberos_time(seconds)?;
+        authenticator.cusec = 456_789_i32.into();
         request.authenticator.cipher = encrypt_message(
             &session,
             &der::encode(&authenticator)?,
