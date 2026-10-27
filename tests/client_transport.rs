@@ -448,9 +448,8 @@ mod tests {
     #[test]
     fn tokio_transport_auto_retries_tcp_after_udp_response_too_big() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let udp = UdpSocket::bind("127.0.0.1:0").await?;
+            let (udp, listener) = bind_udp_and_tcp_pair().await?;
             let addr = udp.local_addr()?;
-            let listener = TcpListener::bind(addr).await?;
             let too_big = response_too_big_error()?;
 
             let udp_task = tokio::spawn(async move {
@@ -607,6 +606,22 @@ mod tests {
         }
         input.push_str(" }\n");
         Ok(Config::parse(&input)?)
+    }
+
+    /// Binds a UDP socket and a TCP listener on the same loopback port.
+    ///
+    /// The kernel picks a free UDP port, but that number may already be taken
+    /// for TCP by another socket, so a TCP `AddrInUse` retries on a fresh port.
+    async fn bind_udp_and_tcp_pair() -> io::Result<(UdpSocket, TcpListener)> {
+        for _ in 0_u8..16 {
+            let udp = UdpSocket::bind("127.0.0.1:0").await?;
+            match TcpListener::bind(udp.local_addr()?).await {
+                Ok(listener) => return Ok((udp, listener)),
+                Err(error) if error.kind() == io::ErrorKind::AddrInUse => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(io::Error::from(io::ErrorKind::AddrInUse))
     }
 
     /// Accepts one connection and reads one length-prefixed request from it.
