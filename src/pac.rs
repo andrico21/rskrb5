@@ -741,7 +741,13 @@ impl CredentialData {
         let mut reader = Reader::new(bytes);
         read_ndr_wrapper(&mut reader, "CredentialData")?;
 
+        let max_count = read_ndr_u32(&mut reader)?;
         let credential_count = read_ndr_u32(&mut reader)?;
+        (max_count == credential_count).ok_or(Error::CountMismatch {
+            target: "CredentialData.Credentials",
+            expected: credential_count,
+            actual: max_count,
+        })?;
         let credentials = read_counted_supplemental_credentials(&mut reader, credential_count)?;
         ensure_zero_trailing(&mut reader, "CredentialData")?;
 

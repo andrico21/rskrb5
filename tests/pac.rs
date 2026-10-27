@@ -923,6 +923,7 @@ mod tests {
         let credential = ntlm_supplemental_credential_bytes();
         let mut object = Vec::new();
         push_u32(&mut object, 1);
+        push_u32(&mut object, 1);
         push_rpc_unicode_string_descriptor(&mut object, "NTLM", 0x0002_0004)?;
         push_u32(
             &mut object,
@@ -931,7 +932,15 @@ mod tests {
         push_u32(&mut object, 0x0002_0008);
         push_deferred_rpc_unicode_string(&mut object, "NTLM")?;
         push_deferred_u8_array(&mut object, &credential)?;
-        ndr_wrapped(&object)
+        let mut bytes = ndr_wrapped(&object)?;
+        align_vec(&mut bytes, 8);
+        let object_len =
+            u32::try_from(bytes.len().saturating_sub(16)).context("padded object length")?;
+        bytes
+            .get_mut(8..12)
+            .context("private object length")?
+            .copy_from_slice(&object_len.to_le_bytes());
+        Ok(bytes)
     }
 
     fn ntlm_supplemental_credential_bytes() -> Vec<u8> {

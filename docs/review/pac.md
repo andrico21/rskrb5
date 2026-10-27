@@ -14,6 +14,8 @@ Full commands, red runs and scratch failure QA are recorded in
 
 ## Traversal policy and trust boundary
 
+| RSK-DB101DC5 | fixed | `credentials_accepts_conformant_single_entry`, `credentials_rejects_mismatched_conformant_count`; corrected direct/encrypted fixture coverage; commit suffix `(RSK-DB101DC5)` | PAC_CREDENTIAL_DATA consumes and correlates the NDR32 conformant maximum count before CredentialCount (MS-PAC 2.6.2, DCE C706 structures containing arrays). Local credential fixtures now include both words and eight-byte serialization padding. | N/A |
+
 The inclusive limits match the existing service authorization validator: eight
 wrappers and 1 MiB of visited entry payloads. Every visited payload is charged,
 including ignored entries and PAC bytes; nested content is charged at each level
@@ -28,6 +30,6 @@ key decryption, as recorded by the audit lead. No service call-site edit is need
 
 ## Remaining work
 
-Seven other todo-32 items remain pending. Final full STRICT, WIN-CLIPPY,
+Six other todo-32 items remain pending. Final full STRICT, WIN-CLIPPY,
 FULL-TEST, DOCTEST, DOCS, NIGHTLY-FMT, GATES and exact doc-ID acceptance are
 deferred until all items are complete, as required by the lane instructions.

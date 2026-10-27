@@ -16,7 +16,13 @@ mod tests {
     #[test]
     fn credentials_rejects_count_without_descriptor_extent() -> Result<(), TestError> {
         // Given: a bounded count without the corresponding fixed descriptors.
-        let bytes = count_only(64);
+        let mut bytes = count_only(64);
+        bytes.extend_from_slice(&64_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes
+            .get_mut(8..12)
+            .context("object length")?
+            .copy_from_slice(&16_u32.to_le_bytes());
         // When: the public parser admits the count.
         let error = CredentialData::parse(&bytes)
             .err()
@@ -36,7 +42,12 @@ mod tests {
     #[test]
     fn credentials_accepts_empty_count() -> Result<(), TestError> {
         // Given: an empty credential object.
-        let bytes = count_only(0);
+        let mut bytes = count_only(0);
+        bytes.extend_from_slice(&[0; 8]);
+        bytes
+            .get_mut(8..12)
+            .context("object length")?
+            .copy_from_slice(&16_u32.to_le_bytes());
         // When: the public parser handles it.
         let data = CredentialData::parse(&bytes).context("empty credentials parse")?;
         // Then: no supplemental packages are returned.
@@ -44,7 +55,53 @@ mod tests {
         Ok(())
     }
 
-    /// Builds the current single-count wire shape; conformance is a separate review item.
+    /// Pins the NDR32 conformant count preceding the structure's own count.
+    #[test]
+    fn credentials_accepts_conformant_single_entry() -> Result<(), TestError> {
+        // Given: conformance count, CredentialCount, then one empty package descriptor.
+        let mut bytes = count_only(1);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 16]);
+        bytes.extend_from_slice(&[0; 4]);
+        bytes
+            .get_mut(8..12)
+            .context("object length")?
+            .copy_from_slice(&32_u32.to_le_bytes());
+        // When: the conforming empty-package object is parsed.
+        let data = CredentialData::parse(&bytes).context("conformant package parses")?;
+        // Then: its single package is retained.
+        assert_eq!(data.credentials.len(), 1);
+        Ok(())
+    }
+
+    /// Pins correlation before descriptor admission or allocation.
+    #[test]
+    fn credentials_rejects_mismatched_conformant_count() -> Result<(), TestError> {
+        // Given: two count words that disagree.
+        let mut bytes = count_only(1);
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes
+            .get_mut(8..12)
+            .context("object length")?
+            .copy_from_slice(&16_u32.to_le_bytes());
+        // When: the count pair is parsed.
+        let error = CredentialData::parse(&bytes)
+            .err()
+            .context("count mismatch rejected")?;
+        // Then: the mismatch is identified independently of descriptor contents.
+        assert!(matches!(
+            error,
+            PacError::CountMismatch {
+                target: _,
+                expected: 0,
+                actual: 1
+            }
+        ));
+        Ok(())
+    }
+
+    /// Builds the historical single-count wire shape for the rejection controls.
     fn count_only(count: u32) -> Vec<u8> {
         let mut bytes = vec![1, 0x10, 8, 0, 0xcc, 0xcc, 0xcc, 0xcc];
         bytes.extend_from_slice(&8_u32.to_le_bytes());
