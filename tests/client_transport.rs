@@ -74,7 +74,7 @@ mod tests {
         runtime()?.block_on(async {
             let socket = UdpSocket::bind("127.0.0.1:0").await?;
             let server = socket.local_addr()?;
-            let task = tokio::spawn(dns_admin_fixture(socket));
+            let task = tokio::spawn(dns_admin_fixture(socket, None));
             let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
             let result = Tokio::new()
                 .with_dns_server(&server.to_string())?
@@ -93,8 +93,29 @@ mod tests {
         })
     }
 
-    /// Serve absent kpasswd records and a conventional administration service.
-    async fn dns_admin_fixture(socket: UdpSocket) -> Result<(), TestError> {
+    /// An authoritative root target prohibits administration fallback.
+    #[test]
+    fn kpasswd_dns_unavailable_stops_fallback() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = socket.local_addr()?;
+            let task = tokio::spawn(dns_admin_fixture(socket, Some(Name::root())));
+            let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
+            let result = Tokio::new()
+                .with_dns_server(&server.to_string())?
+                .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                .await;
+            task.abort();
+            assert!(
+                result.err().is_some(),
+                "explicit unavailability must stop discovery"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Serve selected kpasswd records and a conventional administration service.
+    async fn dns_admin_fixture(socket: UdpSocket, kpasswd: Option<Name>) -> Result<(), TestError> {
         loop {
             let mut buffer = [0; 4096];
             let (len, peer) = socket.recv_from(&mut buffer).await?;
@@ -104,6 +125,16 @@ mod tests {
             response.metadata.authoritative = true;
             response.metadata.recursion_available = true;
             response.queries = request.queries.clone();
+            if query.query_type() == RecordType::SRV
+                && query.name().to_utf8().starts_with("_kpasswd.")
+                && let Some(target) = &kpasswd
+            {
+                response.answers.push(Record::from_rdata(
+                    query.name().clone(),
+                    60,
+                    RData::SRV(SRV::new(0, 0, 1464, target.clone())),
+                ));
+            }
             if query.query_type() == RecordType::SRV
                 && query.name().to_utf8().starts_with("_kerberos-adm.")
             {

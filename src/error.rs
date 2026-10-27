@@ -532,6 +532,15 @@ pub enum Client {
         /// Resolver error message.
         message: String,
     },
+    /// DNS explicitly declares that the requested service is unavailable.
+    #[cfg(feature = "tokio")]
+    #[error("DNS service {service} is unavailable for {realm}")]
+    DnsServiceUnavailable {
+        /// Queried service label.
+        service: String,
+        /// Realm being discovered.
+        realm: String,
+    },
     /// No KDC endpoints were discovered for a realm.
     #[cfg(feature = "tokio")]
     #[error("no KDC endpoints discovered for {realm} over {protocol:?}")]

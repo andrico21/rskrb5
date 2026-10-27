@@ -13,6 +13,9 @@ that choose this input must read it themselves and pass its value to
 explicit port is provided; blank input selects the system resolver. Invalid
 input returns `Client::DnsResolverConfig`.
 
+A root SRV target now returns `Client::DnsServiceUnavailable { service, realm }`
+instead of allowing administration-service fallback.
+
 UDP response limits now reject oversized responses with the new
 `Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
 

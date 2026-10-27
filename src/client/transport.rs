@@ -1836,6 +1836,12 @@ impl Tokio {
             .await
         {
             Ok(endpoints) if !endpoints.is_empty() => return Ok(endpoints),
+            Err(
+                error @ Error::DnsServiceUnavailable {
+                    service: _,
+                    realm: _,
+                },
+            ) => return Err(error),
             Ok(_) | Err(_) => {}
         }
 
@@ -1892,6 +1898,16 @@ impl Tokio {
                 message: source.to_string(),
             })?;
 
+        if lookup
+            .answers()
+            .iter()
+            .any(|record| matches!(&record.data, RData::SRV(srv) if srv.target.is_root()))
+        {
+            return Err(Error::DnsServiceUnavailable {
+                service: service.to_owned(),
+                realm: realm.to_owned(),
+            });
+        }
         let mut records = lookup
             .answers()
             .iter()
