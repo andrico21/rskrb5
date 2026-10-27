@@ -48,6 +48,13 @@ mod tests {
     };
 
     use chrono::{DateTime, FixedOffset, Utc};
+    use hickory_resolver::proto::{
+        op::Message,
+        rr::{
+            Name, RData, Record, RecordType,
+            rdata::{A, SRV},
+        },
+    };
     use rasn::{der, types::Integer};
     use rasn_kerberos::{KerberosString, KerberosTime, KrbError, PrincipalName, Realm};
     use tokio::{
@@ -60,6 +67,62 @@ mod tests {
 
     /// Error type of these tests; `Send` so stub KDC tasks can return it.
     type TestError = Box<dyn Error + Send + Sync>;
+
+    /// Administration DNS fallback supplies hosts but never its service port.
+    #[test]
+    fn kpasswd_dns_admin_fallback_uses_port_464() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = socket.local_addr()?;
+            let task = tokio::spawn(dns_admin_fixture(socket));
+            let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
+            let result = Tokio::new()
+                .with_dns_server(&server.to_string())?
+                .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                .await;
+            task.abort();
+            let endpoints = result?;
+            assert_eq!(
+                endpoints
+                    .iter()
+                    .map(|endpoint| endpoint.port)
+                    .collect::<Vec<_>>(),
+                [464]
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Serve absent kpasswd records and a conventional administration service.
+    async fn dns_admin_fixture(socket: UdpSocket) -> Result<(), TestError> {
+        loop {
+            let mut buffer = [0; 4096];
+            let (len, peer) = socket.recv_from(&mut buffer).await?;
+            let request = Message::from_vec(buffer.get(..len).ok_or("DNS length")?)?;
+            let query = request.queries.first().ok_or("DNS question")?;
+            let mut response = Message::response(request.metadata.id, request.metadata.op_code);
+            response.metadata.authoritative = true;
+            response.metadata.recursion_available = true;
+            response.queries = request.queries.clone();
+            if query.query_type() == RecordType::SRV
+                && query.name().to_utf8().starts_with("_kerberos-adm.")
+            {
+                response.answers.push(Record::from_rdata(
+                    query.name().clone(),
+                    60,
+                    RData::SRV(SRV::new(0, 0, 749, Name::from_ascii("admin.test.gokrb5.")?)),
+                ));
+            }
+            if query.query_type() == RecordType::A {
+                response.answers.push(Record::from_rdata(
+                    query.name().clone(),
+                    60,
+                    RData::A(A::new(127, 0, 0, 1)),
+                ));
+            }
+            let _: usize = socket.send_to(&response.to_vec()?, peer).await?;
+        }
+    }
 
     /// Library transport discovery must not read process environment overrides.
     #[test]

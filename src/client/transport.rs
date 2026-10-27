@@ -1839,9 +1839,12 @@ impl Tokio {
             Ok(_) | Err(_) => {}
         }
 
-        let endpoints = self
+        let mut endpoints = self
             .discover_srv_endpoints("_kerberos-adm", realm, protocol)
             .await?;
+        for endpoint in &mut endpoints {
+            endpoint.port = 464;
+        }
         if endpoints.is_empty() {
             Err(Error::NoKdcEndpoints {
                 realm: realm.to_owned(),
