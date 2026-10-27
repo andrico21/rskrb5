@@ -901,3 +901,14 @@ responses `version` is `CHANGE_PASSWORD_REQUEST_VERSION` (0xff80),
 preserves this bare profile. Legacy version-1 error replies remain framed;
 callers constructing responders can select the profile through `version`.
 Neither error form authenticates a success result.
+
+High-level password changes now reject invalid KRB-PRIV response controls with
+`error::Client::KpasswdReplyControl`. If AP-REP negotiates a server sequence,
+the result must carry that sequence (not the client's starting sequence).
+Otherwise a timestamp/usec pair is required. Supplied times must be whole-second
+KerberosTime plus 0..=999999 microseconds and within 300 seconds of the request
+metadata. `RequestOptions::recipient_address`, when present, pins the response
+sender; absent that option, the sender must have valid IPv4/IPv6 encoding but
+is not bound to the transport endpoint. A supplied response recipient must
+match `RequestOptions::sender_address`. Raw `Reply::decrypt_result` remains a
+decryption-only API with no contextual freshness/address claim.

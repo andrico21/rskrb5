@@ -413,6 +413,82 @@ TEST.GOKRB5 = {{
         Ok(())
     }
 
+    /// Rejects authenticated replies whose protected control fields are invalid.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn kpasswd_rejects_invalid_protected_controls() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            for mode in 0_u8..6 {
+                // Given a real authenticated reply with one invalid protected control.
+                let tgt = sample_tgt_session()?;
+                let ticket = current_changepw_ticket(&tgt)?;
+                let key = ticket.session_key.clone();
+                let listener = TcpListener::bind("127.0.0.1:0").await?;
+                let addr = listener.local_addr()?;
+                let mut client = Tokio::from_tgt_session(
+                    config_with_kpasswd_server(&addr.to_string())?,
+                    KdcProtocol::Tcp,
+                    tgt,
+                );
+                client.cache_service_ticket(ticket);
+                let task = tokio::spawn(async move {
+                    let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                    let parsed = KpasswdRequest::parse(&request)?;
+                    let (authenticator, _data) = decrypt_change_data(&parsed, &key)?;
+                    let response = kpasswd_success_reply_with_ap_rep_subkey(
+                        &authenticator,
+                        &key,
+                        &key,
+                        KPASSWD_SUCCESS,
+                        "changed",
+                    )?;
+                    let mut reply = KpasswdReply::parse(&response)?;
+                    let mut part =
+                        decrypt_krb_priv_enc_part(reply.krb_priv.as_ref().context("priv")?, &key)?;
+                    part.seq_number = Some(99);
+                    match mode {
+                        0 => part.seq_number = None,
+                        1 => part.seq_number = Some(999),
+                        2 => part.sender_address = ipv4_host_address([127, 0, 0, 9]),
+                        3 => part.recipient_address = Some(ipv4_host_address([127, 0, 0, 9])),
+                        4 => {
+                            part.timestamp = Some(kerberos_time(1_893_550_000)?);
+                            part.usec = Some(Integer::from(0_i32));
+                        }
+                        _ => part.usec = Some(Integer::from(1_000_000_i32)),
+                    }
+                    let plaintext = der::encode(&part)?;
+                    let cipher = AesSha1Etype::Aes256.encrypt_message_with_confounder(
+                        &key.value,
+                        &plaintext,
+                        KRB_PRIV_ENCPART_USAGE,
+                        &decode_hex(PREAUTH_CONFOUNDER)?,
+                    )?;
+                    reply.krb_priv.as_mut().context("priv")?.enc_part.cipher = cipher.into();
+                    write_tcp_kdc_response(&mut socket, &reply.encode()?).await?;
+                    Ok::<(), TestError>(())
+                });
+                // When the high-level mutation consumes the response.
+                let result = client
+                    .change_password_with_options(
+                        b"newpassword",
+                        RequestOptions::new(
+                            timestamp(1_893_553_452)?,
+                            456_789,
+                            42,
+                            ipv4_host_address([127, 0, 0, 1]),
+                        )
+                        .with_recipient_address(ipv4_host_address([127, 0, 0, 1])),
+                    )
+                    .await;
+                task.await??;
+                // Then no invalid authenticated result is accepted.
+                assert!(result.is_err(), "invalid control mode {mode} was accepted");
+            }
+            Ok(())
+        })
+    }
+
     /// Pins that the Tokio client sends the explicit target principal and new password to kpasswd.
     #[cfg(feature = "tokio")]
     #[test]

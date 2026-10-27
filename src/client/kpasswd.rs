@@ -267,3 +267,77 @@ pub fn verify_kpasswd_ap_rep(
         sequence_number: enc_part.seq_number,
     }))
 }
+
+/// Consume the result only after validating the authenticated response controls.
+///
+/// # Errors
+///
+/// Returns protocol/decryption errors or [`Error::KpasswdReplyControl`] for an
+/// invalid sequence, time pair or address. A configured request recipient pins
+/// the response sender; otherwise only IPv4/IPv6 address shape is enforced.
+#[cfg(feature = "tokio")]
+pub(super) fn validated_result(
+    reply: &kadmin::Reply,
+    request: &BuiltKpasswdRequest,
+    options: &RequestOptions,
+) -> Result<kadmin::ChangePasswordResult, Error> {
+    let Some(verified) = verify_kpasswd_ap_rep(reply, request)? else {
+        return reply
+            .decrypt_result(&request.reply_key)
+            .map_err(Error::from);
+    };
+    let key = verified.subkey.as_ref().unwrap_or(&request.reply_key);
+    let part = kadmin::decrypt_krb_priv_enc_part(
+        reply
+            .krb_priv
+            .as_ref()
+            .ok_or(Error::KpasswdReplyControl("missing KRB-PRIV"))?,
+        key,
+    )?;
+    if let Some(expected) = verified.sequence_number
+        && part.seq_number != Some(expected)
+    {
+        return Err(Error::KpasswdReplyControl("sequence"));
+    }
+    match (&part.timestamp, &part.usec) {
+        (Some(time), Some(usec)) => {
+            let micros = integer_to_u32("krb-priv.usec", usec)?;
+            if micros > 999_999 || time.0.timestamp_subsec_nanos() != 0 {
+                return Err(Error::KpasswdReplyControl("time range"));
+            }
+            let actual = system_time_from_kerberos_time(time)?
+                .checked_add(Duration::from_micros(u64::from(micros)))
+                .ok_or(Error::TimeOverflow)?;
+            let expected = options
+                .timestamp
+                .checked_add(Duration::from_micros(u64::from(options.cusec)))
+                .ok_or(Error::TimeOverflow)?;
+            let skew = actual
+                .duration_since(expected)
+                .unwrap_or_else(|error| error.duration());
+            if skew > Duration::from_secs(300) {
+                return Err(Error::KpasswdReplyControl("stale timestamp"));
+            }
+        }
+        (None, None) if verified.sequence_number.is_some() => {}
+        (Some(_) | None, None) | (None, Some(_)) => {
+            return Err(Error::KpasswdReplyControl("missing freshness"));
+        }
+    }
+    let address = &part.sender_address;
+    if !matches!(
+        (address.addr_type, address.address.len()),
+        (2_i32, 4) | (24_i32, 16)
+    ) || options
+        .recipient_address
+        .as_ref()
+        .is_some_and(|expected| expected != address)
+        || part
+            .recipient_address
+            .as_ref()
+            .is_some_and(|actual| actual != &options.sender_address)
+    {
+        return Err(Error::KpasswdReplyControl("address"));
+    }
+    kadmin::ChangePasswordResult::parse(part.user_data.as_ref()).map_err(Error::from)
+}

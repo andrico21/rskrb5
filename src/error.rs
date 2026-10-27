@@ -370,6 +370,9 @@ pub enum Client {
     /// A successful kpasswd reply did not contain AP-REP.
     #[error("kpasswd reply does not contain AP-REP")]
     MissingKpasswdApRep,
+    /// An authenticated kpasswd response violated its contextual control policy.
+    #[error("invalid kpasswd response control: {0}")]
+    KpasswdReplyControl(&'static str),
     /// A kpasswd AP-REP did not echo the AP-REQ authenticator timestamp.
     #[error("kpasswd AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
     KpasswdApRepTimestampMismatch {
