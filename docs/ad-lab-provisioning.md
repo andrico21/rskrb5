@@ -91,10 +91,10 @@ both UDP and TCP `88` from the runner to each KDC. Admin endpoint values are
 required for the config and CI secrets. Their TCP `464` reachability is checked
 only when `TEST_AD_CHECK_ADMIN_REACHABILITY=1`.
 
-The default GitHub Actions gate runs on GitHub-hosted `ubuntu-latest`, so the
-KDC endpoints must be reachable from GitHub-hosted runners. Private lab
-addresses need a tunnel or a workflow change back to a self-hosted runner near
-the lab.
+rskrb5-ng's CI has no AD job. The upstream gate ran on GitHub-hosted
+`ubuntu-latest`; a restored hosted job needs KDC endpoints reachable from
+GitHub-hosted runners, and private lab addresses need a tunnel or a
+self-hosted runner near the lab.
 
 Keep the runner, USER domain controller, and RES domain controller clocks within
 normal Kerberos skew tolerance.

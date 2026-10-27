@@ -13,7 +13,7 @@ release, `0.3.0`, is integrated on `release/0.3.0`: it merges
 `chore/deps-refresh` (`4142dce`) and the 8 medium/low branches below at their
 tips after the review corrections, cherry-picks the replay correction
 (`b7fb459` as `a1ace38`), and adopts the strictest lint profile
-([`../lint-policy.md`](../lint-policy.md)). All 14 confirmed findings are
+([`../lint-policy.md`](../../lint-policy.md)). All 14 confirmed findings are
 implemented, and each has an open upstream PR against `clelange/rskrb5`
 (`#20`-`#29`). The master checklist, with every follow-up and the open items,
 is [`CHECKLIST.md`](CHECKLIST.md).

@@ -1,62 +1,107 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - unreleased
 
-### Lint tooling
+The first release as `rskrb5-ng` (library `rskrb5_ng`), which continues
+`rskrb5` independently from upstream `clelange/rskrb5` `main` at `6f4abc9`.
+Changes are listed against `rskrb5-patched` 0.2.2, the last published
+version; they include everything prepared for an `rskrb5-patched` 0.3.0 that
+was never published. Upgrade steps, with every renamed path and changed
+signature, are in
+[`docs/migration-from-rskrb5-patched.md`](docs/migration-from-rskrb5-patched.md);
+the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
-- Removed the transition baseline machinery: the empty `lint-migration:`
-  baseline and its gates (`baseline_gate.py`, `generate_baseline.py`,
-  `closure_report.py`, `clean-paths.txt`) are deleted with
-  `scripts/lint-ratchet/`. The remaining gates live in `scripts/lint-gates/`,
-  joined by `exception_gate.py`, which admits only the six sanctioned
-  `expect` forms. `docs/lint-policy.md` replaces `docs/lint-baseline.md`.
-- CI runs strict clippy and the tests in every feature closure (a static
-  36-leg `closures` matrix held equal to `feature_closures.py list` by
-  `feature_closures.py check-ci`), clippy on Windows and a build of every fuzz
-  target; the K1-K7 `features-matrix` and the `release/**` trigger are gone.
-  `prek.toml` mirrors the fast jobs plus a three-closure smoke.
+### Crate, library and repository
 
-## [0.3.0] - 2026-10-24
+- The package is `rskrb5-ng` (was `rskrb5-patched`) and the library
+  `rskrb5_ng` (was `rskrb5`): depend on `rskrb5-ng = "0.3"` and replace
+  `use rskrb5::` with `use rskrb5_ng::`.
+- The compatibility-report binary is `rskrb5-ng-compat-report` and the fuzz
+  crate `rskrb5-ng-fuzz`.
+- The repository is `https://github.com/andrico21/rskrb5-ng`, a standalone
+  repository (the old `andrico21/rskrb5` URL redirects there).
 
-Patched fork of `rskrb5`, still based on upstream `clelange/rskrb5` `main` at
-`6f4abc9`, adding the changes below on top of the 0.2.2 set. They close the
-medium and low findings of the second audit run; the detailed plans live in
-`docs/fix-plans/`. See `FORK-NOTES.md` for the upstream references and the
-retirement trigger.
+### API
+
+These are breaking; the migration guide maps each one.
+
+- Public structs and enums are `#[non_exhaustive]` and gain constructors or
+  `with_*` builders; struct literals no longer compile outside the crate.
+- The module-local error types move into the new `error` module
+  (`client::Error` is `error::Client`, the crate-level `Error` is
+  `error::Any`, and so on); the old paths are private.
+- Module-repeating names are dropped (`ap_req::build_ap_req` is
+  `ap_req::build`, `service::ServiceValidator` is `service::Validator`,
+  `client::TokioClient` is `client::Tokio`), and items move to new public
+  modules (`client::{kpasswd, negotiate, options, principal, transport}`,
+  `spnego::oid`, `evaluation::data`). The crate-root re-exports `Principal`,
+  `TokioClient`, `NegotiateClient`, `BlockingNegotiateClient`, `Config` and
+  `ServiceValidator` keep their names.
+- `config::LibDefaults` stores enctype names only:
+  `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and
+  `permitted_enctype_ids` are methods that derive the ids, and the
+  `with_*_enctype_ids` builders are replaced by `with_*_enctypes`. Its
+  thirteen boolean options use `config::Toggle`, and the new `allow_rc4` and
+  `allow_des3` options join them.
+- `config::Realm::realm` is `name`. Several functions borrow their option
+  structs, group arguments into parameter structs
+  (`client::TgsRequestParts`, `kadmin::PasswordEncryption`) or become
+  associated functions; argument-position `impl Trait` becomes a named
+  generic; many functions gain `#[must_use]` or become `const fn`.
+- New error variants, among them `error::Client::{EnctypeNotRequested,
+  EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
+  DnsServiceUnavailable}`, `error::Config::{EnctypeNotPermitted,
+  NoPermittedEnctypes, UnsupportedEnctype, EnctypeDisabled}`,
+  `error::Kadmin::UnauthenticatedSuccess`,
+  `error::Ccache::IdentityUnavailable` and
+  `http::NegotiateHttpError::MutualAuthenticationNotProven`.
+  `http::NegotiateHttpError<E>` becomes `NegotiateHttpError<E, B>`, where `B`
+  is the response body type the new variant carries.
+- New public fields: `LibDefaults.permitted_enctypes_explicit` and
+  `InitiatorContext.context_flags`.
+
+### Dependencies and toolchain
+
+- `rust-version` is 1.99 (was 1.88).
+- Every direct dependency is on its latest major version: `base64` 0.23,
+  `getrandom` 0.4, `rasn` and `rasn-kerberos` 0.29, `compcol` 0.7,
+  `picky-krb` 0.13 (optional, `evaluation`), dev `toml` 1.1, and `pbkdf2`
+  0.13 instead of the `=0.13.0-rc.10` pre-release pin. `proptest` is a new
+  dev-dependency. No runtime dependency was added.
+
+### Behaviour changes
 
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so
-  a short malformed cache returns `Error::Truncated` instead of aborting the
-  process on a multi-GB allocation.
+  a short malformed cache returns `error::Ccache::Truncated` instead of
+  aborting the process on a multi-GB allocation.
 - kpasswd: a success result is accepted only with authenticated provenance. An
   unsigned KRB-ERROR reply carrying result code 0 is rejected with
-  `kadmin::Error::UnauthenticatedSuccess`, and the high-level client keeps its
-  stored password; non-zero error results keep their `PasswordChangeFailed`
-  behaviour.
+  `error::Kadmin::UnauthenticatedSuccess`, and the high-level client keeps
+  its stored password; non-zero error results keep their
+  `PasswordChangeFailed` behaviour.
 - `[libdefaults] permitted_enctypes` is an enctype allowlist when it's set
   explicitly: request lists are narrowed to it and the config-driven AS/TGS
   exchanges reject a session key outside it
-  (`client::Error::EnctypeNotPermitted`). An explicit `default_tkt_enctypes`
+  (`error::Client::EnctypeNotPermitted`). An explicit `default_tkt_enctypes`
   or `default_tgs_enctypes` naming an enctype outside an explicit allowlist is
-  a parse error (`config::Error::EnctypeNotPermitted`) rather than a silent
+  a parse error (`error::Config::EnctypeNotPermitted`) rather than a silent
   narrowing, checked once on the final values across included files. The
-  seeded default list changes nothing, and the explicit flag
-  (`LibDefaults.permitted_enctypes_explicit`) survives a serde round-trip.
+  explicit flag (`LibDefaults.permitted_enctypes_explicit`) survives a serde
+  round-trip.
 - An explicit allowlist fails closed when it resolves to no supported enctype:
-  a parsed `permitted_enctypes` naming only unsupported names (or only weak
-  ones without `allow_weak_crypto`) is a parse error
-  (`config::Error::NoPermittedEnctypes`) instead of meaning "no policy", and a
-  hand-built `LibDefaults` with the explicit flag and an empty
-  `permitted_enctype_ids` requests no enctype (`client::Error::EmptyEtypes`)
-  and rejects every session key (`client::Error::EnctypeNotPermitted`).
+  a parsed `permitted_enctypes` naming only unsupported or disabled names is a
+  parse error (`error::Config::NoPermittedEnctypes`) instead of meaning "no
+  policy", and a `LibDefaults` built with the explicit flag and an empty
+  `permitted_enctypes` list requests no enctype
+  (`error::Client::EmptyEtypes`) and rejects every session key
+  (`error::Client::EnctypeNotPermitted`).
 - MIT's DES3 names `des3-cbc-sha1` and `des3-hmac-sha1` resolve to enctype 16
-  like `des3-cbc-sha1-kd`, so an explicit list using them is honoured (or
-  rejected against an explicit allowlist) instead of silently dropping DES3.
-  The seeded default list no longer names `des3-cbc-sha1` (gokrb5's
-  unimplemented etype 7), so the defaults still request 18, 17 and 23 only.
+  like `des3-cbc-sha1-kd`, so an explicit list using them is honoured (subject
+  to `allow_des3`, below) instead of silently dropping DES3.
 - AS and TGS replies are bound to the requested enctype list: the AS-REP reply
   key enctype and the AS/TGS session-key enctype must appear in the request's
-  `etype` list, otherwise `client::Error::EnctypeNotRequested`.
+  `etype` list, otherwise `error::Client::EnctypeNotRequested`.
 - The TGT refresh band is measured from the current ticket life
   (`end_time - start_time`) instead of `auth_time`, so a just-renewed TGT is no
   longer immediately due.
@@ -71,7 +116,7 @@ retirement trigger.
   cached service ticket. Service names, realms and `Principal::parse_service`
   keep their case.
 - `[libdefaults] clockskew` reaches the `Config`-driven acceptors
-  (`ServiceValidator::from_default_keytab_name`/`from_default_keytab`,
+  (`service::Validator::from_default_keytab_name`/`from_default_keytab`,
   `NegotiateLayer::from_default_keytab_name`/`from_default_keytab`). The plain
   constructors keep the 300 s default.
 - `[domain_realm]` lookups fold the DNS name to lower case (realm values stay
@@ -88,11 +133,8 @@ retirement trigger.
   ciphertext, so an authenticator re-presented under a rewritten cleartext
   ticket `sname` (for example a keytab alias sharing the service key) is
   rejected (clelange/rskrb5 PR #20, updated).
-- Lockfile refreshed to the latest Rust 1.99-compatible dependency versions
-  (`crossbeam-epoch` 0.9.18 to 0.9.21 and `crypto-bigint` 0.7.6 to 0.7.8
-  among them).
 
-### Behaviour changes from the review
+#### From the review backlog
 
 Each fixed review item with an observable behaviour change, by area. The
 dispositions, tests and commits are indexed in `docs/review/README.md`.
@@ -315,75 +357,59 @@ Release workflow, CI docs and fixture scripts:
   `RSKRB5_INTEGRATION_ENV_FILE` is replaced by `RSKRB5_INTEGRATION_ENV_DIR`
   (RSK-A8D595D8).
 
-### Breaking
+### Lint compliance
 
-- New enum variants on exhaustive enums: `client::Error::EnctypeNotRequested`,
-  `client::Error::EnctypeNotPermitted`, `config::Error::EnctypeNotPermitted`,
-  `config::Error::NoPermittedEnctypes`,
-  `kadmin::Error::UnauthenticatedSuccess` and
-  `http::NegotiateHttpError::MutualAuthenticationNotProven`.
-- `http::NegotiateHttpError<E>` becomes `NegotiateHttpError<E, B>`, where `B`
-  is the response body type carried by the new variant.
-- New public fields on constructible structs:
-  `LibDefaults.permitted_enctypes_explicit` and
-  `InitiatorContext.context_flags`.
-- Lint pass on fork-only API: `client::TgsFastRequestParts` is
-  `#[non_exhaustive]`, and `build_tgs_req_for_realm_with_subkey` and
-  `build_tgs_req_for_realm_with_confounder_and_subkey` take a generic
-  `R: Into<String>` realm instead of `impl Into<String>` (ordinary calls
-  compile unchanged).
-- Behaviour: an unsigned kpasswd success is rejected; a KDC reply or session
-  key outside the requested (or explicitly permitted) enctypes is rejected,
-  and so is a config whose explicit request list falls outside an explicit
-  `permitted_enctypes`, or whose explicit `permitted_enctypes` names no
-  supported enctype; `des3-cbc-sha1` and `des3-hmac-sha1` now mean enctype
-  16; host-based SPNs carry a lower-cased host; and the send
-  wrappers return an error when requested mutual authentication isn't proven.
-
-### Lint profile, rules and tooling
-
-- The crate adopts the core Section 9 lint profile of the vendored Rust
-  guidelines (equal to rmcp-server-kit `b7f6b66`), with `clippy.toml`,
-  `.cargo/config.toml` (`build.warnings = "deny"`) and no `allow` attributes.
-  Upstream code keeps its existing violations as generated, item-level
-  `lint-migration:` expectations listed in a generated baseline manifest
-  (7,396 at adoption, 6,514 now), which can only shrink. Fork code passes the
-  profile outright. Gates: fork-lines (differential diagnostics), prose (the
-  core's non-lint rules), baseline ratchet, profile equality, profile
-  completeness and allow. See `docs/lint-policy.md` (the baseline is gone).
-- CI floats on `stable`; rustfmt and the second rustdoc run use
-  `nightly-2026-10-03` with rmcp-server-kit's `rustfmt.toml`.
-- **Breaking:** `rust-version` is raised from 1.88 to 1.99. The lockfile holds
-  the latest Rust 1.99-compatible versions, and `proptest` is a new
-  dev-dependency.
-- The universal Rust guidelines are vendored at `docs/rust-guidelines/`
-  (pinned and checksummed) with the `RUST_GUIDELINES.md` index, which names
-  the pin.
-- **Breaking** for configs that relied on silent narrowing: an explicit
-  `default_tkt_enctypes` or `default_tgs_enctypes` naming an enctype outside an
-  explicit `permitted_enctypes` is a parse error
-  (`config::Error::EnctypeNotPermitted`).
-- The fuzz crate depends on the renamed package key, and a `ccache_parse`
-  fuzz target joins `kpasswd_reply`; ccache and config property tests run with
-  `proptest`. The release workflow publishes with `--locked`.
-- CI jobs added: an OS matrix (Linux, macOS, Windows), i686 (check and the
-  ccache tests), MSRV (1.99.0), a K1 to K7 feature matrix, lib-only checks of
-  the `messages`, `spnego`, `http` and `evaluation` feature sets and the
-  compatibility-report binary, the README commands, `cargo deny`, `cargo audit`, `cargo vet`,
-  `cargo machete`, `cargo semver-checks`, `taplo`, publish dry-run, a
-  path-dependency consumer build, docs-validate (guideline checksums and an
-  offline link check), lint-gates, fork-lines and package. Geiger, a floating
-  nightly rustdoc canary, mutants and fuzz stay advisory. The prek hooks mirror
-  the fast gates.
+- The crate passes the core Section 9 lint profile of the vendored Rust
+  guidelines unchanged, with `clippy.toml`, `rustfmt.toml` and
+  `.cargo/config.toml` (`build.warnings = "deny"`). There is no baseline, no
+  `allow` attribute and no `unsafe` code; the only `expect` attributes are
+  the six sanctioned forms in `docs/lint-policy.md`.
+- Every feature closure (36, computed from `[features]`) passes
+  `cargo clippy --all-targets -- -D warnings` and its tests, and clippy is
+  clean on Windows.
+- The core's non-lint rules apply to the whole tree: cancel-safety sections
+  on async functions (`NOT cancel-safe` on credential-mutating ones), test
+  docs, `Result`-returning tests, Drop audits and emptiness messages.
 - The tests set environment variables in a child test process instead of
-  through `unsafe` `set_var`, and the shared test helpers are split by use
-  under `tests/support/`.
+  through `unsafe` `set_var`; shared test helpers live under
+  `tests/support/`.
+- The universal Rust guidelines and the project overlay are vendored at
+  `docs/rust-guidelines/` (pinned and checksummed), indexed by
+  `RUST_GUIDELINES.md`.
+
+### Fuzzing, tests and CI
+
+- Twelve `cargo fuzz` targets cover every attacker-facing parser
+  (`kpasswd_reply`, `ccache_parse`, `keytab_parse`, `pac_parse`,
+  `spnego_token`, `gss_token`, `kdc_reply`, `krb5_conf`, `der_oid`,
+  `krb_messages`, `name_parse`, `http_negotiate`), seeded from the test
+  fixtures; `docs/review/fuzz.md` maps each parser to its target. Ccache and
+  config property tests run with `proptest`, including a ccache
+  serialization round-trip.
+- CI runs on floating stable: rustfmt (`nightly-2026-10-03`), strict clippy
+  and the tests in each of the 36 feature closures (`closures`, held equal to
+  `feature_closures.py list`), clippy on Windows, library-only feature sets,
+  the README commands, the test suite on Linux, macOS and Windows, i686,
+  rustdoc on stable and nightly, MSRV 1.99.0, `cargo semver-checks` once a
+  published `rskrb5-ng` baseline exists, a publish dry run, a path-dependency
+  consumer build, `cargo deny`, `cargo audit`, `cargo vet`, `cargo machete`,
+  `taplo`, an offline link check with the guideline checksums, the lint gates,
+  a build of every fuzz target and `cargo package`. Advisory: `geiger`, a
+  floating-nightly rustdoc canary, and on schedule or dispatch the
+  whole-crate mutants run in eight shards and 300 s of fuzzing per target.
+- The `Release` workflow publishes only a `vN.N.N` tag on a CI-green commit
+  of `main`, after the owner approves the `release` environment
+  (`docs/RELEASING.md`).
+- The Docker MIT KDC and Active Directory integration gates run locally with
+  `scripts/run-gated-integration.sh`; the upstream workflow-dispatch jobs
+  aren't part of this CI, and `docs/gokrb5-parity.toml` records their upstream
+  runs as historical evidence.
 
 ## [0.2.2] - 2026-10-07
 
 Patched fork of `rskrb5`, still based on upstream `clelange/rskrb5` `main` at
-`6f4abc9`, adding the changes below on top of the 0.2.1 set. See
-`FORK-NOTES.md` for the upstream references and the retirement trigger.
+`6f4abc9`, adding the changes below on top of the 0.2.1 set. The upstream
+references are in `PROVENANCE.md` (formerly `FORK-NOTES.md`).
 
 - AP-REQ replay identity is canonicalized over the advisory name-type: a
   name-type-only replay of a captured AP-REQ is rejected, and the replay key
@@ -398,15 +424,14 @@ Patched fork of `rskrb5`, still based on upstream `clelange/rskrb5` `main` at
   preserved), plus a pinning extension for the `Auto` fallback (Gittingc0dez
   stacked PR #1).
 - Documentation: detailed fix plans for the remaining audit findings live in
-  `docs/fix-plans/` (excluded from packaging).
+  `docs/fix-plans/` (now `docs/history/fix-plans/`, excluded from packaging).
 
 ## [0.2.1] - 2026-10-06
 
 Patched fork of `rskrb5`, based on upstream `clelange/rskrb5` `main` at
 `6f4abc9` plus the changes below - published as `rskrb5-patched` so consumers
 can depend on a registry version that carries them while they wait upstream.
-See `FORK-NOTES.md` for the change list, the upstream references and the
-retirement trigger.
+The upstream references are in `PROVENANCE.md` (formerly `FORK-NOTES.md`).
 
 - Clippy lints reported by Rust 1.98 (PR #15).
 - `hex` as a dev-dependency so the crate's own integration tests build

@@ -18,16 +18,16 @@ required for `gokrb5/v8` parity.
 |---|---|---|
 | krb5.conf configuration | covered | Keep translated config tests current. |
 | Keytab parsing, writing, and lookup | covered | Keep keytab fixture tests current. |
-| Credential cache parsing, writing, and collection names | covered-with-gated-evidence | Keep privileged `kinit`/`kvno` ccache coverage green in Linux CI. |
+| Credential cache parsing, writing, and collection names | covered-with-gated-evidence | The privileged `kinit`/`kvno` gate has upstream evidence only; run it locally before a release; CI has no Docker job. |
 | Kerberos cryptography | covered | Keep RFC/gokrb5 vectors current. |
 | ASN.1 and Kerberos message wrappers | covered | Keep fixture matrix current. |
-| RFC 3244 password change | covered-with-gated-evidence | Keep `TEST_KPASSWD=1` green in Linux CI. |
-| AS/TGS client flows | covered-with-gated-evidence | Keep the full Linux Docker MIT gate green. |
-| AP-REQ/AP-REP service validation | covered-with-gated-evidence | Keep Linux Docker HTTP/SPNEGO service coverage green. |
-| GSSAPI, SPNEGO, and HTTP Negotiate tokens | covered-with-gated-evidence | Keep HTTP wrapper tests and Docker SPNEGO integration green. |
+| RFC 3244 password change | covered-with-gated-evidence | The `TEST_KPASSWD=1` gate has upstream evidence only; run it locally before a release; CI has no Docker job. |
+| AS/TGS client flows | covered-with-gated-evidence | The full Docker MIT gate has upstream evidence only; run it locally before a release; CI has no Docker job. |
+| AP-REQ/AP-REP service validation | covered-with-gated-evidence | The Docker HTTP/SPNEGO gate has upstream evidence only; run it locally before a release; CI has no Docker job. |
+| GSSAPI, SPNEGO, and HTTP Negotiate tokens | covered-with-gated-evidence | The HTTP wrapper tests run in CI (`test`); the Docker SPNEGO gate has upstream evidence only. |
 | PAC and NDR parsing | covered-needs-ad-evidence | Run `TESTAD=1` against a maintained AD lab. |
-| Docker MIT KDC integration fixtures | covered-with-gated-evidence | Keep workflow-dispatched Docker-backed integration green. |
-| Active Directory integration | blocked-on-lab | Deferred for 0.2.0 until reachable USER/RESOURCE AD endpoints are available; keep the dry-run evidence green and do not claim AD parity. |
+| Docker MIT KDC integration fixtures | covered-with-gated-evidence | Run `scripts/run-gated-integration.sh` locally; the upstream workflow-dispatch job isn't part of this CI. |
+| Active Directory integration | blocked-on-lab | Blocked until reachable USER/RESOURCE AD endpoints exist; do not claim AD parity. |
 | Out-of-scope non-gokrb5 platform features | intentionally-out-of-scope | Keep typed unsupported-store errors and do not block parity on these. |
 
 Intentional divergences from the gokrb5 baseline are recorded as they land:
@@ -141,43 +141,82 @@ Intentional divergences from the gokrb5 baseline are recorded as they land:
   `credentials.parseCredential`) and slices the input without bounds checks
   (`credentials.readBytes`), so a malformed cache can panic its parser.
 
+The 0.3.0 review backlog adds the divergences below. Each one is a fix with a
+regression test, indexed in [`review/README.md`](review/README.md); the
+gokrb5 behaviour cited is from the v8.4.4 source.
+
+- **Enctype defaults and unsupported names.** The default enctype lists are
+  AES only; RC4 and DES3 need `[libdefaults] allow_rc4` or `allow_des3`, and
+  an explicit list naming an unsupported or disabled enctype is a parse error
+  (`rskrb5_ng::error::Config::UnsupportedEnctype`,
+  `rskrb5_ng::error::Config::EnctypeDisabled`). gokrb5 v8.4.4 defaults to a
+  list that includes `des3-cbc-sha1` and `arcfour-hmac-md5`
+  (`config.newLibDefaults`) and silently drops names it doesn't support
+  (`config.parseETypes`).
+- **Ticket and authenticator versions, transited policy.** Tickets with
+  `tkt-vno` other than 5 and authenticators with `authenticator-vno` other
+  than 5 are rejected, and a cross-realm ticket without
+  TRANSITED-POLICY-CHECKED is rejected unless a caller-supplied
+  `TransitValidator` accepts its path (RFC 4120 sections 2.7 and 3.3.3.2).
+  gokrb5 v8.4.4 checks neither version field nor the transited encoding
+  outside its tests.
+- **SPNEGO negotiation.** The acceptor takes only a first-choice Kerberos
+  mechanism and fails closed on a non-first offer, a continuation or a
+  mechListMIC (RFC 4178 sections 4 and 5). gokrb5 v8.4.4 marks
+  `MechListMIC` as unused for Kerberos (`spnego/negotiationToken.go`).
+- **Replay cache bounds.** Replay caches have their own skew and a capacity
+  (300 s and 65,536 records by default), expire entries and fail closed when
+  full. gokrb5 v8.4.4 keeps one process-wide map without a capacity
+  (`service.GetReplayCache`).
+- **AES-SHA2 decryption order.** The HMAC is verified before decryption
+  (RFC 8009 section 5). gokrb5 v8.4.4 decrypts first and verifies after
+  (`rfc8009.DecryptMessage`).
+- **KDC transport limits.** KDC TCP framing uses 31-bit lengths and rejects
+  the reserved high bit (RFC 4120 section 7.2.2), and an oversized UDP
+  datagram is `rskrb5_ng::error::Client::UdpResponseTooLarge`. gokrb5 v8.4.4
+  reads a full 32-bit length (`client.sendTCP`) and returns the first 4,096
+  bytes of a UDP reply as the response (`client.sendUDP`).
+- **kpasswd retries.** Once a kpasswd request may have been delivered, the
+  client never retries it on another endpoint or protocol and returns
+  `rskrb5_ng::error::Client::KpasswdOutcomeUnknown`. gokrb5 v8.4.4 moves to
+  the next server after any send or receive error (`client.dialSendUDP`,
+  `client.dialSendTCP`, used by `client.Client.sendToKPasswd`).
+
 ## Parity Gates
 
-These gates are the release and parity proof points for gokrb5 behavior.
-`required_for_release` means the gate should stay green before the next breaking
-preview release unless the release notes explicitly call it out as skipped.
+These gates are the parity proof points for gokrb5 behaviour. The CI workflow
+of this repository has no Docker integration job and no Active Directory job
+([`gated-integration.md`](gated-integration.md)), so the five Docker MIT gates
+have the status `historical-upstream`: their only green runs are GitHub
+Actions runs of the upstream `clelange/rskrb5` workflow, attributed as such in
+[`gokrb5-parity.toml`](gokrb5-parity.toml). They are not
+`required_for_release`; run them locally with the command shown before a
+release that touches the code they prove.
 
-| Gate | Status | Proves | Command or blocker | Next action |
+| Gate | Status | Proves | Command | Evidence and next action |
 |---|---|---|---|---|
-| Full Linux Docker MIT integration | proven | docker-mit, client, service, ccache | `scripts/run-gated-integration.sh run --test client_integration` | GitHub Actions run `28073249506` passed 40 Docker MIT `client_integration` tests on `ubuntu-latest`; keep this gate green. |
-| Linux Docker MIT password-change integration | proven | kadmin-kpasswd, client | `TEST_KPASSWD=1 scripts/run-gated-integration.sh run --test client_integration` | GitHub Actions run `28073249506` passed `docker_mit_kdc_tokio_client_change_password`; keep this gate green. |
-| Linux Docker DNS-SRV KDC discovery | proven | docker-mit, client | `TEST_DNS_KDC=1 scripts/run-gated-integration.sh run --test client_integration docker_mit_kdc_dns_srv_as_login -- --nocapture` | GitHub Actions run `28073249506` passed `docker_mit_kdc_dns_srv_as_login`; keep this gate green. |
-| Linux Docker privileged external ccache | proven | ccache, client | `TESTPRIVILEGED=1 scripts/run-gated-integration.sh run --test client_integration` | GitHub Actions run `28073249506` passed external `kinit` and `kvno` ccache tests; keep this gate green. |
-| Linux Docker HTTP SPNEGO service integration | proven | service, gssapi-spnego, client | `scripts/run-gated-integration.sh run --test client_integration docker_mit_kdc_spnego_header_authenticates_to_docker_http -- --nocapture` | GitHub Actions run `28073249506` passed HTTP SPNEGO, raw KRB5 Negotiate, and replay rejection tests; keep this gate green. |
-| Active Directory TESTAD integration | blocked-on-lab | active-directory, PAC, client, service | GitHub Actions run [`28119806826`](https://github.com/clelange/rskrb5/actions/runs/28119806826) passed the hosted keytab-secret dry-run; strict run [`28117082548`](https://github.com/clelange/rskrb5/actions/runs/28117082548) reached hosted `ubuntu-latest` and decoded the four keytab secrets before failing because the endpoint secrets are absent. | Deferred for 0.2.0; revisit after reachable `TEST_AD_*_ADDR` secrets exist, then run `scripts/check-github-ad-gate.py --dispatch`. |
-| Ready-to-use HTTP Negotiate client wrapper | proven | gssapi-spnego, client | `cargo test --all-features --test http` | Async `send_with_negotiate` and blocking `send_with_blocking_negotiate` retry 401 Negotiate responses through replayable request factories; keep this gate green. |
+| Full Linux Docker MIT integration | historical-upstream | docker-mit, client, service, ccache | `scripts/run-gated-integration.sh run --test client_integration` | Upstream run `28073249506` passed 40 Docker MIT `client_integration` tests on `ubuntu-latest`. Run locally. |
+| Linux Docker MIT password-change integration | historical-upstream | kadmin-kpasswd, client | `TEST_KPASSWD=1 scripts/run-gated-integration.sh run --test client_integration` | Upstream run `28073249506` passed `docker_mit_kdc_tokio_client_change_password`. Run locally. |
+| Linux Docker DNS-SRV KDC discovery | historical-upstream | docker-mit, client | `TEST_DNS_KDC=1 scripts/run-gated-integration.sh run --test client_integration docker_mit_kdc_dns_srv_as_login -- --nocapture` | Upstream run `28073249506` passed `docker_mit_kdc_dns_srv_as_login`. Run locally. |
+| Linux Docker privileged external ccache | historical-upstream | ccache, client | `TESTPRIVILEGED=1 scripts/run-gated-integration.sh run --test client_integration` | Upstream run `28073249506` passed the external `kinit` and `kvno` ccache tests. Run locally. |
+| Linux Docker HTTP SPNEGO service integration | historical-upstream | service, gssapi-spnego, client | `scripts/run-gated-integration.sh run --test client_integration docker_mit_kdc_spnego_header_authenticates_to_docker_http -- --nocapture` | Upstream run `28073249506` passed HTTP SPNEGO, raw KRB5 Negotiate and replay rejection tests. Run locally. |
+| Active Directory TESTAD integration | blocked-on-lab | active-directory, PAC, client, service | `scripts/check-github-ad-gate.py` | Upstream run [`28119806826`](https://github.com/clelange/rskrb5/actions/runs/28119806826) passed the hosted keytab-secret dry-run, and upstream run [`28117082548`](https://github.com/clelange/rskrb5/actions/runs/28117082548) decoded the four keytab secrets before failing on the absent endpoint secrets. There is no hosted AD job here; see [`ad-integration.md`](ad-integration.md). |
+| Ready-to-use HTTP Negotiate client wrapper | proven | gssapi-spnego, client | `cargo test --all-features --test http` | Runs in the CI `test` job. Async `send_with_negotiate` and blocking `send_with_blocking_negotiate` retry 401 Negotiate responses through replayable request factories. |
 
 ## Deferred Blockers
 
-- Active Directory parity remains blocked on reachable endpoint secrets:
+- Active Directory parity remains blocked on reachable endpoints:
   `TEST_AD_USER_KDC_ADDR`, `TEST_AD_RESOURCE_KDC_ADDR`,
-  `TEST_AD_USER_ADMIN_ADDR`, and `TEST_AD_RESOURCE_ADMIN_ADDR`. This is
-  recorded but explicitly not a `0.2.0` release blocker.
-- The current acceptable 0.2.0 evidence is the green hosted keytab-secret
-  dry-run plus static AD keytab fixture coverage. These do not prove Windows AD
-  PAC parity.
+  `TEST_AD_USER_ADMIN_ADDR`, and `TEST_AD_RESOURCE_ADMIN_ADDR`. The evidence
+  so far is the upstream hosted keytab-secret dry-run plus the static AD
+  keytab fixture coverage, which doesn't prove Windows AD PAC parity.
 - Do not add random or placeholder AD endpoint secrets. Endpoint secrets should
-  be set only for real services reachable from the selected runner; otherwise
-  keep using the non-live keytab dry-run.
-
-## Immediate Next Slices
-
-1. Keep the workflow-dispatched Docker MIT gate green with `integration=true`,
-   `test_kpasswd=true`, and `test_ad=false` before the next release.
-2. Prepare release notes for the next breaking preview with the new API surface
-   and the explicitly deferred AD gate called out.
-3. Use [`samba-ad-feasibility.md`](samba-ad-feasibility.md) as a backup spike
-   only; do not treat Samba results as Windows AD parity evidence.
+  be set only for real services reachable from the selected runner.
+- Restoring a hosted Docker or AD gate means adding the job and its
+  `workflow_dispatch` inputs to `ci.yml`;
+  `scripts/check-github-ad-gate.py --dispatch` refuses to dispatch until then.
+- Use [`samba-ad-feasibility.md`](samba-ad-feasibility.md) as a backup spike
+  only; do not treat Samba results as Windows AD parity evidence.
 
 ## Status Values
 
@@ -191,6 +230,8 @@ preview release unless the release notes explicitly call it out as skipped.
 - `needs-live-evidence`: implementation may exist, but current proof is not
   broad enough for a release parity claim.
 - `blocked-on-lab`: code exists, but external infrastructure is required.
+- `historical-upstream`: the gate was captured green only by the upstream
+  `clelange/rskrb5` workflow; this repository's CI doesn't run it.
 - `proven`: the named gate has been captured green on the required platform and
   should stay green before release.
 - `unproven`: the test, fixture, or implementation target is known, but the

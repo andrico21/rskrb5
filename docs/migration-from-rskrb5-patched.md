@@ -1,7 +1,76 @@
 # Migrating from rskrb5-patched
 
-The package is now `rskrb5-ng`; Rust imports use `rskrb5_ng`.
-The version remains 0.3.0. Wire formats and field semantics are unchanged.
+`rskrb5-patched` 0.2.x users move to `rskrb5-ng` 0.3. This guide lists every
+change a caller can see: the new package and library names, renamed paths,
+constructors that replace struct literals, changed signatures and error
+types, new configuration keys and behaviour changes. The full change list is
+the `[0.3.0]` section of `CHANGELOG.md`.
+
+## Dependency and imports
+
+Replace the dependency:
+
+```toml
+[dependencies]
+rskrb5-ng = "0.3"
+```
+
+and the imports: `use rskrb5::...` becomes `use rskrb5_ng::...`, and so does
+every `rskrb5::` path. A manifest that renames the dependency key,
+`rskrb5 = { package = "rskrb5-ng", version = "0.3" }`, keeps the `rskrb5::`
+paths compiling and changes only the package. The features are the same
+(`messages`, `spnego`, `tokio`, `http`, `tower`, `serde`, `evaluation`;
+default `spnego`, `tokio`, `serde`).
+
+`rskrb5-ng` needs Rust 1.99 or newer (`rust-version = "1.99"`; it was 1.88).
+It depends on `rasn` and `rasn-kerberos` 0.29; a caller that passes `rasn`
+values to or from this crate needs the same versions.
+
+## New configuration keys
+
+Two `[libdefaults]` flags gate the legacy enctypes. Both default to false,
+independently of `allow_weak_crypto`:
+
+```text
+[libdefaults]
+    allow_rc4 = true
+    allow_des3 = true
+```
+
+Without them the default enctype lists are AES only, and an explicit
+`default_tkt_enctypes`, `default_tgs_enctypes` or `permitted_enctypes` entry
+naming RC4 or DES3 fails to parse with `error::Config::EnctypeDisabled`. In
+code, set `LibDefaults::allow_rc4` and `LibDefaults::allow_des3` (both
+`config::Toggle`) or use their `with_*` builders. "Derived enctype policy"
+below has the details.
+
+## Behaviour changes before the review backlog
+
+These came with the 0.3 line before the review fixes below; `CHANGELOG.md`
+describes each one.
+
+- A KDC reply or session key outside the requested enctypes fails with
+  `error::Client::EnctypeNotRequested`; with an explicit
+  `permitted_enctypes`, a session key outside it fails with
+  `error::Client::EnctypeNotPermitted`.
+- An explicit `default_tkt_enctypes`/`default_tgs_enctypes` entry outside an
+  explicit `permitted_enctypes` is a parse error
+  (`error::Config::EnctypeNotPermitted`), and an explicit
+  `permitted_enctypes` with no usable enctype is
+  `error::Config::NoPermittedEnctypes`.
+- `des3-cbc-sha1` and `des3-hmac-sha1` mean enctype 16.
+- An unsigned kpasswd success is `error::Kadmin::UnauthenticatedSuccess`.
+- Host-based service principals carry a lower-cased host, and
+  `[domain_realm]` lookups fold case and apply bare tags to subdomains.
+- `[libdefaults] clockskew` reaches the `Config`-driven acceptors.
+- TGT refresh, auto-renewal pacing and AS recovery follow the renewal series
+  in `CHANGELOG.md`.
+- The HTTP send wrappers return
+  `NegotiateHttpError::MutualAuthenticationNotProven` when requested mutual
+  authentication isn't proven; `NegotiateHttpError<E>` is now
+  `NegotiateHttpError<E, B>`.
+- Malformed ccache record counts return `error::Ccache::Truncated` instead of
+  reserving memory.
 
 ## Review backlog behaviour changes
 
@@ -378,6 +447,7 @@ and writable. `Option` builders accept the complete `Option<T>`, including
 | `service::Principal` | `new(realm, name_type, components)` |
 | `ccache::AuthorizationDataEntry` | `new(ad_type, data)` |
 | `ccache::Credential` | `new(client, server, key, times, ticket_flags, ticket)`; `with_is_skey`, `with_addresses`, `with_auth_data`, `with_second_ticket` |
+| `ccache::CredentialTimes` | Existing `Default`; then set the public fields |
 | `keytab::Entry` | `new(principal, timestamp, kvno8, key, kvno)` |
 | `client::BuiltAsReq` | `new(message, der, client, service, nonce)` |
 | `client::BuiltTgsReq` | `new(message, der, client, service, kdc_realm, nonce)` |
@@ -1046,3 +1116,62 @@ let error = Client::PrincipalMismatch {
 assert!(matches!(error, Client::PrincipalMismatch { .. }));
 # }
 ```
+
+## kpasswd-rs
+
+`kpasswd-rs` depends on `rskrb5-patched` 0.2.1 through its vendored tree
+(`crates/kpasswd-rs/Cargo.toml`, `rskrb5 = { version = "0.2.1", package =
+"rskrb5-patched", path = "../../vendor/rskrb5", ... }`). This project makes
+no change to it. A scratch copy of `kpasswd-rs` at `76bc19b`, with only that
+line pointed at `rskrb5-ng` (keeping the `rskrb5` key) and `rasn` and
+`rasn-kerberos` moved to 0.29, fails `cargo check --all-targets` with 114
+distinct errors; the library target alone fails with 37. The edits it needs,
+by group:
+
+- **Manifest.** `rskrb5 = { version = "0.3", package = "rskrb5-ng",
+  default-features = false, features = ["tokio"] }` with a new vendored tree
+  (and `VENDORING.md` updated to match), `rasn` and `rasn-kerberos` 0.29, and
+  a Rust 1.99 toolchain. Keeping the `rskrb5` key leaves the `rskrb5::`
+  paths in place.
+- **Error types** (`error.rs`, `narration.rs` and others): `client::Error`,
+  `config::Error` and `crypto::Error` are `error::Client`, `error::Config`
+  and `error::Crypto`. The `match` in `Error::from_client` needs a wildcard
+  arm because the error enums are non-exhaustive, `ClientPrincipalMismatch`
+  is `PrincipalMismatch`, and the new variants need a mapping; in particular
+  `error::Client::KpasswdOutcomeUnknown` means the password may have changed
+  and must not be reported as a failure.
+- **Moved items:** `client::Principal` is `client::principal::Principal`;
+  `client::{KdcEndpoint, KdcEndpointSource, KdcProtocol}` and
+  `client::TokioKdcTransport` are `client::transport::{KdcEndpoint,
+  KdcEndpointSource, KdcProtocol, Tokio}`; `client::{AsReqOptions,
+  TgsReqOptions}` are `client::options::{AsReq, TgsReq}`;
+  `client::{KpasswdRequestOptions, build_kpasswd_request,
+  verify_kpasswd_ap_rep}` are `client::kpasswd::{RequestOptions,
+  build_kpasswd_request, verify_kpasswd_ap_rep}`;
+  `ap_req::{build_ap_req, decode_ap_req, encode_ap_req}` are
+  `ap_req::{build, decode, encode}`; `kadmin::EncKrbPrivPartOptions` and
+  `kadmin::{ipv4_host_address, ipv6_host_address}` are in `krb_priv`.
+- **Struct literals** (41 sites): `keytab::EncryptionKey`,
+  `ccache::EncryptionKey`, `ccache::Principal`, `ccache::Credential`,
+  `keytab::Entry`, `client::PreauthKeyInfo`, `client::AsRepSession` and
+  `client::KdcError` use the constructors in the construction map above;
+  `ccache::CredentialTimes` starts from `Default`; `config::Realm` comes from
+  parsing a `krb5.conf` snippet; `kadmin::ChangePasswordResult` comes from
+  `ChangePasswordResult::parse`.
+- **`LibDefaults`** (`enctype.rs`): `default_tkt_enctype_ids` and
+  `default_tgs_enctype_ids` are methods (`defaults.default_tkt_enctype_ids()`),
+  and the boolean options are `config::Toggle` (`is_enabled()`,
+  `Toggle::from_bool`). `config::Realm::realm` is `name`.
+- **Crypto:** `AesSha1Etype` and `AesSha2Etype` `confounder_len` and
+  `default_s2kparams` are associated functions
+  (`AesSha1Etype::confounder_len()`).
+- **TGS builder:** `build_tgs_req_for_realm_with_confounder_and_subkey` takes
+  `(tgt, kdc_realm, service, parts)`, with `parts` from
+  `TgsRequestParts::new(options, confounder, subkey).with_timestamp(timestamp,
+  cusec)`.
+- **Behaviour to re-check:** RC4 and DES3 are off unless `allow_rc4` or
+  `allow_des3` is set, `%{uid}`/`%{euid}` in file names work only on Linux,
+  and every change listed under "Review backlog behaviour changes" above.
+
+These are the first-pass compiler errors; fixing them can surface more (for
+example exhaustive matches over other enums that are now non-exhaustive).

@@ -13,9 +13,8 @@ in the same log: STRICT, Windows clippy, FULL-TEST, DOCTEST, stable and nightly
 docs, both nightly format checks, taplo, the workflow YAML parse, every gate
 and the exact-once ID check of this table against the plan.
 The tests read `.github/` and `scripts/` from the repository checkout. Both are
-excluded from (or slated for exclusion from) the package, so these tests need
-the repository, not an extracted crate. Todo 42 should exclude
-`tests/gokrb5_parity_manifest.rs` from the package as well.
+excluded from the package, and so is `tests/gokrb5_parity_manifest.rs`
+(`Cargo.toml` `exclude`), so these tests run only in the repository.
 
 | ID | Status | Tests and commit | Behaviour change for CHANGELOG | Dismissal evidence |
 | --- | --- | --- | --- | --- |
@@ -48,14 +47,23 @@ The commands, payloads and `GET` verifications are in the evidence log.
   Until then, any workflow that a writer pushes to a branch can read the repository secret. The environment gate protects the token only once it is an environment secret.
 - **Historical tags `v0.1.0` to `v0.2.2`** (the `rskrb5-patched` releases). These tags already exist. A manual CI re-run on one of their commits would make `publish` wait for approval. The reviewer rejects that deployment. The job would fail anyway at "Verify crate name and version", because those trees declare `rskrb5-patched`.
 
-## Hand-off: stale CI references in files outside this todo's ownership
+## Stale CI references in other documents (resolved)
 
-These files still describe the upstream dispatch jobs. Todo 38 does not own
-them, so it records them here:
+When this lane closed, other documents still described the upstream dispatch
+jobs. They were brought in line with this repository's CI by the
+documentation todo (42):
 
-- `README.md` lines 146-157: the manual Docker-backed integration job and the `integration`/`test_kpasswd` dispatch inputs. Todo 42 rewrites the README.
-- `docs/gokrb5-parity.md` lines 152-157 and 175-176: the gate table still says `proven`; the manifest now says `historical-upstream`. The table also has the dispatch instructions. Todo 42 updates this file.
-- `docs/ad-integration.md` lines 93, 160-161, 177-196; `docs/publishing.md` line 73; `docs/samba-ad-feasibility.md` line 120: the hosted dispatch gate.
-- `FORK-NOTES.md` lines 63-71: replaced by `PROVENANCE.md` in todo 42.
-- `docs/ad-integration.md` line 210: names the old environment path `target/gated-integration.env`. The path is now `target/gated-integration/gated-integration.env`, and `env` output is redacted.
-- `docs/release-notes.md` lines 10-24 and 106-110: upstream 0.2.0 release notes. These are legitimate history and need only an attribution.
+- `README.md`: the manual Docker-backed integration job and its dispatch
+  inputs are gone; the README points to the local runner and
+  `docs/gated-integration.md`.
+- `docs/gokrb5-parity.md`: the gate table matches the manifest
+  (`historical-upstream` for the five Docker MIT gates) and no longer gives
+  dispatch instructions.
+- `docs/ad-integration.md`, `docs/ad-lab-provisioning.md` and
+  `docs/samba-ad-feasibility.md`: no hosted dispatch gate is described as
+  available, and `docs/ad-integration.md` names the runner's private
+  environment file `target/gated-integration/gated-integration.env`.
+- `FORK-NOTES.md` is replaced by `PROVENANCE.md`.
+- `docs/publishing.md` and `docs/release-notes.md` (upstream history) moved
+  to `docs/history/` with an attribution note; `docs/RELEASING.md` is the
+  release procedure.

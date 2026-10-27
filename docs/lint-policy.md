@@ -152,11 +152,10 @@ new lints. The owner allows the executor to update the shared core. Then:
 
 ## History
 
-The fork's earlier release line carried a generated, shrink-only
-`lint-migration:` baseline for inherited upstream code, with differential and
-ratchet gates.
+The 0.3 line first carried a generated, shrink-only `lint-migration:`
+baseline for inherited upstream code, with differential and ratchet gates.
 The baseline reached zero entries, and the machinery was then deleted. The
 full transition record (the authorized upstream-line rewrites (a) to (p), the
-retired gates and the divergence from the upstream PR branches) is
+removed gates and the divergence from the upstream PR branches) is
 `docs/lint-baseline.md` at commit `856da18`:
 `git show 856da18:docs/lint-baseline.md`.
