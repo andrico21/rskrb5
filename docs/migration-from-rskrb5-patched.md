@@ -228,6 +228,45 @@ Without keys, reply processing returns `error::Client::DelegationKeyRequired`;
 protected ticket/evidence identity mismatches return `DelegationPrincipalMismatch`.
 `TgsReq` and `BuiltTgsReq` carry optional local-only `delegation_keytab` metadata.
 
+### Unknown password-mutation outcome (RSK-14E2755A, RSK-8BBFC1EE)
+
+High-level password mutation exchange and reply-validation failures now return
+`Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
+The classification is conservative and may include failure before delivery.
+It does not mean rejection or rollback: reconcile with a fresh login before
+retrying. Dropping a mutation future returns no error at all; the caller must
+record unknown externally. Confirmed server rejection remains a normal result
+failure. Async Negotiate wrappers preserve this error and the same cancellation
+contract. Transport retry/deadline staging is a separate review item.
+
+### Password plaintext ownership (RSK-471362A3)
+
+Password-specific `ChangePasswdData` Debug now redacts `new_passwd`. High-level
+password copies and owned DER staging buffers use zeroizing owners; immutable
+rasn `OctetString` fields remain dependency-owned residuals (see the review).
+
+### RFC 3244 bare error responses (RSK-3B6BA222)
+
+`kadmin::Reply::parse` also accepts standalone KRB-ERROR responses. For these
+responses `version` is `CHANGE_PASSWORD_REQUEST_VERSION` (0xff80),
+`message_length` is the DER wire length and `ap_rep_length` is zero. `encode`
+preserves this bare profile. Legacy version-1 error replies remain framed;
+callers constructing responders can select the profile through `version`.
+Neither error form authenticates a success result.
+
+### Validated kpasswd response controls (RSK-789A6FBB)
+
+High-level password changes now reject invalid KRB-PRIV response controls with
+`error::Client::KpasswdReplyControl`. If AP-REP negotiates a server sequence,
+the result must carry that sequence (not the client's starting sequence).
+Otherwise a timestamp/usec pair is required. Supplied times must be whole-second
+KerberosTime plus 0..=999999 microseconds and within 300 seconds of the request
+metadata. `RequestOptions::recipient_address`, when present, pins the response
+sender; absent that option, the sender must have valid IPv4/IPv6 encoding but
+is not bound to the transport endpoint. A supplied response recipient must
+match `RequestOptions::sender_address`. Raw `Reply::decrypt_result` remains a
+decryption-only API with no contextual freshness/address claim.
+
 ## Non-exhaustive types and constructors
 
 Public structs and enums are non-exhaustive. Construct values through their
@@ -943,36 +982,3 @@ let error = Client::PrincipalMismatch {
 assert!(matches!(error, Client::PrincipalMismatch { .. }));
 # }
 ```
-# RFC 3244 bare error responses
-
-High-level password mutation exchange and reply-validation failures now return
-`Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
-The classification is conservative and may include failure before delivery.
-It does not mean rejection or rollback: reconcile with a fresh login before
-retrying. Dropping a mutation future returns no error at all; the caller must
-record unknown externally. Confirmed server rejection remains a normal result
-failure. Async Negotiate wrappers preserve this error and the same cancellation
-contract. Transport retry/deadline staging is a separate review item.
-
-Password-specific `ChangePasswdData` Debug now redacts `new_passwd`. High-level
-password copies and owned DER staging buffers use zeroizing owners; immutable
-rasn `OctetString` fields remain dependency-owned residuals (see the review).
-
-
-`kadmin::Reply::parse` also accepts standalone KRB-ERROR responses. For these
-responses `version` is `CHANGE_PASSWORD_REQUEST_VERSION` (0xff80),
-`message_length` is the DER wire length and `ap_rep_length` is zero. `encode`
-preserves this bare profile. Legacy version-1 error replies remain framed;
-callers constructing responders can select the profile through `version`.
-Neither error form authenticates a success result.
-
-High-level password changes now reject invalid KRB-PRIV response controls with
-`error::Client::KpasswdReplyControl`. If AP-REP negotiates a server sequence,
-the result must carry that sequence (not the client's starting sequence).
-Otherwise a timestamp/usec pair is required. Supplied times must be whole-second
-KerberosTime plus 0..=999999 microseconds and within 300 seconds of the request
-metadata. `RequestOptions::recipient_address`, when present, pins the response
-sender; absent that option, the sender must have valid IPv4/IPv6 encoding but
-is not bound to the transport endpoint. A supplied response recipient must
-match `RequestOptions::sender_address`. Raw `Reply::decrypt_result` remains a
-decryption-only API with no contextual freshness/address claim.
