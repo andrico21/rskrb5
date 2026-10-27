@@ -5,6 +5,36 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Derived enctype policy
+
+`LibDefaults` no longer stores writable `default_tkt_enctype_ids`,
+`default_tgs_enctype_ids` or `permitted_enctype_ids` fields. Call the methods
+with those names instead; each derives IDs from the current public name list
+and policy. Replace the three `with_*_enctype_ids` builders with their
+`with_*_enctypes` name-list counterparts. Serde input cannot inject cached IDs;
+the compatibility JSON snapshot derives IDs on demand. Empty request lists no
+longer substitute an unrelated built-in policy.
+
+Explicit enctype lists now return `error::Config::UnsupportedEnctype { key,
+enctype }` for unsupported names instead of silently removing them. This also
+applies when supported entries accompany the rejected name.
+
+Defaults now advertise only AES (20, 19, 18, 17). Set `[libdefaults] allow_rc4`
+or `allow_des3` explicitly to true before configuring RC4 or DES3 names; both
+are disabled by default, independently of `allow_weak_crypto`. Disabled names
+return `error::Config::EnctypeDisabled { key, enctype }`. Export RC4 additionally
+requires `allow_weak_crypto`. The flags are public `Toggle` fields and serde
+defaults missing flags to false. Policy is evaluated after all sections/includes.
+
+### Environment-free configuration defaults
+
+`LibDefaults::new`, `Config::new` and parsing no longer read `UID` or `HOME`.
+The client-keytab default retains `/usr/local/var/krb5/user/%{euid}/client.keytab`
+for identity expansion when used, and `k5login_directory` defaults to empty.
+Use the new `LibDefaults::from_env()` only when HOME discovery is intended.
+The `*_without_env` entry points remain compatibility aliases. Remaining
+configuration/credential discovery entry points document `# Ambient input`.
+
 ### Explicit transport DNS configuration
 
 `client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications

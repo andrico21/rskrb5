@@ -115,6 +115,9 @@ impl Keytab {
 
     /// Load and parse the file keytab named by `KRB5_KTNAME`.
     ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME`; use [`Keytab::load_name`] for an explicit name.
+    ///
     /// Only file-backed keytab names are supported: bare paths, `FILE:path`,
     /// and `WRFILE:path`. Collection and platform stores such as `DIR:`,
     /// `KEYRING:`, and `MEMORY:` are rejected explicitly.
@@ -257,6 +260,8 @@ impl Keytab {
     /// Returns [`Error::DefaultKeytabName`] when `KRB5_KTNAME` is unset or not
     /// valid Unicode, and any error of [`Keytab::save_name`].
     #[inline]
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME`; use [`Keytab::save_name`] for an explicit name.
     pub fn save_to_env(&self) -> Result<(), Error> {
         let name = env::var(KRB5_KTNAME_ENV).map_err(Error::DefaultKeytabName)?;
         self.save_name(name)
@@ -498,6 +503,9 @@ impl Keytab {
 
 /// The default keytab name: `KRB5_KTNAME` when it is set, otherwise
 /// `configured_name`.
+///
+/// # Ambient input
+/// Reads `KRB5_KTNAME` before the caller's configured fallback.
 ///
 /// # Errors
 ///

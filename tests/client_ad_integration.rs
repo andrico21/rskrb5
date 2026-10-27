@@ -509,22 +509,22 @@ mod tests {
         );
         assert!(!config.libdefaults.allow_weak_crypto.is_enabled());
         assert!(!config.libdefaults.canonicalize.is_enabled());
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [AES256_ETYPE]);
-        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [AES256_ETYPE]);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [AES256_ETYPE]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [AES256_ETYPE]);
 
         let rc4_config = ad_config(true)?;
         assert!(rc4_config.libdefaults.allow_weak_crypto.is_enabled());
         assert!(rc4_config.libdefaults.canonicalize.is_enabled());
         assert_eq!(
-            rc4_config.libdefaults.default_tkt_enctype_ids,
+            rc4_config.libdefaults.default_tkt_enctype_ids(),
             [RC4_HMAC_ETYPE]
         );
         assert_eq!(
-            rc4_config.libdefaults.default_tgs_enctype_ids,
+            rc4_config.libdefaults.default_tgs_enctype_ids(),
             [RC4_HMAC_ETYPE]
         );
         assert_eq!(
-            rc4_config.libdefaults.permitted_enctype_ids,
+            rc4_config.libdefaults.permitted_enctype_ids(),
             [RC4_HMAC_ETYPE]
         );
 
@@ -826,7 +826,8 @@ mod tests {
             "
   allow_weak_crypto = true
   canonicalize = true
-  default_tkt_enctypes = rc4-hmac
+ default_tkt_enctypes = rc4-hmac
+ allow_rc4 = true
   default_tgs_enctypes = rc4-hmac
   permitted_enctypes = rc4-hmac
 "

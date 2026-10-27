@@ -1103,7 +1103,7 @@ impl Tokio {
         let session = process_as_rep(request, &response, reply_key)?;
         if config.libdefaults.permitted_enctypes_explicit.is_enabled() {
             super::ensure_permitted_enctype(
-                &config.libdefaults.permitted_enctype_ids,
+                &config.libdefaults.permitted_enctype_ids(),
                 session.session_key.etype,
             )?;
         }
@@ -1169,7 +1169,7 @@ impl Tokio {
         let session = process_tgs_rep(request, &response, tgs_session_key)?;
         if config.libdefaults.permitted_enctypes_explicit.is_enabled() {
             super::ensure_permitted_enctype(
-                &config.libdefaults.permitted_enctype_ids,
+                &config.libdefaults.permitted_enctype_ids(),
                 session.session_key.etype,
             )?;
         }

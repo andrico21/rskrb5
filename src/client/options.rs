@@ -69,15 +69,10 @@ impl AsReq {
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
             (defaults.renew_lifetime != Duration::ZERO).then_some(defaults.renew_lifetime);
-        options.etypes = if defaults.default_tkt_enctype_ids.is_empty() {
-            DEFAULT_TKT_ENCTYPES.to_vec()
-        } else {
-            defaults.default_tkt_enctype_ids.clone()
-        };
+        options.etypes = defaults.default_tkt_enctype_ids();
         if defaults.permitted_enctypes_explicit.is_enabled() {
-            options
-                .etypes
-                .retain(|etype| defaults.permitted_enctype_ids.contains(etype));
+            let permitted = defaults.permitted_enctype_ids();
+            options.etypes.retain(|etype| permitted.contains(etype));
         }
         options.kdc_option_bits = defaults.kdc_default_options;
         if defaults.canonicalize.is_enabled() {
@@ -214,15 +209,10 @@ impl TgsReq {
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
             (defaults.renew_lifetime != Duration::ZERO).then_some(defaults.renew_lifetime);
-        options.etypes = if defaults.default_tgs_enctype_ids.is_empty() {
-            DEFAULT_TGS_ENCTYPES.to_vec()
-        } else {
-            defaults.default_tgs_enctype_ids.clone()
-        };
+        options.etypes = defaults.default_tgs_enctype_ids();
         if defaults.permitted_enctypes_explicit.is_enabled() {
-            options
-                .etypes
-                .retain(|etype| defaults.permitted_enctype_ids.contains(etype));
+            let permitted = defaults.permitted_enctype_ids();
+            options.etypes.retain(|etype| permitted.contains(etype));
         }
         options.kdc_option_bits = defaults.kdc_default_options;
         if defaults.canonicalize.is_enabled() {

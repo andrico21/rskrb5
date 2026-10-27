@@ -203,17 +203,17 @@ mod tests {
             let names: Vec<&str> = enctypes.iter().map(|entry| entry.0).collect();
             let expected_ids: Vec<i32> = enctypes.iter().map(|entry| entry.1).collect();
             let config = Config::parse(&format!(
-                "[libdefaults]\n permitted_enctypes = {}\n",
+                "[libdefaults]\n allow_rc4 = true\n allow_des3 = true\n permitted_enctypes = {}\n",
                 names.join(" ")
             ))?;
             prop_assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled(), "parsed list is explicit");
-            prop_assert_eq!(&config.libdefaults.permitted_enctype_ids, &expected_ids);
+            prop_assert_eq!(&config.libdefaults.permitted_enctype_ids(), &expected_ids);
 
             let json = serde_json::to_string(&config.libdefaults)?;
             let decoded: LibDefaults = serde_json::from_str(&json)?;
 
             prop_assert!(decoded.permitted_enctypes_explicit.is_enabled(), "explicit flag survives serde");
-            prop_assert_eq!(&decoded.permitted_enctype_ids, &expected_ids);
+            prop_assert_eq!(&decoded.permitted_enctype_ids(), &expected_ids);
             prop_assert_eq!(decoded, config.libdefaults);
         }
 
@@ -250,6 +250,113 @@ mod tests {
         }
     }
 
+    /// Assigned names, rather than a construction-time cache, control the wire.
+    #[cfg(feature = "messages")]
+    #[test]
+    fn assigned_enctype_names_control_encoded_request() -> Result<(), TestError> {
+        // Given a configuration whose names change after construction.
+        let mut defaults = LibDefaults::new();
+        defaults.default_tkt_enctypes = vec!["aes256-cts".to_owned()];
+        // When the real AS-REQ builder encodes that configuration.
+        let etypes = encoded_as_req_etypes(&defaults)?;
+        // Then only the assigned algorithm is advertised.
+        assert_eq!(etypes, vec![18_i32]);
+        Ok(())
+    }
+
+    /// Explicit lists reject an unknown entry even when other entries work.
+    #[test]
+    fn unsupported_explicit_enctype_names_are_rejected() -> Result<(), TestError> {
+        for key in [
+            "default_tkt_enctypes",
+            "default_tgs_enctypes",
+            "permitted_enctypes",
+        ] {
+            let input = format!("[libdefaults]\n {key} = aes256-cts typo-enctype\n");
+            let error = Config::parse(&input)
+                .err()
+                .ok_or("unknown entry was accepted")?;
+            let message = error.to_string();
+            assert!(message.contains(key), "{message}");
+            assert!(message.contains("typo-enctype"), "{message}");
+        }
+        Ok(())
+    }
+
+    /// Deprecated families require their own flag, not just weak-crypto opt-in.
+    #[test]
+    fn deprecated_enctypes_require_explicit_family_opt_in() -> Result<(), TestError> {
+        for name in [
+            "rc4-hmac",
+            "arcfour-hmac-md5",
+            "rc4-hmac-exp",
+            "des3-cbc-sha1-kd",
+        ] {
+            for key in [
+                "default_tkt_enctypes",
+                "default_tgs_enctypes",
+                "permitted_enctypes",
+            ] {
+                let input = format!("[libdefaults]\n allow_weak_crypto = true\n {key} = {name}\n");
+                let error = Config::parse(&input)
+                    .err()
+                    .ok_or("deprecated enctype was accepted")?;
+                assert!(error.to_string().contains(name));
+            }
+        }
+        Ok(())
+    }
+
+    /// Config-derived wire defaults must not advertise deprecated families.
+    #[cfg(feature = "messages")]
+    #[test]
+    fn default_wire_enctypes_are_aes_only() -> Result<(), TestError> {
+        assert_eq!(
+            encoded_as_req_etypes(&LibDefaults::new())?,
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
+        );
+        Ok(())
+    }
+
+    /// Later sections enable only the explicitly opted-in deprecated family.
+    #[test]
+    fn deprecated_family_flags_apply_after_all_sections() -> Result<(), TestError> {
+        for (name, flag, id) in [
+            ("rc4-hmac", "allow_rc4", 23_i32),
+            ("des3-cbc-sha1-kd", "allow_des3", 16_i32),
+        ] {
+            let config = Config::parse(&format!(
+                "[libdefaults]\n default_tkt_enctypes = {name}\n[libdefaults]\n {flag} = true\n"
+            ))?;
+            assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![id]);
+        }
+        Ok(())
+    }
+
+    /// Ordinary defaults and parsing ignore hostile UID/HOME process inputs.
+    #[test]
+    fn ordinary_defaults_ignore_ambient_environment() -> Result<(), TestError> {
+        let test = "tests::ordinary_defaults_ignore_ambient_environment";
+        if !env::in_child(test) {
+            env::run_in_child(
+                test,
+                &[
+                    ("UID", Some("4242".as_ref())),
+                    ("HOME", Some("/attacker/home".as_ref())),
+                ],
+            );
+            return Ok(());
+        }
+        let config = Config::parse("[libdefaults]\n")?;
+        assert_eq!(config.libdefaults.k5login_directory, "");
+        assert_eq!(
+            config.libdefaults.default_client_keytab_name,
+            "/usr/local/var/krb5/user/%{euid}/client.keytab"
+        );
+        assert_eq!(Config::new(), config);
+        Ok(())
+    }
+
     /// Pins the gokrb5 defaults of the DNS lookup, canonicalization and address flags.
     #[test]
     fn libdefaults_defaults_match_gokrb5() {
@@ -272,8 +379,8 @@ mod tests {
         assert!(!config.libdefaults.no_addresses.is_enabled());
         assert!(config.libdefaults.forwardable.is_enabled());
         assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(24));
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32]);
-        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [18_i32]);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [18_i32]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [18_i32]);
 
         assert_eq!(config.realms.len(), 2);
         assert_eq!(
@@ -497,10 +604,13 @@ mod tests {
             config.libdefaults.default_tkt_enctypes,
             ["aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96"]
         );
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32, 17_i32]);
         assert_eq!(
-            config.libdefaults.default_tgs_enctype_ids,
-            [18_i32, 17_i32, 23_i32]
+            config.libdefaults.default_tkt_enctype_ids(),
+            [18_i32, 17_i32]
+        );
+        assert_eq!(
+            config.libdefaults.default_tgs_enctype_ids(),
+            [20_i32, 19_i32, 18_i32, 17_i32]
         );
 
         assert_eq!(config.realms.len(), 3);
@@ -575,7 +685,10 @@ mod tests {
 
         assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
         assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(10));
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32, 17_i32]);
+        assert_eq!(
+            config.libdefaults.default_tkt_enctype_ids(),
+            [18_i32, 17_i32]
+        );
         assert_eq!(config.realms.len(), 2);
         assert_eq!(
             config
@@ -697,6 +810,73 @@ mod tests {
 
     /// Pins that configured KDCs are returned even when `dns_lookup_kdc` is on.
     #[test]
+    fn repeated_realms_preserve_configured_endpoints() -> Result<(), TestError> {
+        // Given distinct sections, plus later relations for the first realm.
+        let input = "[libdefaults]\n dns_lookup_kdc = true\n\
+            [realms]\n A = {\n kdc = first.example*\n admin_server = admin.example\n default_domain = old.example\n }\n\
+            [realms]\n B = {\n kdc = other.example\n }\n\
+            A = {\n kdc = ignored.example\n kpasswd_server = password.example\n default_domain = new.example\n }\n";
+
+        // When the sections compose.
+        let config = Config::parse(input)?;
+
+        // Then unrelated realms, final relations and later scalar values survive.
+        assert_eq!(config.configured_kdcs("A")?, ["first.example:88"]);
+        assert_eq!(config.configured_kdcs("B")?, ["other.example:88"]);
+        assert_eq!(
+            config.configured_kpasswd_servers("A")?,
+            ["password.example"]
+        );
+        assert_eq!(
+            config.realm("A").context("realm A exists")?.default_domain,
+            "new.example"
+        );
+        Ok(())
+    }
+
+    /// Path lists and includes have the same realm composition as inline sections.
+    #[test]
+    fn repeated_realms_compose_across_files() -> Result<(), TestError> {
+        // Given two files with separate realms and an appended relation.
+        let dir = include_fixture_dir(
+            "realm-compose",
+            &[
+                ("a.conf", "[realms]\n A = {\n kdc = first.example\n }\n"),
+                (
+                    "b.conf",
+                    "[realms]\n B = {\n kdc = other.example\n }\n A = {\n kdc = second.example\n }\n",
+                ),
+            ],
+        )?;
+        let first = dir.join("a.conf");
+        let second = dir.join("b.conf");
+
+        // When loading a path list or expanding includes.
+        let results = [
+            Config::load_paths([&first, &second]),
+            Config::parse(&format!(
+                "include {}\ninclude {}\n",
+                first.display(),
+                second.display()
+            )),
+        ];
+        fs::remove_dir_all(dir)?;
+
+        // Then configured routes retain their complete ordered relations.
+        for result in results {
+            let config = result?;
+            assert_eq!(
+                config.configured_kdcs("A")?,
+                ["first.example:88", "second.example:88"]
+            );
+            assert_eq!(config.configured_kdcs("B")?, ["other.example:88"]);
+            assert_eq!(config.realms.len(), 2);
+        }
+        Ok(())
+    }
+
+    /// Pins that configured KDCs are returned even when `dns_lookup_kdc` is on.
+    #[test]
     fn configured_kdcs_are_used_even_when_dns_lookup_is_enabled() -> Result<(), TestError> {
         let config = Config::parse(
             "
@@ -767,15 +947,16 @@ mod tests {
 [libdefaults]
  default_tkt_enctypes = arcfour-hmac rc4-hmac arcfour-hmac-md5
  default_tgs_enctypes = rc4-hmac
+ allow_rc4 = true
 ",
         )
         .context("config parses")?;
 
         assert_eq!(
-            config.libdefaults.default_tkt_enctype_ids,
+            config.libdefaults.default_tkt_enctype_ids(),
             [23_i32, 23_i32, 23_i32]
         );
-        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [23_i32]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [23_i32]);
         Ok(())
     }
 
@@ -1045,7 +1226,7 @@ mod tests {
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
 
         assert!(!decoded.permitted_enctypes_explicit.is_enabled());
-        assert_eq!(decoded.permitted_enctype_ids, vec![18_i32]);
+        assert_eq!(decoded.permitted_enctype_ids(), vec![18_i32]);
         Ok(())
     }
     /// Pins that an explicit `default_tkt_enctypes` entry outside the permitted list fails parsing.
@@ -1117,8 +1298,8 @@ mod tests {
 
         assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled());
         assert_eq!(
-            config.libdefaults.default_tkt_enctype_ids,
-            vec![18_i32, 17_i32, 23_i32]
+            config.libdefaults.default_tkt_enctype_ids(),
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
         );
         #[cfg(feature = "messages")]
         assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
@@ -1168,7 +1349,7 @@ mod tests {
         )
         .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
 
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18_i32]);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
         #[cfg(feature = "messages")]
         assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
         Ok(())
@@ -1236,7 +1417,7 @@ mod tests {
         let config = loaded
             .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
 
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18_i32]);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
         Ok(())
     }
     /// Pins that a bare tag does not match a host that merely ends with its text.
@@ -1305,14 +1486,17 @@ mod tests {
             assert!(
                 matches!(
                     &error,
-                    Error::NoPermittedEnctypes { names: configured }
-                        if configured.join(" ") == names
+                    Error::UnsupportedEnctype { key: "permitted_enctypes", enctype }
+                        if names.split_whitespace().any(|name| name == enctype)
                 ),
                 "unexpected error for {names}: {error:?}"
             );
             let message = error.to_string();
             assert!(message.contains("permitted_enctypes"), "{message}");
-            assert!(message.contains(names), "{message}");
+            assert!(
+                names.split_whitespace().any(|name| message.contains(name)),
+                "{message}"
+            );
         }
         Ok(())
     }
@@ -1330,7 +1514,8 @@ mod tests {
                 let config = Config::parse(&format!(
                     "
 [libdefaults]
- allow_weak_crypto = {allow_weak_crypto}
+  allow_weak_crypto = {allow_weak_crypto}
+  allow_des3 = true
  default_tkt_enctypes = {name}
  permitted_enctypes = {name}
 "
@@ -1338,12 +1523,12 @@ mod tests {
                 .map_err(|cause| format!("config parses: {cause}"))?;
 
                 assert_eq!(
-                    config.libdefaults.permitted_enctype_ids,
+                    config.libdefaults.permitted_enctype_ids(),
                     vec![16_i32],
                     "{name}"
                 );
                 assert_eq!(
-                    config.libdefaults.default_tkt_enctype_ids,
+                    config.libdefaults.default_tkt_enctype_ids(),
                     vec![16_i32],
                     "{name}"
                 );
@@ -1358,13 +1543,16 @@ mod tests {
         let defaults = Config::new().libdefaults;
 
         assert_eq!(
-            defaults.default_tkt_enctype_ids,
-            vec![18_i32, 17_i32, 23_i32]
+            defaults.default_tkt_enctype_ids(),
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
         );
         assert_eq!(
-            defaults.default_tgs_enctype_ids,
-            vec![18_i32, 17_i32, 23_i32]
+            defaults.default_tgs_enctype_ids(),
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
         );
-        assert_eq!(defaults.permitted_enctype_ids, vec![18_i32, 17_i32, 23_i32]);
+        assert_eq!(
+            defaults.permitted_enctype_ids(),
+            vec![20_i32, 19_i32, 18_i32, 17_i32]
+        );
     }
 }

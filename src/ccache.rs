@@ -161,6 +161,9 @@ impl CCache {
 
     /// Load and parse the file credential cache named by `KRB5CCNAME`.
     ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`; use [`CCache::load_name`] for an explicit name.
+    ///
     /// Only file-backed cache names are supported: bare paths, `FILE:path`,
     /// `WRFILE:path`, `DIR:directory`, and subsidiary `DIR::path` cache
     /// names. Platform stores such as `KCM:`, `KEYRING:`, and `API:` are
@@ -213,6 +216,9 @@ impl CCache {
     }
 
     /// Save this credential cache to the file cache named by `KRB5CCNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`; use [`CCache::save_name`] for an explicit name.
     ///
     /// # Errors
     ///

@@ -923,6 +923,7 @@ mod tests {
 [libdefaults]
  dns_lookup_kdc = false
  permitted_enctypes = des3-cbc-sha1-kd
+ allow_des3 = true
 
 [realms]
  TEST.GOKRB5 = {{
@@ -972,6 +973,7 @@ mod tests {
 [libdefaults]
  dns_lookup_kdc = false
  permitted_enctypes = des3-cbc-sha1-kd
+ allow_des3 = true
 
 [realms]
  TEST.GOKRB5 = {{
@@ -1011,8 +1013,12 @@ mod tests {
     #[test]
     fn tgs_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
-            .with_default_tgs_enctype_ids(vec![18_i32, 17_i32, 23_i32])
-            .with_permitted_enctype_ids(vec![18_i32])
+            .with_default_tgs_enctypes(vec![
+                "aes256-cts".into(),
+                "aes128-cts".into(),
+                "rc4-hmac".into(),
+            ])
+            .with_permitted_enctypes(vec!["aes256-cts".into()])
             .with_permitted_enctypes_explicit(true.into());
         let options = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
         let request = build_tgs_req_with_confounder(
@@ -1216,7 +1222,7 @@ mod tests {
  }}
 "
             ))?;
-            config.libdefaults.permitted_enctype_ids.clear();
+            config.libdefaults.permitted_enctypes.clear();
             let request = build_tgt_as_req(
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![18_i32]),
@@ -1267,7 +1273,7 @@ mod tests {
  }}
 "
             ))?;
-            config.libdefaults.permitted_enctype_ids.clear();
+            config.libdefaults.permitted_enctypes.clear();
             let tgt = sample_tgt_session()?;
             let request = build_tgs_req_with_confounder(
                 &tgt,
@@ -1301,9 +1307,9 @@ mod tests {
     #[test]
     fn programmatic_explicit_empty_permitted_ids_fail_closed() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
-            .with_default_tkt_enctype_ids(vec![18_i32, 17_i32])
-            .with_default_tgs_enctype_ids(vec![18_i32, 17_i32])
-            .with_permitted_enctype_ids(Vec::new())
+            .with_default_tkt_enctypes(vec!["aes256-cts".into(), "aes128-cts".into()])
+            .with_default_tgs_enctypes(vec!["aes256-cts".into(), "aes128-cts".into()])
+            .with_permitted_enctypes(Vec::new())
             .with_permitted_enctypes_explicit(true.into());
 
         let as_options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);

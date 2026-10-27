@@ -27,19 +27,12 @@ const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &["C:\\ProgramData\\MIT\\Kerberos
 #[cfg(not(any(target_family = "unix", target_family = "windows")))]
 const PLATFORM_DEFAULT_CONFIG_PATHS: &[&str] = &[];
 
-// gokrb5 also lists des3-cbc-sha1 here, as its unimplemented etype 7. MIT
-// spells enctype 16 that way, so keeping the name would add DES3 to every
-// default request list.
 /// The enctype names every default request and permitted list starts from.
 const DEFAULT_ENCTYPES: &[&str] = &[
+    "aes256-cts-hmac-sha384-192",
+    "aes128-cts-hmac-sha256-128",
     "aes256-cts-hmac-sha1-96",
     "aes128-cts-hmac-sha1-96",
-    "arcfour-hmac-md5",
-    "camellia256-cts-cmac",
-    "camellia128-cts-cmac",
-    "des-cbc-crc",
-    "des-cbc-md5",
-    "des-cbc-md4",
 ];
 
 /// The default `preferred_preauth_types`, most preferred first.
@@ -89,9 +82,7 @@ impl Config {
     /// Create a config with no parsed sections, without reading any
     /// environment variable.
     ///
-    /// The environment-free twin of [`Config::new`]: the defaults come from
-    /// [`LibDefaults::new_without_env`] instead of [`LibDefaults::new`], which
-    /// reads `UID` and `HOME`.
+    /// Compatibility alias for the environment-free [`Config::new`].
     #[inline]
     #[must_use]
     pub fn new_without_env() -> Self {
@@ -131,6 +122,9 @@ impl Config {
     /// The environment value is split with the platform path-list separator.
     /// On Unix this matches the colon-separated list used by MIT Kerberos.
     ///
+    /// # Ambient input
+    /// Reads `KRB5_CONFIG`; use [`Config::load_paths`] for explicit paths.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::DefaultConfigName`] when `KRB5_CONFIG` is unset, and
@@ -145,6 +139,10 @@ impl Config {
     ///
     /// `KRB5_CONFIG` takes precedence when set. Otherwise this tries platform
     /// defaults such as `/etc/krb5.conf` on Unix.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_CONFIG` and discovers platform files; use [`Config::load`]
+    /// or [`Config::parse`] to choose the source explicitly.
     ///
     /// # Errors
     ///
@@ -164,6 +162,10 @@ impl Config {
     /// The embedded config is used only when no environment or platform
     /// default config source exists. If a configured file exists but cannot be
     /// read or parsed, that error is returned.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_CONFIG` and discovers platform files before using the fallback.
+    /// Use [`Config::parse`] to use only caller-supplied text.
     ///
     /// # Errors
     ///
@@ -297,10 +299,7 @@ impl Config {
 
     /// Parse a `krb5.conf` string without reading any environment variable.
     ///
-    /// The environment-free twin of [`Config::parse`]: the same parser, with
-    /// the defaults taken from [`Config::new_without_env`]. `parse` reaches
-    /// `Config::new` -> `LibDefaults::new` -> `UID`/`HOME`, which is exactly
-    /// what a caller that must not read the environment cannot have.
+    /// Compatibility alias for the environment-free [`Config::parse`].
     ///
     /// # Errors
     ///
@@ -359,6 +358,7 @@ impl Config {
             .expand(text, 0)?;
         let mut config = seed();
         let mut enctypes = EnctypeParseState::default();
+        let mut realm_lines = Vec::new();
         let mut current = SectionKind::Unknown;
         let mut lines = Vec::new();
 
@@ -372,6 +372,9 @@ impl Config {
             }
 
             if let Some(section) = SectionKind::parse(cleaned) {
+                if current == SectionKind::Realms {
+                    realm_lines.append(&mut lines);
+                }
                 apply_section(&mut config, current, &lines, &mut enctypes)?;
                 current = section;
                 lines.clear();
@@ -386,7 +389,11 @@ impl Config {
             }
         }
 
+        if current == SectionKind::Realms {
+            realm_lines.append(&mut lines);
+        }
         apply_section(&mut config, current, &lines, &mut enctypes)?;
+        config.realms = parse_realms(&realm_lines)?;
         config.libdefaults.validate_explicit_enctypes(enctypes)?;
         Ok(config)
     }
@@ -550,6 +557,12 @@ impl From<Toggle> for bool {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct LibDefaults {
+    /// Permit explicitly configured RC4 (23/24); disabled by default.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub allow_rc4: Toggle,
+    /// Permit explicitly configured DES3 (16); disabled by default.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub allow_des3: Toggle,
     /// Whether weak crypto names are retained before supported enctype
     /// filtering.
     pub allow_weak_crypto: Toggle,
@@ -571,10 +584,6 @@ pub struct LibDefaults {
     pub default_tgs_enctypes: Vec<String>,
     /// Preferred ticket enctype names.
     pub default_tkt_enctypes: Vec<String>,
-    /// Preferred TGS enctype IDs implemented by gokrb5-compatible crypto.
-    pub default_tgs_enctype_ids: Vec<i32>,
-    /// Preferred ticket enctype IDs implemented by gokrb5-compatible crypto.
-    pub default_tkt_enctype_ids: Vec<i32>,
     /// Whether hostnames should be DNS-canonicalized.
     pub dns_canonicalize_hostname: Toggle,
     /// Whether KDC DNS lookup is enabled.
@@ -599,8 +608,6 @@ pub struct LibDefaults {
     pub no_addresses: Toggle,
     /// Permitted enctype names.
     pub permitted_enctypes: Vec<String>,
-    /// Permitted enctype IDs implemented by gokrb5-compatible crypto.
-    pub permitted_enctype_ids: Vec<i32>,
     /// Whether `[libdefaults] permitted_enctypes` was explicitly configured.
     ///
     /// Parsing a `[libdefaults] permitted_enctypes` line sets this flag. The
@@ -613,8 +620,8 @@ pub struct LibDefaults {
     ///
     /// Code that builds `LibDefaults` programmatically (a struct literal or
     /// `Default`) and wants the allowlist enforced must set this flag to
-    /// `true` together with `permitted_enctypes` / `permitted_enctype_ids`.
-    /// With the flag set, an empty `permitted_enctype_ids` permits no enctype.
+    /// `true` together with `permitted_enctypes`.
+    /// With the flag set, an empty derived list permits no enctype.
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: Toggle,
     /// Preferred preauthentication type IDs.
@@ -708,19 +715,17 @@ impl LibDefaults {
         self.default_tkt_enctypes = value;
         self
     }
-    /// Sets `default_tgs_enctype_ids`, preserving the other fields.
+    /// Derives supported TGS enctype IDs from the current names and policy.
     #[must_use]
     #[inline]
-    pub fn with_default_tgs_enctype_ids(mut self, value: Vec<i32>) -> Self {
-        self.default_tgs_enctype_ids = value;
-        self
+    pub fn default_tgs_enctype_ids(&self) -> Vec<i32> {
+        self.effective_enctype_ids(&self.default_tgs_enctypes)
     }
-    /// Sets `default_tkt_enctype_ids`, preserving the other fields.
+    /// Derives supported ticket enctype IDs from the current names and policy.
     #[must_use]
     #[inline]
-    pub fn with_default_tkt_enctype_ids(mut self, value: Vec<i32>) -> Self {
-        self.default_tkt_enctype_ids = value;
-        self
+    pub fn default_tkt_enctype_ids(&self) -> Vec<i32> {
+        self.effective_enctype_ids(&self.default_tkt_enctypes)
     }
     /// Sets `dns_canonicalize_hostname`, preserving the other fields.
     #[must_use]
@@ -806,12 +811,11 @@ impl LibDefaults {
         self.permitted_enctypes = value;
         self
     }
-    /// Sets `permitted_enctype_ids`, preserving the other fields.
+    /// Derives supported permitted enctype IDs from the current names and policy.
     #[must_use]
     #[inline]
-    pub fn with_permitted_enctype_ids(mut self, value: Vec<i32>) -> Self {
-        self.permitted_enctype_ids = value;
-        self
+    pub fn permitted_enctype_ids(&self) -> Vec<i32> {
+        self.effective_enctype_ids(&self.permitted_enctypes)
     }
     /// Sets `permitted_enctypes_explicit`, preserving the other fields.
     #[must_use]
@@ -884,61 +888,50 @@ impl LibDefaults {
         self
     }
 
-    /// The `UID` the client-keytab default path falls back to when the
-    /// variable is unset. Named so the environment-reading constructor and the
-    /// environment-free one cannot drift apart.
-    const FALLBACK_UID: &'static str = "0";
-
     #[must_use]
-    /// Create default libdefaults.
+    /// Create default libdefaults without reading the environment.
     #[inline]
     pub fn new() -> Self {
-        Self::with_uid_and_home(env::var("UID").ok(), env::var("HOME").ok())
+        Self::with_home(None)
     }
 
-    /// Create default libdefaults without reading any environment variable.
+    /// Create defaults with an explicitly requested home-directory override.
     ///
-    /// Identical to [`LibDefaults::new`] except for the two fields `new()`
-    /// derives from the environment, which take the values `new()` produces
-    /// when the variable is unset:
-    ///
-    /// - `default_client_keytab_name` is
-    ///   `/usr/local/var/krb5/user/0/client.keytab` (the `UID` fallback);
-    /// - `k5login_directory` is the empty string (the `HOME` fallback).
-    ///
-    /// Every other default is the shared non-env default set, so a caller that
-    /// must not read the environment gets one default set rather than a second
-    /// divergent one.
+    /// # Ambient input
+    /// Reads `HOME` for `k5login_directory`; unset/non-Unicode means empty.
+    /// The keytab identity template never reads `UID`.
+    #[inline]
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::with_home(env::var("HOME").ok())
+    }
+
+    /// Compatibility alias for the environment-free [`LibDefaults::new`].
     #[inline]
     #[must_use]
     pub fn new_without_env() -> Self {
-        Self::with_uid_and_home(None, None)
+        Self::new()
     }
 
-    /// Create default libdefaults from already-read `UID` and `HOME` values, or
-    /// from `None` when they must not be read at all.
-    fn with_uid_and_home(uid: Option<String>, home: Option<String>) -> Self {
+    /// Create defaults from an optional, already-read home directory.
+    fn with_home(home: Option<String>) -> Self {
         let default_enctypes = DEFAULT_ENCTYPES
             .iter()
             .map(|value| (*value).to_owned())
             .collect::<Vec<_>>();
-        let default_client_keytab_name = format!(
-            "/usr/local/var/krb5/user/{}/client.keytab",
-            uid.unwrap_or_else(|| Self::FALLBACK_UID.to_owned())
-        );
-        let mut defaults = Self {
+        Self {
+            allow_rc4: Toggle::Disabled,
+            allow_des3: Toggle::Disabled,
             allow_weak_crypto: Toggle::Disabled,
             canonicalize: Toggle::Disabled,
             ccache_type: 4,
             clockskew: Duration::from_secs(300),
             default_ccache_name: String::new(),
-            default_client_keytab_name,
+            default_client_keytab_name: "/usr/local/var/krb5/user/%{euid}/client.keytab".to_owned(),
             default_keytab_name: "/etc/krb5.keytab".to_owned(),
             default_realm: String::new(),
             default_tgs_enctypes: default_enctypes.clone(),
             default_tkt_enctypes: default_enctypes.clone(),
-            default_tgs_enctype_ids: Vec::new(),
-            default_tkt_enctype_ids: Vec::new(),
             dns_canonicalize_hostname: Toggle::Enabled,
             dns_lookup_kdc: Toggle::Disabled,
             dns_lookup_realm: Toggle::Disabled,
@@ -951,7 +944,6 @@ impl LibDefaults {
             kdc_time_sync: 1,
             no_addresses: Toggle::Enabled,
             permitted_enctypes: default_enctypes,
-            permitted_enctype_ids: Vec::new(),
             permitted_enctypes_explicit: Toggle::Disabled,
             preferred_preauth_types: DEFAULT_PREAUTH_TYPES.to_vec(),
             proxiable: Toggle::Disabled,
@@ -962,9 +954,7 @@ impl LibDefaults {
             ticket_lifetime: Duration::from_hours(24),
             udp_preference_limit: 1465,
             verify_ap_req_nofail: Toggle::Disabled,
-        };
-        defaults.refresh_enctype_ids();
-        defaults
+        }
     }
 
     /// Apply one `[libdefaults]` section's lines, recording in `enctypes` which
@@ -991,6 +981,8 @@ impl LibDefaults {
             }
 
             match key {
+                "allow_rc4" => self.allow_rc4 = Toggle::from_bool(parse_boolean(value)?),
+                "allow_des3" => self.allow_des3 = Toggle::from_bool(parse_boolean(value)?),
                 "allow_weak_crypto" => {
                     self.allow_weak_crypto = Toggle::from_bool(parse_boolean(value)?);
                 }
@@ -1004,11 +996,13 @@ impl LibDefaults {
                 "default_keytab_name" => value.clone_into(&mut self.default_keytab_name),
                 "default_realm" => value.clone_into(&mut self.default_realm),
                 "default_tgs_enctypes" => {
-                    self.default_tgs_enctypes = parse_words(value);
+                    self.default_tgs_enctypes =
+                        parse_explicit_enctypes(value, "default_tgs_enctypes")?;
                     enctypes.tgs_explicit = true;
                 }
                 "default_tkt_enctypes" => {
-                    self.default_tkt_enctypes = parse_words(value);
+                    self.default_tkt_enctypes =
+                        parse_explicit_enctypes(value, "default_tkt_enctypes")?;
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
@@ -1035,7 +1029,7 @@ impl LibDefaults {
                     self.no_addresses = Toggle::from_bool(parse_boolean(value)?);
                 }
                 "permitted_enctypes" => {
-                    self.permitted_enctypes = parse_words(value);
+                    self.permitted_enctypes = parse_explicit_enctypes(value, "permitted_enctypes")?;
                     self.permitted_enctypes_explicit = Toggle::Enabled;
                 }
                 "preferred_preauth_types" => {
@@ -1057,7 +1051,6 @@ impl LibDefaults {
             }
         }
 
-        self.refresh_enctype_ids();
         Ok(())
     }
 
@@ -1079,10 +1072,39 @@ impl LibDefaults {
     /// naming the first explicit request list and enctype outside the
     /// allowlist.
     fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
+        for (explicit, key, names) in [
+            (
+                enctypes.tkt_explicit,
+                "default_tkt_enctypes",
+                &self.default_tkt_enctypes,
+            ),
+            (
+                enctypes.tgs_explicit,
+                "default_tgs_enctypes",
+                &self.default_tgs_enctypes,
+            ),
+            (
+                self.permitted_enctypes_explicit.is_enabled(),
+                "permitted_enctypes",
+                &self.permitted_enctypes,
+            ),
+        ] {
+            if explicit {
+                for name in names {
+                    if !self.enctype_enabled(name) {
+                        return Err(Error::EnctypeDisabled {
+                            key,
+                            enctype: name.clone(),
+                        });
+                    }
+                }
+            }
+        }
         if !self.permitted_enctypes_explicit.is_enabled() {
             return Ok(());
         }
-        if self.permitted_enctype_ids.is_empty() {
+        let permitted = self.permitted_enctype_ids();
+        if permitted.is_empty() {
             return Err(Error::NoPermittedEnctypes {
                 names: self.permitted_enctypes.clone(),
             });
@@ -1105,10 +1127,9 @@ impl LibDefaults {
             }
             // Names without a supported ID are never requested, so only
             // supported IDs can be narrowed away.
-            let not_permitted = names.iter().find(|name| {
-                supported_enctype_id(name)
-                    .is_some_and(|id| !self.permitted_enctype_ids.contains(&id))
-            });
+            let not_permitted = names
+                .iter()
+                .find(|name| supported_enctype_id(name).is_some_and(|id| !permitted.contains(&id)));
             if let Some(name) = not_permitted {
                 return Err(Error::EnctypeNotPermitted {
                     key,
@@ -1118,22 +1139,23 @@ impl LibDefaults {
         }
         Ok(())
     }
+    /// Whether both family policy and weak-crypto policy permit this name.
+    fn enctype_enabled(&self, name: &str) -> bool {
+        let family_enabled = match supported_enctype_id(name) {
+            Some(23_i32 | 24_i32) => self.allow_rc4.is_enabled(),
+            Some(16_i32) => self.allow_des3.is_enabled(),
+            Some(_) | None => true,
+        };
+        family_enabled && (self.allow_weak_crypto.is_enabled() || !is_weak_enctype(name))
+    }
 
-    /// Recompute the three enctype ID lists from their name lists, honouring
-    /// `allow_weak_crypto`.
-    fn refresh_enctype_ids(&mut self) {
-        self.default_tgs_enctype_ids = parse_supported_enctype_ids(
-            &self.default_tgs_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        );
-        self.default_tkt_enctype_ids = parse_supported_enctype_ids(
-            &self.default_tkt_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        );
-        self.permitted_enctype_ids = parse_supported_enctype_ids(
-            &self.permitted_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        );
+    /// Derives implemented IDs with the current independent policy switches.
+    fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32> {
+        names
+            .iter()
+            .filter(|name| self.enctype_enabled(name))
+            .filter_map(|name| supported_enctype_id(name))
+            .collect()
     }
 }
 
@@ -1315,12 +1337,8 @@ fn apply_section(
 ) -> Result<(), Error> {
     match section {
         SectionKind::LibDefaults => config.libdefaults.parse_lines(lines, enctypes),
-        SectionKind::Realms => {
-            config.realms = parse_realms(lines)?;
-            Ok(())
-        }
         SectionKind::DomainRealm => parse_domain_realm(&mut config.domain_realm, lines),
-        SectionKind::Unknown => Ok(()),
+        SectionKind::Realms | SectionKind::Unknown => Ok(()),
     }
 }
 
@@ -1378,7 +1396,7 @@ fn parse_domain_realm(
 /// closes a brace it never opened or is never closed, and the
 /// [`Realm::parse`] errors of each block.
 fn parse_realms(lines: &[Line]) -> Result<Vec<Realm>, Error> {
-    let mut realms = Vec::new();
+    let mut blocks: Vec<(String, Vec<Line>)> = Vec::new();
     let mut remaining = lines.iter();
 
     while let Some(line) = remaining.next() {
@@ -1422,10 +1440,17 @@ fn parse_realms(lines: &[Line]) -> Result<Vec<Realm>, Error> {
             )));
         }
 
-        realms.push(Realm::parse(name, &block)?);
+        if let Some((_, relations)) = blocks.iter_mut().find(|(realm, _)| realm == name) {
+            relations.extend(block);
+        } else {
+            blocks.push((name.to_owned(), block));
+        }
     }
 
-    Ok(realms)
+    blocks
+        .into_iter()
+        .map(|(name, relations)| Realm::parse(&name, &relations))
+        .collect()
 }
 
 /// The number of `{` in `value` minus the number of `}`.
@@ -1502,6 +1527,23 @@ pub fn parse_boolean(value: &str) -> Result<bool, Error> {
     }
 }
 
+/// Parses an explicit policy without silently dropping unsupported entries.
+///
+/// # Errors
+/// Returns [`Error::UnsupportedEnctype`] naming the first unsupported entry.
+fn parse_explicit_enctypes(value: &str, key: &'static str) -> Result<Vec<String>, Error> {
+    let names = parse_words(value);
+    for name in &names {
+        if supported_enctype_id(name).is_none() {
+            return Err(Error::UnsupportedEnctype {
+                key,
+                enctype: name.clone(),
+            });
+        }
+    }
+    Ok(names)
+}
+
 #[must_use]
 /// Parse enctype names to the subset of IDs implemented by gokrb5-compatible
 /// crypto.
@@ -1576,10 +1618,10 @@ struct LibDefaultsJson<'config> {
     default_tkt_enctypes: &'config [String],
     /// [`LibDefaults::default_tgs_enctype_ids`], as gokrb5's `DefaultTGSEnctypeIDs`.
     #[serde(rename = "DefaultTGSEnctypeIDs")]
-    default_tgs_enctype_ids: &'config [i32],
+    default_tgs_enctype_ids: Vec<i32>,
     /// [`LibDefaults::default_tkt_enctype_ids`], as gokrb5's `DefaultTktEnctypeIDs`.
     #[serde(rename = "DefaultTktEnctypeIDs")]
-    default_tkt_enctype_ids: &'config [i32],
+    default_tkt_enctype_ids: Vec<i32>,
     /// [`LibDefaults::dns_canonicalize_hostname`], as gokrb5's `DNSCanonicalizeHostname`.
     #[serde(rename = "DNSCanonicalizeHostname")]
     dns_canonicalize_hostname: Toggle,
@@ -1618,7 +1660,7 @@ struct LibDefaultsJson<'config> {
     permitted_enctypes: &'config [String],
     /// [`LibDefaults::permitted_enctype_ids`], as gokrb5's `PermittedEnctypeIDs`.
     #[serde(rename = "PermittedEnctypeIDs")]
-    permitted_enctype_ids: &'config [i32],
+    permitted_enctype_ids: Vec<i32>,
     /// [`LibDefaults::preferred_preauth_types`], as gokrb5's `PreferredPreauthTypes`.
     #[serde(rename = "PreferredPreauthTypes")]
     preferred_preauth_types: &'config [i32],
@@ -1662,8 +1704,8 @@ impl<'config> From<&'config LibDefaults> for LibDefaultsJson<'config> {
             default_realm: &libdefaults.default_realm,
             default_tgs_enctypes: &libdefaults.default_tgs_enctypes,
             default_tkt_enctypes: &libdefaults.default_tkt_enctypes,
-            default_tgs_enctype_ids: &libdefaults.default_tgs_enctype_ids,
-            default_tkt_enctype_ids: &libdefaults.default_tkt_enctype_ids,
+            default_tgs_enctype_ids: libdefaults.default_tgs_enctype_ids(),
+            default_tkt_enctype_ids: libdefaults.default_tkt_enctype_ids(),
             dns_canonicalize_hostname: libdefaults.dns_canonicalize_hostname,
             dns_lookup_kdc: libdefaults.dns_lookup_kdc,
             dns_lookup_realm: libdefaults.dns_lookup_realm,
@@ -1676,7 +1718,7 @@ impl<'config> From<&'config LibDefaults> for LibDefaultsJson<'config> {
             kdc_time_sync: libdefaults.kdc_time_sync,
             no_addresses: libdefaults.no_addresses,
             permitted_enctypes: &libdefaults.permitted_enctypes,
-            permitted_enctype_ids: &libdefaults.permitted_enctype_ids,
+            permitted_enctype_ids: libdefaults.permitted_enctype_ids(),
             preferred_preauth_types: &libdefaults.preferred_preauth_types,
             proxiable: libdefaults.proxiable,
             rdns: libdefaults.rdns,
@@ -2016,6 +2058,7 @@ fn supported_enctype_id(value: &str) -> Option<i32> {
         "aes256-cts-hmac-sha384-192" | "aes256-sha2" => 20,
         "des3-cbc-sha1" | "des3-hmac-sha1" | "des3-cbc-sha1-kd" => 16,
         "arcfour-hmac" | "rc4-hmac" | "arcfour-hmac-md5" => 23,
+        "arcfour-hmac-exp" | "rc4-hmac-exp" | "arcfour-hmac-md5-exp" => 24,
         _ => return None,
     })
 }
@@ -2486,9 +2529,8 @@ mod fork_tests {
     /// The hostile `HOME` the parent gives the child.
     const HOSTILE_HOME: &str = "/attacker/home";
 
-    /// The `UID`-derived default the environment-free constructors must produce:
-    /// the path `LibDefaults::new` builds when `UID` is unset.
-    const ENV_FREE_CLIENT_KEYTAB: &str = "/usr/local/var/krb5/user/0/client.keytab";
+    /// The unexpanded identity template every default constructor preserves.
+    const ENV_FREE_CLIENT_KEYTAB: &str = "/usr/local/var/krb5/user/%{euid}/client.keytab";
 
     /// The environment-free constructor's fields, and - as the control - the
     /// environment-reading constructor's, printed for the parent to assert on.
@@ -2500,7 +2542,7 @@ mod fork_tests {
         let config = Config::new_without_env();
         let defaults = LibDefaults::new_without_env();
         let parsed = Config::parse_without_env("[libdefaults]\n")?;
-        let reading = LibDefaults::new();
+        let reading = LibDefaults::from_env();
         let mut stdout = io::stdout().lock();
         for (name, keytab, k5login) in [
             (
@@ -2572,8 +2614,8 @@ mod fork_tests {
     ) -> Result<(), Box<dyn error::Error>> {
         assert_eq!(
             probe_field(lines, "reading_client_keytab")?,
-            format!("/usr/local/var/krb5/user/{HOSTILE_UID}/client.keytab"),
-            "the environment-reading constructor must follow the hostile UID"
+            ENV_FREE_CLIENT_KEYTAB,
+            "even the opt-in constructor must preserve the identity template"
         );
         assert_eq!(probe_field(lines, "reading_k5login")?, HOSTILE_HOME);
         Ok(())

@@ -731,6 +731,22 @@ pub enum Config {
         /// Why it could not be listed.
         source: io::Error,
     },
+    /// An explicit enctype list names an algorithm disabled by policy.
+    #[error("[libdefaults] {key} lists disabled enctype {enctype}")]
+    EnctypeDisabled {
+        /// The configured list key.
+        key: &'static str,
+        /// The rejected entry.
+        enctype: String,
+    },
+    /// An explicit enctype list contains an unsupported algorithm name.
+    #[error("[libdefaults] {key} lists unsupported enctype {enctype}")]
+    UnsupportedEnctype {
+        /// The configured list key.
+        key: &'static str,
+        /// The rejected entry.
+        enctype: String,
+    },
     /// An explicit request enctype list names an enctype outside the explicit
     /// `permitted_enctypes` allowlist.
     #[error("[libdefaults] {key} lists {enctype}, which permitted_enctypes does not permit")]
