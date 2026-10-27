@@ -525,11 +525,22 @@ jobs:
 
   mutants:
     name: mutants
-    # Scoped to two small files so a run finishes inside the wall.
+    # The whole crate, split deterministically into 8 shards (cargo-mutants
+    # shards are zero-indexed: `--shard k/8` takes k = 0..7). `--all-features`
+    # because cargo-mutants ignores `cfg`: without it every mutant in
+    # feature-gated code (`src/http.rs`, the tokio transport) is a false
+    # MISSED. No fixed `--timeout`: cargo-mutants derives the per-run cap from
+    # the measured baseline test time of each shard.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 75
+    # Above the 170m wall of the run step, so the shard ends through
+    # `timeout` (and still uploads `mutants.out`) instead of being killed.
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     # Mutation runs only need the build to compile. The deny-level profile
     # would make most mutants unviable (a mutant often leaves an unused
     # binding), so lints are capped and warnings let through for this job.
@@ -541,24 +552,51 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install cargo-mutants
         run: cargo install cargo-mutants --locked
-      - name: Run cargo mutants (advisory, wall-capped at 60m)
-        run: timeout 60m cargo mutants --no-shuffle --cap-lints=true --timeout 120 -j 4 -f src/kadmin.rs -f src/client/transport.rs
+      - name: Run cargo mutants (shard ${{ matrix.shard }}/8, wall-capped at 170m)
+        # `timeout` reports 124 (or 137 after SIGKILL) when the wall expires:
+        # the untested tail is then absent from outcomes.json, which the
+        # summary below reports as truncated. cargo-mutants' own statuses
+        # (2 = missed mutants, 3 = timeouts) are advisory findings.
+        run: |
+          set +e
+          timeout 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/8 -j 2
+          status=$?
+          set -e
+          echo "MUTANTS_STATUS=$status" >> "$GITHUB_ENV"
+          if [ "$status" = "124" ] || [ "$status" = "137" ]; then
+            echo "TRUNCATED=1" >> "$GITHUB_ENV"
+          else
+            echo "TRUNCATED=0" >> "$GITHUB_ENV"
+          fi
+          exit "$status"
+      - name: Summarize mutation results (shard ${{ matrix.shard }}/8)
+        if: always()
+        shell: bash
+        run: |
+          out=mutants.out
+          generated=$(jq 'length' "$out/mutants.json" 2>/dev/null || echo 0)
+          total=$(jq '[.outcomes[]? | select(.scenario != "Baseline")] | length' "$out/outcomes.json" 2>/dev/null || echo 0)
+          summary=$(jq -r '"caught=\(.caught) missed=\(.missed) unviable=\(.unviable) timeout=\(.timeout) success=\(.success)"' "$out/outcomes.json" 2>/dev/null || echo "no outcomes.json")
+          line="shard ${{ matrix.shard }}/8: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload mutants.out
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: mutants-out
+          name: mutants-out-shard-${{ matrix.shard }}
           path: mutants.out
           retention-days: 14
 
   fuzz:
     name: fuzz
-    # Bounded smoke runs on arbitrary input: `kpasswd_reply` (the kadmin
-    # frame parsers) and `ccache_parse` (the ccache reader). A crash is a
-    # finding and surfaces through the advisory status.
+    # Every target `cargo fuzz list` prints, 300 s each on top of the seed
+    # corpus. A crash is a finding: the loop runs every target, then fails;
+    # the crash inputs are uploaded.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 150
     # The fuzz crate builds rskrb5-ng as a path dependency, so the profile runs
     # on nightly; cap it there (lints are enforced on stable by `closures`).
     env:
@@ -570,12 +608,31 @@ jobs:
         with:
           toolchain: nightly-2026-10-03
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
-      - name: Fuzz kpasswd_reply (bounded)
-        run: cargo +nightly-2026-10-03 fuzz run kpasswd_reply -- -max_total_time=300 -rss_limit_mb=4096
-      - name: Fuzz ccache_parse (bounded)
-        if: success() || failure()
-        run: cargo +nightly-2026-10-03 fuzz run ccache_parse -- -max_total_time=300 -rss_limit_mb=4096
+        run: cargo +nightly-2026-10-03 install cargo-fuzz --locked
+      - name: Fuzz every target (300 s each)
+        shell: bash
+        run: |
+          set -uo pipefail
+          targets="$(cargo +nightly-2026-10-03 fuzz list)"
+          test -n "$targets" || exit 1
+          failed=""
+          for target in $targets; do
+            echo "--- fuzz run $target"
+            if ! cargo +nightly-2026-10-03 fuzz run "$target" -- -max_total_time=300 -rss_limit_mb=4096; then
+              failed="$failed $target"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::fuzz targets failed:$failed"
+            exit 1
+          fi
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          retention-days: 14
       - name: Upload corpus
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
