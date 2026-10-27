@@ -807,6 +807,9 @@ impl Tokio {
     }
     /// Create a keytab-backed client from the default client keytab.
     ///
+    /// # Ambient input
+    /// Reads `KRB5_CLIENT_KTNAME`; use `with_client_keytab_from_config` to avoid discovery.
+    ///
     /// `KRB5_CLIENT_KTNAME` takes precedence when set. Otherwise this falls
     /// back to `config.libdefaults.default_client_keytab_name`.
     /// # Errors
@@ -823,6 +826,9 @@ impl Tokio {
         Self::with_keytab_name(config, protocol, client, keytab_name)
     }
     /// Create a keytab-backed client by loading the file keytab named by `KRB5_CLIENT_KTNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_CLIENT_KTNAME`; use `with_keytab_name` for an explicit name.
     /// # Errors
     ///
     /// Returns [`Error::DefaultClientKeytabName`] when `KRB5_CLIENT_KTNAME` is unset
@@ -838,6 +844,9 @@ impl Tokio {
         Self::with_keytab_name(config, protocol, client, keytab_name)
     }
     /// Create a keytab-backed client by loading the file keytab named by `KRB5_KTNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME`; use `with_keytab_name` for an explicit name.
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when `KRB5_KTNAME` is unset or invalid or the keytab
@@ -941,6 +950,9 @@ impl Tokio {
     }
     /// Create a cache-only client from the default credential cache.
     ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`; use `from_default_ccache_name` to use only configuration.
+    ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
     /// # Errors
@@ -953,6 +965,9 @@ impl Tokio {
         Self::from_ccache_name(config, protocol, cache_name)
     }
     /// Create a cache-only client by loading the file ccache named by `KRB5CCNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`; use `from_ccache_name` for an explicit name.
     /// # Errors
     ///
     /// Returns [`Error::CCache`] when `KRB5CCNAME` is unset or invalid or the cache
@@ -4736,6 +4751,9 @@ fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
 /// The default ccache name: `KRB5CCNAME` when set, else the configured
 /// `default_ccache_name`.
 ///
+/// # Ambient input
+/// Reads `KRB5CCNAME` before the configured cache name.
+///
 /// # Errors
 ///
 /// Returns [`Error::CCache`] when `KRB5CCNAME` is not valid Unicode and
@@ -4751,6 +4769,9 @@ fn default_ccache_name(config: &Config) -> Result<String, Error> {
 
 /// The default client keytab name: `KRB5_CLIENT_KTNAME` when set, else the
 /// configured `default_client_keytab_name`.
+///
+/// # Ambient input
+/// Reads `KRB5_CLIENT_KTNAME` before the configured client-keytab name.
 ///
 /// # Errors
 ///

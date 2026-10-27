@@ -82,9 +82,7 @@ impl Config {
     /// Create a config with no parsed sections, without reading any
     /// environment variable.
     ///
-    /// The environment-free twin of [`Config::new`]: the defaults come from
-    /// [`LibDefaults::new_without_env`] instead of [`LibDefaults::new`], which
-    /// reads `UID` and `HOME`.
+    /// Compatibility alias for the environment-free [`Config::new`].
     #[inline]
     #[must_use]
     pub fn new_without_env() -> Self {
@@ -124,6 +122,9 @@ impl Config {
     /// The environment value is split with the platform path-list separator.
     /// On Unix this matches the colon-separated list used by MIT Kerberos.
     ///
+    /// # Ambient input
+    /// Reads `KRB5_CONFIG`; use [`Config::load_paths`] for explicit paths.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::DefaultConfigName`] when `KRB5_CONFIG` is unset, and
@@ -138,6 +139,10 @@ impl Config {
     ///
     /// `KRB5_CONFIG` takes precedence when set. Otherwise this tries platform
     /// defaults such as `/etc/krb5.conf` on Unix.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_CONFIG` and discovers platform files; use [`Config::load`]
+    /// or [`Config::parse`] to choose the source explicitly.
     ///
     /// # Errors
     ///
@@ -157,6 +162,10 @@ impl Config {
     /// The embedded config is used only when no environment or platform
     /// default config source exists. If a configured file exists but cannot be
     /// read or parsed, that error is returned.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_CONFIG` and discovers platform files before using the fallback.
+    /// Use [`Config::parse`] to use only caller-supplied text.
     ///
     /// # Errors
     ///
@@ -290,10 +299,7 @@ impl Config {
 
     /// Parse a `krb5.conf` string without reading any environment variable.
     ///
-    /// The environment-free twin of [`Config::parse`]: the same parser, with
-    /// the defaults taken from [`Config::new_without_env`]. `parse` reaches
-    /// `Config::new` -> `LibDefaults::new` -> `UID`/`HOME`, which is exactly
-    /// what a caller that must not read the environment cannot have.
+    /// Compatibility alias for the environment-free [`Config::parse`].
     ///
     /// # Errors
     ///
@@ -882,48 +888,37 @@ impl LibDefaults {
         self
     }
 
-    /// The `UID` the client-keytab default path falls back to when the
-    /// variable is unset. Named so the environment-reading constructor and the
-    /// environment-free one cannot drift apart.
-    const FALLBACK_UID: &'static str = "0";
-
     #[must_use]
-    /// Create default libdefaults.
+    /// Create default libdefaults without reading the environment.
     #[inline]
     pub fn new() -> Self {
-        Self::with_uid_and_home(env::var("UID").ok(), env::var("HOME").ok())
+        Self::with_home(None)
     }
 
-    /// Create default libdefaults without reading any environment variable.
+    /// Create defaults with an explicitly requested home-directory override.
     ///
-    /// Identical to [`LibDefaults::new`] except for the two fields `new()`
-    /// derives from the environment, which take the values `new()` produces
-    /// when the variable is unset:
-    ///
-    /// - `default_client_keytab_name` is
-    ///   `/usr/local/var/krb5/user/0/client.keytab` (the `UID` fallback);
-    /// - `k5login_directory` is the empty string (the `HOME` fallback).
-    ///
-    /// Every other default is the shared non-env default set, so a caller that
-    /// must not read the environment gets one default set rather than a second
-    /// divergent one.
+    /// # Ambient input
+    /// Reads `HOME` for `k5login_directory`; unset/non-Unicode means empty.
+    /// The keytab identity template never reads `UID`.
+    #[inline]
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::with_home(env::var("HOME").ok())
+    }
+
+    /// Compatibility alias for the environment-free [`LibDefaults::new`].
     #[inline]
     #[must_use]
     pub fn new_without_env() -> Self {
-        Self::with_uid_and_home(None, None)
+        Self::new()
     }
 
-    /// Create default libdefaults from already-read `UID` and `HOME` values, or
-    /// from `None` when they must not be read at all.
-    fn with_uid_and_home(uid: Option<String>, home: Option<String>) -> Self {
+    /// Create defaults from an optional, already-read home directory.
+    fn with_home(home: Option<String>) -> Self {
         let default_enctypes = DEFAULT_ENCTYPES
             .iter()
             .map(|value| (*value).to_owned())
             .collect::<Vec<_>>();
-        let default_client_keytab_name = format!(
-            "/usr/local/var/krb5/user/{}/client.keytab",
-            uid.unwrap_or_else(|| Self::FALLBACK_UID.to_owned())
-        );
         Self {
             allow_rc4: Toggle::Disabled,
             allow_des3: Toggle::Disabled,
@@ -932,7 +927,7 @@ impl LibDefaults {
             ccache_type: 4,
             clockskew: Duration::from_secs(300),
             default_ccache_name: String::new(),
-            default_client_keytab_name,
+            default_client_keytab_name: "/usr/local/var/krb5/user/%{euid}/client.keytab".to_owned(),
             default_keytab_name: "/etc/krb5.keytab".to_owned(),
             default_realm: String::new(),
             default_tgs_enctypes: default_enctypes.clone(),
@@ -2534,9 +2529,8 @@ mod fork_tests {
     /// The hostile `HOME` the parent gives the child.
     const HOSTILE_HOME: &str = "/attacker/home";
 
-    /// The `UID`-derived default the environment-free constructors must produce:
-    /// the path `LibDefaults::new` builds when `UID` is unset.
-    const ENV_FREE_CLIENT_KEYTAB: &str = "/usr/local/var/krb5/user/0/client.keytab";
+    /// The unexpanded identity template every default constructor preserves.
+    const ENV_FREE_CLIENT_KEYTAB: &str = "/usr/local/var/krb5/user/%{euid}/client.keytab";
 
     /// The environment-free constructor's fields, and - as the control - the
     /// environment-reading constructor's, printed for the parent to assert on.
@@ -2548,7 +2542,7 @@ mod fork_tests {
         let config = Config::new_without_env();
         let defaults = LibDefaults::new_without_env();
         let parsed = Config::parse_without_env("[libdefaults]\n")?;
-        let reading = LibDefaults::new();
+        let reading = LibDefaults::from_env();
         let mut stdout = io::stdout().lock();
         for (name, keytab, k5login) in [
             (
@@ -2620,8 +2614,8 @@ mod fork_tests {
     ) -> Result<(), Box<dyn error::Error>> {
         assert_eq!(
             probe_field(lines, "reading_client_keytab")?,
-            format!("/usr/local/var/krb5/user/{HOSTILE_UID}/client.keytab"),
-            "the environment-reading constructor must follow the hostile UID"
+            ENV_FREE_CLIENT_KEYTAB,
+            "even the opt-in constructor must preserve the identity template"
         );
         assert_eq!(probe_field(lines, "reading_k5login")?, HOSTILE_HOME);
         Ok(())

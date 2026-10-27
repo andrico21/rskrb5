@@ -26,6 +26,15 @@ return `error::Config::EnctypeDisabled { key, enctype }`. Export RC4 additionall
 requires `allow_weak_crypto`. The flags are public `Toggle` fields and serde
 defaults missing flags to false. Policy is evaluated after all sections/includes.
 
+### Environment-free configuration defaults
+
+`LibDefaults::new`, `Config::new` and parsing no longer read `UID` or `HOME`.
+The client-keytab default retains `/usr/local/var/krb5/user/%{euid}/client.keytab`
+for identity expansion when used, and `k5login_directory` defaults to empty.
+Use the new `LibDefaults::from_env()` only when HOME discovery is intended.
+The `*_without_env` entry points remain compatibility aliases. Remaining
+configuration/credential discovery entry points document `# Ambient input`.
+
 ### Explicit transport DNS configuration
 
 `client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications

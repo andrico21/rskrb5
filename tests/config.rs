@@ -333,6 +333,30 @@ mod tests {
         Ok(())
     }
 
+    /// Ordinary defaults and parsing ignore hostile UID/HOME process inputs.
+    #[test]
+    fn ordinary_defaults_ignore_ambient_environment() -> Result<(), TestError> {
+        let test = "tests::ordinary_defaults_ignore_ambient_environment";
+        if !env::in_child(test) {
+            env::run_in_child(
+                test,
+                &[
+                    ("UID", Some("4242".as_ref())),
+                    ("HOME", Some("/attacker/home".as_ref())),
+                ],
+            );
+            return Ok(());
+        }
+        let config = Config::parse("[libdefaults]\n")?;
+        assert_eq!(config.libdefaults.k5login_directory, "");
+        assert_eq!(
+            config.libdefaults.default_client_keytab_name,
+            "/usr/local/var/krb5/user/%{euid}/client.keytab"
+        );
+        assert_eq!(Config::new(), config);
+        Ok(())
+    }
+
     /// Pins the gokrb5 defaults of the DNS lookup, canonicalization and address flags.
     #[test]
     fn libdefaults_defaults_match_gokrb5() {
