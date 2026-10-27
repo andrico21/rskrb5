@@ -826,8 +826,8 @@ mod tests {
             "
   allow_weak_crypto = true
   canonicalize = true
- default_tkt_enctypes = rc4-hmac
- allow_rc4 = true
+  default_tkt_enctypes = rc4-hmac
+  allow_rc4 = true
   default_tgs_enctypes = rc4-hmac
   permitted_enctypes = rc4-hmac
 "
