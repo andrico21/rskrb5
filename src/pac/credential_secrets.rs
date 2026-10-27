@@ -40,6 +40,8 @@ impl fmt::Debug for NtlmSupplementalCredential {
     }
 }
 
+// Drop audit: optional fixed-size hash erasure is synchronous and performs no
+// allocation, I/O or fallible work; abort still skips this destructor.
 impl Drop for NtlmSupplementalCredential {
     /// Erases both owned optional hashes before releasing the credential value.
     #[inline]
