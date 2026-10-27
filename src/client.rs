@@ -1282,7 +1282,7 @@ impl Tokio {
                 record_keytab_enctype_diagnostics(
                     &mut errors,
                     &enctypes,
-                    &self.config.libdefaults.default_tkt_enctype_ids,
+                    &self.config.libdefaults.default_tkt_enctype_ids(),
                     "default_tkt_enctypes",
                 );
                 record_keytab_enctype_diagnostics(
@@ -1309,7 +1309,7 @@ impl Tokio {
             has_tgt: self.tgt.is_some(),
             tgt_session_count: self.tgt_sessions.len(),
             service_ticket_cache_count: self.service_tickets.len(),
-            default_tkt_enctypes: self.config.libdefaults.default_tkt_enctype_ids.clone(),
+            default_tkt_enctypes: self.config.libdefaults.default_tkt_enctype_ids(),
             preferred_preauth_types: self.config.libdefaults.preferred_preauth_types.clone(),
             keytab_enctypes,
             udp_kdcs,

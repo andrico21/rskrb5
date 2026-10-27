@@ -207,13 +207,13 @@ mod tests {
                 names.join(" ")
             ))?;
             prop_assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled(), "parsed list is explicit");
-            prop_assert_eq!(&config.libdefaults.permitted_enctype_ids, &expected_ids);
+            prop_assert_eq!(&config.libdefaults.permitted_enctype_ids(), &expected_ids);
 
             let json = serde_json::to_string(&config.libdefaults)?;
             let decoded: LibDefaults = serde_json::from_str(&json)?;
 
             prop_assert!(decoded.permitted_enctypes_explicit.is_enabled(), "explicit flag survives serde");
-            prop_assert_eq!(&decoded.permitted_enctype_ids, &expected_ids);
+            prop_assert_eq!(&decoded.permitted_enctype_ids(), &expected_ids);
             prop_assert_eq!(decoded, config.libdefaults);
         }
 
@@ -250,6 +250,20 @@ mod tests {
         }
     }
 
+    /// Assigned names, rather than a construction-time cache, control the wire.
+    #[cfg(feature = "messages")]
+    #[test]
+    fn assigned_enctype_names_control_encoded_request() -> Result<(), TestError> {
+        // Given a configuration whose names change after construction.
+        let mut defaults = LibDefaults::new();
+        defaults.default_tkt_enctypes = vec!["aes256-cts".to_owned()];
+        // When the real AS-REQ builder encodes that configuration.
+        let etypes = encoded_as_req_etypes(&defaults)?;
+        // Then only the assigned algorithm is advertised.
+        assert_eq!(etypes, vec![18_i32]);
+        Ok(())
+    }
+
     /// Pins the gokrb5 defaults of the DNS lookup, canonicalization and address flags.
     #[test]
     fn libdefaults_defaults_match_gokrb5() {
@@ -272,8 +286,8 @@ mod tests {
         assert!(!config.libdefaults.no_addresses.is_enabled());
         assert!(config.libdefaults.forwardable.is_enabled());
         assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(24));
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32]);
-        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [18_i32]);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [18_i32]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [18_i32]);
 
         assert_eq!(config.realms.len(), 2);
         assert_eq!(
@@ -497,9 +511,12 @@ mod tests {
             config.libdefaults.default_tkt_enctypes,
             ["aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96"]
         );
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32, 17_i32]);
         assert_eq!(
-            config.libdefaults.default_tgs_enctype_ids,
+            config.libdefaults.default_tkt_enctype_ids(),
+            [18_i32, 17_i32]
+        );
+        assert_eq!(
+            config.libdefaults.default_tgs_enctype_ids(),
             [18_i32, 17_i32, 23_i32]
         );
 
@@ -575,7 +592,10 @@ mod tests {
 
         assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
         assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(10));
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, [18_i32, 17_i32]);
+        assert_eq!(
+            config.libdefaults.default_tkt_enctype_ids(),
+            [18_i32, 17_i32]
+        );
         assert_eq!(config.realms.len(), 2);
         assert_eq!(
             config
@@ -839,10 +859,10 @@ mod tests {
         .context("config parses")?;
 
         assert_eq!(
-            config.libdefaults.default_tkt_enctype_ids,
+            config.libdefaults.default_tkt_enctype_ids(),
             [23_i32, 23_i32, 23_i32]
         );
-        assert_eq!(config.libdefaults.default_tgs_enctype_ids, [23_i32]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [23_i32]);
         Ok(())
     }
 
@@ -1112,7 +1132,7 @@ mod tests {
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
 
         assert!(!decoded.permitted_enctypes_explicit.is_enabled());
-        assert_eq!(decoded.permitted_enctype_ids, vec![18_i32]);
+        assert_eq!(decoded.permitted_enctype_ids(), vec![18_i32]);
         Ok(())
     }
     /// Pins that an explicit `default_tkt_enctypes` entry outside the permitted list fails parsing.
@@ -1184,7 +1204,7 @@ mod tests {
 
         assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled());
         assert_eq!(
-            config.libdefaults.default_tkt_enctype_ids,
+            config.libdefaults.default_tkt_enctype_ids(),
             vec![18_i32, 17_i32, 23_i32]
         );
         #[cfg(feature = "messages")]
@@ -1235,7 +1255,7 @@ mod tests {
         )
         .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
 
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18_i32]);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
         #[cfg(feature = "messages")]
         assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
         Ok(())
@@ -1303,7 +1323,7 @@ mod tests {
         let config = loaded
             .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
 
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids, vec![18_i32]);
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
         Ok(())
     }
     /// Pins that a bare tag does not match a host that merely ends with its text.
@@ -1405,12 +1425,12 @@ mod tests {
                 .map_err(|cause| format!("config parses: {cause}"))?;
 
                 assert_eq!(
-                    config.libdefaults.permitted_enctype_ids,
+                    config.libdefaults.permitted_enctype_ids(),
                     vec![16_i32],
                     "{name}"
                 );
                 assert_eq!(
-                    config.libdefaults.default_tkt_enctype_ids,
+                    config.libdefaults.default_tkt_enctype_ids(),
                     vec![16_i32],
                     "{name}"
                 );
@@ -1425,13 +1445,16 @@ mod tests {
         let defaults = Config::new().libdefaults;
 
         assert_eq!(
-            defaults.default_tkt_enctype_ids,
+            defaults.default_tkt_enctype_ids(),
             vec![18_i32, 17_i32, 23_i32]
         );
         assert_eq!(
-            defaults.default_tgs_enctype_ids,
+            defaults.default_tgs_enctype_ids(),
             vec![18_i32, 17_i32, 23_i32]
         );
-        assert_eq!(defaults.permitted_enctype_ids, vec![18_i32, 17_i32, 23_i32]);
+        assert_eq!(
+            defaults.permitted_enctype_ids(),
+            vec![18_i32, 17_i32, 23_i32]
+        );
     }
 }

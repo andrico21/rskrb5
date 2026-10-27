@@ -398,8 +398,12 @@ mod tests {
     #[test]
     fn as_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
-            .with_default_tkt_enctype_ids(vec![18_i32, 17_i32, 23_i32])
-            .with_permitted_enctype_ids(vec![18_i32])
+            .with_default_tkt_enctypes(vec![
+                "aes256-cts".into(),
+                "aes128-cts".into(),
+                "rc4-hmac".into(),
+            ])
+            .with_permitted_enctypes(vec!["aes256-cts".into()])
             .with_permitted_enctypes_explicit(true.into());
         let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
@@ -413,8 +417,8 @@ mod tests {
     #[test]
     fn as_req_with_disjoint_permitted_enctypes_fails_closed() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
-            .with_default_tkt_enctype_ids(vec![18_i32])
-            .with_permitted_enctype_ids(vec![17_i32])
+            .with_default_tkt_enctypes(vec!["aes256-cts".into()])
+            .with_permitted_enctypes(vec!["aes128-cts".into()])
             .with_permitted_enctypes_explicit(true.into());
         let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         assert!(
@@ -435,8 +439,12 @@ mod tests {
     #[test]
     fn sha2_request_list_survives_the_implicit_permitted_set() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
-            .with_default_tkt_enctype_ids(vec![19_i32, 20_i32])
-            .with_permitted_enctype_ids(vec![18_i32, 17_i32, 23_i32]);
+            .with_default_tkt_enctypes(vec!["aes128-sha2".into(), "aes256-sha2".into()])
+            .with_permitted_enctypes(vec![
+                "aes256-cts".into(),
+                "aes128-cts".into(),
+                "rc4-hmac".into(),
+            ]);
         let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
 
         assert_eq!(options.etypes, vec![19_i32, 20_i32]);

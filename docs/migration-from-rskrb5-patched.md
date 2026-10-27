@@ -5,6 +5,16 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Derived enctype policy
+
+`LibDefaults` no longer stores writable `default_tkt_enctype_ids`,
+`default_tgs_enctype_ids` or `permitted_enctype_ids` fields. Call the methods
+with those names instead; each derives IDs from the current public name list
+and policy. Replace the three `with_*_enctype_ids` builders with their
+`with_*_enctypes` name-list counterparts. Serde input cannot inject cached IDs;
+the compatibility JSON snapshot derives IDs on demand. Empty request lists no
+longer substitute an unrelated built-in policy.
+
 ### Explicit transport DNS configuration
 
 `client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications

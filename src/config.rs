@@ -579,10 +579,6 @@ pub struct LibDefaults {
     pub default_tgs_enctypes: Vec<String>,
     /// Preferred ticket enctype names.
     pub default_tkt_enctypes: Vec<String>,
-    /// Preferred TGS enctype IDs implemented by gokrb5-compatible crypto.
-    pub default_tgs_enctype_ids: Vec<i32>,
-    /// Preferred ticket enctype IDs implemented by gokrb5-compatible crypto.
-    pub default_tkt_enctype_ids: Vec<i32>,
     /// Whether hostnames should be DNS-canonicalized.
     pub dns_canonicalize_hostname: Toggle,
     /// Whether KDC DNS lookup is enabled.
@@ -607,8 +603,6 @@ pub struct LibDefaults {
     pub no_addresses: Toggle,
     /// Permitted enctype names.
     pub permitted_enctypes: Vec<String>,
-    /// Permitted enctype IDs implemented by gokrb5-compatible crypto.
-    pub permitted_enctype_ids: Vec<i32>,
     /// Whether `[libdefaults] permitted_enctypes` was explicitly configured.
     ///
     /// Parsing a `[libdefaults] permitted_enctypes` line sets this flag. The
@@ -621,8 +615,8 @@ pub struct LibDefaults {
     ///
     /// Code that builds `LibDefaults` programmatically (a struct literal or
     /// `Default`) and wants the allowlist enforced must set this flag to
-    /// `true` together with `permitted_enctypes` / `permitted_enctype_ids`.
-    /// With the flag set, an empty `permitted_enctype_ids` permits no enctype.
+    /// `true` together with `permitted_enctypes`.
+    /// With the flag set, an empty derived list permits no enctype.
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: Toggle,
     /// Preferred preauthentication type IDs.
@@ -716,19 +710,23 @@ impl LibDefaults {
         self.default_tkt_enctypes = value;
         self
     }
-    /// Sets `default_tgs_enctype_ids`, preserving the other fields.
+    /// Derives supported TGS enctype IDs from the current names and policy.
     #[must_use]
     #[inline]
-    pub fn with_default_tgs_enctype_ids(mut self, value: Vec<i32>) -> Self {
-        self.default_tgs_enctype_ids = value;
-        self
+    pub fn default_tgs_enctype_ids(&self) -> Vec<i32> {
+        parse_supported_enctype_ids(
+            &self.default_tgs_enctypes,
+            self.allow_weak_crypto.is_enabled(),
+        )
     }
-    /// Sets `default_tkt_enctype_ids`, preserving the other fields.
+    /// Derives supported ticket enctype IDs from the current names and policy.
     #[must_use]
     #[inline]
-    pub fn with_default_tkt_enctype_ids(mut self, value: Vec<i32>) -> Self {
-        self.default_tkt_enctype_ids = value;
-        self
+    pub fn default_tkt_enctype_ids(&self) -> Vec<i32> {
+        parse_supported_enctype_ids(
+            &self.default_tkt_enctypes,
+            self.allow_weak_crypto.is_enabled(),
+        )
     }
     /// Sets `dns_canonicalize_hostname`, preserving the other fields.
     #[must_use]
@@ -814,12 +812,14 @@ impl LibDefaults {
         self.permitted_enctypes = value;
         self
     }
-    /// Sets `permitted_enctype_ids`, preserving the other fields.
+    /// Derives supported permitted enctype IDs from the current names and policy.
     #[must_use]
     #[inline]
-    pub fn with_permitted_enctype_ids(mut self, value: Vec<i32>) -> Self {
-        self.permitted_enctype_ids = value;
-        self
+    pub fn permitted_enctype_ids(&self) -> Vec<i32> {
+        parse_supported_enctype_ids(
+            &self.permitted_enctypes,
+            self.allow_weak_crypto.is_enabled(),
+        )
     }
     /// Sets `permitted_enctypes_explicit`, preserving the other fields.
     #[must_use]
@@ -934,7 +934,7 @@ impl LibDefaults {
             "/usr/local/var/krb5/user/{}/client.keytab",
             uid.unwrap_or_else(|| Self::FALLBACK_UID.to_owned())
         );
-        let mut defaults = Self {
+        Self {
             allow_weak_crypto: Toggle::Disabled,
             canonicalize: Toggle::Disabled,
             ccache_type: 4,
@@ -945,8 +945,6 @@ impl LibDefaults {
             default_realm: String::new(),
             default_tgs_enctypes: default_enctypes.clone(),
             default_tkt_enctypes: default_enctypes.clone(),
-            default_tgs_enctype_ids: Vec::new(),
-            default_tkt_enctype_ids: Vec::new(),
             dns_canonicalize_hostname: Toggle::Enabled,
             dns_lookup_kdc: Toggle::Disabled,
             dns_lookup_realm: Toggle::Disabled,
@@ -959,7 +957,6 @@ impl LibDefaults {
             kdc_time_sync: 1,
             no_addresses: Toggle::Enabled,
             permitted_enctypes: default_enctypes,
-            permitted_enctype_ids: Vec::new(),
             permitted_enctypes_explicit: Toggle::Disabled,
             preferred_preauth_types: DEFAULT_PREAUTH_TYPES.to_vec(),
             proxiable: Toggle::Disabled,
@@ -970,9 +967,7 @@ impl LibDefaults {
             ticket_lifetime: Duration::from_hours(24),
             udp_preference_limit: 1465,
             verify_ap_req_nofail: Toggle::Disabled,
-        };
-        defaults.refresh_enctype_ids();
-        defaults
+        }
     }
 
     /// Apply one `[libdefaults]` section's lines, recording in `enctypes` which
@@ -1065,7 +1060,6 @@ impl LibDefaults {
             }
         }
 
-        self.refresh_enctype_ids();
         Ok(())
     }
 
@@ -1090,7 +1084,8 @@ impl LibDefaults {
         if !self.permitted_enctypes_explicit.is_enabled() {
             return Ok(());
         }
-        if self.permitted_enctype_ids.is_empty() {
+        let permitted = self.permitted_enctype_ids();
+        if permitted.is_empty() {
             return Err(Error::NoPermittedEnctypes {
                 names: self.permitted_enctypes.clone(),
             });
@@ -1113,10 +1108,9 @@ impl LibDefaults {
             }
             // Names without a supported ID are never requested, so only
             // supported IDs can be narrowed away.
-            let not_permitted = names.iter().find(|name| {
-                supported_enctype_id(name)
-                    .is_some_and(|id| !self.permitted_enctype_ids.contains(&id))
-            });
+            let not_permitted = names
+                .iter()
+                .find(|name| supported_enctype_id(name).is_some_and(|id| !permitted.contains(&id)));
             if let Some(name) = not_permitted {
                 return Err(Error::EnctypeNotPermitted {
                     key,
@@ -1125,23 +1119,6 @@ impl LibDefaults {
             }
         }
         Ok(())
-    }
-
-    /// Recompute the three enctype ID lists from their name lists, honouring
-    /// `allow_weak_crypto`.
-    fn refresh_enctype_ids(&mut self) {
-        self.default_tgs_enctype_ids = parse_supported_enctype_ids(
-            &self.default_tgs_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        );
-        self.default_tkt_enctype_ids = parse_supported_enctype_ids(
-            &self.default_tkt_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        );
-        self.permitted_enctype_ids = parse_supported_enctype_ids(
-            &self.permitted_enctypes,
-            self.allow_weak_crypto.is_enabled(),
-        );
     }
 }
 
@@ -1587,10 +1564,10 @@ struct LibDefaultsJson<'config> {
     default_tkt_enctypes: &'config [String],
     /// [`LibDefaults::default_tgs_enctype_ids`], as gokrb5's `DefaultTGSEnctypeIDs`.
     #[serde(rename = "DefaultTGSEnctypeIDs")]
-    default_tgs_enctype_ids: &'config [i32],
+    default_tgs_enctype_ids: Vec<i32>,
     /// [`LibDefaults::default_tkt_enctype_ids`], as gokrb5's `DefaultTktEnctypeIDs`.
     #[serde(rename = "DefaultTktEnctypeIDs")]
-    default_tkt_enctype_ids: &'config [i32],
+    default_tkt_enctype_ids: Vec<i32>,
     /// [`LibDefaults::dns_canonicalize_hostname`], as gokrb5's `DNSCanonicalizeHostname`.
     #[serde(rename = "DNSCanonicalizeHostname")]
     dns_canonicalize_hostname: Toggle,
@@ -1629,7 +1606,7 @@ struct LibDefaultsJson<'config> {
     permitted_enctypes: &'config [String],
     /// [`LibDefaults::permitted_enctype_ids`], as gokrb5's `PermittedEnctypeIDs`.
     #[serde(rename = "PermittedEnctypeIDs")]
-    permitted_enctype_ids: &'config [i32],
+    permitted_enctype_ids: Vec<i32>,
     /// [`LibDefaults::preferred_preauth_types`], as gokrb5's `PreferredPreauthTypes`.
     #[serde(rename = "PreferredPreauthTypes")]
     preferred_preauth_types: &'config [i32],
@@ -1673,8 +1650,8 @@ impl<'config> From<&'config LibDefaults> for LibDefaultsJson<'config> {
             default_realm: &libdefaults.default_realm,
             default_tgs_enctypes: &libdefaults.default_tgs_enctypes,
             default_tkt_enctypes: &libdefaults.default_tkt_enctypes,
-            default_tgs_enctype_ids: &libdefaults.default_tgs_enctype_ids,
-            default_tkt_enctype_ids: &libdefaults.default_tkt_enctype_ids,
+            default_tgs_enctype_ids: libdefaults.default_tgs_enctype_ids(),
+            default_tkt_enctype_ids: libdefaults.default_tkt_enctype_ids(),
             dns_canonicalize_hostname: libdefaults.dns_canonicalize_hostname,
             dns_lookup_kdc: libdefaults.dns_lookup_kdc,
             dns_lookup_realm: libdefaults.dns_lookup_realm,
@@ -1687,7 +1664,7 @@ impl<'config> From<&'config LibDefaults> for LibDefaultsJson<'config> {
             kdc_time_sync: libdefaults.kdc_time_sync,
             no_addresses: libdefaults.no_addresses,
             permitted_enctypes: &libdefaults.permitted_enctypes,
-            permitted_enctype_ids: &libdefaults.permitted_enctype_ids,
+            permitted_enctype_ids: libdefaults.permitted_enctype_ids(),
             preferred_preauth_types: &libdefaults.preferred_preauth_types,
             proxiable: libdefaults.proxiable,
             rdns: libdefaults.rdns,
