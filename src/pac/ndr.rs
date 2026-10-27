@@ -6,6 +6,16 @@ use super::{
     RpcUnicodeString, SecpkgSupplementalCredential, Sid, SidAndAttributes, reader::Reader,
 };
 
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "ndr_tests.rs"]
+mod tests;
+
 /// Upper bound on any NDR conformant count, to stop hostile buffers from
 /// requesting huge allocations.
 const MAX_REASONABLE_NDR_COUNT: u32 = 1_000_000;
@@ -530,7 +540,7 @@ fn read_deferred_u64_array(
     Ok(values)
 }
 
-/// Reads a deferred conformant array of boolean claim values (one byte each).
+/// Reads Boolean claim values as aligned ULONG64 zero/one values (MS-ADTS).
 ///
 /// # Errors
 ///
@@ -562,9 +572,14 @@ fn read_deferred_bool_array(
     let len = ndr_len(count)?;
     let mut values = Vec::with_capacity(len);
     for _ in 0..count {
-        values.push(reader.read_u8()? != 0);
+        let value = read_ndr_u64(reader)?;
+        let boolean = match value {
+            0 => false,
+            1 => true,
+            _ => return Err(Error::InvalidBooleanClaim(value)),
+        };
+        values.push(boolean);
     }
-    reader.align(4)?;
     Ok(values)
 }
 

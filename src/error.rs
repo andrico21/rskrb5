@@ -1578,6 +1578,9 @@ pub enum Pac {
     /// A claims value type is not supported.
     #[error("unsupported PAC claim type: {0}")]
     UnsupportedClaimType(u16),
+    /// A Boolean ULONG64 claim was neither zero nor one.
+    #[error("invalid Boolean claim value: {0}")]
+    InvalidBooleanClaim(u64),
     /// A claim union discriminant did not match the entry type.
     #[error("invalid PAC claim union tag: claim type {claim_type}, union tag {union_tag}")]
     InvalidClaimUnionTag {

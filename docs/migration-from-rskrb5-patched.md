@@ -5,6 +5,11 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Boolean claim values
+
+Boolean claim arrays are decoded as aligned ULONG64 values, not bytes.
+Values other than zero or one return `error::Pac::InvalidBooleanClaim`.
+
 ### NTLM supplemental validity masks
 
 `NTLM_SUPPLEMENTAL_CRED_LMOWF` and `NTLM_SUPPLEMENTAL_CRED_NTOWF` now hold

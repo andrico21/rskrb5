@@ -15,6 +15,8 @@ Full commands, red runs and scratch failure QA are recorded in
 
 ## Traversal policy and trust boundary
 
+| RSK-8E17F182 | fixed | `boolean_claims_decode_aligned_u64_values`, `boolean_claims_reject_non_binary_u64`; commit suffix for this item | Boolean claims consume eight-byte-aligned ULONG64 values and reject values other than 0/1 with `Pac::InvalidBooleanClaim` (MS-ADTS CLAIM_ENTRY/CLAIM_TYPE). | N/A |
+
 The inclusive limits match the existing service authorization validator: eight
 wrappers and 1 MiB of visited entry payloads. Every visited payload is charged,
 including ignored entries and PAC bytes; nested content is charged at each level
