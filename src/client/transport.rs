@@ -4,7 +4,7 @@ use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use std::env;
+use std::{env, io};
 
 use hickory_resolver::{
     TokioResolver,
@@ -14,7 +14,7 @@ use hickory_resolver::{
 };
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::{TcpStream, ToSocketAddrs, UdpSocket},
+    net::{TcpStream, ToSocketAddrs, UdpSocket, lookup_host},
     time::timeout,
 };
 
@@ -227,8 +227,29 @@ impl Tokio {
         }
 
         self.with_transport_timeout(async {
-            let socket = UdpSocket::bind("0.0.0.0:0").await?;
-            socket.connect(addr).await?;
+            let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
+            let mut connected = None;
+            for candidate in lookup_host(addr).await? {
+                let wildcard = if candidate.is_ipv4() {
+                    "0.0.0.0:0"
+                } else {
+                    "[::]:0"
+                };
+                let attempt = async {
+                    let socket = UdpSocket::bind(wildcard).await?;
+                    socket.connect(candidate).await?;
+                    Ok::<_, io::Error>(socket)
+                }
+                .await;
+                match attempt {
+                    Ok(socket) => {
+                        connected = Some(socket);
+                        break;
+                    }
+                    Err(error) => last_error = error,
+                }
+            }
+            let socket = connected.ok_or(last_error)?;
             let _: usize = socket.send(request).await?;
 
             let mut response = vec![0; self.udp_response_limit];

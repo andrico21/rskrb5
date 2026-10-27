@@ -103,6 +103,33 @@ mod tests {
         Ok(())
     }
 
+    /// IPv6-only UDP peers can receive a request without a TCP fallback.
+    #[test]
+    fn udp_transport_reaches_ipv6_loopback() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a live IPv6-only UDP peer on an ephemeral port.
+            let server = UdpSocket::bind("[::1]:0").await?;
+            let addr = server.local_addr()?;
+            let task = tokio::spawn(async move {
+                let mut request = [0; 64];
+                let (len, peer) = server.recv_from(&mut request).await?;
+                assert_eq!(request.get(..len), Some(b"ipv6-request".as_slice()));
+                let _: usize = server.send_to(b"ipv6-response", peer).await?;
+                Ok::<_, io::Error>(())
+            });
+            // When the direct UDP transport sends to that address.
+            let result = Tokio::new()
+                .with_timeout(Duration::from_secs(2))
+                .send_udp(addr, b"ipv6-request")
+                .await;
+            // Then a complete UDP reply is returned.
+            let response = result?;
+            task.await??;
+            assert_eq!(response, b"ipv6-response");
+            Ok::<_, TestError>(())
+        })
+    }
+
     /// Pins that a UDP send transmits the raw request datagram and returns the reply datagram.
     #[test]
     fn tokio_transport_sends_udp_datagram() -> Result<(), TestError> {
