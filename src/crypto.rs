@@ -1685,6 +1685,9 @@ fn keyed_cipher<C>(key: &[u8]) -> Result<C, Error>
 where
     C: KeyInit,
 {
+    #[cfg(test)]
+    tests::CIPHER_SETUPS.with(|calls| calls.set(calls.get().saturating_add(1)));
+
     C::new_from_slice(key).map_err(|InvalidLength| Error::InvalidKeyLength {
         expected: C::key_size(),
         actual: key.len(),
@@ -2231,11 +2234,55 @@ fn hex_encode(bytes: &[u8]) -> String {
 mod tests {
     use core::{cell::Cell, error::Error};
 
-    use super::{AesSha2Etype, Error as CryptoError};
+    use super::{AesSha2Etype, Des3CbcSha1KdEtype, Error as CryptoError};
 
     std::thread_local! {
         /// Raw AES decryption entries on this test thread, isolated from parallel tests.
         pub(super) static AES_DECRYPTIONS: Cell<usize> = const { Cell::new(0) };
+        /// Cipher-constructor entries on this thread, independent of parallel tests.
+        pub(super) static CIPHER_SETUPS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// AES raw encryption and decryption each construct one schedule regardless of blocks.
+    #[test]
+    fn aes_cipher_setup_is_once_per_raw_operation() -> Result<(), Box<dyn Error>> {
+        // Given one-block, multiblock and CTS-tail input lengths.
+        for etype in [AesSha2Etype::Aes128, AesSha2Etype::Aes256] {
+            let key = vec![0x42; etype.key_len()];
+            for length in [16, 32, 33, 4096, 4097] {
+                let plaintext = vec![0x24; length];
+                CIPHER_SETUPS.set(0);
+                // When raw encryption and decryption process those blocks.
+                let (_, encrypted) = etype.encrypt_data(&key, &plaintext)?;
+                let encrypt_setups = CIPHER_SETUPS.replace(0);
+                let decrypted = etype.decrypt_data(&key, &encrypted)?;
+                // Then each operation performs one setup, not one setup per block.
+                assert_eq!(encrypt_setups, 1, "AES encryption setup count");
+                assert_eq!(CIPHER_SETUPS.get(), 1, "AES decryption setup count");
+                assert_eq!(decrypted, plaintext);
+            }
+        }
+        Ok(())
+    }
+
+    /// DES3 raw encryption and decryption each construct one schedule regardless of blocks.
+    #[test]
+    fn des3_cipher_setup_is_once_per_raw_operation() -> Result<(), Box<dyn Error>> {
+        // Given one-block and multiblock DES3 inputs.
+        let key = [0x42; 24];
+        for length in [8, 16, 4096] {
+            let plaintext = vec![0x24; length];
+            CIPHER_SETUPS.set(0);
+            // When raw encryption and decryption process those blocks.
+            let (_, encrypted) = Des3CbcSha1KdEtype::encrypt_data(&key, &plaintext)?;
+            let encrypt_setups = CIPHER_SETUPS.replace(0);
+            let decrypted = Des3CbcSha1KdEtype::decrypt_data(&key, &encrypted)?;
+            // Then each operation performs one setup and preserves the payload.
+            assert_eq!(encrypt_setups, 1, "DES3 encryption setup count");
+            assert_eq!(CIPHER_SETUPS.get(), 1, "DES3 decryption setup count");
+            assert_eq!(decrypted, plaintext);
+        }
+        Ok(())
     }
 
     /// Invalid SHA2 tags must be rejected before the raw AES decrypt boundary.
