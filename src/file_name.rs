@@ -1,10 +1,14 @@
-use std::{env, path::PathBuf};
+#[cfg(target_os = "linux")]
+use std::fs;
+use std::path::PathBuf;
 
 /// Why a credential file name could not be resolved to a path.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Error {
     /// The name, or the residual after its type prefix, is empty.
     Empty,
+    /// Process identities are unavailable on this platform or from procfs.
+    IdentityUnavailable,
     /// The name carries a type prefix that the caller does not accept.
     UnsupportedType {
         /// The rejected type prefix as written in the name.
@@ -29,11 +33,11 @@ pub(crate) fn file_path_from_name(name: &str, allowed_types: &[&str]) -> Result<
     }
 
     let Some((prefix, path)) = name.split_once(':') else {
-        return Ok(PathBuf::from(expand_path_tokens(name)));
+        return expand_path_tokens(name).map(PathBuf::from);
     };
 
     if is_windows_drive_path(prefix, path) {
-        return Ok(PathBuf::from(expand_path_tokens(name)));
+        return expand_path_tokens(name).map(PathBuf::from);
     }
 
     if allowed_types
@@ -43,7 +47,7 @@ pub(crate) fn file_path_from_name(name: &str, allowed_types: &[&str]) -> Result<
         if path.is_empty() {
             return Err(Error::Empty);
         }
-        Ok(PathBuf::from(expand_path_tokens(path)))
+        expand_path_tokens(path).map(PathBuf::from)
     } else {
         Err(Error::UnsupportedType {
             name_type: prefix.to_owned(),
@@ -64,15 +68,55 @@ fn is_windows_drive_path(prefix: &str, path: &str) -> bool {
 
 /// Expand the `%{uid}` and `%{euid}` tokens in a credential file path.
 ///
-/// Both tokens expand to the `UID` environment variable, or to `0` when it is
-/// unset or not valid Unicode.
-pub(crate) fn expand_path_tokens(value: &str) -> String {
-    if !value.contains("%{") {
-        return value.to_owned();
+/// Linux reads real/effective identities from `/proc/self/status`. Other
+/// platforms reject these tokens; no environment variable supplies identity.
+///
+/// # Errors
+///
+/// Returns [`Error::IdentityUnavailable`] when process identity cannot be read.
+pub(crate) fn expand_path_tokens(value: &str) -> Result<String, Error> {
+    if !value.contains("%{uid}") && !value.contains("%{euid}") {
+        return Ok(value.to_owned());
     }
+    let (real, effective) = process_identity()?;
+    Ok(value
+        .replace("%{uid}", &real.to_string())
+        .replace("%{euid}", &effective.to_string()))
+}
 
-    let user_id = env::var("UID").unwrap_or_else(|_| "0".to_owned());
-    value
-        .replace("%{uid}", &user_id)
-        .replace("%{euid}", &user_id)
+/// Real and effective Linux identities, without consulting ambient UID text.
+///
+/// # Errors
+///
+/// Returns [`Error::IdentityUnavailable`] for unsupported or unavailable procfs.
+#[cfg(target_os = "linux")]
+fn process_identity() -> Result<(u32, u32), Error> {
+    let status =
+        fs::read_to_string("/proc/self/status").map_err(|_io| Error::IdentityUnavailable)?;
+    let mut ids = status
+        .lines()
+        .find_map(|line| line.strip_prefix("Uid:"))
+        .ok_or(Error::IdentityUnavailable)?
+        .split_whitespace();
+    let real = ids
+        .next()
+        .ok_or(Error::IdentityUnavailable)?
+        .parse()
+        .map_err(|_parse| Error::IdentityUnavailable)?;
+    let effective = ids
+        .next()
+        .ok_or(Error::IdentityUnavailable)?
+        .parse()
+        .map_err(|_parse| Error::IdentityUnavailable)?;
+    Ok((real, effective))
+}
+
+/// Unsupported platforms cannot infer identities for token expansion.
+///
+/// # Errors
+///
+/// Always returns [`Error::IdentityUnavailable`].
+#[cfg(not(target_os = "linux"))]
+const fn process_identity() -> Result<(u32, u32), Error> {
+    Err(Error::IdentityUnavailable)
 }

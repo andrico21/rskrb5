@@ -240,7 +240,29 @@ mod tests {
             PathBuf::from("C:\\temp\\krb5cc")
         );
 
-        let user_id = var("UID").unwrap_or_else(|_| "0".to_owned());
+        Ok(())
+    }
+
+    /// Linux identity expansion ignores an inherited path-like UID value.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn resolves_process_identity_tokens_without_uid_environment() -> Result<(), TestError> {
+        const TEST_PATH: &str = "tests::resolves_process_identity_tokens_without_uid_environment";
+        if !env::in_child(TEST_PATH) {
+            env::try_run_in_child(TEST_PATH, &[("UID", Some("../../wrong-user".as_ref()))])?;
+            return Ok(());
+        }
+        // Given real and effective identities independently reported by procfs.
+        let status = read_to_string("/proc/self/status")?;
+        let mut ids = status
+            .lines()
+            .find_map(|line| line.strip_prefix("Uid:"))
+            .context("kernel reports identities")?
+            .split_whitespace();
+        let user_id = ids.next().context("real identity")?;
+        let effective_id = ids.next().context("effective identity")?;
+
+        // When resolving every file-backed cache name form.
         assert_eq!(
             CCache::file_path_from_cache_name("FILE:/tmp/krb5cc_%{uid}")
                 .context("uid path token resolves")?,
@@ -249,7 +271,7 @@ mod tests {
         assert_eq!(
             CCache::file_path_from_cache_name("WRFILE:/tmp/krb5cc_%{euid}")
                 .context("euid path token resolves")?,
-            PathBuf::from(format!("/tmp/krb5cc_{user_id}"))
+            PathBuf::from(format!("/tmp/krb5cc_{effective_id}"))
         );
         assert_eq!(
             CCache::file_path_from_cache_name("DIR::relative/tkt_%{uid}")
@@ -257,6 +279,23 @@ mod tests {
             PathBuf::from(format!("relative/tkt_{user_id}"))
         );
         Ok(())
+    }
+
+    /// Unsupported platforms reject UID tokens instead of inventing an identity.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn identity_tokens_require_linux_procfs() {
+        for name in [
+            "FILE:cache_%{uid}",
+            "WRFILE:cache_%{euid}",
+            "DIR::collection/tkt_%{uid}",
+            "DIR:collection_%{euid}",
+        ] {
+            assert!(matches!(
+                CCache::file_path_from_cache_name(name),
+                Err(Error::IdentityUnavailable)
+            ));
+        }
     }
 
     /// Pins the file paths of typed cache names, and that a `DIR:` collection

@@ -15,10 +15,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::file_name;
-
 #[cfg(feature = "serde")]
 use serde::de::Error as _;
+
+use crate::file_name;
 
 /// First byte of every MIT credential cache file.
 const CCACHE_FIRST_BYTE: u8 = 5;
@@ -559,12 +559,18 @@ fn direct_file_path_from_cache_name(name: &str) -> Result<PathBuf, Error> {
     if let Some(path) = dir_subsidiary_path(name) {
         return validate_dir_subsidiary_path(path);
     }
-    file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(|error| match error {
+    file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(file_name_error)
+}
+
+/// Map the shared filename boundary into the credential-cache error domain.
+fn file_name_error(error: file_name::Error) -> Error {
+    match error {
         file_name::Error::Empty => Error::InvalidCacheName,
+        file_name::Error::IdentityUnavailable => Error::IdentityUnavailable,
         file_name::Error::UnsupportedType { name_type } => Error::UnsupportedCacheType {
             cache_type: name_type,
         },
-    })
+    }
 }
 
 /// The path of a subsidiary `DIR::path` cache name, or `None` for any other
@@ -596,7 +602,7 @@ fn validate_dir_subsidiary_path(path: &str) -> Result<PathBuf, Error> {
     if path.is_empty() {
         return Err(Error::InvalidCacheName);
     }
-    let expanded = PathBuf::from(file_name::expand_path_tokens(path));
+    let expanded = PathBuf::from(file_name::expand_path_tokens(path).map_err(file_name_error)?);
     let has_parent = expanded
         .parent()
         .is_some_and(|parent| !parent.as_os_str().is_empty());
@@ -621,7 +627,8 @@ fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     if directory.is_empty() {
         return Err(Error::InvalidCacheName);
     }
-    let collection = PathBuf::from(file_name::expand_path_tokens(directory));
+    let collection =
+        PathBuf::from(file_name::expand_path_tokens(directory).map_err(file_name_error)?);
     let primary_path = collection.join(DIR_PRIMARY_FILE);
     let primary = match fs::read_to_string(&primary_path) {
         Ok(contents) => parse_dir_primary_name(&contents)?,

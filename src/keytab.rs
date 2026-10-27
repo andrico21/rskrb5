@@ -285,6 +285,7 @@ impl Keytab {
     pub fn file_path_from_keytab_name(name: &str) -> Result<PathBuf, Error> {
         file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(|error| match error {
             file_name::Error::Empty => Error::InvalidKeytabName,
+            file_name::Error::IdentityUnavailable => Error::IdentityUnavailable,
             file_name::Error::UnsupportedType { name_type } => Error::UnsupportedKeytabType {
                 keytab_type: name_type,
             },

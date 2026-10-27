@@ -16,6 +16,8 @@ mod tests {
         error,
         fmt::{Display, Write as _},
     };
+    #[cfg(target_os = "linux")]
+    use std::fs::read_to_string;
     use std::{
         env::{VarError, temp_dir, var},
         fs::remove_file,
@@ -272,7 +274,29 @@ mod tests {
             PathBuf::from("C:\\temp\\krb5.keytab")
         );
 
-        let user_id = var("UID").unwrap_or_else(|_| "0".to_owned());
+        Ok(())
+    }
+
+    /// Linux keytab identity tokens use kernel identities, never UID text.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn resolves_keytab_process_identity_tokens() -> Result<(), TestError> {
+        const TEST_PATH: &str = "tests::resolves_keytab_process_identity_tokens";
+        if !env::in_child(TEST_PATH) {
+            env::try_run_in_child(TEST_PATH, &[("UID", Some("../../wrong-user".as_ref()))])?;
+            return Ok(());
+        }
+        // Given identities reported by the running kernel.
+        let status = read_to_string("/proc/self/status")?;
+        let mut ids = status
+            .lines()
+            .find_map(|line| line.strip_prefix("Uid:"))
+            .context("kernel reports identities")?
+            .split_whitespace();
+        let user_id = ids.next().context("real identity")?;
+        let effective_id = ids.next().context("effective identity")?;
+
+        // When resolving keytab tokens, both identity roles stay explicit.
         assert_eq!(
             Keytab::file_path_from_keytab_name("FILE:/tmp/krb5_%{uid}.keytab")
                 .context("uid path token resolves")?,
@@ -281,9 +305,19 @@ mod tests {
         assert_eq!(
             Keytab::file_path_from_keytab_name("WRFILE:/tmp/krb5_%{euid}.keytab")
                 .context("euid path token resolves")?,
-            PathBuf::from(format!("/tmp/krb5_{user_id}.keytab"))
+            PathBuf::from(format!("/tmp/krb5_{effective_id}.keytab"))
         );
         Ok(())
+    }
+
+    /// Unsupported platforms reject identity tokens with the named error.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn keytab_identity_tokens_require_linux_procfs() {
+        assert!(matches!(
+            Keytab::file_path_from_keytab_name("FILE:key_%{uid}_%{euid}"),
+            Err(Error::IdentityUnavailable)
+        ));
     }
 
     /// Pins the file paths of typed `FILE:`, `WRFILE:` and Windows keytab names.

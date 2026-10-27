@@ -5,6 +5,16 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Credential filename identity tokens
+
+`%{uid}` and `%{euid}` in keytab and credential-cache names now use the
+Linux process's real and effective UIDs from `/proc/self/status`, respectively.
+The `UID` environment variable is never read for expansion. Missing or malformed
+procfs identity data, and all non-Linux platforms including macOS and Windows,
+return the new `error::Ccache::IdentityUnavailable` or
+`error::Keytab::IdentityUnavailable` variant. Use explicitly resolved literal
+paths on those platforms; token-free names do not require procfs.
+
 ### Decrypted PAC credential ownership
 
 `SecpkgSupplementalCredential::credentials` is now `Zeroizing<Vec<u8>>`.
