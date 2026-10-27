@@ -43,8 +43,10 @@ mod tests {
 
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use hex::FromHexError;
+    #[cfg(any(feature = "tokio", feature = "tower"))]
+    use http_types::Method;
     #[cfg(feature = "tokio")]
-    use http_types::{Method, Uri};
+    use http_types::Uri;
     use http_types::{
         Request, Response, StatusCode,
         header::{HeaderValue, WWW_AUTHENTICATE},
@@ -58,6 +60,10 @@ mod tests {
     };
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::config::Config;
+    #[cfg(feature = "tokio")]
+    use rskrb5_ng::service::ReplayCache;
+    #[cfg(any(feature = "tokio", feature = "tower"))]
+    use rskrb5_ng::service::SharedReplayCache;
     use rskrb5_ng::{
         ap_req,
         client::{AsRepSession, principal::Principal},
@@ -993,6 +999,72 @@ mod tests {
         Ok(())
     }
 
+    /// Explicit cache sharing rejects cross-request replays across independent layer constructions.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn replay_scope_independent_layers_share_explicit_cache() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let cache = SharedReplayCache::new();
+        let mut first_service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_shared_replay_cache(cache.clone())
+            .with_ap_rep(false)
+            .layer(AssertAcceptedService);
+        let mut second_service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_shared_replay_cache(cache)
+            .with_ap_rep(false)
+            .layer(AssertAcceptedService);
+        let header = valid_authorization_header()?;
+        let mut first = Request::new(());
+        *first.uri_mut() = "/account".parse()?;
+        krb_http::set_authorization_header(&mut first, &header)?;
+        let mut replay = Request::new(());
+        *replay.method_mut() = Method::POST;
+        *replay.uri_mut() = "/transfer".parse()?;
+        krb_http::set_authorization_header(&mut replay, &header)?;
+        assert_eq!(
+            run_ready(first_service.call(first))??.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            run_ready(second_service.call(replay))??.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        Ok(())
+    }
+
+    /// Independent default caches each accept a first presentation, documenting the topology limit.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn replay_scope_independent_caches_do_not_coordinate() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let header = valid_authorization_header()?;
+        for path in ["/account", "/transfer"] {
+            let mut service = krb_http::NegotiateLayer::new(&keytab)
+                .with_now(timestamp(1_893_553_447)?)
+                .with_ap_rep(false)
+                .layer(AssertAcceptedService);
+            let mut request = Request::new(());
+            *request.uri_mut() = path.parse()?;
+            krb_http::set_authorization_header(&mut request, &header)?;
+            assert_eq!(run_ready(service.call(request))??.status(), StatusCode::OK);
+        }
+        Ok(())
+    }
+
+    /// Challenge and reject response bodies contain no internal parser or validation detail.
+    #[test]
+    fn rejection_helpers_have_opaque_bodies() -> Result<(), TestError> {
+        let challenge: Response<String> = krb_http::challenge_response();
+        let reject: Response<String> = krb_http::reject_response()?;
+        assert_eq!(challenge.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(reject.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(challenge.body(), "");
+        assert_eq!(reject.body(), "");
+        Ok(())
+    }
+
     fn valid_authorization_header() -> Result<String, TestError> {
         let ap_req_token = Krb5MechToken::ap_req(gss_ap_req_fixture()?)
             .encode()
@@ -1648,9 +1720,13 @@ mod tests {
         authorization: &str,
     ) -> Result<String, TestError> {
         let keytab = keytab()?;
+        let wide_skew = Duration::from_hours(100 * 365 * 24);
         let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(Duration::from_hours(100 * 365 * 24));
+            .with_max_clock_skew(wide_skew)
+            .with_shared_replay_cache(SharedReplayCache::from_cache(ReplayCache::with_limits(
+                wide_skew, 16,
+            )));
         let accepted = spnego::accept_sec_context_header(&mut validator, authorization)
             .map_err(|cause| format!("wrapper Authorization header validates: {cause}"))?;
         Ok(accepted

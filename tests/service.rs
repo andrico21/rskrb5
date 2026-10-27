@@ -1,6 +1,8 @@
 //! Service AP-REQ validation, AP-REP, replay cache and keytab loading tests against the gokrb5 vectors.
 #![cfg(feature = "messages")]
 
+extern crate alloc;
+
 #[path = "support/context.rs"]
 mod context;
 #[path = "support/env.rs"]
@@ -17,6 +19,7 @@ mod pac_ad_win2k;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use alloc::sync::Arc;
     use core::time::Duration;
     use std::{
         env::{temp_dir, var},
@@ -31,12 +34,19 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rasn::der;
     use rskrb5_ng::{
+        ap_req::{decode_authenticator, decrypt_ap_req_authenticator},
         config::Config,
         crypto::AesSha1Etype,
-        error::{Crypto as CryptoError, Pac as PacError, Service as Error},
+        error::{
+            ApReq as ApReqError, Crypto as CryptoError, Pac as PacError, Service as Error,
+            Ticket as TicketError,
+        },
         keytab::{EncryptionKey, Keytab},
         pac,
-        service::{ApRepOptions, Principal, SharedReplayCache, ValidatedApReq, Validator},
+        service::{
+            ApRepOptions, Principal, ReplayCache, SharedReplayCache, TransitValidator,
+            ValidatedApReq, Validator,
+        },
         ticket::decrypt_ticket_enc_part,
     };
 
@@ -1228,6 +1238,114 @@ mod tests {
             .map_err(|cause| format!("fixture AP-REQ decodes: {cause}"))?)
     }
 
+    /// Rejects a nested ticket version even when its encrypted part is valid.
+    #[test]
+    fn service_rejects_nested_ticket_version() -> Result<(), TestError> {
+        // Given a valid ticket with only the cleartext version changed.
+        let keytab = http_keytab()?;
+        let mut request = valid_ap_req_struct()?;
+        request.ticket.tkt_vno = 6_i32.into();
+        let bytes = der::encode(&request)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+
+        // When the service accepts the AP-REQ.
+        let error = validator
+            .validate_ap_req(&bytes)
+            .err()
+            .context("version rejected")?;
+
+        // Then semantic rejection precedes replay admission.
+        assert!(
+            matches!(error, Error::InvalidMessage { field: "tkt-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        assert_eq!(validator.replay_cache_mut().len(), 0);
+        Ok(())
+    }
+
+    /// Rejects a decrypted authenticator with a non-v5 protocol version.
+    #[test]
+    fn service_rejects_nested_authenticator_version() -> Result<(), TestError> {
+        // Given a correctly encrypted authenticator whose version is six.
+        let keytab = http_keytab()?;
+        let mut request = valid_ap_req_struct()?;
+        let session_key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator = decrypt_ap_req_authenticator(
+            &request,
+            &session_key,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+        )?;
+        authenticator.authenticator_vno = 6_i32.into();
+        request.authenticator.cipher = encrypt_message(
+            &session_key,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
+        let bytes = der::encode(&request)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+
+        // When the service accepts the AP-REQ.
+        let error = validator
+            .validate_ap_req(&bytes)
+            .err()
+            .context("version rejected")?;
+
+        // Then semantic rejection precedes replay admission.
+        assert!(
+            matches!(error, Error::InvalidMessage { field: "authenticator-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        assert_eq!(validator.replay_cache_mut().len(), 0);
+        Ok(())
+    }
+
+    /// Shared authenticator decoding enforces the version without service validation.
+    #[test]
+    fn authenticator_decoder_rejects_nested_version() -> Result<(), TestError> {
+        // Given a DER authenticator with an invalid fixed version.
+        let request = valid_ap_req_struct()?;
+        let session_key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator = decrypt_ap_req_authenticator(
+            &request,
+            &session_key,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+        )?;
+        authenticator.authenticator_vno = 6_i32.into();
+        let bytes = der::encode(&authenticator)?;
+
+        // When decoded through the semantic boundary.
+        let error = decode_authenticator(&bytes)
+            .err()
+            .context("version rejected")?;
+
+        // Then the failure identifies the version, not DER or crypto.
+        assert!(
+            matches!(error, ApReqError::InvalidMessage { field: "authenticator-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        Ok(())
+    }
+
+    /// Shared ticket decryption enforces the version without service validation.
+    #[test]
+    fn ticket_decryptor_rejects_nested_version() -> Result<(), TestError> {
+        // Given a valid encrypted ticket with the wrong outer ticket version.
+        let keytab = http_keytab()?;
+        let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+        let mut request = valid_ap_req_struct()?;
+        request.ticket.tkt_vno = 6_i32.into();
+
+        // When decrypted through the shared semantic boundary.
+        let error = decrypt_ticket_enc_part(&request.ticket, key)
+            .err()
+            .context("version rejected")?;
+
+        // Then the failure identifies the version, not DER or crypto.
+        assert!(
+            matches!(error, TicketError::InvalidMessage { field: "tkt-vno", expected: 5_i32, actual } if actual == "6")
+        );
+        Ok(())
+    }
+
     /// Re-encrypt the fixture authenticator under the ticket session key with a
     /// different client realm and name-type.
     fn reencrypt_authenticator(
@@ -1264,6 +1382,686 @@ mod tests {
             .into(),
         };
         Ok(())
+    }
+
+    /// Unchecked cross-realm tickets require an explicit transit decision, even for direct paths.
+    #[test]
+    fn transit_rejects_unchecked_cross_realm_paths() -> Result<(), TestError> {
+        for (encoding, contents) in [
+            (1_i32, b"".as_slice()),
+            (1_i32, b"UNTRUSTED"),
+            (99_i32, b"opaque"),
+        ] {
+            let keytab = http_keytab()?;
+            let bytes = transit_ap_req("FOREIGN.DUMMY", encoding, contents, false)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            let error = validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("unchecked transit rejected")?;
+            assert!(matches!(error, Error::TransitPolicyRejected));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// Same-realm tickets and KDC-checked cross-realm paths retain their existing acceptance.
+    #[test]
+    fn transit_preserves_same_realm_and_kdc_checked_paths() -> Result<(), TestError> {
+        for (client_realm, checked) in [("TEST.GOKRB5", false), ("FOREIGN.DUMMY", true)] {
+            let keytab = http_keytab()?;
+            let bytes = transit_ap_req(client_realm, 1, b"UNTRUSTED", checked)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert_eq!(
+                validator.validate_ap_req(&bytes)?.client.realm,
+                client_realm
+            );
+        }
+        Ok(())
+    }
+
+    /// The caller policy receives endpoint realms, empty paths and unknown encoding identifiers.
+    #[test]
+    fn transit_policy_explicitly_accepts_only_matching_paths() -> Result<(), TestError> {
+        for (encoding, contents) in [
+            (1_i32, b"".as_slice()),
+            (1_i32, b"TRUSTED"),
+            (99_i32, b"opaque"),
+        ] {
+            let keytab = http_keytab()?;
+            let bytes = transit_ap_req("FOREIGN.DUMMY", encoding, contents, false)?;
+            let policy = ExactTransit {
+                encoding,
+                contents: contents.to_vec(),
+            };
+            let mut validator = Validator::new(&keytab)
+                .with_now(timestamp(1_893_553_447)?)
+                .with_transit_validator(Arc::new(policy));
+            assert_eq!(
+                validator.validate_ap_req(&bytes)?.client.realm,
+                "FOREIGN.DUMMY"
+            );
+        }
+        Ok(())
+    }
+
+    /// A configured transit policy must reject a different path, not merely be present.
+    #[test]
+    fn transit_policy_rejects_mismatching_paths() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let bytes = transit_ap_req("FOREIGN.DUMMY", 1, b"UNTRUSTED", false)?;
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_transit_validator(Arc::new(ExactTransit {
+                encoding: 1,
+                contents: b"TRUSTED".to_vec(),
+            }));
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("policy rejects path")?,
+            Error::TransitPolicyRejected
+        ));
+        Ok(())
+    }
+
+    /// A fixture policy explicitly understanding one encoding and one complete path.
+    #[derive(Debug)]
+    struct ExactTransit {
+        encoding: i32,
+        contents: Vec<u8>,
+    }
+
+    impl TransitValidator for ExactTransit {
+        fn accepts(
+            &self,
+            client_realm: &str,
+            service_realm: &str,
+            transited: &rasn_kerberos::TransitedEncoding,
+        ) -> bool {
+            client_realm == "FOREIGN.DUMMY"
+                && service_realm == "TEST.GOKRB5"
+                && transited.r#type == self.encoding
+                && transited.contents.as_ref() == self.contents
+        }
+    }
+
+    /// Rebuilds the encrypted fixture with matching client realms and selected transit metadata.
+    fn transit_ap_req(
+        client_realm: &str,
+        encoding: i32,
+        contents: &[u8],
+        checked: bool,
+    ) -> Result<Vec<u8>, TestError> {
+        let keytab = http_keytab()?;
+        let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+        let mut request = valid_ap_req_struct()?;
+        let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+        ticket.crealm = realm(client_realm)?;
+        ticket.transited.r#type = encoding;
+        ticket.transited.contents = contents.to_vec().into();
+        ticket.flags.0.set(12, checked);
+        request.ticket.enc_part.cipher = encrypt_message(
+            key,
+            &der::encode(&ticket)?,
+            KDC_REP_TICKET_USAGE_FOR_TEST,
+            PAC_TICKET_CONFOUNDER,
+        )?
+        .into();
+        reencrypt_authenticator(&mut request, client_realm, 1)?;
+        Ok(der::encode(&request)?)
+    }
+
+    /// Unknown critical ticket restrictions and unsupported mandatory containers fail closed.
+    #[test]
+    fn authdata_rejects_ticket_critical_elements() -> Result<(), TestError> {
+        for kind in [-233_i32, 4_i32, 5_i32, 8_i32] {
+            let keytab = http_keytab()?;
+            let bytes = authdata_ap_req(Some(authorization_element(kind, Vec::new())), None)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            let error = validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("critical restriction rejected")?;
+            assert!(matches!(
+                error,
+                Error::UnsupportedAuthorizationData { kind: _ }
+                    | Error::Decode {
+                        target: "AuthorizationData",
+                        message: _
+                    }
+            ));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// Authenticator restrictions receive the same criticality checks as ticket restrictions.
+    #[test]
+    fn authdata_rejects_authenticator_critical_elements() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let bytes = authdata_ap_req(None, Some(authorization_element(-233, Vec::new())))?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("authenticator restriction rejected")?,
+            Error::UnsupportedAuthorizationData { kind: -233_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Optional unknown elements inside AD-IF-RELEVANT do not become mandatory.
+    #[test]
+    fn authdata_accepts_optional_unknown_elements() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let nested = authorization_element(-233, Vec::new());
+        let bytes = authdata_ap_req(Some(authorization_element(1, der::encode(&nested)?)), None)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert_eq!(
+            validator.validate_ap_req(&bytes)?.client.realm,
+            "TEST.GOKRB5"
+        );
+        Ok(())
+    }
+
+    /// A valid PAC must not stop validation of a subsequent critical sibling.
+    #[test]
+    fn authdata_rejects_critical_sibling_after_verified_pac() -> Result<(), TestError> {
+        let keytab = syshttp_keytab()?;
+        let (key, _) = keytab.find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)?;
+        let mut request: rasn_kerberos::ApReq = der::decode(&ap_req_with_pac()?)?;
+        let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+        ticket
+            .authorization_data
+            .as_mut()
+            .context("PAC data exists")?
+            .push(rasn_kerberos::AuthorizationDataValue {
+                r#type: -233,
+                data: Vec::new().into(),
+            });
+        request.ticket.enc_part.cipher = encrypt_message(
+            key,
+            &der::encode(&ticket)?,
+            KDC_REP_TICKET_USAGE_FOR_TEST,
+            PAC_TICKET_CONFOUNDER,
+        )?
+        .into();
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&der::encode(&request)?)
+                .err()
+                .context("critical sibling rejected")?,
+            Error::UnsupportedAuthorizationData { kind: -233_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Mandatory wrapper contents restore criticality inside an optional wrapper.
+    #[test]
+    fn authdata_rejects_mandatory_inside_optional_wrapper() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let critical = authorization_element(-233, Vec::new());
+        let mandatory = authorization_element(8, der::encode(&critical)?);
+        let bytes = authdata_ap_req(
+            Some(authorization_element(1, der::encode(&mandatory)?)),
+            None,
+        )?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("mandatory restriction rejected")?,
+            Error::UnsupportedAuthorizationData { kind: -233_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Unsupported AND-OR semantics cannot be bypassed by AD-IF-RELEVANT.
+    #[test]
+    fn authdata_rejects_unsupported_and_or_inside_optional_wrapper() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let nested = authorization_element(5, Vec::new());
+        let bytes = authdata_ap_req(Some(authorization_element(1, der::encode(&nested)?)), None)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("AND-OR rejected")?,
+            Error::UnsupportedAuthorizationData { kind: 5_i32 }
+        ));
+        Ok(())
+    }
+
+    /// Wrapper traversal rejects excess depth and decoded bytes before PAC processing.
+    #[test]
+    fn authdata_enforces_depth_and_byte_limits() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let mut nested = authorization_element(-233, Vec::new());
+        for _ in 0_u8..9 {
+            nested = authorization_element(1, der::encode(&nested)?);
+        }
+        for data in [nested, authorization_element(-233, vec![0_u8; 0x0010_0001])] {
+            let bytes = authdata_ap_req(Some(data), None)?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert!(matches!(
+                validator
+                    .validate_ap_req(&bytes)
+                    .err()
+                    .context("resource limit enforced")?,
+                Error::AuthorizationDataLimit
+            ));
+        }
+        Ok(())
+    }
+
+    /// Wraps one authorization-data element for policy fixtures.
+    fn authorization_element(kind: i32, data: Vec<u8>) -> rasn_kerberos::AuthorizationData {
+        vec![rasn_kerberos::AuthorizationDataValue {
+            r#type: kind,
+            data: data.into(),
+        }]
+    }
+
+    /// Re-encrypts both fixture parts with independently selected authorization data.
+    fn authdata_ap_req(
+        ticket_data: Option<rasn_kerberos::AuthorizationData>,
+        authenticator_data: Option<rasn_kerberos::AuthorizationData>,
+    ) -> Result<Vec<u8>, TestError> {
+        let keytab = http_keytab()?;
+        let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+        let mut request = valid_ap_req_struct()?;
+        let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+        ticket.authorization_data = ticket_data;
+        request.ticket.enc_part.cipher = encrypt_message(
+            key,
+            &der::encode(&ticket)?,
+            KDC_REP_TICKET_USAGE_FOR_TEST,
+            PAC_TICKET_CONFOUNDER,
+        )?
+        .into();
+        let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator =
+            decrypt_ap_req_authenticator(&request, &session, AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST)?;
+        authenticator.authorization_data = authenticator_data;
+        request.authenticator.cipher = encrypt_message(
+            &session,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
+        Ok(der::encode(&request)?)
+    }
+
+    /// Automatic admission expires records only after their entire replayability window.
+    #[test]
+    fn replay_lifecycle_automatically_expires_old_records() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let first = decode_hex(VALID_AP_REQ)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        drop(validator.validate_ap_req(&first)?);
+        let second = replay_request_at(1_893_554_048)?;
+        validator = validator.with_now(timestamp(1_893_554_048)?);
+        drop(validator.validate_ap_req(&second)?);
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+        Ok(())
+    }
+
+    /// Moving the validation clock backwards fails closed even for a fresh distinct token.
+    #[test]
+    fn replay_lifecycle_rejects_clock_rollback() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_448)?);
+        drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
+        validator = validator.with_now(timestamp(1_893_553_447)?);
+        let error = validator
+            .validate_ap_req(&replay_request_at(1_893_553_447)?)
+            .err()
+            .context("rollback rejected")?;
+        assert!(matches!(error, Error::ReplayCacheClockRollback));
+        Ok(())
+    }
+
+    /// Full capacity rejects admission rather than evicting an active replay record.
+    #[test]
+    fn replay_lifecycle_capacity_preserves_live_records() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let cache =
+            SharedReplayCache::from_cache(ReplayCache::with_limits(Duration::from_secs(300), 1));
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_shared_replay_cache(cache);
+        drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&replay_request_at(1_893_553_447)?)
+                .err()
+                .context("capacity rejects new record")?,
+            Error::ReplayCacheCapacityExceeded { capacity: 1_usize }
+        ));
+        assert!(matches!(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
+                .err()
+                .context("live record retained")?,
+            Error::Replay
+        ));
+        Ok(())
+    }
+
+    /// A shared cache rejects newly attached validators with a wider skew ceiling.
+    #[test]
+    fn replay_lifecycle_rejects_wider_shared_skew() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let cache = SharedReplayCache::new();
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_max_clock_skew(Duration::from_secs(301))
+            .with_shared_replay_cache(cache.clone());
+        assert!(matches!(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
+                .err()
+                .context("wider skew rejected")?,
+            Error::ReplayCacheSkewExceeded {
+                maximum: _,
+                requested: _
+            }
+        ));
+        assert_eq!(cache.len()?, 0);
+        Ok(())
+    }
+
+    /// Future authenticators remain replay-protected across the full two-sided skew window.
+    #[test]
+    fn replay_lifecycle_preserves_future_authenticators() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let bytes = replay_request_at(1_893_553_747)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_448)?);
+        drop(validator.validate_ap_req(&bytes)?);
+        validator = validator.with_now(timestamp(1_893_554_047)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&bytes)
+                .err()
+                .context("future authenticator remains replay")?,
+            Error::Replay
+        ));
+        Ok(())
+    }
+
+    /// Rebuilds an authenticator with a different second and deterministic encryption.
+    fn replay_request_at(seconds: u64) -> Result<Vec<u8>, TestError> {
+        let mut request = valid_ap_req_struct()?;
+        let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator =
+            decrypt_ap_req_authenticator(&request, &session, AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST)?;
+        authenticator.ctime = kerberos_time(seconds)?;
+        authenticator.cusec = 456_789_i32.into();
+        request.authenticator.cipher = encrypt_message(
+            &session,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
+        Ok(der::encode(&request)?)
+    }
+
+    /// Authenticator microseconds outside the RFC domain cannot normalize into another second.
+    #[test]
+    fn microseconds_rejects_out_of_domain_authenticator() -> Result<(), TestError> {
+        for value in [-1_i64, 1_000_000, 0x0001_0000_0000] {
+            let keytab = http_keytab()?;
+            let mut request = valid_ap_req_struct()?;
+            let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+            let mut authenticator = decrypt_ap_req_authenticator(
+                &request,
+                &session,
+                AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            )?;
+            authenticator.cusec = value.into();
+            request.authenticator.cipher = encrypt_message(
+                &session,
+                &der::encode(&authenticator)?,
+                AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+                PAC_AUTHENTICATOR_CONFOUNDER,
+            )?
+            .into();
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert!(matches!(
+                validator
+                    .validate_ap_req(&der::encode(&request)?)
+                    .err()
+                    .context("invalid cusec rejected")?,
+                Error::IntegerOutOfRange {
+                    field: "authenticator.cusec",
+                    value: _
+                }
+            ));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// AP-REP construction rechecks public mutable microsecond fields before encoding.
+    #[test]
+    fn microseconds_rejects_invalid_reply_construction() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_cusec = 1_000_000;
+        assert!(matches!(
+            validated
+                .build_ap_rep_with_confounder(
+                    &decode_hex(AP_REP_CONFOUNDER)?,
+                    &ApRepOptions::default()
+                )
+                .err()
+                .context("invalid reply construction rejected")?,
+            Error::IntegerOutOfRange {
+                field: "authenticator.cusec",
+                value: _
+            }
+        ));
+        Ok(())
+    }
+
+    /// Reply verification rejects invalid microseconds even when public expected fields match them.
+    #[test]
+    fn microseconds_rejects_invalid_reply_verification() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_cusec = 1_000_000;
+        let reply = reply_with_microseconds(&validated, 1_000_000)?;
+        assert!(matches!(
+            validated
+                .verify_ap_rep(&reply)
+                .err()
+                .context("invalid reply microseconds rejected")?,
+            Error::IntegerOutOfRange {
+                field: "ap-rep.cusec",
+                value: _
+            }
+        ));
+        Ok(())
+    }
+
+    /// Both legal boundary values remain representable and round-trip in mutual replies.
+    #[test]
+    fn microseconds_reply_boundaries_roundtrip() -> Result<(), TestError> {
+        for value in [0_u32, 999_999] {
+            let mut validated = valid_ap_req()?;
+            validated.authenticator_cusec = value;
+            let reply = validated.build_ap_rep_with_confounder(
+                &decode_hex(AP_REP_CONFOUNDER)?,
+                &ApRepOptions::default(),
+            )?;
+            assert_eq!(validated.verify_ap_rep(&reply)?.cusec, value);
+        }
+        Ok(())
+    }
+
+    /// Builds independently encoded AP-REP input without the service builder's semantic checks.
+    fn reply_with_microseconds(
+        validated: &ValidatedApReq,
+        value: i64,
+    ) -> Result<Vec<u8>, TestError> {
+        let part = rasn_kerberos::EncApRepPart {
+            ctime: kerberos_time(1_893_553_447)?,
+            cusec: value.into(),
+            subkey: None,
+            seq_number: None,
+        };
+        let cipher = encrypt_message(
+            &validated.session_key,
+            &der::encode(&part)?,
+            12,
+            AP_REP_CONFOUNDER,
+        )?;
+        Ok(der::encode(&rasn_kerberos::ApRep {
+            pvno: 5_i32.into(),
+            msg_type: 15_i32.into(),
+            enc_part: rasn_kerberos::EncryptedData {
+                etype: 18,
+                kvno: None,
+                cipher: cipher.into(),
+            },
+        })?)
+    }
+
+    /// Every ticket time must obey `KerberosTime` even when not selected for validity arithmetic.
+    #[test]
+    fn fractional_time_rejects_all_ticket_fields() -> Result<(), TestError> {
+        for field in ["authtime", "starttime", "endtime", "renew-till"] {
+            let keytab = http_keytab()?;
+            let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+            let mut request = valid_ap_req_struct()?;
+            let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+            let fraction = fractional_kerberos_time()?;
+            match field {
+                "authtime" => ticket.auth_time = fraction,
+                "starttime" => ticket.start_time = Some(fraction),
+                "endtime" => ticket.end_time = fraction,
+                _ => ticket.renew_till = Some(fraction),
+            }
+            request.ticket.enc_part.cipher = encrypt_message(
+                key,
+                &der::encode(&ticket)?,
+                KDC_REP_TICKET_USAGE_FOR_TEST,
+                PAC_TICKET_CONFOUNDER,
+            )?
+            .into();
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert!(matches!(
+                validator
+                    .validate_ap_req(&der::encode(&request)?)
+                    .err()
+                    .context("fractional ticket rejected")?,
+                Error::FractionalKerberosTime
+            ));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// Fractional authenticator ctime is not combined with the separate microseconds field.
+    #[test]
+    fn fractional_time_rejects_authenticator() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let mut request = valid_ap_req_struct()?;
+        let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator =
+            decrypt_ap_req_authenticator(&request, &session, AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST)?;
+        authenticator.ctime = fractional_kerberos_time()?;
+        request.authenticator.cipher = encrypt_message(
+            &session,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&der::encode(&request)?)
+                .err()
+                .context("fractional authenticator rejected")?,
+            Error::FractionalKerberosTime
+        ));
+        Ok(())
+    }
+
+    /// AP-REP construction rejects fractional mutable input rather than echoing it.
+    #[test]
+    fn fractional_time_rejects_reply_construction() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_ctime = timestamp(1_893_553_447)?
+            .checked_add(Duration::from_millis(500))
+            .context("fractional time fits")?;
+        assert!(matches!(
+            validated
+                .build_ap_rep_with_confounder(
+                    &decode_hex(AP_REP_CONFOUNDER)?,
+                    &ApRepOptions::default()
+                )
+                .err()
+                .context("fractional construction rejected")?,
+            Error::FractionalKerberosTime
+        ));
+        Ok(())
+    }
+
+    /// AP-REP verification rejects independently encoded fractional timestamps.
+    #[test]
+    fn fractional_time_rejects_reply_verification() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_ctime = timestamp(1_893_553_447)?
+            .checked_add(Duration::from_millis(500))
+            .context("fractional time fits")?;
+        let part = rasn_kerberos::EncApRepPart {
+            ctime: fractional_kerberos_time()?,
+            cusec: validated.authenticator_cusec.into(),
+            subkey: None,
+            seq_number: None,
+        };
+        let cipher = encrypt_message(
+            &validated.session_key,
+            &der::encode(&part)?,
+            12,
+            AP_REP_CONFOUNDER,
+        )?;
+        let reply = der::encode(&rasn_kerberos::ApRep {
+            pvno: 5_i32.into(),
+            msg_type: 15_i32.into(),
+            enc_part: rasn_kerberos::EncryptedData {
+                etype: 18,
+                kvno: None,
+                cipher: cipher.into(),
+            },
+        })?;
+        assert!(matches!(
+            validated
+                .verify_ap_rep(&reply)
+                .err()
+                .context("fractional reply rejected")?,
+            Error::FractionalKerberosTime
+        ));
+        Ok(())
+    }
+
+    /// Produces legal `GeneralizedTime` that is illegal as `KerberosTime`.
+    fn fractional_kerberos_time() -> Result<rasn_kerberos::KerberosTime, TestError> {
+        let whole = kerberos_time(1_893_553_447)?;
+        Ok(rasn_kerberos::KerberosTime(
+            whole
+                .0
+                .checked_add_signed(chrono::Duration::milliseconds(500))
+                .context("fractional fixture fits")?,
+        ))
     }
 
     /// Decodes a hex fixture.

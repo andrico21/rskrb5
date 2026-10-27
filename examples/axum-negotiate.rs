@@ -43,6 +43,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let app = Router::new()
         .route("/", get(index))
         .layer(middleware::from_fn_with_state(state.clone(), negotiate))
+        .layer(middleware::map_response(security_response))
         .with_state(state);
 
     let listener = TcpListener::bind("127.0.0.1:3000").await?;
@@ -117,4 +118,128 @@ fn load_keytab() -> Result<Keytab, Box<dyn Error>> {
         .strip_prefix("FILE:")
         .map_or_else(|| configured.clone(), PathBuf::from);
     Ok(Keytab::parse(&fs::read(path)?)?)
+}
+
+/// Applies the example's response security policy.
+fn harden_response(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    for name in [
+        "server",
+        "x-powered-by",
+        "x-aspnet-version",
+        "x-aspnetmvc-version",
+    ] {
+        drop(headers.remove(name));
+    }
+    for (name, value) in [
+        (
+            "strict-transport-security",
+            "max-age=63072000; includeSubDomains",
+        ),
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "deny"),
+        (
+            "content-security-policy",
+            "default-src 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests",
+        ),
+        ("referrer-policy", "no-referrer"),
+        (
+            "permissions-policy",
+            "accelerometer=(), camera=(), geolocation=(), microphone=()",
+        ),
+        ("cross-origin-embedder-policy", "require-corp"),
+        ("cross-origin-opener-policy", "same-origin"),
+        ("cross-origin-resource-policy", "same-origin"),
+        ("cache-control", "no-store, max-age=0"),
+        ("x-dns-prefetch-control", "off"),
+        ("x-permitted-cross-domain-policies", "none"),
+    ] {
+        drop(headers.insert(name, HeaderValue::from_static(value)));
+    }
+    response
+}
+
+/// Adapts the security policy as the outer response middleware.
+// cancel-safe: applies headers synchronously without an await point.
+async fn security_response(response: Response) -> Response {
+    harden_response(response)
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use super::*;
+
+    /// Security headers override insecure values on success, challenge, error and fallback responses.
+    #[test]
+    fn hardening_covers_all_response_statuses() -> Result<(), Box<dyn Error>> {
+        for status in [
+            StatusCode::OK,
+            StatusCode::UNAUTHORIZED,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::NOT_FOUND,
+        ] {
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = status;
+            drop(response.headers_mut().insert(
+                "server",
+                HeaderValue::from_static("internal-host/build-secret"),
+            ));
+            drop(
+                response
+                    .headers_mut()
+                    .insert("x-powered-by", HeaderValue::from_static("framework-secret")),
+            );
+            drop(response.headers_mut().insert(
+                "x-aspnet-version",
+                HeaderValue::from_static("version-secret"),
+            ));
+            drop(response.headers_mut().insert(
+                "x-aspnetmvc-version",
+                HeaderValue::from_static("version-secret"),
+            ));
+            drop(
+                response
+                    .headers_mut()
+                    .insert("x-content-type-options", HeaderValue::from_static("unsafe")),
+            );
+            let hardened = harden_response(response);
+            assert_eq!(hardened.status(), status);
+            for name in [
+                "server",
+                "x-powered-by",
+                "x-aspnet-version",
+                "x-aspnetmvc-version",
+            ] {
+                assert!(hardened.headers().get(name).is_none());
+            }
+            assert_eq!(
+                hardened
+                    .headers()
+                    .get("x-content-type-options")
+                    .ok_or("nosniff missing")?,
+                "nosniff"
+            );
+            for name in [
+                "strict-transport-security",
+                "x-frame-options",
+                "content-security-policy",
+                "referrer-policy",
+                "permissions-policy",
+                "cross-origin-embedder-policy",
+                "cross-origin-opener-policy",
+                "cross-origin-resource-policy",
+                "cache-control",
+                "x-dns-prefetch-control",
+                "x-permitted-cross-domain-policies",
+            ] {
+                assert!(hardened.headers().contains_key(name), "missing {name}");
+            }
+        }
+        Ok(())
+    }
 }

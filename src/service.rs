@@ -8,14 +8,14 @@
 //! authenticator timestamp.
 
 use alloc::{borrow::Cow, sync::Arc};
-use core::{str::from_utf8, time::Duration};
+use core::{fmt::Debug, str::from_utf8, time::Duration};
 use std::{
     collections::HashMap,
     sync::Mutex,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use rasn::types::Integer;
+use rasn::{der, types::Integer};
 use sha2::{Digest as _, Sha256};
 
 use crate::{
@@ -132,9 +132,13 @@ impl ValidatedApReq {
         confounder: &[u8],
         options: &ApRepOptions,
     ) -> Result<Vec<u8>, Error> {
+        let cusec = microseconds_to_u32(
+            "authenticator.cusec",
+            &Integer::from(self.authenticator_cusec),
+        )?;
         let enc_part = rasn_kerberos::EncApRepPart {
             ctime: kerberos_time_from_system_time(self.authenticator_ctime)?,
-            cusec: Integer::from(self.authenticator_cusec),
+            cusec: Integer::from(cusec),
             subkey: options.subkey.as_ref().map(encryption_key_to_rasn),
             seq_number: options.sequence_number,
         };
@@ -166,7 +170,7 @@ impl ValidatedApReq {
         let enc_part =
             ap_rep::decrypt_ap_rep_enc_part(&ap_rep, &self.session_key).map_err(ap_rep_error)?;
         let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
-        let cusec = integer_to_u32("ap-rep.cusec", &enc_part.cusec)?;
+        let cusec = microseconds_to_u32("ap-rep.cusec", &enc_part.cusec)?;
         let authenticator_time = ctime
             .checked_add(Duration::from_micros(cusec.into()))
             .ok_or(Error::TimeOverflow)?;
@@ -241,8 +245,14 @@ pub struct VerifiedApRep {
 }
 
 /// In-memory AP-REQ replay cache.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ReplayCache {
+    /// Immutable skew ceiling for every validator using this cache.
+    max_clock_skew: Duration,
+    /// Maximum live records; admission never evicts a live replay record.
+    capacity: usize,
+    /// Latest admission time, preserved even by explicit clearing.
+    watermark: Option<SystemTime>,
     /// RFC 4120 replay keys of the accepted authenticators, each with the
     /// time it was presented.
     entries: HashMap<ReplayKey, SystemTime>,
@@ -252,7 +262,31 @@ pub struct ReplayCache {
     authenticators: HashMap<[u8; 32], SystemTime>,
 }
 
+impl Default for ReplayCache {
+    #[inline]
+    fn default() -> Self {
+        Self::with_limits(DEFAULT_MAX_CLOCK_SKEW, 0x0001_0000)
+    }
+}
+
 impl ReplayCache {
+    /// Create an empty cache with immutable skew and live-entry admission limits.
+    ///
+    /// Validators exceeding `max_clock_skew` are rejected on admission. Zero
+    /// capacity rejects all new records. Expiry retains twice the skew from
+    /// presentation, covering authenticators first accepted in the future.
+    #[must_use]
+    #[inline]
+    pub fn with_limits(max_clock_skew: Duration, capacity: usize) -> Self {
+        Self {
+            max_clock_skew,
+            capacity,
+            watermark: None,
+            entries: HashMap::new(),
+            authenticators: HashMap::new(),
+        }
+    }
+
     #[must_use]
     /// Create an empty replay cache.
     #[inline]
@@ -308,23 +342,46 @@ impl ReplayCache {
     /// Returns `false`, recording nothing, when either the RFC 4120 replay key
     /// or the authenticator digest was already seen; `true` once both are
     /// recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCacheSkewExceeded`], [`Error::ReplayCacheClockRollback`]
+    /// or [`Error::ReplayCacheCapacityExceeded`] when cache policy rejects admission.
     fn insert(
         &mut self,
         key: ReplayKey,
         authenticator_digest: [u8; 32],
         presented_at: SystemTime,
-    ) -> bool {
+        validator_skew: Duration,
+    ) -> Result<bool, Error> {
+        if validator_skew > self.max_clock_skew {
+            return Err(Error::ReplayCacheSkewExceeded {
+                maximum: self.max_clock_skew,
+                requested: validator_skew,
+            });
+        }
+        if self.watermark.is_some_and(|latest| presented_at < latest) {
+            return Err(Error::ReplayCacheClockRollback);
+        }
+        self.watermark = Some(presented_at);
+        let retention = self.max_clock_skew.saturating_mul(2);
+        let _: usize = self.clear_older_than_at(retention, presented_at);
         if self.entries.contains_key(&key)
             || self.authenticators.contains_key(&authenticator_digest)
         {
-            return false;
+            return Ok(false);
+        }
+        if self.entries.len() >= self.capacity {
+            return Err(Error::ReplayCacheCapacityExceeded {
+                capacity: self.capacity,
+            });
         }
         // Both lookups above missed, so neither insert replaces an entry.
         let _: Option<SystemTime> = self.entries.insert(key, presented_at);
         let _: Option<SystemTime> = self
             .authenticators
             .insert(authenticator_digest, presented_at);
-        true
+        Ok(true)
     }
 }
 
@@ -415,8 +472,11 @@ impl SharedReplayCache {
         key: ReplayKey,
         authenticator_digest: [u8; 32],
         presented_at: SystemTime,
+        validator_skew: Duration,
     ) -> Result<bool, Error> {
-        self.with_cache_mut(|cache| cache.insert(key, authenticator_digest, presented_at))
+        self.with_cache_mut(|cache| {
+            cache.insert(key, authenticator_digest, presented_at, validator_skew)
+        })?
     }
 
     /// Run `read` on the shared cache under its lock.
@@ -446,6 +506,23 @@ impl SharedReplayCache {
     }
 }
 
+/// Caller-owned policy for unchecked cross-realm transit (RFC 4120 section 2.7).
+///
+/// Implementations must validate both endpoint realms and the complete encoded
+/// path. Empty contents mean direct cross-realm transit, not same-realm use.
+/// Unsupported encodings must be rejected unless the implementation understands
+/// their semantics. This policy is called only when the endpoint realms differ
+/// and the KDC has not set TRANSITED-POLICY-CHECKED.
+pub trait TransitValidator: Debug + Send + Sync {
+    /// Return whether this realm path is explicitly trusted by the application.
+    fn accepts(
+        &self,
+        client_realm: &str,
+        service_realm: &str,
+        transited: &rasn_kerberos::TransitedEncoding,
+    ) -> bool;
+}
+
 /// AP-REQ validator backed by a service keytab.
 #[derive(Debug)]
 pub struct Validator<'keytab> {
@@ -465,6 +542,8 @@ pub struct Validator<'keytab> {
     replay_cache: ReplayCache,
     /// A shared replay cache that replaces `replay_cache` when attached.
     shared_replay_cache: Option<SharedReplayCache>,
+    /// Explicit policy for cross-realm tickets not checked by the KDC.
+    transit_policy: Option<Arc<dyn TransitValidator>>,
 }
 
 impl<'keytab> Validator<'keytab> {
@@ -487,6 +566,7 @@ impl<'keytab> Validator<'keytab> {
             require_client_address: false,
             replay_cache: ReplayCache::new(),
             shared_replay_cache: None,
+            transit_policy: None,
         }
     }
 
@@ -537,6 +617,14 @@ impl<'keytab> Validator<'keytab> {
         self
     }
 
+    /// Accept unchecked cross-realm paths only when this policy explicitly trusts them.
+    #[must_use]
+    #[inline]
+    pub fn with_transit_validator(mut self, validator: Arc<dyn TransitValidator>) -> Self {
+        self.transit_policy = Some(validator);
+        self
+    }
+
     /// Share replay detection state with other validators.
     #[must_use]
     #[inline]
@@ -580,7 +668,8 @@ impl<'keytab> Validator<'keytab> {
     /// [`Error::BadClientAddress`], [`Error::RequiredClientAddressMissing`],
     /// [`Error::ClientPrincipalMismatch`], [`Error::ClockSkew`] and
     /// [`Error::Replay`]. A poisoned shared replay cache returns
-    /// [`Error::ReplayCachePoisoned`].
+    /// [`Error::ReplayCachePoisoned`]. Unchecked cross-realm transit without an
+    /// approving caller policy returns [`Error::TransitPolicyRejected`].
     #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
         self.validate_ap_req_with_check(bytes, |_| Ok::<(), Error>(()))
@@ -627,21 +716,16 @@ impl<'keytab> Validator<'keytab> {
             ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key.0).map_err(ticket_error)?;
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
-        let pac = match &enc_ticket.authorization_data {
-            Some(authorization_data) => {
-                pac::find_pac_in_authorization_data(authorization_data).map_err(Error::from)?
-            }
-            None => None,
-        };
-        if let Some(ticket_pac) = &pac {
-            ticket_pac.verify(service_key.0).map_err(Error::from)?;
-        }
+        self.validate_transit(&ticket_service, &enc_ticket)?;
+        let pac = verified_ticket_pac(enc_ticket.authorization_data.as_ref(), service_key.0)?;
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
         let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
         let authenticator =
             ap_req::decrypt_ap_req_authenticator(&ap_req, &session_key, authenticator_usage)
                 .map_err(ap_req_error)?;
+
+        validate_authorization_data(authenticator.authorization_data.as_ref(), false)?;
 
         let ticket_client = principal_from_parts(&enc_ticket.crealm, &enc_ticket.cname)?;
         let authenticator_client =
@@ -663,7 +747,7 @@ impl<'keytab> Validator<'keytab> {
             .into());
         }
 
-        let cusec = integer_to_u32("authenticator.cusec", &authenticator.cusec)?;
+        let cusec = microseconds_to_u32("authenticator.cusec", &authenticator.cusec)?;
         let authenticator_ctime = system_time_from_kerberos_time(&authenticator.ctime)?;
         let authenticator_timestamp = authenticator_ctime
             .checked_add(Duration::from_micros(cusec.into()))
@@ -722,6 +806,29 @@ impl<'keytab> Validator<'keytab> {
         Ok(validated)
     }
 
+    /// Enforce RFC 4120 section 2.7 before replay admission.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TransitPolicyRejected`] for unchecked cross-realm paths
+    /// without explicit approval, or [`Error::InvalidString`] for invalid realms.
+    fn validate_transit(
+        &self,
+        service: &Principal,
+        ticket: &rasn_kerberos::EncTicketPart,
+    ) -> Result<(), Error> {
+        let client_realm = kerberos_string_to_string(&ticket.crealm)?;
+        if client_realm != service.realm
+            && !ticket.flags.0.get(12).is_some_and(|bit| *bit)
+            && !self.transit_policy.as_ref().is_some_and(|policy| {
+                policy.accepts(&client_realm, &service.realm, &ticket.transited)
+            })
+        {
+            return Err(Error::TransitPolicyRejected);
+        }
+        Ok(())
+    }
+
     /// The validation time: the fixed time when one is set, otherwise the
     /// system clock.
     fn now(&self) -> SystemTime {
@@ -743,10 +850,10 @@ impl<'keytab> Validator<'keytab> {
         now: SystemTime,
     ) -> Result<(), Error> {
         let inserted = if let Some(replay_cache) = &self.shared_replay_cache {
-            replay_cache.insert(replay_key, authenticator_digest, now)?
+            replay_cache.insert(replay_key, authenticator_digest, now, self.max_clock_skew)?
         } else {
             self.replay_cache
-                .insert(replay_key, authenticator_digest, now)
+                .insert(replay_key, authenticator_digest, now, self.max_clock_skew)?
         };
         if inserted { Ok(()) } else { Err(Error::Replay) }
     }
@@ -764,6 +871,10 @@ impl<'keytab> Validator<'keytab> {
         service: &Principal,
         enc_ticket: &rasn_kerberos::EncTicketPart,
     ) -> Result<(), Error> {
+        let _: SystemTime = system_time_from_kerberos_time(&enc_ticket.auth_time)?;
+        if let Some(renew_till) = &enc_ticket.renew_till {
+            let _: SystemTime = system_time_from_kerberos_time(renew_till)?;
+        }
         let now = self.now();
         let start = ticket_start_time(enc_ticket)?;
         if starts_after_skew(start, now, self.max_clock_skew) || has_invalid_flag(&enc_ticket.flags)
@@ -902,6 +1013,109 @@ impl Validator<'static> {
 }
 
 use crate::error::Service as Error;
+
+/// Authorization-data interpretation context, including wrapper criticality.
+#[derive(Clone, Copy)]
+struct AuthorizationScope {
+    /// AD-IF-RELEVANT makes unknown direct children optional.
+    critical: bool,
+    /// Only ticket PACs are authenticated by the existing PAC verification path.
+    ticket: bool,
+    /// Maximum nesting is eight wrappers, independently of DER validity.
+    depth: usize,
+}
+
+/// Validate every restriction independently of first-PAC extraction (RFC 4120 section 5.2.6).
+///
+/// # Errors
+///
+/// Returns [`Error::UnsupportedAuthorizationData`] for uninterpreted mandatory
+/// semantics, [`Error::AuthorizationDataLimit`] for excess depth/decoded bytes,
+/// and [`Error::Decode`] for malformed known wrappers.
+fn validate_authorization_data(
+    data: Option<&rasn_kerberos::AuthorizationData>,
+    ticket: bool,
+) -> Result<(), Error> {
+    if let Some(elements) = data {
+        validate_authorization_elements(
+            elements,
+            AuthorizationScope {
+                critical: true,
+                ticket,
+                depth: 0,
+            },
+            &mut 0x0010_0000,
+        )?;
+    }
+    Ok(())
+}
+
+/// Interpret wrapper criticality with a shared decoded-byte budget.
+///
+/// # Errors
+///
+/// Returns the errors documented by [`validate_authorization_data`].
+fn validate_authorization_elements(
+    data: &rasn_kerberos::AuthorizationData,
+    scope: AuthorizationScope,
+    remaining: &mut usize,
+) -> Result<(), Error> {
+    for entry in data {
+        *remaining = remaining
+            .checked_sub(entry.data.len())
+            .ok_or(Error::AuthorizationDataLimit)?;
+        match entry.r#type {
+            pac::AD_IF_RELEVANT | 8_i32 => {
+                if scope.depth >= 8 {
+                    return Err(Error::AuthorizationDataLimit);
+                }
+                let nested = der::decode::<rasn_kerberos::AuthorizationData>(entry.data.as_ref())
+                    .map_err(|source| Error::Decode {
+                    target: "AuthorizationData",
+                    message: source.to_string(),
+                })?;
+                validate_authorization_elements(
+                    &nested,
+                    AuthorizationScope {
+                        critical: entry.r#type == 8_i32,
+                        ticket: scope.ticket,
+                        depth: scope.depth.saturating_add(1),
+                    },
+                    remaining,
+                )?;
+            }
+            pac::AD_WIN2K_PAC if scope.ticket => {}
+            4_i32 | 5_i32 => {
+                return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
+            }
+            _ if scope.critical => {
+                return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Validate every ticket restriction before extracting and verifying its first PAC.
+///
+/// # Errors
+///
+/// Returns authorization-policy errors or [`Error::Pac`] for PAC parsing/checksum failures.
+fn verified_ticket_pac(
+    data: Option<&rasn_kerberos::AuthorizationData>,
+    key: &EncryptionKey,
+) -> Result<Option<Pac>, Error> {
+    validate_authorization_data(data, true)?;
+    let Some(elements) = data else {
+        return Ok(None);
+    };
+    let pac = pac::find_pac_in_authorization_data(elements)?;
+    if let Some(value) = &pac {
+        value.verify(key)?;
+    }
+    Ok(pac)
+}
 
 /// RFC 4120 section 3.2.3 replay-cache key of one authenticator.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1069,6 +1283,9 @@ fn ticket_start_time(enc_ticket: &rasn_kerberos::EncTicketPart) -> Result<System
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
     let seconds = time.0.timestamp();
     let nanos = time.0.timestamp_subsec_nanos();
+    if nanos != 0 {
+        return Err(Error::FractionalKerberosTime);
+    }
     u64::try_from(seconds)
         .map_or_else(
             |_before_epoch| UNIX_EPOCH.checked_sub(Duration::new(seconds.unsigned_abs(), nanos)),
@@ -1084,6 +1301,9 @@ fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<
 /// Returns [`Error::TimeOverflow`] when the time is not representable.
 fn kerberos_time_from_system_time(time: SystemTime) -> Result<rasn_kerberos::KerberosTime, Error> {
     let (seconds, nanos) = unix_timestamp_parts(time)?;
+    if nanos != 0 {
+        return Err(Error::FractionalKerberosTime);
+    }
     let utc = chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, nanos)
         .ok_or(Error::TimeOverflow)?;
     let offset = chrono::FixedOffset::east_opt(0).ok_or(Error::TimeOverflow)?;
@@ -1129,17 +1349,18 @@ fn unix_timestamp_parts(time: SystemTime) -> Result<(i64, u32), Error> {
     }
 }
 
-/// Convert a wire integer to `u32`.
+/// Enforce the RFC 4120 Microseconds domain before timestamp arithmetic.
 ///
 /// # Errors
 ///
-/// Returns [`Error::IntegerOutOfRange`], naming `field`, when the value does
-/// not fit in `u32`.
-fn integer_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
+/// Returns [`Error::IntegerOutOfRange`], naming `field`, outside 0..=999999.
+fn microseconds_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
     value
         .to_string()
         .parse::<u32>()
-        .map_err(|_out_of_range| Error::IntegerOutOfRange {
+        .ok()
+        .filter(|parsed| *parsed <= 999_999)
+        .ok_or_else(|| Error::IntegerOutOfRange {
             field,
             value: value.to_string(),
         })

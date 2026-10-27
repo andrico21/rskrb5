@@ -5,6 +5,89 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### HTTP replay-cache scope and binding limits
+
+Layer clones already share replay state. Independently constructed
+`NegotiateLayer`/`NegotiateService` instances for the same service principal
+must be wired to the same `SharedReplayCache`; never construct a fresh cache
+per request. This is in-process only: replicas, restarts and separate hosts
+require external coordination or a single accepting boundary. There is no
+automatic global cache keyed by principal.
+
+The adapter authenticates an AP-REQ, not HTTP method, URI, headers or body.
+No TLS channel-binding input is available. Use TLS, but do not claim that TLS
+alone makes this adapter's tokens request/channel-bound. A captured token's
+first-use race is not prevented by replay detection. No API signatures change.
+
+### Whole-second KerberosTime (RSK-B161A328)
+
+Service acceptance rejects fractional ticket `authtime`, `starttime`, `endtime`
+and `renew-till`, plus fractional authenticator `ctime`, with the new
+`Service::FractionalKerberosTime` variant. Service AP-REP verification and
+construction enforce the same rule, including mutable public construction
+inputs. Fractions are neither truncated nor added to `cusec`; the separate
+microseconds field remains valid. Generic DER codecs are unchanged.
+
+### Strict Microseconds domain (RSK-985742B6)
+
+Service AP-REQ acceptance and `ValidatedApReq` AP-REP construction/verification
+now reject microseconds outside 0..=999999 using the existing
+`Service::IntegerOutOfRange` error (`authenticator.cusec` or `ap-rep.cusec`).
+Values at or above one million are not normalized into additional seconds.
+Construction rechecks the mutable public `authenticator_cusec` field. Zero and
+999999 remain valid. Public signatures and error variants are unchanged.
+
+### Bounded replay-cache lifecycle (RSK-7D80FA41)
+
+`ReplayCache::new`/`default` now own an immutable 300-second skew ceiling and
+65,536-record capacity. Use `ReplayCache::with_limits(max_clock_skew, capacity)`
+and `SharedReplayCache::from_cache` for an explicitly different policy. A validator
+whose skew exceeds the cache ceiling fails admission with
+`Service::ReplayCacheSkewExceeded`; `with_max_clock_skew` does not widen a cache.
+This also applies to the shared cache created by a Tower layer.
+
+Each insert prunes records presented more than twice the cache skew ago, then
+checks replay and capacity atomically under the shared lock. Twice-skew retention
+covers authenticators first accepted up to one skew window in the future. Equality
+at the expiry boundary stays live. Backward validation time returns
+`ReplayCacheClockRollback` until time catches up to the high-water mark; even
+explicit `clear` does not reset that mark. Full capacity returns
+`ReplayCacheCapacityExceeded`, never evicting live replay evidence.
+
+Explicit `clear`/`clear_older_than*` remain administrative overrides that can erase
+live replay protection. Do not schedule aggressive pruning; automatic admission
+now maintains expiry. Replace caches only with service downtime lasting at least
+the replay window; creating a fresh cache or restarting still loses in-memory
+evidence. Capacity bounds records, not principal-string bytes or allocator RSS.
+
+### Mandatory authorization-data policy (RSK-D1D6BDC3)
+
+Service acceptance now scans all ticket and authenticator authorization data,
+independently of first-PAC extraction, before replay admission. Unknown critical
+elements return `error::Service::UnsupportedAuthorizationData { kind }`.
+AD-IF-RELEVANT permits unknown direct children; AD-MANDATORY-FOR-KDC contents
+are interpreted with criticality restored. Unsupported AD-KDCIssued and
+AD-AND-OR containers fail closed, including inside optional wrappers. Ticket
+PACs retain their existing server-checksum verification; authenticator PACs
+are not treated as KDC-authenticated authorization evidence.
+
+Policy traversal is limited to eight wrappers and 1,048,576 cumulative payload
+bytes (including decoded nested payloads), returning `AuthorizationDataLimit`.
+Malformed known wrappers return the existing `Service::Decode` classification.
+These service-only bounds do not change the standalone PAC extraction API.
+
+### Explicit unchecked cross-realm transit policy (RSK-3E3C2278)
+
+The service validator now rejects cross-realm tickets lacking
+TRANSITED-POLICY-CHECKED with `error::Service::TransitPolicyRejected`, unless
+an explicitly configured `service::TransitValidator` approves the complete path.
+Use `Validator::with_transit_validator(Arc<dyn TransitValidator>)` or the matching
+`http::NegotiateLayer` builder. Implementations receive client realm, service
+realm and the raw `TransitedEncoding`; validate all three. Empty contents still
+represent cross-realm transit. Reject unknown encodings unless your implementation
+understands them. The library does not decode or implicitly trust transit paths.
+Same-realm tickets and KDC-checked cross-realm tickets are unaffected.
+
 ### Bounded HTTP Negotiate headers (upstream issue #9)
 
 `spnego::parse_negotiate_header` now rejects header values longer than 65,536

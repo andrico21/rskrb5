@@ -1716,6 +1716,38 @@ pub enum Pac {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Service {
+    /// `KerberosTime` contains fractional seconds forbidden by RFC 4120 section 5.2.3.
+    #[error("fractional seconds are not permitted in KerberosTime")]
+    FractionalKerberosTime,
+    /// Validator skew exceeds the replay cache's immutable policy.
+    #[error("validator skew {requested:?} exceeds replay cache maximum {maximum:?}")]
+    ReplayCacheSkewExceeded {
+        /// Cache-owned maximum skew.
+        maximum: Duration,
+        /// Validator's requested acceptance skew.
+        requested: Duration,
+    },
+    /// Validation time moved behind the cache's admission high-water mark.
+    #[error("replay cache clock moved backwards")]
+    ReplayCacheClockRollback,
+    /// All replay-cache slots contain live records.
+    #[error("replay cache capacity {capacity} exhausted")]
+    ReplayCacheCapacityExceeded {
+        /// Immutable maximum number of live records.
+        capacity: usize,
+    },
+    /// An authorization-data restriction cannot be safely interpreted.
+    #[error("unsupported mandatory authorization data type {kind}")]
+    UnsupportedAuthorizationData {
+        /// Authorization-data type identifier.
+        kind: i32,
+    },
+    /// Authorization-data wrappers exceed the service's depth or decoded-byte budget.
+    #[error("authorization data exceeds the service validation limit")]
+    AuthorizationDataLimit,
+    /// Cross-realm transit was neither KDC-checked nor explicitly trusted locally.
+    #[error("cross-realm transit policy rejected the ticket")]
+    TransitPolicyRejected,
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]
     Decode {

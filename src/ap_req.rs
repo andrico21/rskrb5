@@ -55,10 +55,17 @@ pub fn encode(ap_req: &rasn_kerberos::ApReq) -> Result<Vec<u8>, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::Decode`] when `bytes` is not a DER Authenticator.
+/// Returns [`Error::Decode`] when `bytes` is not a DER Authenticator, and
+/// [`Error::InvalidMessage`] when its authenticator version is not 5.
 #[inline]
 pub fn decode_authenticator(bytes: &[u8]) -> Result<rasn_kerberos::Authenticator, Error> {
-    decode_der::<rasn_kerberos::Authenticator>("Authenticator", bytes)
+    let authenticator = decode_der::<rasn_kerberos::Authenticator>("Authenticator", bytes)?;
+    validate_integer(
+        "authenticator-vno",
+        &authenticator.authenticator_vno,
+        KRB5_PVNO,
+    )?;
+    Ok(authenticator)
 }
 
 /// Encode an Authenticator as DER.
