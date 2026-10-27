@@ -149,7 +149,7 @@ impl KdcEndpoint {
 pub struct Tokio {
     /// Timeout applied to each KDC exchange.
     timeout: Duration,
-    /// UDP receive buffer size; a larger datagram is truncated.
+    /// Maximum accepted UDP response size.
     udp_response_limit: usize,
     /// Maximum accepted TCP response body size.
     tcp_response_limit: usize,
@@ -185,7 +185,7 @@ impl Tokio {
     }
 
     #[must_use]
-    /// Override the UDP receive buffer size.
+    /// Override the maximum accepted UDP response size.
     #[inline]
     pub const fn with_udp_response_limit(mut self, udp_response_limit: usize) -> Self {
         self.udp_response_limit = udp_response_limit;
@@ -252,8 +252,17 @@ impl Tokio {
             let socket = connected.ok_or(last_error)?;
             let _: usize = socket.send(request).await?;
 
-            let mut response = vec![0; self.udp_response_limit];
+            let capacity = self
+                .udp_response_limit
+                .min(usize::from(u16::MAX))
+                .saturating_add(1);
+            let mut response = vec![0; capacity];
             let len = socket.recv(&mut response).await?;
+            if len > self.udp_response_limit {
+                return Err(Error::UdpResponseTooLarge {
+                    limit: self.udp_response_limit,
+                });
+            }
             response.truncate(len);
             Ok(response)
         })

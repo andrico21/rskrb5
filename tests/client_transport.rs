@@ -130,6 +130,58 @@ mod tests {
         })
     }
 
+    /// Oversized datagrams must not be reported as successful prefixes.
+    #[test]
+    fn udp_transport_rejects_truncated_datagram() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a peer whose response exceeds the four-byte acceptance limit.
+            let server = UdpSocket::bind("127.0.0.1:0").await?;
+            let addr = server.local_addr()?;
+            let task = tokio::spawn(async move {
+                let mut request = [0; 64];
+                let (_, peer) = server.recv_from(&mut request).await?;
+                let _: usize = server.send_to(b"ABCDEFGH", peer).await?;
+                Ok::<_, io::Error>(())
+            });
+            // When the transport receives that datagram.
+            let response = Tokio::new()
+                .with_udp_response_limit(4)
+                .send_udp(addr, b"request")
+                .await;
+            task.await??;
+            // Then no incomplete response is returned as success.
+            assert!(
+                response.err().is_some(),
+                "oversized datagram must be rejected"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// UDP limits accept an exact-sized datagram, including an unrestricted caller cap.
+    #[test]
+    fn udp_transport_accepts_exact_limit() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            for limit in [8, usize::MAX] {
+                let server = UdpSocket::bind("127.0.0.1:0").await?;
+                let addr = server.local_addr()?;
+                let task = tokio::spawn(async move {
+                    let mut request = [0; 64];
+                    let (_, peer) = server.recv_from(&mut request).await?;
+                    let _: usize = server.send_to(b"ABCDEFGH", peer).await?;
+                    Ok::<_, io::Error>(())
+                });
+                let response = Tokio::new()
+                    .with_udp_response_limit(limit)
+                    .send_udp(addr, b"request")
+                    .await?;
+                task.await??;
+                assert_eq!(response, b"ABCDEFGH");
+            }
+            Ok::<_, TestError>(())
+        })
+    }
+
     /// Pins that a UDP send transmits the raw request datagram and returns the reply datagram.
     #[test]
     fn tokio_transport_sends_udp_datagram() -> Result<(), TestError> {

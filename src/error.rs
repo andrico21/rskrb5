@@ -565,6 +565,13 @@ pub enum Client {
         /// Maximum UDP payload length.
         limit: usize,
     },
+    /// UDP response exceeded the configured acceptance limit.
+    #[cfg(feature = "tokio")]
+    #[error("KDC UDP response exceeds configured limit {limit}")]
+    UdpResponseTooLarge {
+        /// Maximum accepted response byte length.
+        limit: usize,
+    },
     /// TCP request length could not fit the RFC 4120 length prefix.
     #[cfg(feature = "tokio")]
     #[error("KDC TCP request length {actual} exceeds u32::MAX")]
