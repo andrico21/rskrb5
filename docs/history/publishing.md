@@ -1,5 +1,8 @@
 # Publishing And Release Plan
 
+> Historical: the upstream `rskrb5` 0.1/0.2 release plan, kept as written apart
+> from link paths. rskrb5-ng releases follow [`../RELEASING.md`](../RELEASING.md).
+
 `rskrb5` has a published `0.1` preview. The next pre-`1.0` preview may make
 breaking Rust API changes to reduce compatibility shims and tighten the public
 surface around client-side login, file-backed keytab and credential-cache
@@ -62,12 +65,12 @@ INTEGRATION=1 TESTAD=1 TESTAD_REQUIRED=1 cargo test --all-features --test client
 
 `TESTPRIVILEGED=1` and `TEST_KPASSWD=1` are additive gates on top of
 `INTEGRATION=1`; the local runner enables `TESTPRIVILEGED=1` by default and
-documents fixture setup in [`gated-integration.md`](gated-integration.md).
+documents fixture setup in [`gated-integration.md`](../gated-integration.md).
 `TESTAD=1` uses the Active Directory lab endpoints documented in
-[`ad-integration.md`](ad-integration.md). Provisioning details live in
-[`ad-lab-provisioning.md`](ad-lab-provisioning.md), and the Actions runner mode
+[`ad-integration.md`](../ad-integration.md). Provisioning details live in
+[`ad-lab-provisioning.md`](../ad-lab-provisioning.md), and the Actions runner mode
 plus repository secret checklist lives in
-[`github-ad-gate-setup.md`](github-ad-gate-setup.md). The gate remains optional
+[`github-ad-gate-setup.md`](../github-ad-gate-setup.md). The gate remains optional
 until that lab is maintained in CI and reachable from GitHub-hosted runners.
 Use `TESTAD_REQUIRED=1` whenever an AD run is used as release evidence. The
 manual GitHub Actions `test_ad=true` gate runs on `ubuntu-latest` and preflights

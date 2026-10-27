@@ -103,7 +103,7 @@ Plan tests that were missing, all written in todos 1, 5, 6 and 7:
 
 ## 4. Lint profile and tooling on `release/0.3.0`
 
-Details in `docs/lint-baseline.md` at `856da18` (the current policy is [`../lint-policy.md`](../lint-policy.md)); summary in FORK-NOTES "Lint profile".
+Details in `docs/lint-baseline.md` at `856da18` (the current policy is [`../lint-policy.md`](../../lint-policy.md)); summary in FORK-NOTES "Lint profile".
 
 - [x] Nightly rustfmt profile from rmcp-server-kit, `nightly-2026-10-03` (todo 11, `8eb3977`).
 - [x] Environment test helper: child-process re-exec instead of `unsafe` `set_var`, shared helpers split into `tests/support/` (todo 12, `b61c3f2`).

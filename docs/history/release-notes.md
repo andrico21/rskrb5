@@ -1,5 +1,10 @@
 # Release Notes
 
+> Historical: the upstream `rskrb5` release notes up to 0.2.0, kept as written
+> apart from link paths and the compatibility-report binary name. The GitHub
+> Actions runs cited here ran in `clelange/rskrb5`. rskrb5-ng changes are in
+> [`../../CHANGELOG.md`](../../CHANGELOG.md).
+
 ## Unreleased
 
 - Added a dedicated Active Directory integration runbook and strict
@@ -95,7 +100,7 @@ Final local evidence for `0.2.0`, recorded on 2026-06-24:
 - `cargo test --all-features`
 - `cargo doc --all-features --no-deps`
 - `cargo run --no-default-features --features evaluation --bin rskrb5-ng-compat-report`
-  matches [`compatibility-report.md`](compatibility-report.md)
+  matches [`compatibility-report.md`](../compatibility-report.md)
 - `cargo package --locked`
 - `cargo publish --locked --dry-run`
 - `prek run --all-files --stage pre-push`
