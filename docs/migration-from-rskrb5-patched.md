@@ -5,6 +5,30 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Explicit transport DNS configuration
+
+`client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications
+that choose this input must read it themselves and pass its value to
+`Tokio::new().with_dns_server(&value)?`. IP literals use port 53 unless an
+explicit port is provided; blank input selects the system resolver. Invalid
+input returns `Client::DnsResolverConfig`.
+
+A root SRV target now returns `Client::DnsServiceUnavailable { service, realm }`
+instead of allowing administration-service fallback.
+
+KDC TCP framing rejects the reserved high bit with `Client::TcpReservedBitSet`;
+outgoing KDC lengths above 31 bits return `Client::TcpRequestTooLarge`.
+Kpasswd TCP retains RFC 3244's separate unsigned length rules.
+
+Password transport no longer retries after a send may have started. Such I/O
+failures, response errors and timeouts return `Client::KpasswdOutcomeUnknown`.
+Configured Auto chooses its initial protocol from `udp_preference_limit` and
+only fails over before possible delivery; direct-address Auto uses UDP once.
+Do not treat an unknown outcome as a failed mutation or blindly retry it.
+
+UDP response limits now reject oversized responses with the new
+`Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
+
 ### Decrypted PAC credential ownership
 
 `SecpkgSupplementalCredential::credentials` is now `Zeroizing<Vec<u8>>`.

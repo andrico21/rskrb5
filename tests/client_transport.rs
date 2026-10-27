@@ -48,6 +48,13 @@ mod tests {
     };
 
     use chrono::{DateTime, FixedOffset, Utc};
+    use hickory_resolver::proto::{
+        op::Message,
+        rr::{
+            Name, RData, Record, RecordType,
+            rdata::{A, SRV},
+        },
+    };
     use rasn::{der, types::Integer};
     use rasn_kerberos::{KerberosString, KerberosTime, KrbError, PrincipalName, Realm};
     use tokio::{
@@ -60,6 +67,366 @@ mod tests {
 
     /// Error type of these tests; `Send` so stub KDC tasks can return it.
     type TestError = Box<dyn Error + Send + Sync>;
+
+    /// A possibly committed TCP mutation must not be delivered to a second endpoint.
+    #[test]
+    fn kpasswd_lost_reply_does_not_retry_endpoint() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let first = TcpListener::bind("127.0.0.1:0").await?;
+            let second = TcpListener::bind("127.0.0.1:0").await?;
+            let config = config_with_kpasswd_servers(
+                [
+                    first.local_addr()?.to_string(),
+                    second.local_addr()?.to_string(),
+                ],
+                1,
+            )?;
+            let committed = tokio::spawn(async move {
+                let (request, socket) = read_tcp_request(&first).await?;
+                drop(socket);
+                Ok::<_, io::Error>(request)
+            });
+            let duplicate = tokio::spawn(async move {
+                match timeout(Duration::from_millis(250), read_tcp_request(&second)).await {
+                    Ok(Ok((_, mut socket))) => {
+                        write_tcp_response(&mut socket, b"duplicate").await?;
+                        Ok::<_, io::Error>(true)
+                    }
+                    Ok(Err(error)) => Err(error),
+                    Err(_elapsed) => Ok(false),
+                }
+            });
+            let result = Tokio::new()
+                .with_timeout(Duration::from_secs(1))
+                .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"mutation")
+                .await;
+            assert_eq!(committed.await??, b"mutation");
+            assert!(
+                !duplicate.await??,
+                "a possibly committed mutation was delivered twice"
+            );
+            assert!(
+                matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))),
+                "lost reply must be outcome unknown"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Auto password exchanges never resend a delivered UDP mutation over TCP.
+    #[test]
+    fn kpasswd_udp_timeout_does_not_retry_tcp() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let (udp, tcp) = bind_udp_and_tcp_pair().await?;
+            let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
+            let received = tokio::spawn(async move {
+                let mut bytes = [0; 64];
+                let (length, _) = udp.recv_from(&mut bytes).await?;
+                let duplicate = timeout(Duration::from_millis(250), tcp.accept())
+                    .await
+                    .is_ok();
+                Ok::<_, io::Error>((length, duplicate))
+            });
+            let result = Tokio::new()
+                .with_timeout(Duration::from_millis(50))
+                .send_to_kpasswd_realm(&config, KdcProtocol::Auto, "TEST.GOKRB5", b"mutation")
+                .await;
+            let (length, duplicate) = received.await??;
+            assert_eq!(length, 8);
+            assert!(
+                !duplicate,
+                "delivered UDP mutation must not be retried over TCP"
+            );
+            assert!(matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))));
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// KDC reserved high bits are rejected independently of the allocation cap.
+    #[test]
+    fn kdc_tcp_rejects_reserved_bit_before_body_read() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let task = tokio::spawn(async move {
+                let (_, mut socket) = read_tcp_request(&listener).await?;
+                socket.write_all(&0x8000_0000_u32.to_be_bytes()).await?;
+                Ok::<_, io::Error>(())
+            });
+            let error = Tokio::new()
+                .with_tcp_response_limit(0)
+                .send_tcp(addr, b"request")
+                .await
+                .err()
+                .ok_or("reserved bit rejected")?;
+            task.await??;
+            assert!(
+                !matches!(
+                    error,
+                    ClientError::TcpResponseTooLarge {
+                        actual: _,
+                        limit: _
+                    }
+                ),
+                "reserved bit must be a protocol error, not an allocation limit"
+            );
+            assert!(
+                !matches!(error, ClientError::Io(_)),
+                "reject before reading body"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Administration DNS fallback supplies hosts but never its service port.
+    #[test]
+    fn kpasswd_dns_admin_fallback_uses_port_464() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = socket.local_addr()?;
+            let task = tokio::spawn(dns_admin_fixture(socket, None));
+            let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
+            let result = Tokio::new()
+                .with_dns_server(&server.to_string())?
+                .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                .await;
+            task.abort();
+            let endpoints = result?;
+            assert_eq!(
+                endpoints
+                    .iter()
+                    .map(|endpoint| endpoint.port)
+                    .collect::<Vec<_>>(),
+                [464]
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// An authoritative root target prohibits administration fallback.
+    #[test]
+    fn kpasswd_dns_unavailable_stops_fallback() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = socket.local_addr()?;
+            let task = tokio::spawn(dns_admin_fixture(socket, Some(Name::root())));
+            let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
+            let result = Tokio::new()
+                .with_dns_server(&server.to_string())?
+                .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                .await;
+            task.abort();
+            assert!(
+                result.err().is_some(),
+                "explicit unavailability must stop discovery"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Explicit DNS discovery retains all addresses of a password service target.
+    #[test]
+    fn kpasswd_dns_retains_all_target_addresses() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = socket.local_addr()?;
+            let task = tokio::spawn(dns_admin_fixture(
+                socket,
+                Some(Name::from_ascii("multiple.test.gokrb5.")?),
+            ));
+            let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
+            let result = Tokio::new()
+                .with_dns_server(&server.to_string())?
+                .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                .await;
+            task.abort();
+            let mut authorities = result?
+                .iter()
+                .map(KdcEndpoint::authority)
+                .collect::<Vec<_>>();
+            authorities.sort();
+            assert_eq!(authorities, ["127.0.0.1:1464", "127.0.0.2:1464"]);
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Serve selected kpasswd records and a conventional administration service.
+    async fn dns_admin_fixture(socket: UdpSocket, kpasswd: Option<Name>) -> Result<(), TestError> {
+        loop {
+            let mut buffer = [0; 4096];
+            let (len, peer) = socket.recv_from(&mut buffer).await?;
+            let request = Message::from_vec(buffer.get(..len).ok_or("DNS length")?)?;
+            let query = request.queries.first().ok_or("DNS question")?;
+            let mut response = Message::response(request.metadata.id, request.metadata.op_code);
+            response.metadata.authoritative = true;
+            response.metadata.recursion_available = true;
+            response.queries = request.queries.clone();
+            if query.query_type() == RecordType::SRV
+                && query.name().to_utf8().starts_with("_kpasswd.")
+                && let Some(target) = &kpasswd
+            {
+                response.answers.push(Record::from_rdata(
+                    query.name().clone(),
+                    60,
+                    RData::SRV(SRV::new(0, 0, 1464, target.clone())),
+                ));
+            }
+            if query.query_type() == RecordType::SRV
+                && query.name().to_utf8().starts_with("_kerberos-adm.")
+            {
+                response.answers.push(Record::from_rdata(
+                    query.name().clone(),
+                    60,
+                    RData::SRV(SRV::new(0, 0, 749, Name::from_ascii("admin.test.gokrb5.")?)),
+                ));
+            }
+            if query.query_type() == RecordType::A {
+                if query.name().to_utf8().starts_with("multiple.") {
+                    response.answers.push(Record::from_rdata(
+                        query.name().clone(),
+                        60,
+                        RData::A(A::new(127, 0, 0, 2)),
+                    ));
+                }
+                response.answers.push(Record::from_rdata(
+                    query.name().clone(),
+                    60,
+                    RData::A(A::new(127, 0, 0, 1)),
+                ));
+            }
+            let _: usize = socket.send_to(&response.to_vec()?, peer).await?;
+        }
+    }
+
+    /// Library transport discovery must not read process environment overrides.
+    #[test]
+    fn transport_dns_has_no_ambient_environment_reads() {
+        assert!(
+            !include_str!("../src/client/transport.rs").contains("env::var("),
+            "DNS configuration must be explicitly supplied"
+        );
+    }
+
+    /// Bare IPv6 literals retain every address component and the service default port.
+    #[test]
+    fn configured_endpoint_preserves_bare_ipv6() -> Result<(), TestError> {
+        // Given a final decimal-looking IPv6 component, not an authority port.
+        let host = "2001:db8::1:2";
+        for default_port in [88, 464] {
+            // When the endpoint is parsed for either Kerberos service.
+            let endpoint =
+                KdcEndpoint::configured_with_default_port(KdcProtocol::Tcp, host, default_port)?;
+            // Then the whole literal is the host and the default still applies.
+            assert_eq!(endpoint.host, host);
+            assert_eq!(endpoint.port, default_port);
+        }
+        Ok(())
+    }
+
+    /// Administrative IPv6 authorities supply a complete host, never the administration port.
+    #[test]
+    fn kpasswd_admin_fallback_preserves_ipv6() -> Result<(), TestError> {
+        // Given bracketed, bare IPv6 and hostname administration endpoints.
+        let config = Config::parse(
+            "[libdefaults]\n dns_lookup_kdc = false\n[realms]\n TEST.GOKRB5 = {\n admin_server = [2001:db8::1]:749\n admin_server = 2001:db8::1:2\n admin_server = admin.example:1749\n }\n",
+        )?;
+        // When password-change discovery derives its configuration fallback.
+        let endpoints = runtime()?.block_on(Tokio::new().discover_kpasswd_servers(
+            &config,
+            "TEST.GOKRB5",
+            KdcProtocol::Tcp,
+        ))?;
+        // Then every complete host is retained with the password-change port.
+        let authorities: Vec<_> = endpoints.iter().map(KdcEndpoint::authority).collect();
+        assert_eq!(
+            authorities,
+            [
+                "[2001:db8::1]:464",
+                "[2001:db8::1:2]:464",
+                "admin.example:464"
+            ]
+        );
+        Ok(())
+    }
+
+    /// IPv6-only UDP peers can receive a request without a TCP fallback.
+    #[test]
+    fn udp_transport_reaches_ipv6_loopback() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a live IPv6-only UDP peer on an ephemeral port.
+            let server = UdpSocket::bind("[::1]:0").await?;
+            let addr = server.local_addr()?;
+            let task = tokio::spawn(async move {
+                let mut request = [0; 64];
+                let (len, peer) = server.recv_from(&mut request).await?;
+                assert_eq!(request.get(..len), Some(b"ipv6-request".as_slice()));
+                let _: usize = server.send_to(b"ipv6-response", peer).await?;
+                Ok::<_, io::Error>(())
+            });
+            // When the direct UDP transport sends to that address.
+            let result = Tokio::new()
+                .with_timeout(Duration::from_secs(2))
+                .send_udp(addr, b"ipv6-request")
+                .await;
+            // Then a complete UDP reply is returned.
+            let response = result?;
+            task.await??;
+            assert_eq!(response, b"ipv6-response");
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// Oversized datagrams must not be reported as successful prefixes.
+    #[test]
+    fn udp_transport_rejects_truncated_datagram() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a peer whose response exceeds the four-byte acceptance limit.
+            let server = UdpSocket::bind("127.0.0.1:0").await?;
+            let addr = server.local_addr()?;
+            let task = tokio::spawn(async move {
+                let mut request = [0; 64];
+                let (_, peer) = server.recv_from(&mut request).await?;
+                let _: usize = server.send_to(b"ABCDEFGH", peer).await?;
+                Ok::<_, io::Error>(())
+            });
+            // When the transport receives that datagram.
+            let response = Tokio::new()
+                .with_udp_response_limit(4)
+                .send_udp(addr, b"request")
+                .await;
+            task.await??;
+            // Then no incomplete response is returned as success.
+            assert!(
+                response.err().is_some(),
+                "oversized datagram must be rejected"
+            );
+            Ok::<_, TestError>(())
+        })
+    }
+
+    /// UDP limits accept an exact-sized datagram, including an unrestricted caller cap.
+    #[test]
+    fn udp_transport_accepts_exact_limit() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            for limit in [8, usize::MAX] {
+                let server = UdpSocket::bind("127.0.0.1:0").await?;
+                let addr = server.local_addr()?;
+                let task = tokio::spawn(async move {
+                    let mut request = [0; 64];
+                    let (_, peer) = server.recv_from(&mut request).await?;
+                    let _: usize = server.send_to(b"ABCDEFGH", peer).await?;
+                    Ok::<_, io::Error>(())
+                });
+                let response = Tokio::new()
+                    .with_udp_response_limit(limit)
+                    .send_udp(addr, b"request")
+                    .await?;
+                task.await??;
+                assert_eq!(response, b"ABCDEFGH");
+            }
+            Ok::<_, TestError>(())
+        })
+    }
 
     /// Pins that a UDP send transmits the raw request datagram and returns the reply datagram.
     #[test]

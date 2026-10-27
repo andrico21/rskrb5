@@ -835,7 +835,12 @@ mod tests {
 
         runtime()?.block_on(async {
             let config = dns_kdc_config()?;
-            let transport = TokioKdcTransport::new().with_timeout(Duration::from_secs(10));
+            let mut transport = TokioKdcTransport::new().with_timeout(Duration::from_secs(10));
+            match env::var("RSKRB5_DNS_SERVER") {
+                Ok(server) => transport = transport.with_dns_server(&server)?,
+                Err(env::VarError::NotPresent) => {}
+                Err(error) => return Err(error.into()),
+            }
 
             for protocol in [KdcProtocol::Udp, KdcProtocol::Tcp] {
                 let endpoints = transport.discover_kdcs(&config, REALM, protocol).await?;

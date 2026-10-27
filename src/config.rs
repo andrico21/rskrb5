@@ -5,7 +5,10 @@
 //! realm lookup, duration parsing, and configured KDC discovery.
 
 use alloc::collections::BTreeMap;
-use core::{net::IpAddr, time::Duration};
+use core::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 use std::{
     env,
     io::{self, Read as _},
@@ -1221,8 +1224,22 @@ impl Realm {
                 .admin_server
                 .iter()
                 .map(|admin| {
-                    let host = admin.split(':').next().unwrap_or(admin);
-                    format!("{host}:464")
+                    if let Ok(address) = admin.parse::<SocketAddr>() {
+                        return SocketAddr::new(address.ip(), 464).to_string();
+                    }
+                    if let Ok(address) = admin.parse::<IpAddr>() {
+                        return SocketAddr::new(address, 464).to_string();
+                    }
+                    let host = admin.strip_circumfix('[', ']').unwrap_or_else(|| {
+                        admin
+                            .split_once(':')
+                            .map_or(admin.as_str(), |(host, _)| host)
+                    });
+                    if host.contains(':') {
+                        format!("[{host}]:464")
+                    } else {
+                        format!("{host}:464")
+                    }
                 })
                 .collect();
         }

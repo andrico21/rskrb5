@@ -4,7 +4,7 @@ use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use std::env;
+use std::io;
 
 use hickory_resolver::{
     TokioResolver,
@@ -14,7 +14,7 @@ use hickory_resolver::{
 };
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::{TcpStream, ToSocketAddrs, UdpSocket},
+    net::{TcpStream, ToSocketAddrs, UdpSocket, lookup_host},
     time::timeout,
 };
 
@@ -48,13 +48,18 @@ const MAX_UDP_DATAGRAM: usize = 65_507;
 /// Default maximum number of cross-realm referrals followed for one ticket.
 #[cfg(feature = "tokio")]
 const DEFAULT_MAX_REFERRALS: usize = 5;
-/// Environment variable naming an `ip[:port]` DNS server that overrides the
-/// system resolver for KDC discovery.
-#[cfg(feature = "tokio")]
-const RSKRB5_DNS_SERVER_ENV: &str = "RSKRB5_DNS_SERVER";
 /// Byte length of the RFC 4120 section 7.2.2 record mark prefixing each TCP message.
 #[cfg(feature = "tokio")]
 const TCP_RECORD_MARK_LEN: usize = 4;
+
+/// TCP length rules belong to the service, not to the underlying stream.
+#[derive(Clone, Copy)]
+enum TcpFraming {
+    /// RFC 4120 reserves the high bit for KDC messages.
+    Kdc,
+    /// RFC 3244 uses its own unsigned length field.
+    Kpasswd,
+}
 
 /// KDC wire protocol for Tokio transport operations.
 #[cfg(feature = "tokio")]
@@ -147,9 +152,11 @@ impl KdcEndpoint {
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tokio {
+    /// Explicit DNS server; otherwise use the system resolver.
+    dns_server: Option<(IpAddr, u16)>,
     /// Timeout applied to each KDC exchange.
     timeout: Duration,
-    /// UDP receive buffer size; a larger datagram is truncated.
+    /// Maximum accepted UDP response size.
     udp_response_limit: usize,
     /// Maximum accepted TCP response body size.
     tcp_response_limit: usize,
@@ -170,6 +177,7 @@ impl Tokio {
     #[inline]
     pub const fn new() -> Self {
         Self {
+            dns_server: None,
             timeout: DEFAULT_KDC_TIMEOUT,
             udp_response_limit: MAX_UDP_DATAGRAM + 1,
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
@@ -184,8 +192,25 @@ impl Tokio {
         self
     }
 
+    /// Select an explicit DNS server using an IP literal and optional port.
+    ///
+    /// Blank input selects the system resolver. Bare IP literals use port 53.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DnsResolverConfig`] for malformed server literals.
+    #[inline]
+    pub fn with_dns_server(mut self, value: &str) -> Result<Self, Error> {
+        self.dns_server = if value.trim().is_empty() {
+            None
+        } else {
+            Some(parse_dns_server(value).map_err(Error::DnsResolverConfig)?)
+        };
+        Ok(self)
+    }
+
     #[must_use]
-    /// Override the UDP receive buffer size.
+    /// Override the maximum accepted UDP response size.
     #[inline]
     pub const fn with_udp_response_limit(mut self, udp_response_limit: usize) -> Self {
         self.udp_response_limit = udp_response_limit;
@@ -227,12 +252,42 @@ impl Tokio {
         }
 
         self.with_transport_timeout(async {
-            let socket = UdpSocket::bind("0.0.0.0:0").await?;
-            socket.connect(addr).await?;
+            let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
+            let mut connected = None;
+            for candidate in lookup_host(addr).await? {
+                let wildcard = if candidate.is_ipv4() {
+                    "0.0.0.0:0"
+                } else {
+                    "[::]:0"
+                };
+                let attempt = async {
+                    let socket = UdpSocket::bind(wildcard).await?;
+                    socket.connect(candidate).await?;
+                    Ok::<_, io::Error>(socket)
+                }
+                .await;
+                match attempt {
+                    Ok(socket) => {
+                        connected = Some(socket);
+                        break;
+                    }
+                    Err(error) => last_error = error,
+                }
+            }
+            let socket = connected.ok_or(last_error)?;
             let _: usize = socket.send(request).await?;
 
-            let mut response = vec![0; self.udp_response_limit];
+            let capacity = self
+                .udp_response_limit
+                .min(usize::from(u16::MAX))
+                .saturating_add(1);
+            let mut response = vec![0; capacity];
             let len = socket.recv(&mut response).await?;
+            if len > self.udp_response_limit {
+                return Err(Error::UdpResponseTooLarge {
+                    limit: self.udp_response_limit,
+                });
+            }
             response.truncate(len);
             Ok(response)
         })
@@ -342,11 +397,24 @@ impl Tokio {
     /// partial record written to or unread from the stream. Discard the stream
     /// then instead of reusing it.
     async fn exchange_tcp(&self, stream: &mut TcpStream, request: &[u8]) -> Result<Vec<u8>, Error> {
-        let Ok(request_len) = u32::try_from(request.len()) else {
-            return Err(Error::TcpRequestTooLarge {
-                actual: request.len(),
-            });
-        };
+        self.exchange_tcp_framed(stream, request, TcpFraming::Kdc)
+            .await
+    }
+
+    /// Exchange one bounded TCP record using the service's length rules.
+    ///
+    /// # Errors
+    /// Returns I/O, length, reserved-bit or empty-response errors.
+    ///
+    /// # Cancel safety
+    /// NOT cancel-safe for the stream: discard it after a cancelled exchange.
+    async fn exchange_tcp_framed(
+        &self,
+        stream: &mut TcpStream,
+        request: &[u8],
+        framing: TcpFraming,
+    ) -> Result<Vec<u8>, Error> {
+        let request_len = tcp_request_length(request.len(), framing)?;
         let mut framed = Vec::with_capacity(request.len().saturating_add(TCP_RECORD_MARK_LEN));
         framed.extend_from_slice(&request_len.to_be_bytes());
         framed.extend_from_slice(request);
@@ -355,6 +423,7 @@ impl Tokio {
         let mut header = [0; TCP_RECORD_MARK_LEN];
         let _: usize = stream.read_exact(&mut header).await?;
         let response_len = u32::from_be_bytes(header);
+        validate_tcp_length(response_len, framing)?;
         let Some(response_len_usize) = usize::try_from(response_len)
             .ok()
             .filter(|len| *len <= self.tcp_response_limit)
@@ -655,19 +724,130 @@ impl Tokio {
             .await
     }
 
-    /// Send to a realm's KDCs over one explicit protocol.
+    /// Send to password endpoints with RFC 3244 framing.
     ///
     /// # Errors
-    ///
-    /// Returns the discovery errors of [`Self::discover_kdcs`],
-    /// [`Error::NoKdcEndpoints`] when no endpoint is available, and
-    /// [`Error::KdcEndpointFailures`] when every endpoint fails.
+    /// Returns endpoint failures when no exchange succeeds.
     ///
     /// # Cancel safety
+    /// NOT cancel-safe: a delivered password request may already have committed.
+    async fn send_to_password_endpoints(
+        &self,
+        realm: &str,
+        protocol: KdcProtocol,
+        endpoints: Vec<KdcEndpoint>,
+        request: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let mut failures = Vec::new();
+        for endpoint in endpoints {
+            let result = self
+                .send_password_once(
+                    endpoint.protocol,
+                    (endpoint.host.as_str(), endpoint.port),
+                    request,
+                )
+                .await;
+            match result {
+                Ok(response) => return Ok(response),
+                Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
+                Err(error) => failures.push(error.to_string()),
+            }
+        }
+        Err(Error::KdcEndpointFailures {
+            realm: realm.to_owned(),
+            protocol,
+            failures,
+        })
+    }
+
+    /// Send one password mutation, marking the outcome unknown before possible delivery.
     ///
-    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
-    /// future closes any socket it opened and abandons the request, which the
-    /// caller can send again.
+    /// # Errors
+    /// Returns preparation errors before a send, or `KpasswdOutcomeUnknown` afterward.
+    ///
+    /// # Cancel safety
+    /// NOT cancel-safe: a cancelled send or reply wait may already have committed.
+    async fn send_password_once<A>(
+        &self,
+        protocol: KdcProtocol,
+        addr: A,
+        request: &[u8],
+    ) -> Result<Vec<u8>, Error>
+    where
+        A: ToSocketAddrs + Clone,
+    {
+        match protocol {
+            KdcProtocol::Tcp => {
+                let _length = tcp_request_length(request.len(), TcpFraming::Kpasswd)?;
+                let mut stream = self.with_transport_timeout(Self::connect_tcp(addr)).await?;
+                self.with_transport_timeout(self.exchange_tcp_framed(
+                    &mut stream,
+                    request,
+                    TcpFraming::Kpasswd,
+                ))
+                .await
+                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
+            }
+            KdcProtocol::Udp | KdcProtocol::Auto => {
+                if request.len() > MAX_UDP_DATAGRAM {
+                    return Err(Error::UdpRequestTooLarge {
+                        actual: request.len(),
+                        limit: MAX_UDP_DATAGRAM,
+                    });
+                }
+                let socket = self
+                    .with_transport_timeout(async {
+                        let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
+                        for candidate in lookup_host(addr).await? {
+                            let wildcard = if candidate.is_ipv4() {
+                                "0.0.0.0:0"
+                            } else {
+                                "[::]:0"
+                            };
+                            let result = async {
+                                let socket = UdpSocket::bind(wildcard).await?;
+                                socket.connect(candidate).await?;
+                                Ok::<_, io::Error>(socket)
+                            }
+                            .await;
+                            match result {
+                                Ok(socket) => return Ok(socket),
+                                Err(error) => last_error = error,
+                            }
+                        }
+                        Err(Error::Io(last_error))
+                    })
+                    .await?;
+                self.with_transport_timeout(async {
+                    let _: usize = socket.send(request).await?;
+                    let mut response = vec![
+                        0;
+                        self.udp_response_limit
+                            .min(usize::from(u16::MAX))
+                            .saturating_add(1)
+                    ];
+                    let length = socket.recv(&mut response).await?;
+                    if length > self.udp_response_limit {
+                        return Err(Error::UdpResponseTooLarge {
+                            limit: self.udp_response_limit,
+                        });
+                    }
+                    response.truncate(length);
+                    non_empty_kdc_response(response)
+                })
+                .await
+                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
+            }
+        }
+    }
+
+    /// Send to configured KDC endpoints using KDC framing.
+    ///
+    /// # Errors
+    /// Returns discovery errors or failures from all endpoints.
+    ///
+    /// # Cancel safety
+    /// cancel-safe: no client state is changed and sockets close on cancellation.
     async fn send_to_realm_explicit(
         &self,
         config: &Config,
@@ -687,8 +867,8 @@ impl Tokio {
     /// Returns the discovery errors of [`Self::discover_kpasswd_servers`],
     /// [`Error::NoKdcEndpoints`] when no endpoint is available, and
     /// [`Error::KdcEndpointFailures`] when every endpoint fails.
-    /// [`KdcProtocol::Auto`] retries over the other protocol after a failure of
-    /// the first and returns the errors of that retry.
+    /// Failover is permitted only before possible delivery. Later failures return
+    /// [`Error::KpasswdOutcomeUnknown`] without resending the mutation.
     ///
     /// # Cancel safety
     ///
@@ -738,7 +918,7 @@ impl Tokio {
         let endpoints = self
             .discover_kpasswd_servers(config, realm, protocol)
             .await?;
-        self.send_to_endpoints(realm, protocol, endpoints, request)
+        self.send_to_password_endpoints(realm, protocol, endpoints, request)
             .await
     }
 
@@ -767,7 +947,7 @@ impl Tokio {
         A: ToSocketAddrs + Clone,
     {
         let frame = request.encode()?;
-        let response = self.send(protocol, addr, &frame).await?;
+        let response = self.send_password_once(protocol, addr, &frame).await?;
         Ok(kadmin::Reply::parse(&response)?)
     }
 
@@ -1790,12 +1970,21 @@ impl Tokio {
             .await
         {
             Ok(endpoints) if !endpoints.is_empty() => return Ok(endpoints),
+            Err(
+                error @ Error::DnsServiceUnavailable {
+                    service: _,
+                    realm: _,
+                },
+            ) => return Err(error),
             Ok(_) | Err(_) => {}
         }
 
-        let endpoints = self
+        let mut endpoints = self
             .discover_srv_endpoints("_kerberos-adm", realm, protocol)
             .await?;
+        for endpoint in &mut endpoints {
+            endpoint.port = 464;
+        }
         if endpoints.is_empty() {
             Err(Error::NoKdcEndpoints {
                 realm: realm.to_owned(),
@@ -1807,15 +1996,15 @@ impl Tokio {
     }
 
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
-    /// them by priority, then by descending weight.
+    /// them by priority, then weighted selection without replacement.
     ///
-    /// With the `RSKRB5_DNS_SERVER` override set, each target is also resolved
+    /// With an explicit DNS server set, each target is also resolved
     /// to an IP address through the same resolver.
     ///
     /// # Errors
     ///
     /// Returns [`Error::DnsResolverConfig`] when the resolver or the
-    /// `RSKRB5_DNS_SERVER` override is invalid, and [`Error::DnsSrvLookup`] when
+    /// DNS server option is invalid, and [`Error::DnsSrvLookup`] when
     /// the SRV lookup or the resolution of a target fails.
     ///
     /// # Cancel safety
@@ -1833,7 +2022,7 @@ impl Tokio {
             KdcProtocol::Tcp => "_tcp",
         };
         let query = format!("{service}.{transport}.{realm}.");
-        let resolver = dns_resolver()?;
+        let resolver = dns_resolver(self.dns_server)?;
         let lookup = resolver
             .srv_lookup(query.as_str())
             .await
@@ -1843,6 +2032,16 @@ impl Tokio {
                 message: source.to_string(),
             })?;
 
+        if lookup
+            .answers()
+            .iter()
+            .any(|record| matches!(&record.data, RData::SRV(srv) if srv.target.is_root()))
+        {
+            return Err(Error::DnsServiceUnavailable {
+                service: service.to_owned(),
+                realm: realm.to_owned(),
+            });
+        }
         let mut records = lookup
             .answers()
             .iter()
@@ -1863,28 +2062,22 @@ impl Tokio {
             })
             .filter(|(_, _, target, _)| !target.is_empty() && target != ".")
             .collect::<Vec<_>>();
-        records.sort_by(|left, right| {
-            left.0
-                .cmp(&right.0)
-                .then_with(|| right.1.cmp(&left.1))
-                .then_with(|| left.2.cmp(&right.2))
-                .then_with(|| left.3.cmp(&right.3))
-        });
+        order_srv_records(&mut records, srv_draw)?;
 
-        let resolve_targets = dns_server_override()?.is_some();
+        let resolve_targets = self.dns_server.is_some();
         let mut endpoints = Vec::with_capacity(records.len());
         for (_, _, target, port) in records {
-            let host = if resolve_targets {
+            let hosts = if resolve_targets {
                 resolve_dns_endpoint_host(&resolver, realm, protocol, &target).await?
             } else {
-                target
+                vec![target]
             };
-            endpoints.push(KdcEndpoint {
+            endpoints.extend(hosts.into_iter().map(|host| KdcEndpoint {
                 protocol,
                 host,
                 port,
                 source: KdcEndpointSource::DnsSrv,
-            });
+            }));
         }
 
         Ok(endpoints)
@@ -2012,8 +2205,7 @@ impl Tokio {
     }
 
     /// Send to a realm's kpasswd servers over the protocol
-    /// `udp_preference_limit` selects, retrying over the other one after a
-    /// failure or, from UDP, after `KRB_ERR_RESPONSE_TOO_BIG`.
+    /// `udp_preference_limit` selects, retrying only before possible delivery.
     ///
     /// # Errors
     ///
@@ -2043,14 +2235,8 @@ impl Tokio {
             .send_to_kpasswd_realm_explicit(config, first, realm, request)
             .await
         {
-            Ok(response)
-                if first == KdcProtocol::Udp
-                    && kdc_error_code(&response) == Some(KRB_ERR_RESPONSE_TOO_BIG) =>
-            {
-                self.send_to_kpasswd_realm_explicit(config, second, realm, request)
-                    .await
-            }
             Ok(response) => Ok(response),
+            Err(error @ Error::KpasswdOutcomeUnknown(_)) => Err(error),
             Err(_) => {
                 self.send_to_kpasswd_realm_explicit(config, second, realm, request)
                     .await
@@ -2080,6 +2266,102 @@ impl Tokio {
     }
 }
 
+/// Validate the reserved bit only for RFC 4120 KDC records.
+///
+/// # Errors
+/// Returns the named reserved-bit error for KDC frames.
+const fn validate_tcp_length(length: u32, framing: TcpFraming) -> Result<(), Error> {
+    match framing {
+        TcpFraming::Kdc if length & 0x8000_0000 != 0 => Err(Error::TcpReservedBitSet),
+        TcpFraming::Kdc | TcpFraming::Kpasswd => Ok(()),
+    }
+}
+
+/// Convert an outgoing length according to the service's framing rules.
+///
+/// # Errors
+/// Returns a request-size error if the service's record mark cannot represent it.
+fn tcp_request_length(length: usize, framing: TcpFraming) -> Result<u32, Error> {
+    let value =
+        u32::try_from(length).map_err(|_overflow| Error::TcpRequestTooLarge { actual: length })?;
+    validate_tcp_length(value, framing)
+        .map_err(|_reserved| Error::TcpRequestTooLarge { actual: length })?;
+    Ok(value)
+}
+
+/// Select without replacement within ascending priorities using RFC 2782 draws.
+///
+/// # Errors
+/// Returns the draw error or a transport error for an invalid draw.
+fn order_srv_records<F>(records: &mut [(u16, u16, String, u16)], mut draw: F) -> Result<(), Error>
+where
+    F: FnMut(u64) -> Result<u64, Error>,
+{
+    records.sort_by_key(|record| record.0);
+    for offset in 0..records.len() {
+        let remaining = records
+            .get_mut(offset..)
+            .ok_or_else(|| Error::Transport("SRV selection offset".to_owned()))?;
+        let Some(first) = remaining.first() else {
+            break;
+        };
+        let priority = first.0;
+        let count = remaining
+            .iter()
+            .take_while(|record| record.0 == priority)
+            .count();
+        let group = remaining
+            .get_mut(..count)
+            .ok_or_else(|| Error::Transport("SRV priority group".to_owned()))?;
+        group.sort_by_key(|record| record.1 != 0);
+        let total = group.iter().map(|record| u64::from(record.1)).sum::<u64>();
+        let selected = if total == 0 {
+            usize::try_from(draw(
+                u64::try_from(count.saturating_sub(1))
+                    .map_err(|error| Error::Transport(error.to_string()))?,
+            )?)
+            .map_err(|error| Error::Transport(error.to_string()))?
+        } else {
+            let ticket = draw(total)?;
+            let mut cumulative = 0_u64;
+            group
+                .iter()
+                .position(|record| {
+                    cumulative = cumulative.saturating_add(u64::from(record.1));
+                    cumulative >= ticket
+                })
+                .ok_or_else(|| Error::Transport("SRV draw outside weight range".to_owned()))?
+        };
+        group
+            .get_mut(..=selected)
+            .ok_or_else(|| Error::Transport("SRV draw outside group".to_owned()))?
+            .rotate_right(1);
+    }
+    Ok(())
+}
+
+/// Draw uniformly from the inclusive range, rejecting the biased remainder.
+///
+/// # Errors
+/// Returns a transport error if entropy acquisition or range construction fails.
+fn srv_draw(maximum: u64) -> Result<u64, Error> {
+    let range = maximum
+        .checked_add(1)
+        .ok_or_else(|| Error::Transport("SRV weight overflow".to_owned()))?;
+    let threshold = range
+        .wrapping_neg()
+        .checked_rem(range)
+        .ok_or_else(|| Error::Transport("empty SRV range".to_owned()))?;
+    loop {
+        let value = getrandom::u64()?;
+        if value >= threshold {
+            return value
+                .checked_rem(range)
+                .ok_or_else(|| Error::Transport("empty SRV range".to_owned()));
+        }
+    }
+}
+
 /// Reject an empty KDC reply.
 ///
 /// # Errors
@@ -2105,6 +2387,10 @@ fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), E
     let endpoint = value.trim();
     if endpoint.is_empty() {
         return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
+    }
+
+    if endpoint.parse::<IpAddr>().is_ok() {
+        return Ok((endpoint.to_owned(), default_port));
     }
 
     if let Some(rest) = endpoint.strip_prefix('[') {
@@ -2153,15 +2439,15 @@ fn parse_kdc_port(endpoint: &str, port: &str) -> Result<u16, Error> {
         .ok_or_else(|| Error::InvalidKdcEndpoint(endpoint.to_owned()))
 }
 
-/// Build the DNS resolver, honouring the `RSKRB5_DNS_SERVER` override.
+/// Build the DNS resolver using the explicitly selected server, if any.
 ///
 /// # Errors
 ///
 /// Returns [`Error::DnsResolverConfig`] when the override is invalid or the
 /// resolver cannot be built.
 #[cfg(feature = "tokio")]
-fn dns_resolver() -> Result<TokioResolver, Error> {
-    if let Some((ip, port)) = dns_server_override()? {
+fn dns_resolver(server: Option<(IpAddr, u16)>) -> Result<TokioResolver, Error> {
+    if let Some((ip, port)) = server {
         let mut udp = ConnectionConfig::udp();
         udp.port = port;
         let mut tcp = ConnectionConfig::tcp();
@@ -2181,7 +2467,7 @@ fn dns_resolver() -> Result<TokioResolver, Error> {
         .map_err(|source| Error::DnsResolverConfig(source.to_string()))
 }
 
-/// Resolve an SRV target to its first IP address; IP literals pass through.
+/// Resolve every address of an SRV target; IP literals pass through.
 ///
 /// # Errors
 ///
@@ -2198,9 +2484,9 @@ async fn resolve_dns_endpoint_host(
     realm: &str,
     protocol: KdcProtocol,
     target: &str,
-) -> Result<String, Error> {
+) -> Result<Vec<String>, Error> {
     if target.parse::<IpAddr>().is_ok() {
-        return Ok(target.to_owned());
+        return Ok(vec![target.to_owned()]);
     }
 
     let lookup_name = if target.ends_with('.') {
@@ -2216,36 +2502,15 @@ async fn resolve_dns_endpoint_host(
             protocol,
             message: format!("target {target}: {source}"),
         })?;
-    lookup
-        .iter()
-        .next()
-        .map(|ip| ip.to_string())
-        .ok_or_else(|| Error::DnsSrvLookup {
+    let hosts: Vec<_> = lookup.iter().map(|ip| ip.to_string()).collect();
+    if hosts.is_empty() {
+        return Err(Error::DnsSrvLookup {
             realm: realm.to_owned(),
             protocol,
             message: format!("target {target}: no address records found"),
-        })
-}
-
-/// Read the `RSKRB5_DNS_SERVER` override; unset or blank means none.
-///
-/// # Errors
-///
-/// Returns [`Error::DnsResolverConfig`] when the variable is not valid
-/// Unicode or not an `ip` or `ip:port` literal.
-#[cfg(feature = "tokio")]
-fn dns_server_override() -> Result<Option<(IpAddr, u16)>, Error> {
-    match env::var(RSKRB5_DNS_SERVER_ENV) {
-        Ok(value) if !value.trim().is_empty() => {
-            parse_dns_server(&value).map(Some).map_err(|message| {
-                Error::DnsResolverConfig(format!("{RSKRB5_DNS_SERVER_ENV}: {message}"))
-            })
-        }
-        Ok(_) | Err(env::VarError::NotPresent) => Ok(None),
-        Err(source) => Err(Error::DnsResolverConfig(format!(
-            "{RSKRB5_DNS_SERVER_ENV}: {source}"
-        ))),
+        });
     }
+    Ok(hosts)
 }
 
 /// Parse an `ip` or `ip:port` DNS server literal, defaulting to port 53.
@@ -2297,6 +2562,84 @@ mod tests {
     use core::net::IpAddr;
 
     use super::parse_dns_server;
+
+    /// Numeric framing boundaries are tested without allocating multi-gigabyte requests.
+    #[test]
+    fn tcp_lengths_are_service_specific() -> Result<(), super::Error> {
+        assert_eq!(
+            super::tcp_request_length(0x7FFF_FFFF, super::TcpFraming::Kdc)?,
+            0x7FFF_FFFF
+        );
+        assert!(
+            super::tcp_request_length(0x8000_0000, super::TcpFraming::Kdc)
+                .err()
+                .is_some()
+        );
+        assert_eq!(
+            super::tcp_request_length(0x8000_0000, super::TcpFraming::Kpasswd)?,
+            0x8000_0000
+        );
+        super::validate_tcp_length(u32::MAX, super::TcpFraming::Kpasswd)?;
+        Ok(())
+    }
+
+    /// A zero draw selects zero-weight records before weighted peers at equal priority.
+    #[test]
+    fn srv_zero_draw_selects_zero_weight() -> Result<(), super::Error> {
+        let mut records = vec![
+            (1, 3, "heavy".to_owned(), 88),
+            (1, 0, "zero".to_owned(), 88),
+            (2, 8, "later".to_owned(), 88),
+        ];
+        super::order_srv_records(&mut records, |_| Ok(0))?;
+        assert_eq!(
+            records.first().map(|record| record.2.as_str()),
+            Some("zero")
+        );
+        assert_eq!(
+            records.last().map(|record| record.2.as_str()),
+            Some("later")
+        );
+        Ok(())
+    }
+
+    /// Inclusive draws cover both weighted boundaries without replacing selected records.
+    #[test]
+    fn srv_weight_boundaries_select_each_peer() -> Result<(), super::Error> {
+        for (ticket, expected) in [(0, "light"), (1, "light"), (2, "heavy"), (4, "heavy")] {
+            let mut records = vec![
+                (1, 1, "light".to_owned(), 88),
+                (1, 3, "heavy".to_owned(), 88),
+            ];
+            let mut first = true;
+            super::order_srv_records(&mut records, |_| {
+                let value = if first { ticket } else { 0 };
+                first = false;
+                Ok(value)
+            })?;
+            assert_eq!(
+                records.first().map(|record| record.2.as_str()),
+                Some(expected)
+            );
+            assert_ne!(records.first(), records.last());
+        }
+        Ok(())
+    }
+
+    /// All-zero groups use the injected index draw rather than a fixed ordering.
+    #[test]
+    fn srv_all_zero_weights_use_uniform_index() -> Result<(), super::Error> {
+        let mut records = vec![
+            (1, 0, "first".to_owned(), 88),
+            (1, 0, "second".to_owned(), 88),
+        ];
+        super::order_srv_records(&mut records, Ok)?;
+        assert_eq!(
+            records.first().map(|record| record.2.as_str()),
+            Some("second")
+        );
+        Ok(())
+    }
 
     /// A bare IP literal selects the standard DNS port 53.
     #[test]

@@ -532,6 +532,15 @@ pub enum Client {
         /// Resolver error message.
         message: String,
     },
+    /// DNS explicitly declares that the requested service is unavailable.
+    #[cfg(feature = "tokio")]
+    #[error("DNS service {service} is unavailable for {realm}")]
+    DnsServiceUnavailable {
+        /// Queried service label.
+        service: String,
+        /// Realm being discovered.
+        realm: String,
+    },
     /// No KDC endpoints were discovered for a realm.
     #[cfg(feature = "tokio")]
     #[error("no KDC endpoints discovered for {realm} over {protocol:?}")]
@@ -565,9 +574,20 @@ pub enum Client {
         /// Maximum UDP payload length.
         limit: usize,
     },
-    /// TCP request length could not fit the RFC 4120 length prefix.
+    /// UDP response exceeded the configured acceptance limit.
     #[cfg(feature = "tokio")]
-    #[error("KDC TCP request length {actual} exceeds u32::MAX")]
+    #[error("KDC UDP response exceeds configured limit {limit}")]
+    UdpResponseTooLarge {
+        /// Maximum accepted response byte length.
+        limit: usize,
+    },
+    /// KDC TCP frame has the RFC 4120 reserved high bit set.
+    #[cfg(feature = "tokio")]
+    #[error("KDC TCP frame has its reserved high bit set")]
+    TcpReservedBitSet,
+    /// TCP request length could not fit the service's length prefix.
+    #[cfg(feature = "tokio")]
+    #[error("TCP request length {actual} exceeds the service framing limit")]
     TcpRequestTooLarge {
         /// Encoded request byte length.
         actual: usize,
