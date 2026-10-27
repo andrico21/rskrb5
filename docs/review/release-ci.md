@@ -7,6 +7,7 @@ commands, red runs and exit codes are in `task-38-rskrb5-ng-own-way.log`.
 | ID | Status | Tests and commit | Behaviour change for CHANGELOG | Dismissal evidence |
 | --- | --- | --- | --- | --- |
 | run-2 lead `release.publish.crates-io-token.unprotected-tag-authorization` | fixed | `release_find_tag_job_holds_no_secret_and_reports_untagged_runs`, `release_publish_job_requires_tag_environment_and_main_ancestry`, `release_registry_token_reaches_only_the_publish_upload` (`tests/gokrb5_parity_manifest.rs`); commit recorded in the evidence log | The Release workflow has two jobs. `find-tag` holds no secret and no environment. When no `v`-prefixed tag points at the commit, it prints `No vN.N.N tag points at <sha>` and outputs an empty tag. It accepts only `v`-prefixed tags and fails when more than one tag matches. `publish` runs only when a tag was found, in the `release` environment, whose required reviewer is `andrico21`. It checks that the tag still points at the commit CI verified and that this commit is an ancestor of `origin/main`. The registry token is used only by the upload step, which runs `cargo publish --locked --no-verify` after the dry run has verified the tree without the token. The repository settings are listed below. | N/A |
+| RSK-E0AFE152 | fixed | `parity_gates_correspond_to_fork_ci_jobs`, `manifest_and_runbooks_cite_only_fork_workflow_inputs` (`tests/gokrb5_parity_manifest.rs`), `python3 scripts/check-github-ad-gate.py --self-test`; commit recorded in the evidence log | `scripts/check-github-ad-gate.py --dispatch` reads `ci.yml` before making any GitHub call. While `workflow_dispatch` lacks the inputs the helper passes (`integration`, `test_ad`, `test_ad_dry_run`, `test_kpasswd`), it exits 2 and dispatches nothing. Previously it dispatched inputs the fork's workflow does not declare. Every parity gate in `docs/gokrb5-parity.toml` now names its fork CI job (`ci_job`). The five Docker MIT gates proven only by upstream runs have the new status `historical-upstream`, cite those runs with the attribution `historical upstream clelange/rskrb5` and are no longer `required_for_release`. The AD gate's command is the readiness check. `docs/gated-integration.md`, `docs/github-ad-gate-setup.md` and the `ci.yml` header state that the fork's CI has no Docker integration or AD job. The runbooks target `andrico21/rskrb5-ng`. | N/A |
 
 ## Repository settings (applied by todo 38)
 
@@ -32,3 +33,14 @@ The commands, payloads and `GET` verifications are in the evidence log.
 
   Until then, any workflow that a writer pushes to a branch can read the repository secret. The environment gate protects the token only once it is an environment secret.
 - **Historical tags `v0.1.0` to `v0.2.2`** (the `rskrb5-patched` releases). These tags already exist. A manual CI re-run on one of their commits would make `publish` wait for approval. The reviewer rejects that deployment. The job would fail anyway at "Verify crate name and version", because those trees declare `rskrb5-patched`.
+
+## Hand-off: stale CI references in files outside this todo's ownership
+
+These files still describe the upstream dispatch jobs. Todo 38 does not own
+them, so it records them here:
+
+- `README.md` lines 146-157: the manual Docker-backed integration job and the `integration`/`test_kpasswd` dispatch inputs. Todo 42 rewrites the README.
+- `docs/gokrb5-parity.md` lines 152-157 and 175-176: the gate table still says `proven`; the manifest now says `historical-upstream`. The table also has the dispatch instructions. Todo 42 updates this file.
+- `docs/ad-integration.md` lines 93, 160-161, 177-196; `docs/publishing.md` line 73; `docs/samba-ad-feasibility.md` line 120: the hosted dispatch gate.
+- `FORK-NOTES.md` lines 63-71: replaced by `PROVENANCE.md` in todo 42.
+- `docs/release-notes.md` lines 10-24 and 106-110: upstream 0.2.0 release notes. These are legitimate history and need only an attribution.

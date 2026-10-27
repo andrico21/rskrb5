@@ -1,32 +1,43 @@
 # GitHub Active Directory Gate Setup
 
-This runbook prepares the strict `TESTAD=1 TESTAD_REQUIRED=1` GitHub Actions
+This runbook prepares a strict `TESTAD=1 TESTAD_REQUIRED=1` GitHub Actions
 gate. The gate is live infrastructure evidence, not a Docker fixture. Keep it
 blocked until the repository has the required secrets and reachable AD
 endpoints.
 
+## Status In rskrb5-ng
+
+The rskrb5-ng CI workflow (`.github/workflows/ci.yml`) has **no AD job**, and
+its `workflow_dispatch` trigger declares no inputs. The upstream
+`clelange/rskrb5` workflow had an `active-directory-integration` job dispatched
+with AD inputs; its runs are recorded in `docs/gokrb5-parity.toml` as
+historical upstream evidence, not as rskrb5-ng gates.
+
+This runbook therefore covers two things: the secret setup and readiness
+check, which work today, and the requirements an AD job must meet once it is
+restored to `ci.yml` together with its dispatch inputs.
+`scripts/check-github-ad-gate.py --dispatch` refuses to dispatch until then.
+
 ## Runner Mode
 
-The default `active-directory-integration` job runs on GitHub-hosted
-`ubuntu-latest`. No self-hosted runner is required for the current workflow.
-
+The upstream AD job ran on GitHub-hosted `ubuntu-latest`. A restored job on
 GitHub-hosted runners can prove the strict AD gate only when the AD endpoints
 are reachable from GitHub's network or through a tunnel started by the workflow.
-If the AD lab is private, either expose a controlled route or switch the job
-back to a self-hosted Linux x64 runner near the lab.
+If the AD lab is private, either expose a controlled route or run the job on a
+self-hosted Linux x64 runner near the lab.
 
-The legacy self-hosted runner mode expects these labels:
+The self-hosted runner mode expects these labels:
 
 - `self-hosted`
 - `linux`
 - `x64`
 - `rskrb5-ad`
 
-Use this registration sequence only if the workflow is changed back to the
-self-hosted runner labels:
+Use this registration sequence only if the AD job uses the self-hosted runner
+labels:
 
 ```sh
-REPO=clelange/rskrb5
+REPO=andrico21/rskrb5-ng
 TOKEN=$(gh api --method POST "repos/$REPO/actions/runners/registration-token" --jq .token)
 
 # Run inside the extracted GitHub Actions runner directory.
@@ -51,14 +62,14 @@ The runner must satisfy these operational requirements:
   tolerance.
 - Access to the AD lab described in [`ad-lab-provisioning.md`](ad-lab-provisioning.md).
 
-The workflow installs the Rust toolchain itself. No keytabs live on disk on the
+An AD job installs the Rust toolchain itself. No keytabs live on disk on the
 runner before the job starts; the job reads keytab bytes from Actions secrets.
 
 ## Required Secrets
 
 Set these repository Actions secrets. Repository or org repo-selected secrets
-work. Do not rely on Environment secrets unless the workflow is changed to set
-an `environment:` for the AD job.
+work. Do not rely on Environment secrets unless the AD job sets an
+`environment:`.
 
 Endpoint secrets are plain `host:port` strings:
 
@@ -87,7 +98,7 @@ Keytab secrets are standard base64 of the complete MIT keytab bytes:
 Example secret setup:
 
 ```sh
-REPO=clelange/rskrb5
+REPO=andrico21/rskrb5-ng
 
 printf '%s' '192.168.88.100:88'  | gh secret set TEST_AD_USER_KDC_ADDR --repo "$REPO" --app actions
 printf '%s' '192.168.88.101:88'  | gh secret set TEST_AD_RESOURCE_KDC_ADDR --repo "$REPO" --app actions
@@ -102,52 +113,40 @@ base64 < /secure/ad/sysHTTP.keytab   | tr -d '\n' | gh secret set TEST_AD_SYSHTT
 
 ## Readiness And Dispatch
 
-Check GitHub-side readiness before dispatching the strict gate:
+Check GitHub-side secret readiness for the strict gate:
 
 ```sh
 scripts/check-github-ad-gate.py
 ```
 
 The readiness script must report all required secrets present. It does not
-prove that GitHub-hosted runners can reach the AD endpoints; the workflow
-preflight checks that from inside GitHub Actions. Treat strict readiness as
-meaningful only when the endpoint secrets point at real AD services.
+prove that GitHub-hosted runners can reach the AD endpoints; an AD job's
+preflight would check that from inside GitHub Actions. Treat strict readiness
+as meaningful only when the endpoint secrets point at real AD services.
 
-To validate only the keytab secret shape without requiring live AD endpoints,
-run the non-live dry-run check:
+To check only the keytab secrets, without requiring live AD endpoints, run:
 
 ```sh
 scripts/check-github-ad-gate.py --dry-run
 ```
 
-Dispatching the dry-run job is allowed while the endpoint secrets are absent:
+To also check the self-hosted runner labels, pass
+`--require-self-hosted-runner`.
+
+Dispatch is unsupported in rskrb5-ng today. `--dispatch` reads
+`.github/workflows/ci.yml` before any GitHub call. While the workflow's
+`workflow_dispatch` lacks any of the inputs the helper passes (`integration`,
+`test_ad`, `test_ad_dry_run`, `test_kpasswd`), it exits 2 and dispatches
+nothing. Once an AD job and those inputs are restored, these commands dispatch
+the dry-run (keytab secret shape only, no AD parity) and the strict job:
 
 ```sh
 scripts/check-github-ad-gate.py --dry-run --dispatch --ref main
-```
-
-This runs `test_ad_dry_run=true` on GitHub-hosted `ubuntu-latest`, checks that
-the four keytab secrets decode as complete keytabs, and skips endpoint
-reachability. It does not prove AD parity.
-
-To also check the legacy self-hosted runner labels, pass
-`--require-self-hosted-runner`.
-
-Dispatch the strict AD job only after readiness is green:
-
-```sh
 scripts/check-github-ad-gate.py --dispatch --ref main
 ```
 
-Direct equivalent:
-
-```sh
-gh workflow run ci.yml --repo clelange/rskrb5 --ref main \
-  -f integration=false \
-  -f test_ad=true \
-  -f test_ad_dry_run=false \
-  -f test_kpasswd=false
-```
+`python3 scripts/check-github-ad-gate.py --self-test` checks both behaviours
+against a stub `gh`.
 
 ## Failure Triage
 

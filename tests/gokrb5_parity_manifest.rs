@@ -60,8 +60,22 @@ mod tests {
         "http-client-wrapper",
     ];
     /// Statuses a parity gate may have.
-    const ALLOWED_GATE_STATUSES: [&str; 4] =
-        ["proven", "unproven", "blocked-on-lab", "missing-api"];
+    const ALLOWED_GATE_STATUSES: [&str; 5] = [
+        "proven",
+        "historical-upstream",
+        "unproven",
+        "blocked-on-lab",
+        "missing-api",
+    ];
+    /// Prefix of a manifest string that records evidence from the upstream
+    /// `clelange/rskrb5` workflow, whose jobs the fork's CI does not run.
+    const HISTORICAL_UPSTREAM: &str = "historical upstream clelange/rskrb5";
+    /// `workflow_dispatch` inputs of the upstream CI workflow.
+    const UPSTREAM_DISPATCH_INPUTS: [&str; 4] =
+        ["integration", "test_ad", "test_ad_dry_run", "test_kpasswd"];
+    /// Fixture runbooks that must describe the fork's own workflow.
+    const FIXTURE_RUNBOOKS: [&str; 2] =
+        ["docs/gated-integration.md", "docs/github-ad-gate-setup.md"];
 
     /// Pins the manifest's gokrb5 target, its required parity areas and its required gates.
     #[test]
@@ -357,6 +371,169 @@ mod tests {
             publish.contains("cargo publish --locked --no-verify"),
             "the token-holding upload must not run the tagged tree's build scripts"
         );
+        Ok(())
+    }
+
+    /// Job ids and `workflow_dispatch` input names of `.github/workflows/ci.yml`.
+    fn ci_workflow() -> Result<(BTreeSet<String>, BTreeSet<String>), TestError> {
+        let text = repository_file(".github/workflows/ci.yml")?;
+        let jobs = workflow_jobs(&text).into_iter().map(|(id, _)| id).collect();
+        let mut inputs = BTreeSet::new();
+        let mut in_dispatch = false;
+        let mut in_inputs = false;
+        for line in text.lines() {
+            let content = line.trim_start();
+            if content.is_empty() || content.starts_with('#') {
+                continue;
+            }
+            match line.chars().take_while(|&ch| ch == ' ').count() {
+                0 => {
+                    in_dispatch = false;
+                    in_inputs = false;
+                }
+                2 => {
+                    in_dispatch = content == "workflow_dispatch:";
+                    in_inputs = false;
+                }
+                4 => in_inputs = in_dispatch && content == "inputs:",
+                6 if in_inputs => {
+                    if let Some(name) = content.strip_suffix(':') {
+                        let _: bool = inputs.insert(name.to_owned());
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok((jobs, inputs))
+    }
+
+    /// Collects every string inside `value` into `out`.
+    fn collect_strings(value: &Value, out: &mut Vec<String>) {
+        if let Some(text) = value.as_str() {
+            out.push(text.to_owned());
+        } else if let Some(items) = value.as_array() {
+            for item in items {
+                collect_strings(item, out);
+            }
+        } else if let Some(table) = value.as_table() {
+            for item in table.values() {
+                collect_strings(item, out);
+            }
+        } else {
+            // Numbers, booleans and dates carry no prose.
+        }
+    }
+
+    /// Every parity gate names the fork CI job that runs it; a gate without one is
+    /// neither proven nor required for release, and a historical-upstream gate cites
+    /// only attributed upstream runs.
+    #[test]
+    fn parity_gates_correspond_to_fork_ci_jobs() -> Result<(), TestError> {
+        let manifest: Table = include_str!("../docs/gokrb5-parity.toml").parse()?;
+        let (ci_jobs, _) = ci_workflow()?;
+        let gates = manifest
+            .get("gate")
+            .and_then(Value::as_array)
+            .ok_or("manifest has gate array")?;
+        for gate in gates.iter().filter_map(Value::as_table) {
+            let id = gate
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("gate has id")?;
+            let ci_job = gate
+                .get("ci_job")
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("gate {id} has string ci_job"))?;
+            let status = gate
+                .get("status")
+                .and_then(Value::as_str)
+                .ok_or("gate has status")?;
+            if ci_job.is_empty() {
+                assert_ne!(
+                    status, "proven",
+                    "gate {id} is proven without a fork CI job"
+                );
+                assert_ne!(
+                    gate.get("required_for_release").and_then(Value::as_bool),
+                    Some(true),
+                    "gate {id} is required for release without a fork CI job"
+                );
+            } else {
+                assert!(
+                    ci_jobs.contains(ci_job),
+                    "gate {id} names ci_job {ci_job}, which .github/workflows/ci.yml does not define"
+                );
+            }
+            if status == "historical-upstream" {
+                assert!(
+                    ci_job.is_empty(),
+                    "historical-upstream gate {id} must not claim fork CI job {ci_job}"
+                );
+                let evidence = gate
+                    .get("evidence")
+                    .and_then(Value::as_array)
+                    .ok_or("gate has evidence array")?;
+                for item in evidence {
+                    let text = item.as_str().ok_or("gate evidence entries are strings")?;
+                    assert!(
+                        text.starts_with(HISTORICAL_UPSTREAM),
+                        "gate {id} evidence lacks the historical upstream attribution: {text}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The manifest and the fixture runbooks cite no hosted run without the historical
+    /// upstream attribution, no dispatch input the fork's `ci.yml` lacks, and no
+    /// upstream repository as the dispatch target.
+    #[test]
+    fn manifest_and_runbooks_cite_only_fork_workflow_inputs() -> Result<(), TestError> {
+        let (_, inputs) = ci_workflow()?;
+        let removed: Vec<String> = UPSTREAM_DISPATCH_INPUTS
+            .iter()
+            .filter(|&&name| !inputs.contains(name))
+            .map(|name| format!("{name}="))
+            .collect();
+
+        let manifest: Table = include_str!("../docs/gokrb5-parity.toml").parse()?;
+        let mut texts = Vec::new();
+        for value in manifest.values() {
+            collect_strings(value, &mut texts);
+        }
+        for text in texts
+            .iter()
+            .filter(|text| !text.starts_with(HISTORICAL_UPSTREAM))
+        {
+            assert!(
+                !text.contains("GitHub Actions run") && !text.contains("workflow_dispatch run"),
+                "manifest cites a hosted run without the historical upstream attribution: {text}"
+            );
+            for token in &removed {
+                assert!(
+                    !text.contains(token.as_str()),
+                    "manifest cites dispatch input `{token}`, which ci.yml does not declare: {text}"
+                );
+            }
+        }
+
+        for runbook in FIXTURE_RUNBOOKS {
+            let text = repository_file(runbook)?;
+            for line in text.lines() {
+                for token in &removed {
+                    assert!(
+                        !line.contains(token.as_str()),
+                        "{runbook} cites dispatch input `{token}`, which ci.yml does not declare: {line}"
+                    );
+                }
+                assert!(
+                    !line.contains("REPO=clelange/rskrb5")
+                        && !line.contains("--repo clelange/rskrb5"),
+                    "{runbook} targets the upstream repository: {line}"
+                );
+            }
+        }
         Ok(())
     }
 }

@@ -1,8 +1,14 @@
 # Gated Integration Validation
 
-The gated integration tests reuse the gokrb5 Docker fixtures. Use the checked-in
-runner so local validation and GitHub Actions use the same container names,
-ports, and environment variables.
+The gated integration tests reuse the gokrb5 Docker fixtures and run locally
+through the checked-in runner, which fixes the container names, ports, and
+environment variables.
+
+The rskrb5-ng CI workflow (`.github/workflows/ci.yml`) has no Docker
+integration job and no AD job, and its `workflow_dispatch` trigger declares no
+inputs: these gates are local-only. The upstream `clelange/rskrb5` workflow ran
+them on GitHub-hosted runners; `docs/gokrb5-parity.toml` keeps those runs as
+evidence attributed to the upstream repository (status `historical-upstream`).
 
 ## Local Run
 
@@ -115,8 +121,7 @@ endpoints fail instead of soft-skipping:
 TESTAD=1 TESTAD_REQUIRED=1 cargo test --all-features --test client_ad_integration -- --nocapture
 ```
 
-In GitHub Actions, `workflow_dispatch` with `test_ad=true` runs a separate
-strict AD job on GitHub-hosted `ubuntu-latest`. The Docker-backed integration
-job stays MIT-only; dispatch with both `integration=true` and `test_ad=true` to
-run both gates in one workflow. The AD job only proves live parity when the AD
-endpoints are reachable from GitHub-hosted runners.
+There is no hosted AD gate in rskrb5-ng: `ci.yml` has no AD job, and
+`scripts/check-github-ad-gate.py --dispatch` refuses to dispatch until an AD job
+and its `workflow_dispatch` inputs are restored. The secret setup such a job
+needs is in [`github-ad-gate-setup.md`](github-ad-gate-setup.md).

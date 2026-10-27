@@ -27,6 +27,14 @@ name: CI
 # Vendored guidelines. `docs/rust-guidelines/` is checked against its
 # SHA256SUMS in `docs-validate`; update it only by re-vendoring.
 #
+# Not in this workflow: the Docker MIT KDC integration gates and the Active
+# Directory gate of the upstream `clelange/rskrb5` workflow. They run locally
+# (`scripts/run-gated-integration.sh`, docs/gated-integration.md), and
+# `workflow_dispatch` below declares no inputs, so
+# `scripts/check-github-ad-gate.py --dispatch` refuses to dispatch.
+# `docs/gokrb5-parity.toml` keeps their upstream runs as attributed historical
+# evidence (gate status `historical-upstream`).
+#
 # Blocking: every job except the four advisory ones below. Advisory (never a
 # merge gate, per core Section 12 "Recommended"): `geiger`,
 # `rustdoc-nightly-canary`, and the scheduled/dispatch `fuzz` and `mutants`;
