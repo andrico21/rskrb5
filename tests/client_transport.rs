@@ -61,6 +61,22 @@ mod tests {
     /// Error type of these tests; `Send` so stub KDC tasks can return it.
     type TestError = Box<dyn Error + Send + Sync>;
 
+    /// Bare IPv6 literals retain every address component and the service default port.
+    #[test]
+    fn configured_endpoint_preserves_bare_ipv6() -> Result<(), TestError> {
+        // Given a final decimal-looking IPv6 component, not an authority port.
+        let host = "2001:db8::1:2";
+        for default_port in [88, 464] {
+            // When the endpoint is parsed for either Kerberos service.
+            let endpoint =
+                KdcEndpoint::configured_with_default_port(KdcProtocol::Tcp, host, default_port)?;
+            // Then the whole literal is the host and the default still applies.
+            assert_eq!(endpoint.host, host);
+            assert_eq!(endpoint.port, default_port);
+        }
+        Ok(())
+    }
+
     /// Pins that a UDP send transmits the raw request datagram and returns the reply datagram.
     #[test]
     fn tokio_transport_sends_udp_datagram() -> Result<(), TestError> {

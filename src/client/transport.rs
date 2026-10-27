@@ -2107,6 +2107,10 @@ fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), E
         return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
     }
 
+    if endpoint.parse::<IpAddr>().is_ok() {
+        return Ok((endpoint.to_owned(), default_port));
+    }
+
     if let Some(rest) = endpoint.strip_prefix('[') {
         let Some((host, suffix)) = rest.split_once(']') else {
             return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
