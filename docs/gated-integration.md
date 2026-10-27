@@ -32,8 +32,22 @@ RSKRB5_KEEP_CONTAINERS=1 scripts/run-gated-integration.sh run \
 scripts/run-gated-integration.sh stop
 ```
 
-The `start` command writes `target/gated-integration.env`. To run custom cargo
-commands against already-started fixtures:
+The `start` command writes the environment file
+`target/gated-integration/gated-integration.env`. The file can carry AD
+keytab secrets, so the runner keeps it private:
+
+- the directory is used only by the runner and is set to mode 0700; a symlink
+  or a directory owned by another user is refused;
+- the file is staged under a fresh mode-0600 name and renamed into place, so an
+  earlier permissive file is replaced, never rewritten;
+- `env` prints it with every keytab `*_HEX`/`*_BASE64` value replaced by
+  `<redacted>`;
+- `stop` deletes it, and so does `run` on exit unless `RSKRB5_KEEP_CONTAINERS=1`.
+
+`RSKRB5_INTEGRATION_ENV_DIR` selects another directory, which gets the same
+treatment. `scripts/run-gated-integration.sh self-test` checks this handling on
+dummy secrets without Docker. To run custom cargo commands against
+already-started fixtures:
 
 ```sh
 scripts/run-gated-integration.sh start
@@ -63,8 +77,7 @@ RSKRB5_CONFIGURE_RESOLVER=0 scripts/run-gated-integration.sh start
 ```
 
 When resolver configuration is disabled, `TEST_DNS_KDC` defaults to `0` so the
-Rust DNS-SRV gate is skipped. The generated `target/gated-integration.env` still
-records `DNS_IP`; on Docker backends that expose container IPs directly, this is
+Rust DNS-SRV gate is skipped. The generated environment file still records `DNS_IP`; on Docker backends that expose container IPs directly, this is
 the DNS container IP rather than the loopback publish address.
 `TEST_HTTP_URL` also defaults to `http://127.0.0.1` in this mode so the live
 HTTP Negotiate tests do not depend on DNS.
@@ -72,7 +85,7 @@ HTTP Negotiate tests do not depend on DNS.
 When diagnosing DNS directly, query the fixture before running Rust tests:
 
 ```sh
-source target/gated-integration.env
+source target/gated-integration/gated-integration.env
 dig @"$DNS_IP" -p 53 _kerberos._udp.TEST.GOKRB5 SRV
 dig @"$DNS_IP" -p 53 cname.test.gokrb5 A
 ```
@@ -111,8 +124,8 @@ supplied through `TEST_AD_USER_KDC_ADDR`, `TEST_AD_RESOURCE_KDC_ADDR`,
 `TEST_AD_USER_ADMIN_ADDR`, and `TEST_AD_RESOURCE_ADMIN_ADDR`.
 Lab-specific keytabs can be supplied with the `TEST_AD_*_KEYTAB_PATH`,
 `TEST_AD_*_KEYTAB_HEX`, or `TEST_AD_*_KEYTAB_BASE64` variables documented in
-the AD runbook; the runner preserves those values in
-`target/gated-integration.env`.
+the AD runbook. The runner preserves those values in its private environment
+file and redacts the keytab values when `env` prints it.
 
 Use `TESTAD_REQUIRED=1` for release or parity evidence so unreachable AD
 endpoints fail instead of soft-skipping:

@@ -2,7 +2,15 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${RSKRB5_INTEGRATION_ENV_FILE:-"$ROOT_DIR/target/gated-integration.env"}"
+if [[ -n "${RSKRB5_INTEGRATION_ENV_FILE:-}" ]]; then
+  echo "RSKRB5_INTEGRATION_ENV_FILE is no longer supported; set RSKRB5_INTEGRATION_ENV_DIR to a directory used only by this runner." >&2
+  exit 2
+fi
+# A directory used only by this runner: it holds the generated environment,
+# which may carry AD keytab secrets, so it is kept at mode 0700 and the file
+# at mode 0600.
+ENV_DIR="${RSKRB5_INTEGRATION_ENV_DIR:-"$ROOT_DIR/target/gated-integration"}"
+ENV_FILE="$ENV_DIR/gated-integration.env"
 RESOLV_CONF_BACKUP="${RSKRB5_RESOLV_CONF_BACKUP:-"$ROOT_DIR/target/resolv.conf.rskrb5.backup"}"
 
 CONTAINERS=(
@@ -20,11 +28,14 @@ usage() {
 Usage: scripts/run-gated-integration.sh <command> [cargo-test-args...]
 
 Commands:
-  start       Start gokrb5 Docker integration fixtures and write target/gated-integration.env.
-  test        Source target/gated-integration.env and run cargo test --all-features.
+  start       Start gokrb5 Docker integration fixtures and write the private
+              environment file target/gated-integration/gated-integration.env.
+  test        Source the environment file and run cargo test --all-features.
   run         Start fixtures, run tests, then stop fixtures unless RSKRB5_KEEP_CONTAINERS=1.
-  stop        Stop known fixture containers and restore /etc/resolv.conf when a backup exists.
-  env         Print the generated integration environment.
+  stop        Stop known fixture containers, delete the environment file, and
+              restore /etc/resolv.conf when a backup exists.
+  env         Print the generated environment with keytab secret values redacted.
+  self-test   Check the environment file handling on dummy secrets (no Docker).
 
 Useful environment:
   TEST_KPASSWD=1                 Enable live password-change coverage.
@@ -41,6 +52,8 @@ Useful environment:
   RSKRB5_DIRECT_CONTAINER_IP=1   Use Docker container IPs instead of forwarded ports.
                                  Defaults to 1 on Darwin and 0 elsewhere.
   RSKRB5_KEEP_CONTAINERS=1       Keep containers after the run command exits.
+  RSKRB5_INTEGRATION_ENV_DIR     Directory for the environment file; used only by
+                                 this runner and set to mode 0700.
   DOCKER_PLATFORM=linux/amd64    Optional Docker --platform override.
 
 Examples:
@@ -53,13 +66,19 @@ EOF
 }
 
 docker_sudo=()
-if [[ "$(id -u)" != "0" ]] && ! docker ps >/dev/null 2>&1; then
-  if command -v sudo >/dev/null 2>&1; then
-    docker_sudo=(sudo)
-  fi
-fi
+docker_sudo_checked=0
 
+# Probes Docker access on first use, so commands that need no Docker
+# (`env`, `self-test`) never run it.
 docker_cmd() {
+  if [[ "$docker_sudo_checked" == "0" ]]; then
+    docker_sudo_checked=1
+    if [[ "$(id -u)" != "0" ]] && ! docker ps >/dev/null 2>&1; then
+      if command -v sudo >/dev/null 2>&1; then
+        docker_sudo=(sudo)
+      fi
+    fi
+  fi
   "${docker_sudo[@]}" docker "$@"
 }
 
@@ -88,8 +107,13 @@ restore_resolver() {
   fi
 }
 
+remove_env_file() {
+  rm -f "$ENV_FILE"
+}
+
 stop_all() {
   stop_containers
+  remove_env_file
   restore_resolver
 }
 
@@ -216,6 +240,22 @@ verify_configured_resolver() {
   return 1
 }
 
+# Creates the runner's environment directory at mode 0700, or brings an
+# existing one owned by the invoking user to 0700; refuses a symlink or a
+# directory owned by anyone else.
+prepare_env_dir() {
+  if [[ -L "$ENV_DIR" ]]; then
+    echo "$ENV_DIR is a symlink; refusing to write keytab secrets through it." >&2
+    return 1
+  fi
+  (umask 077 && mkdir -p "$ENV_DIR") || return 1
+  if [[ ! -O "$ENV_DIR" ]]; then
+    echo "$ENV_DIR is not owned by the current user; refusing to write keytab secrets into it." >&2
+    return 1
+  fi
+  chmod 700 "$ENV_DIR" || return 1
+}
+
 write_env() {
   local primary_addr="$1"
   local old_addr="$2"
@@ -230,8 +270,17 @@ write_env() {
   local http_addr="${11}"
   local test_dns_kdc="${12}"
 
-  mkdir -p "$(dirname "$ENV_FILE")"
-  cat >"$ENV_FILE" <<EOF
+  prepare_env_dir || return 1
+  # Stage under a fresh mode-0600 name in the private directory, then rename:
+  # the secrets never land in a file with umask-default or inherited
+  # permissions, and an earlier permissive file is replaced, not rewritten.
+  local staged
+  staged="$(mktemp "$ENV_DIR/.gated-integration.env.XXXXXX")" || return 1
+  chmod 600 "$staged" || {
+    rm -f "$staged"
+    return 1
+  }
+  if ! cat >"$staged" <<EOF
 export INTEGRATION=1
 export TESTPRIVILEGED=${TESTPRIVILEGED:-1}
 export TESTAD=${TESTAD:-0}
@@ -271,6 +320,14 @@ export DNS_IP=$dns_ip
 export DNSUTILS_OVERRIDE_NS=$dns_override_ns
 export RSKRB5_DNS_SERVER=$dns_override_ns
 EOF
+  then
+    rm -f "$staged"
+    return 1
+  fi
+  mv -f "$staged" "$ENV_FILE" || {
+    rm -f "$staged"
+    return 1
+  }
 }
 
 start_fixtures() {
@@ -412,12 +469,85 @@ run_tests() {
   cargo test --all-features "$@"
 }
 
+# Prints the environment with every non-empty keytab HEX/BASE64 override
+# replaced by <redacted>; `test` sources the unredacted file directly.
 print_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
     echo "Missing $ENV_FILE; run '$0 start' first." >&2
     return 1
   fi
-  cat "$ENV_FILE"
+  sed -E 's/^(export TEST_AD_[A-Z0-9_]+_KEYTAB_(HEX|BASE64)=).+$/\1<redacted>/' "$ENV_FILE"
+}
+
+# Exercises write_env, print_env and stop_all on dummy keytab secrets in a
+# scratch directory, with Docker and sudo stubbed out: no container, resolver
+# or network is touched.
+self_test() {
+  local scratch failures=0 printed
+  local hex_secret="05020000dummyhexkeytabsecret"
+  local b64_secret="BQIAAAdummyBase64KeytabSecret=="
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/rskrb5-gated-selftest.XXXXXX")"
+  ENV_DIR="$scratch/state"
+  ENV_FILE="$ENV_DIR/gated-integration.env"
+  RESOLV_CONF_BACKUP="$scratch/no-resolv-backup"
+  docker_cmd() { return 0; }
+  sudo_cmd() { return 0; }
+  st_fail() {
+    echo "self-test FAIL: $*" >&2
+    failures=$((failures + 1))
+  }
+  mode_of() {
+    ls -ld "$1" | cut -c1-10
+  }
+
+  # A permissive directory and env file left by an earlier run.
+  umask 022
+  mkdir -p "$ENV_DIR"
+  chmod 755 "$ENV_DIR"
+  printf 'stale\n' >"$ENV_FILE"
+  chmod 644 "$ENV_FILE"
+
+  TEST_AD_TESTUSER1_KEYTAB_HEX="$hex_secret" TEST_AD_SYSHTTP_KEYTAB_BASE64="$b64_secret" \
+    write_env 127.0.0.1:88 127.0.0.1:78 127.0.0.1:98 127.0.0.1:188 127.0.0.1:58 \
+    127.0.0.1:464 127.0.0.1 127.0.88.53 127.0.88.53:53 http://127.0.0.1 127.0.0.1 0
+
+  [[ "$(mode_of "$ENV_FILE")" == "-rw-------" ]] ||
+    st_fail "env file mode is $(mode_of "$ENV_FILE"), expected -rw-------"
+  [[ "$(mode_of "$ENV_DIR")" == "drwx------" ]] ||
+    st_fail "env directory mode is $(mode_of "$ENV_DIR"), expected drwx------"
+  grep -qF "$hex_secret" "$ENV_FILE" ||
+    st_fail "the env file lost the keytab override that the test command sources"
+
+  printed="$(print_env)"
+  [[ "$printed" != *"$hex_secret"* && "$printed" != *"$b64_secret"* ]] ||
+    st_fail "env printed a keytab secret value"
+  [[ "$printed" == *"export TEST_AD_TESTUSER1_KEYTAB_HEX=<redacted>"* &&
+    "$printed" == *"export TEST_AD_SYSHTTP_KEYTAB_BASE64=<redacted>"* ]] ||
+    st_fail "env did not mark the redacted keytab values"
+  [[ "$printed" == *"export TEST_KDC_ADDR=127.0.0.1:88"* ]] ||
+    st_fail "env dropped a non-secret value"
+
+  stop_all
+  [[ ! -e "$ENV_FILE" ]] || st_fail "stop left the env file with keytab secrets behind"
+
+  # A symlinked environment directory is refused; nothing reaches its target.
+  mkdir "$scratch/elsewhere"
+  ENV_DIR="$scratch/linked"
+  ENV_FILE="$ENV_DIR/gated-integration.env"
+  ln -s "$scratch/elsewhere" "$ENV_DIR"
+  if TEST_AD_TESTUSER1_KEYTAB_HEX="$hex_secret" \
+    write_env 127.0.0.1:88 127.0.0.1:78 127.0.0.1:98 127.0.0.1:188 127.0.0.1:58 \
+    127.0.0.1:464 127.0.0.1 127.0.88.53 127.0.88.53:53 http://127.0.0.1 127.0.0.1 0 2>/dev/null; then
+    st_fail "write_env wrote through a symlinked environment directory"
+  fi
+  [[ -z "$(ls -A "$scratch/elsewhere")" ]] ||
+    st_fail "a file reached the symlinked directory's target"
+
+  rm -rf "$scratch"
+  if [[ "$failures" -ne 0 ]]; then
+    return 1
+  fi
+  echo "self-test: ok"
 }
 
 main() {
@@ -447,6 +577,9 @@ main() {
       ;;
     env)
       print_env
+      ;;
+    self-test)
+      self_test
       ;;
     *)
       usage >&2

@@ -536,4 +536,29 @@ mod tests {
         }
         Ok(())
     }
+
+    /// Runs the fixture runner's self-test on dummy keytab secrets.
+    ///
+    /// The generated environment file must be private (mode 0600 in a 0700 directory,
+    /// even over an earlier permissive file), `env` must redact keytab secrets, and
+    /// `stop` must remove the file.
+    #[cfg(unix)]
+    #[test]
+    fn fixture_runner_env_file_is_private_and_redacted() -> Result<(), TestError> {
+        use std::process::Command;
+
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/run-gated-integration.sh");
+        let output = Command::new("bash")
+            .arg(&script)
+            .arg("self-test")
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success() && stdout.contains("self-test: ok"),
+            "run-gated-integration.sh self-test failed ({}):\n{stdout}{stderr}",
+            output.status
+        );
+        Ok(())
+    }
 }
