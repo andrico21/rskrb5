@@ -908,6 +908,19 @@ where
 }
 
 /// Tower layer for service-side HTTP Negotiate validation.
+///
+/// Clones and services built from one layer share a replay cache by default.
+/// Independently constructed layers accepting the same service principal MUST
+/// use one [`SharedReplayCache`] via [`Self::with_shared_replay_cache`]. Do not
+/// construct a fresh layer/cache per request. In-process sharing does not span
+/// replicas, hosts or process restarts; those require coordinated replay state
+/// outside this adapter or a deployment with a single accepting boundary.
+///
+/// Acceptance authenticates the AP-REQ, not the HTTP method, URI, headers or
+/// body. This API has no TLS channel-binding input and does not verify channel
+/// bindings. TLS is required but does not itself supply request binding here.
+/// A stolen token can win its first presentation; replay detection prevents
+/// subsequent presentations only within the configured cache scope.
 #[cfg(feature = "tower")]
 #[derive(Clone, Debug)]
 pub struct NegotiateLayer<'keytab> {

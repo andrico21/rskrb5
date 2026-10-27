@@ -5,6 +5,20 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### HTTP replay-cache scope and binding limits
+
+Layer clones already share replay state. Independently constructed
+`NegotiateLayer`/`NegotiateService` instances for the same service principal
+must be wired to the same `SharedReplayCache`; never construct a fresh cache
+per request. This is in-process only: replicas, restarts and separate hosts
+require external coordination or a single accepting boundary. There is no
+automatic global cache keyed by principal.
+
+The adapter authenticates an AP-REQ, not HTTP method, URI, headers or body.
+No TLS channel-binding input is available. Use TLS, but do not claim that TLS
+alone makes this adapter's tokens request/channel-bound. A captured token's
+first-use race is not prevented by replay detection. No API signatures change.
+
 ### Whole-second KerberosTime (RSK-B161A328)
 
 Service acceptance rejects fractional ticket `authtime`, `starttime`, `endtime`
