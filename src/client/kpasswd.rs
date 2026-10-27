@@ -1,7 +1,9 @@
 //! Client-side kpasswd request building and AP-REP verification helpers.
 
 use core::time::Duration;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use rasn::types::Integer;
 
 use super::{
     ApReq, BuiltApReq, Error, TgsRepSession, ap_rep_error, build_ap_req_with_confounder,
@@ -14,6 +16,7 @@ use crate::{
     kadmin,
     keytab::EncryptionKey,
     krb_priv::EncKrbPrivPartOptions,
+    messages,
 };
 
 /// Options for constructing a kpasswd request from a service ticket.
@@ -190,6 +193,14 @@ fn build_kpasswd_ap_req_with_confounder(
     options: &RequestOptions,
     ap_req_confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
+    let _micros = messages::microseconds("request.cusec", &Integer::from(options.cusec))
+        .map_err(|_invalid| Error::KpasswdReplyControl("request time range"))?;
+    if options.timestamp.duration_since(UNIX_EPOCH).map_or_else(
+        |error| error.duration().subsec_nanos() != 0,
+        |duration| duration.subsec_nanos() != 0,
+    ) {
+        return Err(Error::KpasswdReplyControl("request time range"));
+    }
     build_ap_req_with_confounder(
         service_ticket,
         ApReq::new()
@@ -246,6 +257,9 @@ pub fn verify_kpasswd_ap_rep(
     validate_ap_rep(ap_rep).map_err(ap_rep_error)?;
     let enc_part =
         decrypt_ap_rep_enc_part(ap_rep, &request.ap_req.session_key).map_err(ap_rep_error)?;
+    messages::whole_seconds(&enc_part.ctime)
+        .and_then(|()| messages::microseconds("ap-rep.cusec", &enc_part.cusec).map(|_value| ()))
+        .map_err(|_invalid| Error::KpasswdReplyControl("AP-REP time range"))?;
     let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
     let cusec = integer_to_u32("ap-rep.cusec", &enc_part.cusec)?;
     let authenticator_time = ctime

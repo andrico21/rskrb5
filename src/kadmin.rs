@@ -7,7 +7,7 @@ use rasn::{
 
 use crate::{
     ap_rep, ap_req, crypto::KerberosEtype, der::decode_complete, error, keytab::EncryptionKey,
-    krb_error, krb_priv, krb_priv::EncKrbPrivPartOptions,
+    krb_error, krb_priv, krb_priv::EncKrbPrivPartOptions, messages,
 };
 
 /// Password-change request protocol version (`0xff80`).
@@ -388,6 +388,12 @@ pub fn build_change_password_message_with_confounders(
     options: ChangePasswdMessageOptions,
     encryption: PasswordEncryption<'_>,
 ) -> Result<BuiltChangePasswordRequest, Error> {
+    messages::microseconds("cusec", &Integer::from(options.cusec))
+        .and_then(|_value| messages::whole_seconds(&options.timestamp))
+        .map_err(|source| Error::Encode {
+            target: "kpasswd request time",
+            message: source.to_string(),
+        })?;
     let PasswordEncryption {
         reply_key,
         ap_req_confounder,

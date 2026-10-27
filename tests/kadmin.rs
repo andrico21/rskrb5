@@ -457,6 +457,38 @@ mod tests {
         Ok(())
     }
 
+    /// Rejects invalid explicit time scalars before constructing a mutation frame.
+    #[test]
+    fn protocol_time_kpasswd_builder_rejects_invalid_scalars() -> Result<(), TestError> {
+        // Given a service ticket and explicit invalid request metadata.
+        for fractional in [false, true] {
+            let request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
+            let key = EncryptionKey::new(18, vec![0x11; 32]);
+            let mut time = kerberos_time(1_893_553_452)?;
+            if fractional {
+                time.0 += chrono::Duration::nanoseconds(1);
+            }
+            let options = ChangePasswdMessageOptions::new(
+                time,
+                if fractional { 0 } else { 1_000_000 },
+                42,
+                ipv4_host_address([127, 0, 0, 1]),
+            );
+            // When construction runs, then no invalid wire request is produced.
+            let _error = build_change_password_message(
+                rasn_principal_name(1, ["testuser1"])?,
+                "TEST.GOKRB5",
+                &ChangePasswdData::new(b"dummy-password"),
+                request.ap_req.ticket,
+                &key,
+                options,
+            )
+            .err()
+            .context("invalid request time rejected")?;
+        }
+        Ok(())
+    }
+
     /// Pins that a built change-password message decrypts to its targeted payload.
     #[test]
     fn kpasswd_request_build_change_password_message_builds_and_decrypts_payload()
