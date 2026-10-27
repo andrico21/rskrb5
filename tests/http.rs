@@ -43,8 +43,10 @@ mod tests {
 
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use hex::FromHexError;
+    #[cfg(any(feature = "tokio", feature = "tower"))]
+    use http_types::Method;
     #[cfg(feature = "tokio")]
-    use http_types::{Method, Uri};
+    use http_types::Uri;
     use http_types::{
         Request, Response, StatusCode,
         header::{HeaderValue, WWW_AUTHENTICATE},
@@ -58,13 +60,17 @@ mod tests {
     };
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::config::Config;
+    #[cfg(feature = "tokio")]
+    use rskrb5_ng::service::ReplayCache;
+    #[cfg(any(feature = "tokio", feature = "tower"))]
+    use rskrb5_ng::service::SharedReplayCache;
     use rskrb5_ng::{
         ap_req,
         client::{AsRepSession, principal::Principal},
         error::Http as HttpError,
         http as krb_http,
         keytab::{EncryptionKey, Keytab},
-        service::{ApRepOptions, ReplayCache, SharedReplayCache, Validator},
+        service::{ApRepOptions, Validator},
         spnego::{
             self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit, Token,
         },
