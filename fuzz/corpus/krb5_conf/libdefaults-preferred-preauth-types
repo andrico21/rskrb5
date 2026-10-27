@@ -1,0 +1,2 @@
+[libdefaults]
+ preferred_preauth_types = 17, 16, 15, 14

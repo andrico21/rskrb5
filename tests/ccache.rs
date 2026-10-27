@@ -31,7 +31,10 @@ mod tests {
         prop_assert, prop_assert_eq, prop_oneof, proptest,
     };
     use rskrb5_ng::{
-        ccache::{CCache, CacheName, Credential, EncryptionKey, Principal},
+        ccache::{
+            AuthorizationDataEntry, CCache, CacheName, Credential, CredentialTimes, EncryptionKey,
+            HostAddress, Principal,
+        },
         error::Ccache as Error,
     };
 
@@ -1077,6 +1080,119 @@ mod tests {
             if let Err(error) = CCache::parse(&bytes) {
                 prop_assert!(!error.to_string().is_empty(), "empty diagnostic for {error:?}");
             }
+        }
+    }
+
+    /// One generated credential: principal names, key, times, flags,
+    /// addresses, authorization data and tickets.
+    type CredentialParts = (
+        (String, i32, Vec<String>),
+        (i16, Vec<u8>, [u32; 4], bool, [u8; 4]),
+        (Vec<(i16, Vec<u8>)>, Vec<(i16, Vec<u8>)>, Vec<u8>, Vec<u8>),
+    );
+
+    /// A principal of the representable shape: UTF-8 realm and components.
+    fn principal_parts() -> impl Strategy<Value = (String, i32, Vec<String>)> {
+        (
+            "[a-zA-Z0-9.@/:-]{0,24}",
+            any::<i32>(),
+            collection::vec("[a-zA-Z0-9.@/:-]{0,24}", 0..4),
+        )
+    }
+
+    /// Every field of a credential the ccache format can carry.
+    fn credential_parts() -> impl Strategy<Value = CredentialParts> {
+        let counted = || collection::vec((any::<i16>(), collection::vec(any::<u8>(), 0..24)), 0..3);
+        (
+            principal_parts(),
+            (
+                any::<i16>(),
+                collection::vec(any::<u8>(), 0..40),
+                any::<[u32; 4]>(),
+                any::<bool>(),
+                any::<[u8; 4]>(),
+            ),
+            (
+                counted(),
+                counted(),
+                collection::vec(any::<u8>(), 0..64),
+                collection::vec(any::<u8>(), 0..16),
+            ),
+        )
+    }
+
+    /// A host address built through the serde form, the only public
+    /// constructor of the non-exhaustive address type.
+    #[cfg(feature = "serde")]
+    fn host_address(addr_type: i16, address: &[u8]) -> Option<HostAddress> {
+        serde_json::from_value(serde_json::json!({
+            "addr_type": addr_type,
+            "address": address,
+        }))
+        .ok()
+    }
+
+    /// Without serde no address can be built, so credentials carry none.
+    #[cfg(not(feature = "serde"))]
+    const fn host_address(_addr_type: i16, _address: &[u8]) -> Option<HostAddress> {
+        None
+    }
+
+    /// Builds the credential `parts` describes.
+    fn credential(parts: CredentialParts) -> Credential {
+        let (
+            (realm, name_type, components),
+            (etype, key, [auth_time, start_time, end_time, renew_till], is_skey, flags),
+            (addresses, auth_data, ticket, second_ticket),
+        ) = parts;
+        let mut times = CredentialTimes::default();
+        times.auth_time = auth_time;
+        times.start_time = start_time;
+        times.end_time = end_time;
+        times.renew_till = renew_till;
+        let client = Principal::new(realm.clone(), name_type, components.clone());
+        let mut server_components = components;
+        server_components.push("service".to_owned());
+        Credential::new(
+            client,
+            Principal::new(realm, name_type, server_components),
+            EncryptionKey::new(i32::from(etype), key),
+            times,
+            flags,
+            ticket,
+        )
+        .with_is_skey(is_skey)
+        .with_addresses(
+            addresses
+                .into_iter()
+                .filter_map(|(addr_type, address)| host_address(addr_type, &address))
+                .collect(),
+        )
+        .with_auth_data(
+            auth_data
+                .into_iter()
+                .map(|(ad_type, data)| AuthorizationDataEntry::new(i32::from(ad_type), data))
+                .collect(),
+        )
+        .with_second_ticket(second_ticket)
+    }
+
+    proptest! {
+        /// Every cache built through the API survives serialization and
+        /// parsing unchanged, and its serialization is a fixed point.
+        #[test]
+        fn serialized_ccache_roundtrips(
+            (realm, name_type, components) in principal_parts(),
+            credentials in collection::vec(credential_parts(), 0..4),
+        ) {
+            let mut cache = CCache::new(Principal::new(realm, name_type, components));
+            for parts in credentials {
+                cache.credentials_mut().push(credential(parts));
+            }
+            let bytes = cache.to_bytes()?;
+            let parsed = CCache::parse(&bytes)?;
+            prop_assert_eq!(&parsed, &cache);
+            prop_assert_eq!(parsed.to_bytes()?, bytes);
         }
     }
 }

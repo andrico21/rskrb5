@@ -1,0 +1,4 @@
+include /dev/null
+includedir /nonexistent-rskrb5-fuzz
+[libdefaults]
+ default_realm = A

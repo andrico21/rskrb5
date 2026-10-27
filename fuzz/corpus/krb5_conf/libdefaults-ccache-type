@@ -1,0 +1,2 @@
+[libdefaults]
+ ccache_type = 4

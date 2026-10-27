@@ -1,0 +1,2 @@
+[libdefaults]
+ safe_checksum_type = 8

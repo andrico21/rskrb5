@@ -1,0 +1,2 @@
+[libdefaults]
+ realm_try_domains = -1

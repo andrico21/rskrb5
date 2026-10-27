@@ -1,0 +1,2 @@
+[libdefaults]
+ kdc_default_options = 0x00000010

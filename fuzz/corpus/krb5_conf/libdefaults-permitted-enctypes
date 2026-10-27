@@ -1,0 +1,2 @@
+[libdefaults]
+ permitted_enctypes = aes256-cts aes128-cts

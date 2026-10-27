@@ -1,0 +1,2 @@
+[libdefaults]
+ ticket_lifetime = 1:30:00

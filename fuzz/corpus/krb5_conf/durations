@@ -1,0 +1,4 @@
+[libdefaults]
+ ticket_lifetime = 1d2h3m4s
+ renew_lifetime = 86400
+ clockskew = 1:02
