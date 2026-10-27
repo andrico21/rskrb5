@@ -37,7 +37,7 @@ pub fn encode(krb_safe: &rasn_kerberos::KrbSafe) -> Result<Vec<u8>, Error> {
     encode_der("KRB-SAFE", krb_safe)
 }
 
-/// Build a KRB-SAFE message with a keyed checksum over the safe body.
+/// Build a KRB-SAFE message with the RFC 4120 whole-message keyed checksum.
 ///
 /// # Errors
 ///
@@ -56,7 +56,7 @@ pub fn build(
     })
 }
 
-/// Compute the keyed checksum for a KRB-SAFE body.
+/// Compute the RFC 4120 checksum for a body in a version-5 KRB-SAFE message.
 ///
 /// # Errors
 ///
@@ -70,11 +70,15 @@ pub fn checksum(
 ) -> Result<rasn_kerberos::Checksum, Error> {
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let body_der = encode_der("KrbSafeBody", body)?;
+    let input = checksum_input(
+        body,
+        &Integer::from(KRB5_PVNO),
+        &Integer::from(KRB_SAFE_MSG_TYPE),
+    )?;
     Ok(rasn_kerberos::Checksum {
         r#type: etype.checksum_type_id(),
         checksum: etype
-            .checksum(&key.value, &body_der, KRB_SAFE_CHECKSUM_USAGE)?
+            .checksum(&key.value, &input, KRB_SAFE_CHECKSUM_USAGE)?
             .into(),
     })
 }
@@ -100,16 +104,40 @@ pub fn verify_krb_safe_checksum(
             checksum_type: krb_safe.cksum.r#type,
         });
     }
-    let body_der = encode_der("KrbSafeBody", &krb_safe.body)?;
+    let input = checksum_input(&krb_safe.body, &krb_safe.pvno, &krb_safe.msg_type)?;
     if !etype.verify_checksum(
         &key.value,
-        &body_der,
+        &input,
         krb_safe.cksum.checksum.as_ref(),
         KRB_SAFE_CHECKSUM_USAGE,
     ) {
         return Err(Error::ChecksumMismatch);
     }
     Ok(())
+}
+
+/// Encode the whole message with the RFC 4120 section 5.6.1 checksum placeholder.
+///
+/// # Errors
+///
+/// Returns [`Error::Encode`] when the message cannot be DER-encoded.
+fn checksum_input(
+    body: &rasn_kerberos::KrbSafeBody,
+    pvno: &Integer,
+    msg_type: &Integer,
+) -> Result<Vec<u8>, Error> {
+    encode_der(
+        "KRB-SAFE",
+        &rasn_kerberos::KrbSafe {
+            pvno: pvno.clone(),
+            msg_type: msg_type.clone(),
+            body: body.clone(),
+            cksum: rasn_kerberos::Checksum {
+                r#type: 0,
+                checksum: Vec::new().into(),
+            },
+        },
+    )
 }
 
 /// Decode a DER value with a typed error.
