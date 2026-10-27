@@ -1,8 +1,19 @@
 # Credential file review dispositions
 
-Todo 37 is in progress. Only rows with recorded dispositions below are
-complete. Full commands, red runs and exit codes are recorded in
+All seven items have implementation dispositions; final acceptance is incomplete.
+Full commands, red runs and exit codes are recorded in
 `task-37-rskrb5-ng-own-way.log`; final acceptance is separate.
+
+## Acceptance checkpoint
+
+Every fixed item has an initial red run and a scratch reversal proof.
+Native all-features/no-default clippy, credential-format tests and the prose
+gate passed during iteration. Final stable/nightly docs, both nightly format
+checks, all gate self-tests/enforcement and exact seven-ID coverage passed.
+The first final STRICT runner failed before cargo execution because its
+capability-drop wrapper was unsupported. A retry reached STRICT but was stopped
+at the executor's polling limit. Successful full STRICT, final Windows clippy,
+FULL-TEST totals and DOCTEST remain required; no final acceptance is claimed.
 
 | ID | Status | Tests and commit | Behaviour change for CHANGELOG | Dismissal evidence |
 | --- | --- | --- | --- | --- |
