@@ -12,7 +12,20 @@ complete. Full commands, red runs and exit codes are recorded in
 | RSK-DC80DC52 / lead `file-name/uid-token-environment-substitution` | fixed | `resolves_process_identity_tokens_without_uid_environment`, `resolves_keytab_process_identity_tokens`, non-Linux `identity_tokens_require_linux_procfs` and `keytab_identity_tokens_require_linux_procfs`; commit suffix `(RSK-DC80DC52)` | Linux UID tokens use the real/effective Uid fields in `/proc/self/status`, never environment text. On macOS, Windows and other non-Linux platforms, these tokens now fail with `IdentityUnavailable`; literal paths remain supported. Unavailable/malformed Linux procfs also fails closed. | N/A |
 | RSK-DF3180A2 / lead `credential-file/save/inherited-permissions` | fixed | `saves_cache_with_private_permissions`, `saves_keytab_with_private_permissions`; commit suffix `(RSK-DF3180A2)` | Credential saves stage with exclusive creation and Unix mode 0600 before writing secrets, then rename in the same directory; existing owner permissions are only narrowed, never widened. Windows requires a caller-provided owner-only directory ACL. | N/A |
 | RSK-58A6D5DD / lead `credential-file/path-write/followed-symlink` | fixed | `rejects_symlinked_cache_destinations_and_primary`, `rejects_symlinked_keytab_destination`, `saves_cache_through_symlinked_parent`; commit suffix `(RSK-58A6D5DD)` | Saves reject a symlinked final destination; exclusive same-directory staging and rename never write through a swapped final link. DIR primary resolution rejects final symlinks and initializes only with create-new, including for dangling links. Parent-directory symlinks remain supported. | N/A |
+| RSK-361F35CC | fixed | `file_name::tests::credential_file_buffers_are_erased`, `file_name::tests::partial_serialization_is_erased`; commit suffix `(RSK-361F35CC)` | Owned file reads, save buffers, keytab entry staging and partial serializer output have value-attached erasure. Keytab parse adopts keys before later fallible fields; timestamp admission precedes password derivation. Public raw-byte exports remain caller-owned. | N/A |
 
-## Remaining work
+## Ownership and filesystem limits
 
-Secret scratch ownership remains under review.
+Erasure is observed on live storage before deallocation, not by inspecting freed
+memory. Borrowed parser input, successfully exported raw bytes (including serde
+serializer outputs), compiler/register copies, allocator reallocation history and
+dependency-owned state are outside the guarantee. Abort does not run Drop.
+No memory-recovery or cross-UID exploit is claimed.
+
+Filesystem safety assumes callers choose trusted parent directories. Parent
+symlinks are deliberately permitted; std-only path operations do not pin ancestor
+directory identities against concurrent renames. Atomic replacement does not
+follow a raced final link, but cannot promise that a link swapped in after the
+last metadata check is itself rejected. Windows ACL construction remains the
+caller's responsibility. DIR reads retain the existing read API; this review
+hardens write and initialization sinks, not general no-follow credential reads.

@@ -109,7 +109,7 @@ impl Keytab {
     where
         P: AsRef<Path>,
     {
-        let bytes = fs::read(path.as_ref())?;
+        let bytes = file_name::SecretBytes::new(fs::read(path.as_ref())?);
         Self::parse(&bytes)
     }
 
@@ -145,6 +145,8 @@ impl Keytab {
     }
 
     /// Parse keytab bytes.
+    ///
+    /// The borrowed input remains the caller's erasure responsibility.
     ///
     /// Entries with a negative length are holes left by deleted entries and
     /// are skipped; a zero length ends the entry list.
@@ -203,7 +205,10 @@ impl Keytab {
             let Ok(key_len) = usize::try_from(raw_key_len) else {
                 return Err(Error::NegativeLength(raw_key_len.into()));
             };
-            let key_value = read_bytes(entry_bytes, &mut entry_offset, key_len)?.to_vec();
+            let key = EncryptionKey {
+                etype,
+                value: read_bytes(entry_bytes, &mut entry_offset, key_len)?.to_vec(),
+            };
 
             let mut kvno = if entry_bytes.len().saturating_sub(entry_offset) >= 4 {
                 read_u32(entry_bytes, &mut entry_offset, endian)?
@@ -218,10 +223,7 @@ impl Keytab {
                 principal,
                 timestamp,
                 kvno8,
-                key: EncryptionKey {
-                    etype,
-                    value: key_value,
-                },
+                key,
                 kvno,
             });
         }
@@ -243,7 +245,8 @@ impl Keytab {
     where
         P: AsRef<Path>,
     {
-        file_name::write_private(path.as_ref(), &self.to_bytes()?)?;
+        let bytes = file_name::SecretBytes::new(self.to_bytes()?);
+        file_name::write_private(path.as_ref(), &bytes)?;
         Ok(())
     }
 
@@ -297,6 +300,8 @@ impl Keytab {
 
     /// Serialize the keytab to bytes.
     ///
+    /// Successful raw output is caller-owned secret material; erase it after use.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a component count, string or key
@@ -305,9 +310,9 @@ impl Keytab {
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let endian = Endian::for_version(self.version);
-        let mut out = vec![KEYTAB_FIRST_BYTE, self.version];
+        let mut out = file_name::SecretBytes::new(vec![KEYTAB_FIRST_BYTE, self.version]);
         for entry in &self.entries {
-            let mut body = Vec::new();
+            let mut body = file_name::SecretBytes::new(Vec::new());
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
             body.push(entry.kvno8);
@@ -323,7 +328,7 @@ impl Keytab {
             write_i32(&mut out, body_len, endian);
             out.extend_from_slice(&body);
         }
-        Ok(out)
+        Ok(out.into_vec())
     }
 
     #[must_use]
@@ -393,17 +398,20 @@ impl Keytab {
         let etype_impl =
             KerberosEtype::from_etype_id(etype).ok_or(Error::UnsupportedEtype(etype))?;
         let salt = principal.default_password_salt();
-        let key = etype_impl.string_to_key(
-            password.as_ref(),
-            salt.as_bytes(),
-            etype_impl.default_s2kparams(),
-        )?;
         let seconds = system_time_to_u32_seconds(timestamp)?;
+        let key = EncryptionKey::new(
+            etype,
+            etype_impl.string_to_key(
+                password.as_ref(),
+                salt.as_bytes(),
+                etype_impl.default_s2kparams(),
+            )?,
+        );
         self.entries.push(Entry {
             principal,
             timestamp: seconds,
             kvno8: kvno,
-            key: EncryptionKey { etype, value: key },
+            key,
             kvno: kvno.into(),
         });
         Ok(())

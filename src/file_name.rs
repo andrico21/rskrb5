@@ -1,3 +1,7 @@
+use core::{
+    mem,
+    ops::{Deref, DerefMut},
+};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::{
@@ -5,6 +9,137 @@ use std::{
     io::{self, Write as _},
     path::{Path, PathBuf},
 };
+
+use zeroize::{Zeroize as _, Zeroizing};
+
+/// Internal credential bytes with erasure attached to their lifetime.
+pub(crate) struct SecretBytes(Zeroizing<Vec<u8>>);
+
+impl SecretBytes {
+    /// Adopt an allocation without copying its contents.
+    pub(crate) fn new(bytes: Vec<u8>) -> Self {
+        Self(Zeroizing::new(bytes))
+    }
+
+    /// Transfer raw exported bytes to the caller's cleanup responsibility.
+    pub(crate) fn into_vec(mut self) -> Vec<u8> {
+        mem::take(&mut *self.0)
+    }
+}
+
+impl Deref for SecretBytes {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SecretBytes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+// Drop audit: live-slice erasure is in-place, nonblocking and infallible;
+// test-only observation inspects live storage before the allocation is released.
+impl Drop for SecretBytes {
+    fn drop(&mut self) {
+        self.0.as_mut_slice().zeroize();
+        #[cfg(test)]
+        {
+            assert!(self.0.iter().all(|byte| *byte == 0));
+            tests::ERASED_BYTES.with(|count| count.set(count.get().saturating_add(self.0.len())));
+        }
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::{cell::Cell, error::Error as StdError};
+    use std::{
+        env, fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use crate::{
+        ccache::{CCache, Principal as CachePrincipal},
+        error::Keytab as KeytabError,
+        keytab::{EncryptionKey, Entry, Keytab, Principal},
+    };
+
+    std::thread_local! {
+        pub(super) static ERASED_BYTES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// File reads and save serialization erase internal credential allocations.
+    #[test]
+    fn credential_file_buffers_are_erased() -> Result<(), Box<dyn StdError>> {
+        // Given real cache/keytab file operations and an erasure counter.
+        let directory = env::temp_dir().join(format!(
+            "file-erasure-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let mut keytab = Keytab::new();
+        keytab.entries_mut().push(Entry::new(
+            Principal::new("REALM", 1, ["user"]),
+            1,
+            1,
+            EncryptionKey::new(18, vec![7; 16]),
+            1,
+        ));
+        let cache = CCache::new(CachePrincipal::new("REALM", 1, vec!["user".to_owned()]));
+        ERASED_BYTES.with(|count| count.set(0));
+
+        // When persisting and reading each real format.
+        keytab.save(directory.join("keytab"))?;
+        drop(Keytab::load(directory.join("keytab"))?);
+        cache.save(directory.join("cache"))?;
+        drop(CCache::load(directory.join("cache"))?);
+
+        // Then owned file/serialization copies passed through erasing owners.
+        let erased = ERASED_BYTES.with(Cell::get);
+        fs::remove_dir_all(directory)?;
+        assert!(erased >= 32, "owned file buffers were not erased");
+        Ok(())
+    }
+
+    /// Partial keytab output is erased when a later entry cannot serialize.
+    #[test]
+    fn partial_serialization_is_erased() -> Result<(), Box<dyn StdError>> {
+        // Given one secret-bearing entry followed by an invalid entry.
+        let mut keytab = Keytab::parse(&[5, 2])?;
+        let entry = Entry::new(
+            Principal::new("REALM", 1, ["user"]),
+            1,
+            1,
+            EncryptionKey::new(18, vec![7; 16]),
+            1,
+        );
+        keytab.entries_mut().push(entry.clone());
+        let mut invalid = entry;
+        invalid.key.etype = i32::MAX;
+        keytab.entries_mut().push(invalid);
+        ERASED_BYTES.with(|count| count.set(0));
+
+        // When serialization fails after writing the first entry.
+        let result = keytab.to_bytes();
+
+        // Then the partial secret output is erased on the error path.
+        assert!(matches!(result, Err(KeytabError::LengthOverflow)));
+        assert!(
+            ERASED_BYTES.with(Cell::get) >= 16,
+            "partial output was not erased"
+        );
+        Ok(())
+    }
+}
 
 /// Why a credential file name could not be resolved to a path.
 #[derive(Clone, Debug, Eq, PartialEq)]

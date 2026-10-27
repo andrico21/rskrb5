@@ -155,7 +155,7 @@ impl CCache {
     where
         P: AsRef<Path>,
     {
-        let bytes = fs::read(path.as_ref())?;
+        let bytes = file_name::SecretBytes::new(fs::read(path.as_ref())?);
         Self::parse(&bytes)
     }
 
@@ -207,7 +207,8 @@ impl CCache {
     where
         P: AsRef<Path>,
     {
-        file_name::write_private(path.as_ref(), &self.to_bytes()?)?;
+        let bytes = file_name::SecretBytes::new(self.to_bytes()?);
+        file_name::write_private(path.as_ref(), &bytes)?;
         Ok(())
     }
 
@@ -264,6 +265,8 @@ impl CCache {
 
     /// Parse credential cache bytes.
     ///
+    /// The borrowed input remains the caller's erasure responsibility.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::TooShort`] for input shorter than two bytes,
@@ -310,6 +313,8 @@ impl CCache {
 
     /// Serialize the credential cache to bytes.
     ///
+    /// Successful raw output is caller-owned secret material; erase it after use.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a length, count or encryption
@@ -320,7 +325,7 @@ impl CCache {
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         validate_version(self.version)?;
         let endian = Endian::for_version(self.version);
-        let mut out = vec![CCACHE_FIRST_BYTE, self.version];
+        let mut out = file_name::SecretBytes::new(vec![CCACHE_FIRST_BYTE, self.version]);
         if self.version == 4 {
             self.header.write_to(&mut out, endian)?;
         }
@@ -329,7 +334,7 @@ impl CCache {
         for credential in &self.credentials {
             credential.write_to(&mut out, self.version, endian)?;
         }
-        Ok(out)
+        Ok(out.into_vec())
     }
 
     #[must_use]
