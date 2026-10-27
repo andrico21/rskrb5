@@ -893,3 +893,11 @@ let error = Client::PrincipalMismatch {
 assert!(matches!(error, Client::PrincipalMismatch { .. }));
 # }
 ```
+# RFC 3244 bare error responses
+
+`kadmin::Reply::parse` also accepts standalone KRB-ERROR responses. For these
+responses `version` is `CHANGE_PASSWORD_REQUEST_VERSION` (0xff80),
+`message_length` is the DER wire length and `ap_rep_length` is zero. `encode`
+preserves this bare profile. Legacy version-1 error replies remain framed;
+callers constructing responders can select the profile through `version`.
+Neither error form authenticates a success result.

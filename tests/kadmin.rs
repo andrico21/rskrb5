@@ -722,6 +722,41 @@ mod tests {
         Ok(())
     }
 
+    /// Accepts the RFC 3244 unencapsulated error and preserves its wire profile.
+    #[test]
+    fn kpasswd_bare_error_roundtrips() -> Result<(), TestError> {
+        // Given a standalone application-30 error, not a kpasswd frame.
+        let bytes = decode_hex(KRB_ERROR_WITH_EDATA)?;
+        // When the response parser dispatches it.
+        let reply = Reply::parse(&bytes)?;
+        // Then it retains the error result and bare encoding.
+        assert!(reply.is_krb_error());
+        assert_eq!(
+            reply.decrypt_result(&EncryptionKey::new(18, vec![0; 32]))?,
+            ChangePasswordResult::parse(b"krb5data")?
+        );
+        assert_eq!(reply.encode()?, bytes);
+        Ok(())
+    }
+
+    /// Rejects unauthenticated success in both bare and legacy wrapped errors.
+    #[test]
+    fn kpasswd_bare_error_cannot_assert_success() -> Result<(), TestError> {
+        // Given an error carrying a forged success result.
+        let mut error: KrbError = der::decode(&decode_hex(KRB_ERROR_WITH_EDATA)?)?;
+        error.e_data = Some(vec![0, 0].into());
+        let bare = der::encode(&error)?;
+        for bytes in [bare.clone(), kpasswd_reply_frame(0, &bare)?] {
+            // When the result is consumed, then unauthenticated success is rejected.
+            let reply = Reply::parse(&bytes)?;
+            assert!(matches!(
+                reply.decrypt_result(&EncryptionKey::new(18, vec![0; 32])),
+                Err(KadminError::UnauthenticatedSuccess)
+            ));
+        }
+        Ok(())
+    }
+
     /// Pins that a KRB-ERROR reply with an AP-REP and KRB-PRIV cannot be encoded.
     #[test]
     fn kpasswd_reply_rejects_mixed_error_payloads() -> Result<(), TestError> {

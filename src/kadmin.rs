@@ -541,9 +541,9 @@ pub fn build_change_password_request(
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Reply {
-    /// Total message length from the two-byte frame prefix.
+    /// Total wire length; bare RFC 3244 errors have no length prefix.
     pub message_length: u16,
-    /// Protocol version from the reply frame.
+    /// Framed version, or [`CHANGE_PASSWORD_REQUEST_VERSION`] for a bare RFC 3244 error.
     pub version: u16,
     /// DER byte length of the AP-REP section, or zero for a KRB-ERROR reply.
     pub ap_rep_length: u16,
@@ -571,6 +571,28 @@ impl Reply {
     /// error of KRB-ERROR e-data.
     #[inline]
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes.first() == Some(&0x7e)
+            && let Ok(krb_error) = krb_error::decode(bytes)
+        {
+            let result = krb_error
+                .e_data
+                .as_ref()
+                .map(|data| ChangePasswordResult::parse(data.as_ref()))
+                .transpose()?;
+            return Ok(Self {
+                message_length: u16::try_from(bytes.len()).map_err(|_overflow| {
+                    Error::FrameTooLarge {
+                        actual: bytes.len(),
+                    }
+                })?,
+                version: CHANGE_PASSWORD_REQUEST_VERSION,
+                ap_rep_length: 0,
+                ap_rep: None,
+                krb_priv: None,
+                krb_error: Some(krb_error),
+                result,
+            });
+        }
         let frame = parse_header(bytes)?;
         if frame.version != CHANGE_PASSWORD_REPLY_VERSION {
             return Err(Error::InvalidReplyVersion(frame.version));
@@ -683,6 +705,9 @@ impl Reply {
             let body = krb_error_part
                 .map(|message| krb_error::encode(message).map_err(krb_error_error))
                 .ok_or(Error::MissingKrb)??;
+            if self.version == CHANGE_PASSWORD_REQUEST_VERSION {
+                return Ok(body);
+            }
             // Saturating: a total past `usize::MAX` is past `u16::MAX` too, and
             // is refused as too large just below.
             let frame_length = HEADER_LEN.saturating_add(body.len());

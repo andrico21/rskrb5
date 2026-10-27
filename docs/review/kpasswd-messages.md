@@ -8,6 +8,7 @@ and exit codes are in `task-34-rskrb5-ng-own-way.log` in the execution evidence.
 | ID | Status | Tests and commit | Behaviour change for CHANGELOG | Dismissal evidence |
 | --- | --- | --- | --- | --- |
 | RSK-A5F7D975 | fixed | `checksum_matches_whole_message_oracle`, `verifies_independent_whole_message_checksum`; commit subject suffix `(RSK-A5F7D975)` | Generate and verify usage-15 checksums over the entire DER KRB-SAFE with checksum type zero and an empty checksum value, per RFC 4120 §5.6.1, instead of body-only DER. | N/A |
+| RSK-3B6BA222 | fixed | `kpasswd_bare_error_roundtrips`, `kpasswd_bare_error_cannot_assert_success`; commit subject suffix `(RSK-3B6BA222)` | Accept standalone RFC 3244 application-30 errors before frame interpretation; preserve bare encoding using version 0xff80, while version-1 legacy errors remain framed. Both forms reject unauthenticated success when consuming the result. | N/A |
 
 ## Checksum contract
 
@@ -22,7 +23,6 @@ used to replace the checksum; no caller message is mutated.
 
 ## Remaining work
 
-- Bare RFC 3244 errors and explicit responder encoding profile.
 - Contextual KRB-PRIV freshness, sequence and address validation.
 - Complete-message trailing-byte rejection.
 - Shared Microseconds and whole-second KerberosTime constraints.
