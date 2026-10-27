@@ -147,6 +147,34 @@ mod tests {
         Ok(())
     }
 
+    /// Cache saves create private files and never widen existing owner modes.
+    #[cfg(unix)]
+    #[test]
+    fn saves_cache_with_private_permissions() -> Result<(), TestError> {
+        use std::{
+            fs::{Permissions, metadata, set_permissions},
+            os::unix::fs::PermissionsExt as _,
+        };
+        // Given a fresh destination and preexisting broad/restrictive files.
+        let cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+        for mode in [None, Some(0o644), Some(0o400)] {
+            let path = temp_file("private-mode")?;
+            if let Some(bits) = mode {
+                write(&path, b"old content")?;
+                set_permissions(&path, Permissions::from_mode(bits))?;
+            }
+
+            // When saving secret-bearing credentials.
+            cache.save(&path)?;
+
+            // Then permissions are owner-only and existing rights never widen.
+            let actual = metadata(&path)?.permissions().mode() & 0o777;
+            remove_file(&path)?;
+            assert_eq!(actual, mode.unwrap_or(0o600) & 0o600);
+        }
+        Ok(())
+    }
+
     /// Pins that a ccache saved under the `KRB5CCNAME` file name loads back unchanged.
     #[test]
     fn saves_and_loads_ccache_from_env() -> Result<(), TestError> {

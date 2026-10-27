@@ -196,6 +196,34 @@ mod tests {
         Ok(())
     }
 
+    /// Keytab saves create private files without widening existing permissions.
+    #[cfg(unix)]
+    #[test]
+    fn saves_keytab_with_private_permissions() -> Result<(), TestError> {
+        use std::{
+            fs::{Permissions, metadata, set_permissions, write},
+            os::unix::fs::PermissionsExt as _,
+        };
+        // Given fresh and existing files with broad or restrictive modes.
+        let keytab = Keytab::parse(&hex::decode(KTUTIL_USER_KEYTAB)?)?;
+        for mode in [None, Some(0o644), Some(0o400)] {
+            let path = temp_file("private-mode")?;
+            if let Some(bits) = mode {
+                write(&path, b"old content")?;
+                set_permissions(&path, Permissions::from_mode(bits))?;
+            }
+
+            // When persisting the keytab.
+            keytab.save(&path)?;
+
+            // Then only the prior owner permissions survive.
+            let actual = metadata(&path)?.permissions().mode() & 0o777;
+            remove_file(&path)?;
+            assert_eq!(actual, mode.unwrap_or(0o600) & 0o600);
+        }
+        Ok(())
+    }
+
     /// Pins that a keytab saved under the `KRB5_KTNAME` file name loads back unchanged.
     #[test]
     fn saves_and_loads_keytab_from_env() -> Result<(), TestError> {

@@ -195,6 +195,9 @@ impl CCache {
 
     /// Save this credential cache to a file.
     ///
+    /// Unix creation uses owner-only mode 0600 and existing owner rights are
+    /// never widened. On Windows, supply a directory with an owner-only ACL.
+    ///
     /// # Errors
     ///
     /// Returns any error of [`CCache::to_bytes`], and [`Error::Io`] when the
@@ -204,7 +207,7 @@ impl CCache {
     where
         P: AsRef<Path>,
     {
-        fs::write(path.as_ref(), self.to_bytes()?)?;
+        file_name::write_private(path.as_ref(), &self.to_bytes()?)?;
         Ok(())
     }
 

@@ -1,6 +1,10 @@
-#[cfg(target_os = "linux")]
-use std::fs;
-use std::path::PathBuf;
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, Write as _},
+    path::{Path, PathBuf},
+};
 
 /// Why a credential file name could not be resolved to a path.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,4 +123,44 @@ fn process_identity() -> Result<(u32, u32), Error> {
 #[cfg(not(target_os = "linux"))]
 const fn process_identity() -> Result<(u32, u32), Error> {
     Err(Error::IdentityUnavailable)
+}
+
+/// Replace a credential file using an exclusively created same-directory stage.
+///
+/// Unix staging is owner-only before the first write and never widens the
+/// destination's existing owner permissions. Windows callers must provide a
+/// directory with an owner-only ACL; std does not expose ACL construction.
+///
+/// # Errors
+///
+/// Returns filesystem errors from staging, writing, syncing or renaming.
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut random = [0_u8; 16];
+    getrandom::fill(&mut random).map_err(io::Error::other)?;
+    let suffix = u128::from_be_bytes(random);
+    let temporary = parent.join(format!(".rskrb5-{suffix:032x}.tmp"));
+    let mut options = OpenOptions::new();
+    let _: &mut OpenOptions = options.write(true).create_new(true);
+    #[cfg(unix)]
+    let _: &mut OpenOptions = options.mode(0o600);
+    let mut file = options.open(&temporary)?;
+    let result = (|| {
+        #[cfg(unix)]
+        if let Ok(metadata) = fs::metadata(path) {
+            let mode = metadata.permissions().mode() & 0o600;
+            file.set_permissions(fs::Permissions::from_mode(mode))?;
+        }
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        fs::remove_file(temporary)?;
+    }
+    result
 }
