@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""Check GitHub-side readiness for the strict AD integration gate."""
+"""Check GitHub-side readiness for the strict AD integration gate.
+
+The fork's `.github/workflows/ci.yml` has no AD job and its `workflow_dispatch`
+declares no inputs (the upstream `clelange/rskrb5` workflow had both), so
+`--dispatch` refuses to run until ci.yml declares every input in
+`DISPATCH_INPUTS`; the secret readiness check works either way.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 
 ENDPOINT_SECRETS = [
@@ -25,8 +35,37 @@ KEYTAB_SECRETS = [
 
 REQUIRED_RUNNER_LABELS = {"self-hosted", "linux", "x64", "rskrb5-ad"}
 
+# The `workflow_dispatch` inputs `--dispatch` passes to ci.yml.
+DISPATCH_INPUTS = ("integration", "test_ad", "test_ad_dry_run", "test_kpasswd")
+
+CI_WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+
+
+def declared_dispatch_inputs(workflow: str) -> set[str]:
+    """Return the input names under `on: workflow_dispatch: inputs:` of a workflow."""
+    inputs: set[str] = set()
+    in_dispatch = False
+    in_inputs = False
+    for line in workflow.splitlines():
+        content = line.lstrip(" ")
+        if not content or content.startswith("#"):
+            continue
+        indent = len(line) - len(content)
+        if indent == 0:
+            in_dispatch = in_inputs = False
+        elif indent == 2:
+            in_dispatch = content.rstrip() == "workflow_dispatch:"
+            in_inputs = False
+        elif indent == 4:
+            in_inputs = in_dispatch and content.rstrip() == "inputs:"
+        elif indent == 6 and in_inputs and content.rstrip().endswith(":"):
+            inputs.add(content.rstrip()[:-1])
+    return inputs
+
 
 def main() -> int:
+    if sys.argv[1:] == ["--self-test"]:
+        return self_test()
     parser = argparse.ArgumentParser(
         description="Check required GitHub Actions secrets for test_ad=true."
     )
@@ -57,6 +96,24 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+
+    if args.dispatch:
+        # Refuse before any GitHub call: dispatching inputs ci.yml does not
+        # declare fails on GitHub, or runs the ordinary push jobs instead.
+        missing_inputs = [
+            name
+            for name in DISPATCH_INPUTS
+            if name not in declared_dispatch_inputs(CI_WORKFLOW.read_text(encoding="utf-8"))
+        ]
+        if missing_inputs:
+            print(
+                "--dispatch is unsupported: .github/workflows/ci.yml declares no "
+                "workflow_dispatch input(s) " + ", ".join(missing_inputs) + " and has no "
+                "AD job. Restore the AD job and its inputs first; see "
+                "docs/github-ad-gate-setup.md.",
+                file=sys.stderr,
+            )
+            return 2
 
     repo = gh_json(["repo", "view", "--json", "nameWithOwner"])["nameWithOwner"]
     print(f"Repository: {repo}")
@@ -189,6 +246,107 @@ def gh(args: list[str]) -> str:
         text=True,
     )
     return completed.stdout
+
+
+GH_STUB = """#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+with open(os.environ["GH_STUB_LOG"], "a", encoding="utf-8") as log:
+    log.write(" ".join(args) + "\\n")
+if args[:2] == ["repo", "view"]:
+    print(json.dumps({"nameWithOwner": "andrico21/rskrb5-ng"}))
+elif args[:1] == ["api"] and args[1].endswith("actions/secrets"):
+    names = os.environ["GH_STUB_SECRETS"].split()
+    print(json.dumps({"secrets": [{"name": name} for name in names]}))
+elif args[:2] == ["workflow", "run"]:
+    pass
+else:
+    sys.exit(1)
+"""
+
+CI_WITH_AD_INPUTS = """name: CI
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      integration:
+        type: boolean
+      test_ad:
+        type: boolean
+      test_ad_dry_run:
+        type: boolean
+      test_kpasswd:
+        type: boolean
+jobs:
+  test:
+    runs-on: ubuntu-latest
+"""
+
+
+def run_in_scratch_repo(ci_text: str, argv: list[str]) -> tuple[int, str, list[str]]:
+    """Run a copy of this script beside `ci_text` as .github/workflows/ci.yml,
+    with a stub `gh` first on PATH; return (exit code, stderr, gh calls)."""
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch)
+        (root / "scripts").mkdir()
+        (root / ".github" / "workflows").mkdir(parents=True)
+        (root / ".github" / "workflows" / "ci.yml").write_text(ci_text, encoding="utf-8")
+        script = root / "scripts" / Path(__file__).name
+        shutil.copyfile(__file__, script)
+        stub_dir = root / "bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "gh"
+        stub.write_text(GH_STUB, encoding="utf-8")
+        stub.chmod(0o755)
+        log = root / "gh.log"
+        log.touch()
+        env = dict(os.environ)
+        env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+        env["GH_STUB_LOG"] = str(log)
+        env["GH_STUB_SECRETS"] = " ".join(ENDPOINT_SECRETS + KEYTAB_SECRETS)
+        completed = subprocess.run(
+            [sys.executable, str(script), *argv],
+            cwd=root,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        calls = log.read_text(encoding="utf-8").splitlines()
+        return completed.returncode, completed.stderr, calls
+
+
+def self_test() -> int:
+    """Dispatch is refused while ci.yml lacks the AD inputs and allowed once they exist."""
+    failures = []
+    fork_ci = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    for argv in (["--dispatch"], ["--dry-run", "--dispatch"]):
+        code, stderr, calls = run_in_scratch_repo(fork_ci, argv)
+        dispatched = [call for call in calls if call.startswith("workflow run")]
+        if code == 0 or dispatched:
+            failures.append(
+                f"{' '.join(argv)} against the fork ci.yml: exit {code}, gh calls {dispatched}; "
+                "expected a refusal without dispatch"
+            )
+        elif "workflow_dispatch" not in stderr:
+            failures.append(f"{' '.join(argv)}: the refusal does not name workflow_dispatch: {stderr!r}")
+    code, stderr, calls = run_in_scratch_repo(CI_WITH_AD_INPUTS, ["--dry-run", "--dispatch"])
+    dispatched = [call for call in calls if call.startswith("workflow run")]
+    if code != 0 or len(dispatched) != 1:
+        failures.append(
+            f"--dry-run --dispatch with the AD inputs declared: exit {code}, gh calls {dispatched}, "
+            f"stderr {stderr!r}; expected one dispatch"
+        )
+    for failure in failures:
+        print(f"self-test FAIL: {failure}", file=sys.stderr)
+    if failures:
+        return 1
+    print("self-test: ok")
+    return 0
 
 
 if __name__ == "__main__":

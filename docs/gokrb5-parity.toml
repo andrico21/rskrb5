@@ -6,7 +6,7 @@ release_url = "https://github.com/jcmturner/gokrb5/releases/tag/v8.4.4"
 docs_url = "https://pkg.go.dev/github.com/jcmturner/gokrb5/v8"
 usage_url = "https://github.com/jcmturner/gokrb5/blob/master/v8/USAGE.md"
 license = "Apache-2.0"
-last_reviewed = "2026-06-24"
+last_reviewed = "2026-10-27"
 
 [[area]]
 id = "config"
@@ -38,8 +38,8 @@ upstream_tests = ["credentials/ccache_test.go", "credentials/ccache_integration_
 rskrb5_modules = ["src/ccache.rs", "src/client.rs"]
 rskrb5_tests = ["tests/ccache.rs", "tests/client.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["unit tests cover FILE/WRFILE/DIR parsing, writing, lookup, cacheconf entries, JSON, and env/default names", "unit and property tests cover the record-count bounds checked against the remaining input, including the 32-bit LengthOverflow arms in the CI i686 job", "GitHub Actions run 28073249506 passed external kinit and kvno ccache coverage with TESTPRIVILEGED=1 on ubuntu-latest"]
-next = ["keep privileged kinit/kvno coverage green in Linux CI before release"]
+evidence = ["unit tests cover FILE/WRFILE/DIR parsing, writing, lookup, cacheconf entries, JSON, and env/default names", "unit and property tests cover the record-count bounds checked against the remaining input, including the 32-bit LengthOverflow arms in the CI i686 job", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed external kinit and kvno ccache coverage with TESTPRIVILEGED=1 on ubuntu-latest"]
+next = ["keep privileged kinit/kvno coverage green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "crypto"
@@ -71,8 +71,8 @@ upstream_tests = ["kadmin/*_test.go", "client/passwd.go integration paths"]
 rskrb5_modules = ["src/kadmin.rs", "src/client/kpasswd.rs"]
 rskrb5_tests = ["tests/kadmin.rs", "tests/client.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["unit tests cover ChangePasswdData, request/reply frames, AP-REP verification, and reply decryption", "GitHub Actions run 28073249506 passed docker_mit_kdc_tokio_client_change_password with TEST_KPASSWD=1 on ubuntu-latest"]
-next = ["keep TEST_KPASSWD=1 green in Linux CI before release"]
+evidence = ["unit tests cover ChangePasswdData, request/reply frames, AP-REP verification, and reply decryption", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed docker_mit_kdc_tokio_client_change_password with TEST_KPASSWD=1 on ubuntu-latest"]
+next = ["keep TEST_KPASSWD=1 green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "client"
@@ -82,8 +82,8 @@ upstream_tests = ["client/*_test.go", "client/*_integration_test.go"]
 rskrb5_modules = ["src/client.rs", "src/client/options.rs", "src/client/principal.rs", "src/client/transport.rs", "src/client/kpasswd.rs"]
 rskrb5_tests = ["tests/client.rs", "tests/client_principal.rs", "tests/client_transport.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["unit tests cover password/keytab/ccache login, AS/TGS exchange, referrals, renewal, S4U2Self, S4U2Proxy, diagnostics, write-back, and cache behavior", "unit tests cover the renewal series: the refresh band from the current ticket life, auto-renewal pacing, and the AS fallback for an expired or refused renewal", "GitHub Actions run 28073249506 passed 40 Docker MIT client_integration tests on ubuntu-latest, including DNS-SRV, referrals, renewal, cached tickets, ccache, HTTP, and kpasswd"]
-next = ["keep full Docker MIT integration green in Linux CI before release"]
+evidence = ["unit tests cover password/keytab/ccache login, AS/TGS exchange, referrals, renewal, S4U2Self, S4U2Proxy, diagnostics, write-back, and cache behavior", "unit tests cover the renewal series: the refresh band from the current ticket life, auto-renewal pacing, and the AS fallback for an expired or refused renewal", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed 40 Docker MIT client_integration tests on ubuntu-latest, including DNS-SRV, referrals, renewal, cached tickets, ccache, HTTP, and kpasswd"]
+next = ["keep full Docker MIT integration green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "service"
@@ -93,8 +93,8 @@ upstream_tests = ["service/*_test.go", "messages/Ticket_test.go"]
 rskrb5_modules = ["src/service.rs", "src/http.rs"]
 rskrb5_tests = ["tests/service.rs", "tests/http.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["unit tests cover AP-REQ validation, replay cache, clock skew, client address checks, AP-REP mutual auth, mutual-required completion enforcement (classifier and send wrappers fail closed), [libdefaults] clockskew on the Config-driven acceptors, keytab adapters, and PAC checksum validation", "GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
-next = ["keep Linux Docker HTTP/SPNEGO coverage green before release"]
+evidence = ["unit tests cover AP-REQ validation, replay cache, clock skew, client address checks, AP-REP mutual auth, mutual-required completion enforcement (classifier and send wrappers fail closed), [libdefaults] clockskew on the Config-driven acceptors, keytab adapters, and PAC checksum validation", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
+next = ["keep Linux Docker HTTP/SPNEGO coverage green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "gssapi-spnego"
@@ -105,7 +105,7 @@ rskrb5_modules = ["src/spnego.rs", "src/spnego/oid.rs", "src/http.rs", "src/clie
 rskrb5_tests = ["tests/gssapi.rs", "tests/spnego.rs", "tests/http.rs", "tests/client.rs", "tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
 evidence = ["MIC, Wrap, SPNEGO token, raw KRB5 Negotiate, AP-REP verification, HTTP helpers, Tower middleware, and high-level header generation are covered", "transport-agnostic async and blocking HTTP client wrappers retry 401 Negotiate responses through replayable request factories"]
-next = ["keep HTTP wrapper tests and Docker SPNEGO integration green before release"]
+next = ["keep HTTP wrapper tests green in CI and Docker SPNEGO integration green locally before release"]
 
 [[area]]
 id = "pac"
@@ -123,11 +123,11 @@ id = "docker-mit"
 name = "Docker MIT KDC integration fixtures"
 upstream_packages = ["client", "credentials", "spnego", "test/docker"]
 upstream_tests = ["client/*_integration_test.go", "credentials/*_integration_test.go", "spnego/http_test.go"]
-rskrb5_modules = ["scripts/run-gated-integration.sh", ".github/workflows/ci.yml"]
+rskrb5_modules = ["scripts/run-gated-integration.sh"]
 rskrb5_tests = ["tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["focused forwarded-port configured-KDC AS login passed locally", "full local direct-container-IP run timed out to 192.168.215.x:88 on macOS Docker networking", "GitHub Actions workflow_dispatch run 28073249506 passed Docker-backed integration on ubuntu-latest with INTEGRATION=1, TESTPRIVILEGED=1, TEST_KPASSWD=1, and TEST_DNS_KDC=1"]
-next = ["keep workflow_dispatch integration=true and test_kpasswd=true green before release"]
+evidence = ["focused forwarded-port configured-KDC AS login passed locally", "full local direct-container-IP run timed out to 192.168.215.x:88 on macOS Docker networking", "historical upstream clelange/rskrb5: GitHub Actions workflow_dispatch run 28073249506 passed Docker-backed integration on ubuntu-latest with INTEGRATION=1, TESTPRIVILEGED=1, TEST_KPASSWD=1, and TEST_DNS_KDC=1"]
+next = ["run scripts/run-gated-integration.sh run, and again with TEST_KPASSWD=1, locally before release; the fork's ci.yml has no Docker integration job and its workflow_dispatch declares no inputs"]
 
 [[area]]
 id = "active-directory"
@@ -137,8 +137,8 @@ upstream_tests = ["client/client_ad_integration_test.go"]
 rskrb5_modules = ["tests/client_ad_integration.rs", "src/pac.rs", "src/client.rs"]
 rskrb5_tests = ["tests/client_ad_integration.rs"]
 status = "blocked-on-lab"
-evidence = ["AD integration tests exist, the lab contract is documented in docs/ad-integration.md, TESTAD_REQUIRED=1 fails when the strict gate would otherwise soft-skip, lab-specific keytab path/hex/base64 overrides are supported, scripts/check-ad-integration-env.py preflights strict AD runs, workflow_dispatch test_ad=true targets GitHub-hosted ubuntu-latest, workflow_dispatch test_ad_dry_run=true validates keytab secret shape without endpoint reachability, scripts/check-github-ad-gate.py checks GitHub secret readiness, docs/ad-lab-provisioning.md documents the live AD lab contract, and docs/github-ad-gate-setup.md documents the GitHub runner mode and secret setup", "tests/client_ad_integration.rs statically verifies the embedded AD keytab fixtures contain testuser1, testuser2, testuser3, and sysHTTP principals with AES128, AES256, and RC4 key material", "GitHub Actions run 28119806826 passed the hosted test_ad_dry_run=true keytab secret-shape job", "GitHub Actions run 28117082548 reached hosted ubuntu-latest and decoded the four keytab secrets before failing because the four endpoint secrets were absent"]
-next = ["defer strict AD parity for 0.2.0 because TEST_AD_USER_KDC_ADDR, TEST_AD_RESOURCE_KDC_ADDR, TEST_AD_USER_ADMIN_ADDR, and TEST_AD_RESOURCE_ADMIN_ADDR are unavailable", "keep scripts/check-github-ad-gate.py --dry-run --dispatch green while endpoint secrets remain unavailable", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services", "use docs/samba-ad-feasibility.md only as a backup spike, not as Windows AD parity evidence", "after reachable endpoints exist, run scripts/check-github-ad-gate.py before dispatching test_ad=true", "after strict AD is available, run scripts/check-ad-integration-env.py before TESTAD=1 TESTAD_REQUIRED=1 with lab-specific keytabs as needed and record keytab login, no-preauth login, user-domain PAC, and resource-trust PAC evidence"]
+evidence = ["AD integration tests exist, the lab contract is documented in docs/ad-integration.md, TESTAD_REQUIRED=1 fails when the strict gate would otherwise soft-skip, lab-specific keytab path/hex/base64 overrides are supported, scripts/check-ad-integration-env.py preflights strict AD runs, scripts/check-github-ad-gate.py checks GitHub secret readiness and refuses to dispatch while ci.yml has no AD job, docs/ad-lab-provisioning.md documents the live AD lab contract, and docs/github-ad-gate-setup.md documents the secret setup a restored AD job needs", "tests/client_ad_integration.rs statically verifies the embedded AD keytab fixtures contain testuser1, testuser2, testuser3, and sysHTTP principals with AES128, AES256, and RC4 key material", "historical upstream clelange/rskrb5: GitHub Actions run 28119806826 passed the hosted keytab secret-shape dry-run job (upstream dispatch input test_ad_dry_run=true)", "historical upstream clelange/rskrb5: GitHub Actions run 28117082548 reached hosted ubuntu-latest and decoded the four keytab secrets before failing because the four endpoint secrets were absent"]
+next = ["strict AD parity stays deferred: TEST_AD_USER_KDC_ADDR, TEST_AD_RESOURCE_KDC_ADDR, TEST_AD_USER_ADMIN_ADDR, and TEST_AD_RESOURCE_ADMIN_ADDR are unavailable and the fork's ci.yml has no AD job", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services", "use docs/samba-ad-feasibility.md only as a backup spike, not as Windows AD parity evidence", "to restore a hosted AD gate, add an AD job and its workflow_dispatch inputs to ci.yml, then run scripts/check-github-ad-gate.py before dispatching it", "after strict AD is available, run scripts/check-ad-integration-env.py before TESTAD=1 TESTAD_REQUIRED=1 with lab-specific keytabs as needed and record keytab login, no-preauth login, user-domain PAC, and resource-trust PAC evidence"]
 
 [[area]]
 id = "non-goals"
@@ -154,74 +154,81 @@ next = ["keep unsupported-store errors typed and documented; do not block gokrb5
 [[gate]]
 id = "linux-docker-mit-full"
 name = "Full Linux Docker MIT integration"
-status = "proven"
+status = "historical-upstream"
 command = "scripts/run-gated-integration.sh run --test client_integration"
+ci_job = ""
 proves = ["docker-mit", "client", "service", "ccache"]
-required_for_release = true
+required_for_release = false
 required_for_parity = true
-evidence = ["GitHub Actions run 28073249506 passed the Docker-backed integration job on ubuntu-latest with 40 client_integration tests green"]
-next = ["keep this gate green before release"]
+evidence = ["historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed the Docker-backed integration job on ubuntu-latest with 40 client_integration tests green"]
+next = ["run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[gate]]
 id = "linux-docker-mit-kpasswd"
 name = "Linux Docker MIT password-change integration"
-status = "proven"
+status = "historical-upstream"
 command = "TEST_KPASSWD=1 scripts/run-gated-integration.sh run --test client_integration"
+ci_job = ""
 proves = ["kadmin-kpasswd", "client"]
-required_for_release = true
+required_for_release = false
 required_for_parity = true
-evidence = ["GitHub Actions run 28073249506 passed docker_mit_kdc_tokio_client_change_password with TEST_KPASSWD=1 on ubuntu-latest"]
-next = ["keep this gate green before release"]
+evidence = ["historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed docker_mit_kdc_tokio_client_change_password with TEST_KPASSWD=1 on ubuntu-latest"]
+next = ["run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[gate]]
 id = "linux-docker-dns-srv"
 name = "Linux Docker DNS-SRV KDC discovery"
-status = "proven"
+status = "historical-upstream"
 command = "TEST_DNS_KDC=1 scripts/run-gated-integration.sh run --test client_integration docker_mit_kdc_dns_srv_as_login -- --nocapture"
+ci_job = ""
 proves = ["docker-mit", "client"]
-required_for_release = true
+required_for_release = false
 required_for_parity = true
-evidence = ["GitHub Actions run 28073249506 passed docker_mit_kdc_dns_srv_as_login with TEST_DNS_KDC=1 on ubuntu-latest"]
-next = ["keep this gate green before release"]
+evidence = ["historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed docker_mit_kdc_dns_srv_as_login with TEST_DNS_KDC=1 on ubuntu-latest"]
+next = ["run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[gate]]
 id = "linux-docker-privileged-ccache"
 name = "Linux Docker privileged external ccache"
-status = "proven"
+status = "historical-upstream"
 command = "TESTPRIVILEGED=1 scripts/run-gated-integration.sh run --test client_integration"
+ci_job = ""
 proves = ["ccache", "client"]
-required_for_release = true
+required_for_release = false
 required_for_parity = true
-evidence = ["GitHub Actions run 28073249506 passed docker_mit_kdc_loads_external_kinit_ccache and docker_mit_kdc_reads_external_kvno_service_ticket_ccache with TESTPRIVILEGED=1 on ubuntu-latest"]
-next = ["keep this gate green before release"]
+evidence = ["historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed docker_mit_kdc_loads_external_kinit_ccache and docker_mit_kdc_reads_external_kvno_service_ticket_ccache with TESTPRIVILEGED=1 on ubuntu-latest"]
+next = ["run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[gate]]
 id = "linux-docker-http-spnego"
 name = "Linux Docker HTTP SPNEGO service integration"
-status = "proven"
+status = "historical-upstream"
 command = "scripts/run-gated-integration.sh run --test client_integration docker_mit_kdc_spnego_header_authenticates_to_docker_http -- --nocapture"
+ci_job = ""
 proves = ["service", "gssapi-spnego", "client"]
-required_for_release = true
+required_for_release = false
 required_for_parity = true
-evidence = ["GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
-next = ["keep this gate green before release"]
+evidence = ["historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
+next = ["run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[gate]]
 id = "active-directory-testad"
 name = "Active Directory TESTAD integration"
 status = "blocked-on-lab"
-command = "scripts/check-github-ad-gate.py --dispatch"
+command = "scripts/check-github-ad-gate.py"
+ci_job = ""
 proves = ["active-directory", "pac", "client", "service"]
 required_for_release = false
 required_for_parity = true
-evidence = ["AD integration tests exist, docs/ad-integration.md defines the test contract, docs/ad-lab-provisioning.md defines the live AD lab contract, TESTAD_REQUIRED=1 prevents unreachable-lab soft skips from counting as evidence, keytab path/hex/base64 overrides allow lab-specific account keys, scripts/check-ad-integration-env.py validates strict gate readiness, workflow_dispatch test_ad=true targets GitHub-hosted ubuntu-latest, workflow_dispatch test_ad_dry_run=true validates keytab secret shape without endpoint reachability, docs/github-ad-gate-setup.md defines the GitHub setup, and scripts/check-github-ad-gate.py checks GitHub secret readiness", "tests/client_ad_integration.rs statically verifies the embedded AD keytab fixtures contain testuser1, testuser2, testuser3, and sysHTTP principals with AES128, AES256, and RC4 key material", "GitHub Actions run 28119806826 passed the hosted test_ad_dry_run=true keytab secret-shape job", "GitHub Actions run 28117082548 reached hosted ubuntu-latest and decoded the four keytab secrets before failing because the four endpoint secrets were absent"]
-next = ["defer strict AD parity for 0.2.0 because TEST_AD_USER_KDC_ADDR, TEST_AD_RESOURCE_KDC_ADDR, TEST_AD_USER_ADMIN_ADDR, and TEST_AD_RESOURCE_ADMIN_ADDR are unavailable", "keep scripts/check-github-ad-gate.py --dry-run --dispatch green while endpoint secrets remain unavailable", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services", "use docs/samba-ad-feasibility.md only as a backup spike, not as Windows AD parity evidence", "after reachable endpoints exist, run scripts/check-github-ad-gate.py before dispatching test_ad=true", "record keytab login, no-preauth login, user-domain PAC, and resource-trust PAC evidence from scripts/check-ad-integration-env.py plus a strict TESTAD_REQUIRED=1 run with lab-specific keytabs as needed"]
+evidence = ["AD integration tests exist, docs/ad-integration.md defines the test contract, docs/ad-lab-provisioning.md defines the live AD lab contract, TESTAD_REQUIRED=1 prevents unreachable-lab soft skips from counting as evidence, keytab path/hex/base64 overrides allow lab-specific account keys, scripts/check-ad-integration-env.py validates strict gate readiness, docs/github-ad-gate-setup.md defines the secret setup a restored AD job needs, and scripts/check-github-ad-gate.py checks GitHub secret readiness and refuses to dispatch while ci.yml has no AD job", "tests/client_ad_integration.rs statically verifies the embedded AD keytab fixtures contain testuser1, testuser2, testuser3, and sysHTTP principals with AES128, AES256, and RC4 key material", "historical upstream clelange/rskrb5: GitHub Actions run 28119806826 passed the hosted keytab secret-shape dry-run job (upstream dispatch input test_ad_dry_run=true)", "historical upstream clelange/rskrb5: GitHub Actions run 28117082548 reached hosted ubuntu-latest and decoded the four keytab secrets before failing because the four endpoint secrets were absent"]
+next = ["strict AD parity stays deferred: TEST_AD_USER_KDC_ADDR, TEST_AD_RESOURCE_KDC_ADDR, TEST_AD_USER_ADMIN_ADDR, and TEST_AD_RESOURCE_ADMIN_ADDR are unavailable and the fork's ci.yml has no AD job", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services", "use docs/samba-ad-feasibility.md only as a backup spike, not as Windows AD parity evidence", "to restore a hosted AD gate, add an AD job and its workflow_dispatch inputs to ci.yml, then run scripts/check-github-ad-gate.py before dispatching it", "record keytab login, no-preauth login, user-domain PAC, and resource-trust PAC evidence from scripts/check-ad-integration-env.py plus a strict TESTAD_REQUIRED=1 run with lab-specific keytabs as needed"]
 
 [[gate]]
 id = "http-client-wrapper"
 name = "Ready-to-use HTTP Negotiate client wrapper"
 status = "proven"
 command = "cargo test --all-features --test http"
+ci_job = "test"
 proves = ["gssapi-spnego", "client"]
 required_for_release = true
 required_for_parity = true
