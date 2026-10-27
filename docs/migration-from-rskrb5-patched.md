@@ -5,6 +5,15 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Whole-second KerberosTime (RSK-B161A328)
+
+Service acceptance rejects fractional ticket `authtime`, `starttime`, `endtime`
+and `renew-till`, plus fractional authenticator `ctime`, with the new
+`Service::FractionalKerberosTime` variant. Service AP-REP verification and
+construction enforce the same rule, including mutable public construction
+inputs. Fractions are neither truncated nor added to `cusec`; the separate
+microseconds field remains valid. Generic DER codecs are unchanged.
+
 ### Strict Microseconds domain (RSK-985742B6)
 
 Service AP-REQ acceptance and `ValidatedApReq` AP-REP construction/verification

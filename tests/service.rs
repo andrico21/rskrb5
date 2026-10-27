@@ -1933,6 +1933,137 @@ mod tests {
         })?)
     }
 
+    /// Every ticket time must obey `KerberosTime` even when not selected for validity arithmetic.
+    #[test]
+    fn fractional_time_rejects_all_ticket_fields() -> Result<(), TestError> {
+        for field in ["authtime", "starttime", "endtime", "renew-till"] {
+            let keytab = http_keytab()?;
+            let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
+            let mut request = valid_ap_req_struct()?;
+            let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+            let fraction = fractional_kerberos_time()?;
+            match field {
+                "authtime" => ticket.auth_time = fraction,
+                "starttime" => ticket.start_time = Some(fraction),
+                "endtime" => ticket.end_time = fraction,
+                _ => ticket.renew_till = Some(fraction),
+            }
+            request.ticket.enc_part.cipher = encrypt_message(
+                key,
+                &der::encode(&ticket)?,
+                KDC_REP_TICKET_USAGE_FOR_TEST,
+                PAC_TICKET_CONFOUNDER,
+            )?
+            .into();
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert!(matches!(
+                validator
+                    .validate_ap_req(&der::encode(&request)?)
+                    .err()
+                    .context("fractional ticket rejected")?,
+                Error::FractionalKerberosTime
+            ));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// Fractional authenticator ctime is not combined with the separate microseconds field.
+    #[test]
+    fn fractional_time_rejects_authenticator() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let mut request = valid_ap_req_struct()?;
+        let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+        let mut authenticator =
+            decrypt_ap_req_authenticator(&request, &session, AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST)?;
+        authenticator.ctime = fractional_kerberos_time()?;
+        request.authenticator.cipher = encrypt_message(
+            &session,
+            &der::encode(&authenticator)?,
+            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            PAC_AUTHENTICATOR_CONFOUNDER,
+        )?
+        .into();
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&der::encode(&request)?)
+                .err()
+                .context("fractional authenticator rejected")?,
+            Error::FractionalKerberosTime
+        ));
+        Ok(())
+    }
+
+    /// AP-REP construction rejects fractional mutable input rather than echoing it.
+    #[test]
+    fn fractional_time_rejects_reply_construction() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_ctime = timestamp(1_893_553_447)?
+            .checked_add(Duration::from_millis(500))
+            .context("fractional time fits")?;
+        assert!(matches!(
+            validated
+                .build_ap_rep_with_confounder(
+                    &decode_hex(AP_REP_CONFOUNDER)?,
+                    &ApRepOptions::default()
+                )
+                .err()
+                .context("fractional construction rejected")?,
+            Error::FractionalKerberosTime
+        ));
+        Ok(())
+    }
+
+    /// AP-REP verification rejects independently encoded fractional timestamps.
+    #[test]
+    fn fractional_time_rejects_reply_verification() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_ctime = timestamp(1_893_553_447)?
+            .checked_add(Duration::from_millis(500))
+            .context("fractional time fits")?;
+        let part = rasn_kerberos::EncApRepPart {
+            ctime: fractional_kerberos_time()?,
+            cusec: validated.authenticator_cusec.into(),
+            subkey: None,
+            seq_number: None,
+        };
+        let cipher = encrypt_message(
+            &validated.session_key,
+            &der::encode(&part)?,
+            12,
+            AP_REP_CONFOUNDER,
+        )?;
+        let reply = der::encode(&rasn_kerberos::ApRep {
+            pvno: 5_i32.into(),
+            msg_type: 15_i32.into(),
+            enc_part: rasn_kerberos::EncryptedData {
+                etype: 18,
+                kvno: None,
+                cipher: cipher.into(),
+            },
+        })?;
+        assert!(matches!(
+            validated
+                .verify_ap_rep(&reply)
+                .err()
+                .context("fractional reply rejected")?,
+            Error::FractionalKerberosTime
+        ));
+        Ok(())
+    }
+
+    /// Produces legal `GeneralizedTime` that is illegal as `KerberosTime`.
+    fn fractional_kerberos_time() -> Result<rasn_kerberos::KerberosTime, TestError> {
+        let whole = kerberos_time(1_893_553_447)?;
+        Ok(rasn_kerberos::KerberosTime(
+            whole
+                .0
+                .checked_add_signed(chrono::Duration::milliseconds(500))
+                .context("fractional fixture fits")?,
+        ))
+    }
+
     /// Decodes a hex fixture.
     fn decode_hex(input: &str) -> Result<Vec<u8>, FromHexError> {
         hex::decode(input)

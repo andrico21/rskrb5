@@ -1716,6 +1716,9 @@ pub enum Pac {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Service {
+    /// `KerberosTime` contains fractional seconds forbidden by RFC 4120 section 5.2.3.
+    #[error("fractional seconds are not permitted in KerberosTime")]
+    FractionalKerberosTime,
     /// Validator skew exceeds the replay cache's immutable policy.
     #[error("validator skew {requested:?} exceeds replay cache maximum {maximum:?}")]
     ReplayCacheSkewExceeded {

@@ -871,6 +871,10 @@ impl<'keytab> Validator<'keytab> {
         service: &Principal,
         enc_ticket: &rasn_kerberos::EncTicketPart,
     ) -> Result<(), Error> {
+        let _: SystemTime = system_time_from_kerberos_time(&enc_ticket.auth_time)?;
+        if let Some(renew_till) = &enc_ticket.renew_till {
+            let _: SystemTime = system_time_from_kerberos_time(renew_till)?;
+        }
         let now = self.now();
         let start = ticket_start_time(enc_ticket)?;
         if starts_after_skew(start, now, self.max_clock_skew) || has_invalid_flag(&enc_ticket.flags)
@@ -1279,6 +1283,9 @@ fn ticket_start_time(enc_ticket: &rasn_kerberos::EncTicketPart) -> Result<System
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
     let seconds = time.0.timestamp();
     let nanos = time.0.timestamp_subsec_nanos();
+    if nanos != 0 {
+        return Err(Error::FractionalKerberosTime);
+    }
     u64::try_from(seconds)
         .map_or_else(
             |_before_epoch| UNIX_EPOCH.checked_sub(Duration::new(seconds.unsigned_abs(), nanos)),
@@ -1294,6 +1301,9 @@ fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<
 /// Returns [`Error::TimeOverflow`] when the time is not representable.
 fn kerberos_time_from_system_time(time: SystemTime) -> Result<rasn_kerberos::KerberosTime, Error> {
     let (seconds, nanos) = unix_timestamp_parts(time)?;
+    if nanos != 0 {
+        return Err(Error::FractionalKerberosTime);
+    }
     let utc = chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, nanos)
         .ok_or(Error::TimeOverflow)?;
     let offset = chrono::FixedOffset::east_opt(0).ok_or(Error::TimeOverflow)?;
