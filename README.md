@@ -1,172 +1,144 @@
 # rskrb5-ng
 
-`rskrb5-ng` (library `rskrb5_ng`) is a pure-Rust Kerberos 5 client and service
-library. It continues [`rskrb5`](https://github.com/clelange/rskrb5)
-independently.
+`rskrb5-ng` (library `rskrb5_ng`) is a pure-Rust Kerberos 5 client and
+service library with HTTP Negotiate (SPNEGO) support. It reads and writes
+keytabs, credential caches and `krb5.conf`, runs AS/TGS exchanges and
+password changes against a KDC, validates AP-REQs on the service side, and
+parses PACs. The crate has no `unsafe` code (`#![forbid(unsafe_code)]`).
 
-`rskrb5` is a pure-Rust Kerberos v5 client/service library grown from a
-`gokrb5` v8 compatibility effort.
+It continues [`rskrb5`](https://github.com/clelange/rskrb5) independently;
+[`PROVENANCE.md`](PROVENANCE.md) records where the code comes from.
 
-The published `0.1` line is a narrow preview. Pre-`1.0` releases may break
-Rust APIs while the crate converges on a smaller, maintainable public surface;
-Kerberos wire formats, cryptographic behavior, and fixture parity remain
-compatibility-sensitive.
-
-## Current Status
+## Status
 
 | Area | Status |
 |---|---|
-| Keytab, ccache, and config files | File-backed keytab and MIT FILE/WRFILE/DIR ccache parsing, serialization, lookup, environment/default-name loading, and redacted metadata JSON are covered by gokrb5 fixtures. |
-| Crypto and Kerberos messages | AES-SHA1, AES-SHA2, DES3, RC4-HMAC, DER wrappers, KDC/AP/KRB-PRIV/KRB-SAFE/KRB-CRED helpers, and kpasswd frames are covered by unit vectors and fixture round-trips. |
-| High-level client | Tokio password/keytab/ccache login, AS/TGS exchange, referrals, renewal, service-ticket caching, S4U2Self/S4U2Proxy, kpasswd, diagnostics, and ccache write-back are implemented. |
-| Service and HTTP Negotiate | AP-REQ validation, replay detection, AP-REP mutual auth with mutual-required enforcement, SPNEGO/GSSAPI tokens, HTTP helpers, 401 retry client wrappers, Tower middleware, and an Axum example are implemented. |
-| PAC and AD parity | PAC container, validation info, UPN/DNS, credentials, delegation/device/claims data, checksums, and AD-shaped credential summaries are implemented with gated AD tests. |
-| Dependency posture | `rasn-kerberos` and `picky-krb` remain evaluation/data-type candidates; AGPL/LGPL Kerberos crates stay out of default/core features. |
+| Keytab, ccache and config files | File-backed keytabs and MIT FILE/WRFILE/DIR credential caches: parsing, serialization, lookup and redacted metadata JSON, covered by gokrb5 fixtures. `krb5.conf` parsing with `include`/`includedir`. |
+| Crypto and Kerberos messages | AES-SHA1, AES-SHA2, DES3 and RC4-HMAC, DER message wrappers, KDC/AP/KRB-PRIV/KRB-SAFE/KRB-CRED helpers and kpasswd frames, covered by unit vectors and fixture round-trips. The default enctypes are AES only; RC4 and DES3 need `allow_rc4`/`allow_des3`. |
+| High-level client | Tokio password, keytab and ccache login, AS/TGS exchange, referrals, renewal, service-ticket caching, S4U2Self/S4U2Proxy, kpasswd, diagnostics and ccache write-back. |
+| Service and HTTP Negotiate | AP-REQ validation, replay detection, AP-REP mutual authentication, SPNEGO/GSSAPI tokens, HTTP helpers, 401 retry client wrappers, Tower middleware and an Axum example. |
+| PAC and Active Directory | PAC container, validation info, UPN/DNS, credentials, delegation, device and claims data, checksums and AD credential summaries. The AD integration tests need a lab and aren't run in CI ([`docs/ad-integration.md`](docs/ad-integration.md)). |
+| Review backlog | Every open item of the code review and of the second security-audit run is fixed with a regression test or dismissed with evidence: 78 rows, 75 fixed and 3 dismissed ([`docs/review/README.md`](docs/review/README.md)). |
+| Fuzzing | Each attacker-facing parser has a `cargo fuzz` target (12 targets, [`docs/review/fuzz.md`](docs/review/fuzz.md)). |
+| Not supported | API, KCM, KEYRING and MSLSA credential stores, FAST armor, PKINIT and system GSSAPI/SSPI facades. Unsupported credential stores fail with a typed error. |
 
-## Next Preview Scope
+The API can still change before 1.0. Wire formats, cryptographic behaviour
+and the gokrb5 fixture parity are treated as compatibility-sensitive.
+[`docs/gokrb5-parity.md`](docs/gokrb5-parity.md) tracks parity with gokrb5
+v8.4.4 and lists every deliberate divergence.
 
-The next pre-`1.0` preview is focused on a smaller, clearer public API around:
+## Quick start
 
-- password-backed and file keytab-backed client login;
-- FILE, WRFILE, and MIT DIR credential-cache loading/saving;
-- default config loading from `KRB5_CONFIG` or platform defaults;
-- HTTP Negotiate/SPNEGO header generation and 401 retry wrappers through
-  high-level async and blocking clients;
-- password change flows through the high-level clients;
-- explicit typed rejection of unsupported credential/keytab stores.
-
-Still outside the supported preview scope: API, KCM, KEYRING, and MSLSA
-credential stores; FAST; PKINIT; system GSSAPI/SSPI facades; and maintained
-Active Directory CI. Lower-level gokrb5 parity modules remain available for
-testing and integration work, but their Rust APIs can change before `1.0`.
-
-## Client API Examples
-
-Async HTTP Negotiate from a FILE ccache:
-
-```rust
-let config = rskrb5_ng::Config::load_default()?;
-let mut client = rskrb5_ng::NegotiateClient::from_ccache_name(
-    config,
-    "FILE:/tmp/krb5cc",
-)?;
-let header = client
-    .authorization_header_for_host("HTTP", "auth.cern.ch")
-    .await?;
+```toml
+[dependencies]
+rskrb5-ng = "0.3"
 ```
 
-Transport-agnostic 401 retry wrapper with a replayable request factory
-(`http` feature, plus `tokio` when default features are disabled):
+Get a Negotiate `Authorization` header from the default credential cache
+(blocking):
 
-```rust
-let service = rskrb5_ng::Principal::host_based_service("HTTP", "auth.cern.ch")?;
-let result = rskrb5_ng::http::send_with_negotiate(
-    &mut client,
-    service,
-    || {
-        http::Request::builder()
-            .uri("https://auth.cern.ch/protected")
-            .body(Vec::new())
-            .expect("request builds")
-    },
-    |request| async move {
-        // Adapt this request to reqwest, hyper, or another HTTP client.
-        send_http(request).await
-    },
-)
-.await?;
-let response = result.into_response();
+```rust,no_run
+use rskrb5_ng::{BlockingNegotiateClient, Config};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::load_default()?;
+    let mut client = BlockingNegotiateClient::from_default_ccache(config)?;
+    let header = client.authorization_header_for_host("HTTP", "www.example.com")?;
+    println!("Authorization: {header}");
+    Ok(())
+}
 ```
 
-The request factory may be called twice: once for the initial request and again
-after a `401 WWW-Authenticate: Negotiate` challenge. When mutual authentication
-is requested through `send_with_negotiate_options` or
-`send_with_blocking_negotiate_options` (`with_ap_option_bits(0x2000_0000)` or
-`CONTEXT_FLAG_MUTUAL`), the wrappers fail closed: unless the final response
-carries an AP-REP that verifies against the initiator context, they return
-`NegotiateHttpError::MutualAuthenticationNotProven`. That covers a final
-response without `WWW-Authenticate`, a final response without a Negotiate
-challenge, a completion without an AP-REP, and a first response that never
-challenged (so no authenticated retry was sent). The error carries the final
-response for diagnostics and the `ClientNegotiateResponse` classification
-(`None` when no retry happened). Without a mutual request the wrappers return
-the final response with its classification in `result.negotiation`.
+The same with the async client and an explicit FILE ccache:
 
-Blocking CLI-style use:
+```rust,no_run
+use rskrb5_ng::{Config, NegotiateClient};
 
-```rust
-let config = rskrb5_ng::Config::load_default_or_parse(include_str!("krb5.conf"))?;
-let mut client = rskrb5_ng::BlockingNegotiateClient::from_default_ccache(config)?;
-let header = client.authorization_header_for_host("HTTP", "auth.cern.ch")?;
+async fn authorization_header() -> Result<String, Box<dyn std::error::Error>> {
+    let config = Config::load_default()?;
+    let mut client = NegotiateClient::from_ccache_name(config, "FILE:/tmp/krb5cc")?;
+    let header = client
+        .authorization_header_for_host("HTTP", "www.example.com")
+        .await?;
+    Ok(header)
+}
 ```
 
-Unsupported credential stores remain typed:
-
-```rust
-let error = rskrb5_ng::NegotiateClient::from_ccache_name(
-    rskrb5_ng::Config::new(),
-    "API:",
-)
-.expect_err("API caches are not implemented");
-```
-
-Generate the compatibility report:
-
-```sh
-cargo run --no-default-features --features evaluation --bin rskrb5-ng-compat-report
-```
-
-The report records the gokrb5 v8 test contract and the current support matrix
-for candidate crates. Keep it current whenever a candidate or porting milestone
-changes.
-
-Track release parity against the pinned upstream target in
-[`docs/gokrb5-parity.md`](docs/gokrb5-parity.md). The machine-readable parity
-manifest is [`docs/gokrb5-parity.toml`](docs/gokrb5-parity.toml).
-
-Run the Axum Negotiate example with a service keytab:
+Both blocks are compiled as doctests. `Config::load_default` reads
+`KRB5_CONFIG` and `from_default_ccache` reads `KRB5CCNAME`; use
+`Config::parse` or `Config::load` and `from_ccache_name` to choose the
+sources explicitly. The `http` feature adds 401 retry wrappers
+(`http::send_with_negotiate` and the blocking variant), and
+[`examples/axum-negotiate.rs`](examples/axum-negotiate.rs) shows the service
+side:
 
 ```sh
 KRB5_KTNAME=FILE:/path/to/http.keytab cargo run --example axum-negotiate --features http --no-default-features
 ```
 
-Run the local checks:
+Upgrading from the 0.2 releases? The `[0.3.0]` section of
+[`CHANGELOG.md`](CHANGELOG.md) lists every change and links the migration
+guide, which maps each renamed path and changed signature.
+
+## Features
+
+| Feature | Enables | Implies |
+|---|---|---|
+| `messages` | Kerberos ASN.1 message wrappers and protocol modules | |
+| `spnego` | SPNEGO/GSSAPI tokens and Negotiate headers | `messages` |
+| `tokio` | async KDC and kpasswd transports and the high-level clients | `messages` |
+| `http` | `http` crate request/response helpers; with `tokio`, the 401 retry wrappers | `spnego` |
+| `tower` | Tower Negotiate middleware for services | `http` |
+| `serde` | JSON diagnostics and redacted metadata | |
+| `evaluation` | the candidate-crate compatibility report | `spnego` |
+
+The default features are `spnego`, `tokio` and `serde`. Every combination of
+features is supported: the features resolve to 36 distinct closures, and CI
+runs strict clippy and the tests in each one (the `closures` job, held equal
+to `python3 scripts/lint-gates/feature_closures.py list`). The
+compatibility report is generated with:
 
 ```sh
-cargo fmt --check
-cargo check --no-default-features
-cargo check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-cargo doc --all-features --no-deps
-cargo package --locked
-prek run --all-files --stage pre-push
+cargo run --no-default-features --features evaluation --bin rskrb5-ng-compat-report
 ```
 
-The GitHub workflow includes a manual Docker-backed integration job. Run it from
-`workflow_dispatch` with the `integration` input to exercise the live MIT KDC,
-HTTP, DNS, ccache, referral, renewal, and kpasswd-gated integration suite; it
-preserves the gokrb5-style `INTEGRATION=1`, `TESTPRIVILEGED=1`, and optional
-`TESTAD=1` and `TEST_KPASSWD=1` gates.
+## Local checks
 
-For local runs, use [`scripts/run-gated-integration.sh`](scripts/run-gated-integration.sh);
-the detailed fixture setup and DNS resolver notes are documented in
-[`docs/gated-integration.md`](docs/gated-integration.md).
+These are the commands CI runs; [`docs/lint-policy.md`](docs/lint-policy.md)
+explains the lint profile and each gate.
 
-The live kpasswd integration test also requires the `test_kpasswd` workflow
-input because it temporarily changes the Docker test principal password before
-restoring it. Use `TEST_KPASSWD_ADDR`, `TEST_KPASSWD_PORT`, and
-`TEST_KPASSWD_SADDR` when the password-change service or sender address differs
-from the localhost defaults.
+```sh
+cargo +nightly-2026-10-03 fmt --all -- --check
+python3 scripts/lint-gates/feature_closures.py run   # clippy -D warnings and tests, every feature closure
+cargo test --all-features
+cargo test --doc --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+for s in scripts/lint-gates/*.py; do python3 "$s" --self-test; done
+python3 scripts/lint-gates/allow_gate.py --enforce
+python3 scripts/lint-gates/exception_gate.py --enforce
+python3 scripts/lint-gates/profile_eq.py --clippy-toml
+python3 scripts/lint-gates/completeness_check.py
+python3 scripts/lint-gates/facade_gate.py --enforce
+python3 scripts/lint-gates/prose_gate.py --enforce
+python3 scripts/lint-gates/feature_closures.py check-ci .github/workflows/ci.yml
+python3 scripts/lint-gates/fuzz_lint.py --enforce
+cargo deny check && cargo audit && cargo vet --locked && cargo machete && taplo fmt --check
+cargo package --locked
+```
 
-The Active Directory integration tests mirror gokrb5's `TESTAD=1` cases and
-default to the gokrb5 lab addresses `192.168.88.100:88` and
-`192.168.88.101:88`. Use `TEST_AD_USER_KDC_ADDR` and
-`TEST_AD_RESOURCE_KDC_ADDR` to point them at another AD test environment.
+Run the Python gates with `PYTHONDONTWRITEBYTECODE=1`. The Docker MIT KDC
+integration tests and the Active Directory tests are not part of CI; run them
+locally with [`scripts/run-gated-integration.sh`](scripts/run-gated-integration.sh)
+as [`docs/gated-integration.md`](docs/gated-integration.md) describes.
 
-## Distribution Direction
+## Releases
 
-Source, CI, issues, and releases live on GitHub. Public Rust distribution uses
-crates.io. The concrete release gate and checklist are documented in
-[`docs/publishing.md`](docs/publishing.md), with preview-specific API notes in
-[`docs/release-notes.md`](docs/release-notes.md).
+Releases are cut by tagging a CI-green commit on `main`; the tag-gated
+`Release` workflow publishes it after the owner approves.
+[`docs/RELEASING.md`](docs/RELEASING.md) has the steps,
+[`CHANGELOG.md`](CHANGELOG.md) the changes.
+
+## License
+
+Apache-2.0, like `rskrb5`. See [`LICENSE`](LICENSE), [`NOTICE`](NOTICE) and
+[`PROVENANCE.md`](PROVENANCE.md).

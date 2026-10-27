@@ -1,11 +1,11 @@
-//! Pure-Rust Kerberos v5 client/service library.
+//! Pure-Rust Kerberos 5 client and service library with HTTP Negotiate.
 //!
-//! The published `0.1` line exposed a narrow, client-oriented preview surface.
-//! The next pre-`1.0` previews may break Rust APIs while keeping Kerberos wire
-//! formats, cryptographic behavior, and fixture parity compatibility-sensitive.
-//! The supported surface is centered on Kerberos password or keytab login,
-//! FILE/WRFILE/DIR credential-cache loading, password-change flows, and HTTP
-//! Negotiate/SPNEGO header generation and retry wrappers.
+//! `rskrb5-ng` continues `rskrb5` independently. The API can still change
+//! before 1.0; Kerberos wire formats, cryptographic behavior and the gokrb5
+//! fixture parity are treated as compatibility-sensitive. The supported
+//! surface is centered on Kerberos password or keytab login, FILE/WRFILE/DIR
+//! credential-cache loading, password-change flows, service-side AP-REQ
+//! validation, and HTTP Negotiate/SPNEGO header generation and retry wrappers.
 //!
 //! ```ignore
 //! let config = rskrb5_ng::Config::load_default()?;
@@ -52,6 +52,12 @@ extern crate alloc;
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct MigrationGuideDoctests;
+
+#[cfg(all(doctest, feature = "tokio", feature = "spnego"))]
+#[doc = include_str!("../README.md")]
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct ReadmeDoctests;
 
 use core::result;
 

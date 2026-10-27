@@ -4,22 +4,27 @@ version = "0.3.0"
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
-description = "Pure-Rust Kerberos 5 client and service library (independent continuation of rskrb5)"
+description = "Pure-Rust Kerberos 5 client and service library: keytabs, credential caches, AS/TGS and kpasswd exchanges, PAC parsing and HTTP Negotiate (SPNEGO)"
 repository = "https://github.com/andrico21/rskrb5-ng"
 readme = "README.md"
 keywords = ["kerberos", "krb5", "spnego", "gssapi", "authentication"]
 categories = ["authentication", "cryptography", "network-programming"]
 exclude = [
   ".github/",
-  "docs/fix-plans/",
-  "docs/scratch-log.md",
-  "fuzz/",
   ".cargo/",
-  "scripts/lint-gates/",
-  "RUST_GUIDELINES.md",
-  "docs/rust-guidelines/",
-  "supply-chain/",
   ".taplo.toml",
+  "fuzz/",
+  "scripts/",
+  "supply-chain/",
+  "RUST_GUIDELINES.md",
+  "prek.toml",
+  "docs/history/",
+  "docs/maintenance/",
+  "docs/review/",
+  "docs/rust-guidelines/",
+  "docs/RELEASING.md",
+  # Reads `.github/` and `scripts/`, which are not packaged.
+  "tests/gokrb5_parity_manifest.rs",
 ]
 
 [lib]
