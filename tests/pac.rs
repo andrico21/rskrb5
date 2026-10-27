@@ -5,6 +5,14 @@
 mod context;
 #[path = "support/pac_ad_win2k.rs"]
 mod pac_ad_win2k;
+#[path = "support/pac_authorization.rs"]
+mod pac_authorization;
+#[path = "support/pac_claim_limits.rs"]
+mod pac_claim_limits;
+#[path = "support/pac_credential_counts.rs"]
+mod pac_credential_counts;
+#[path = "support/pac_ntlm.rs"]
+mod pac_ntlm;
 #[path = "support/pac_trust.rs"]
 mod pac_trust;
 
@@ -649,6 +657,65 @@ mod tests {
 
     /// Pins that the PAC is found inside AD-IF-RELEVANT authorization data.
     #[test]
+    fn ndr_rejects_underdeclared_object_length() -> Result<(), TestError> {
+        // Given: a complete device object with its declared extent reduced to zero.
+        let mut bytes = device_info_bytes()?;
+        bytes.get_mut(8..12).context("object length")?.fill(0);
+        // When: parsing would otherwise consume fields outside that extent.
+        let error = DeviceInfo::parse(&bytes)
+            .err()
+            .context("underdeclared object rejected")?;
+        // Then: the private-header boundary is enforced.
+        assert!(matches!(
+            error,
+            PacError::InvalidNdrObjectLength {
+                object_len: 0,
+                remaining: _
+            }
+        ));
+        Ok(())
+    }
+
+    /// Pins first-seen SID order with duplicates in the initial user group source.
+    #[test]
+    fn sid_summary_deduplicates_initial_user_groups() -> Result<(), TestError> {
+        // Given: a valid user PAC with the first domain group repeated.
+        let mut pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?)
+            .context("PAC parses")?;
+        let info = pac
+            .kerb_validation_info
+            .as_mut()
+            .context("validation info")?;
+        let expected = info.group_membership_sids();
+        let first = *info.group_ids.first().context("first group")?;
+        info.group_ids.insert(0, first);
+        // When: summary SIDs are derived.
+        let actual = info.group_membership_sids();
+        // Then: duplicates do not alter the stable first-seen sequence.
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    /// Pins the same duplicate policy for initial device groups and later sources.
+    #[test]
+    fn sid_summary_deduplicates_initial_device_groups() -> Result<(), TestError> {
+        // Given: the existing device fixture with its first group repeated.
+        let mut info = DeviceInfo::parse(&device_info_bytes()?).context("device parses")?;
+        let expected = info.group_membership_sids();
+        let first = *info
+            .account_group_ids
+            .first()
+            .context("first device group")?;
+        info.account_group_ids.insert(0, first);
+        // When: summary SIDs are derived.
+        let actual = info.group_membership_sids();
+        // Then: initial and later sources use one duplicate policy.
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    /// Pins that the PAC is found inside AD-IF-RELEVANT authorization data.
+    #[test]
     fn extracts_pac_from_if_relevant_authorization_data() -> Result<(), TestError> {
         let pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?;
         let nested =
@@ -872,7 +939,7 @@ mod tests {
         let ntlm = NtlmSupplementalCredential::parse(&credential.credentials)
             .context("NTLM supplemental credential parses")?;
         assert_eq!(ntlm.version, 0);
-        assert_eq!(ntlm.flags, 0x0300_0000);
+        assert_eq!(ntlm.flags, 3);
         assert!(ntlm.has_lm_password());
         assert!(ntlm.has_nt_password());
         assert_eq!(ntlm.lm_password, Some([0x11; 16]));
@@ -917,6 +984,7 @@ mod tests {
         let credential = ntlm_supplemental_credential_bytes();
         let mut object = Vec::new();
         push_u32(&mut object, 1);
+        push_u32(&mut object, 1);
         push_rpc_unicode_string_descriptor(&mut object, "NTLM", 0x0002_0004)?;
         push_u32(
             &mut object,
@@ -925,13 +993,21 @@ mod tests {
         push_u32(&mut object, 0x0002_0008);
         push_deferred_rpc_unicode_string(&mut object, "NTLM")?;
         push_deferred_u8_array(&mut object, &credential)?;
-        ndr_wrapped(&object)
+        let mut bytes = ndr_wrapped(&object)?;
+        align_vec(&mut bytes, 8);
+        let object_len =
+            u32::try_from(bytes.len().saturating_sub(16)).context("padded object length")?;
+        bytes
+            .get_mut(8..12)
+            .context("private object length")?
+            .copy_from_slice(&object_len.to_le_bytes());
+        Ok(bytes)
     }
 
     fn ntlm_supplemental_credential_bytes() -> Vec<u8> {
         let mut bytes = Vec::new();
         push_u32(&mut bytes, 0);
-        push_u32(&mut bytes, 0x0300_0000);
+        push_u32(&mut bytes, 3);
         bytes.extend_from_slice(&[0x11; 16]);
         bytes.extend_from_slice(&[0x22; 16]);
         bytes
@@ -993,6 +1069,13 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 0x0002_0000);
         bytes.extend_from_slice(object);
+        align_vec(&mut bytes, 8);
+        let padded_len =
+            u32::try_from(bytes.len().saturating_sub(16)).context("padded NDR length")?;
+        bytes
+            .get_mut(8..12)
+            .context("NDR length field")?
+            .copy_from_slice(&padded_len.to_le_bytes());
         Ok(bytes)
     }
 

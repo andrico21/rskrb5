@@ -6,15 +6,22 @@
 
 use alloc::fmt;
 use core::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use compcol::{
     Algorithm, lznt1::Lznt1, vec::decompress_to_vec_capped, xpress::Xpress,
     xpress_huffman::XpressHuffman,
 };
+use zeroize::Zeroizing;
 
 use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
+#[cfg(feature = "messages")]
+mod authorization;
+mod credential_secrets;
 mod ndr;
 mod reader;
 
@@ -104,10 +111,10 @@ const NANOS_PER_WINDOWS_TICK: u64 = 100;
 /// Seconds from 1601-01-01 (the `FILETIME` epoch) to 1970-01-01 UTC.
 const WINDOWS_TO_UNIX_SECONDS: u64 = 11_644_473_600;
 
-/// NTLM supplemental credential LM OWF flag index.
-pub const NTLM_SUPPLEMENTAL_CRED_LMOWF: u32 = 31;
-/// NTLM supplemental credential NT OWF flag index.
-pub const NTLM_SUPPLEMENTAL_CRED_NTOWF: u32 = 30;
+/// NTLM supplemental credential LM OWF numeric mask.
+pub const NTLM_SUPPLEMENTAL_CRED_LMOWF: u32 = 1;
+/// NTLM supplemental credential NT OWF numeric mask.
+pub const NTLM_SUPPLEMENTAL_CRED_NTOWF: u32 = 2;
 
 /// Parsed PAC container and selected processed buffers.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -368,31 +375,24 @@ impl Pac {
 /// Extract and process the first `AD-WIN2K-PAC` entry from Kerberos
 /// authorization data.
 ///
+/// Traversal permits at most eight `AD-IF-RELEVANT` wrappers and charges every
+/// visited entry's payload against one inclusive 1 MiB budget. Nested payloads
+/// are charged again at each decoded level; siblings share the same budget.
+/// Admission occurs before DER decoding or PAC processing. The first PAC still
+/// ends the search; this helper does not validate authorization restrictions.
+///
 /// # Errors
 ///
 /// Returns [`Error::DerDecode`] when nested `AD-IF-RELEVANT` data does not decode, and the
-/// errors of [`Pac::parse_and_process`] for the first PAC found.
+/// errors of [`Pac::parse_and_process`] for the first PAC found. Returns
+/// [`Error::AuthorizationDataDepthLimit`] or [`Error::AuthorizationDataByteLimit`]
+/// before exceeding the local traversal limits.
 #[cfg(feature = "messages")]
 #[inline]
 pub fn find_pac_in_authorization_data(
     authorization_data: &rasn_kerberos::AuthorizationData,
 ) -> Result<Option<Pac>, Error> {
-    use rasn::der;
-
-    for entry in authorization_data {
-        match entry.r#type {
-            AD_WIN2K_PAC => return Ok(Some(Pac::parse_and_process(entry.data.as_ref())?)),
-            AD_IF_RELEVANT => {
-                let nested = der::decode::<rasn_kerberos::AuthorizationData>(entry.data.as_ref())
-                    .map_err(|error| Error::DerDecode(error.to_string()))?;
-                if let Some(pac) = find_pac_in_authorization_data(&nested)? {
-                    return Ok(Some(pac));
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(None)
+    authorization::find(authorization_data, 0, &mut 0x0010_0000)
 }
 
 /// PAC info buffer table entry.
@@ -713,11 +713,11 @@ impl CredentialsInfo {
         }
         let etype = KerberosEtype::from_etype_id(encryption_type)
             .ok_or(Error::UnsupportedEncryptionType(encryption_type))?;
-        let plaintext = etype.decrypt_message(
+        let plaintext = Zeroizing::new(etype.decrypt_message(
             &key.value,
             &self.encrypted_credential_data,
             PAC_CREDENTIALS_KEY_USAGE,
-        )?;
+        )?);
         CredentialData::parse(&plaintext)
     }
 }
@@ -746,7 +746,13 @@ impl CredentialData {
         let mut reader = Reader::new(bytes);
         read_ndr_wrapper(&mut reader, "CredentialData")?;
 
+        let max_count = read_ndr_u32(&mut reader)?;
         let credential_count = read_ndr_u32(&mut reader)?;
+        (max_count == credential_count).ok_or(Error::CountMismatch {
+            target: "CredentialData.Credentials",
+            expected: credential_count,
+            actual: max_count,
+        })?;
         let credentials = read_counted_supplemental_credentials(&mut reader, credential_count)?;
         ensure_zero_trailing(&mut reader, "CredentialData")?;
 
@@ -758,7 +764,7 @@ impl CredentialData {
 }
 
 /// Supplemental credential package entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct SecpkgSupplementalCredential {
     /// Supplemental credential package name.
@@ -766,11 +772,11 @@ pub struct SecpkgSupplementalCredential {
     /// Credential byte length.
     pub credential_size: u32,
     /// Package-specific credential bytes.
-    pub credentials: Vec<u8>,
+    pub credentials: Zeroizing<Vec<u8>>,
 }
 
 /// NTLM supplemental credential data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NtlmSupplementalCredential {
     /// NTLM supplemental credential version. The Microsoft format requires zero.
@@ -798,16 +804,14 @@ impl NtlmSupplementalCredential {
             return Err(Error::InvalidNtlmSupplementalCredentialVersion(version));
         }
         let flags = reader.read_u32()?;
-        let lm_password = if ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF) {
-            Some(reader.read_array()?)
-        } else {
-            None
-        };
-        let nt_password = if ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF) {
-            Some(reader.read_array()?)
-        } else {
-            None
-        };
+        (flags & (NTLM_SUPPLEMENTAL_CRED_LMOWF | NTLM_SUPPLEMENTAL_CRED_NTOWF) != 0)
+            .ok_or(Error::MissingNtlmValidityFlag)?;
+        let lm_slot = Zeroizing::new(reader.read_array()?);
+        let nt_slot = Zeroizing::new(reader.read_array()?);
+        let lm_password =
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF).then_some(*lm_slot);
+        let nt_password =
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF).then_some(*nt_slot);
 
         Ok(Self {
             version,
@@ -974,21 +978,25 @@ impl DeviceInfo {
     #[inline]
     pub fn group_membership_sids(&self) -> Vec<String> {
         let mut sids = Vec::new();
+        let mut seen = HashSet::new();
         if let Some(account_domain_sid) = &self.account_domain_id {
             for group in &self.account_group_ids {
-                sids.push(format!("{account_domain_sid}-{}", group.relative_id));
+                let sid = format!("{account_domain_sid}-{}", group.relative_id);
+                if seen.insert(sid.clone()) {
+                    sids.push(sid);
+                }
             }
         }
         for extra_sid in &self.extra_sids {
             let sid = extra_sid.sid.to_string();
-            if !sids.iter().any(|existing| existing == &sid) {
+            if seen.insert(sid.clone()) {
                 sids.push(sid);
             }
         }
         for domain_group in &self.domain_group {
             for group in &domain_group.group_ids {
                 let sid = format!("{}-{}", domain_group.domain_id, group.relative_id);
-                if !sids.iter().any(|existing| existing == &sid) {
+                if seen.insert(sid.clone()) {
                     sids.push(sid);
                 }
             }
@@ -1104,6 +1112,10 @@ impl ClaimsSetMetadata {
 
     /// Decode the nested claims set bytes, decompressing when required.
     ///
+    /// Output is limited to 1 MiB independently of producer metadata, including
+    /// uncompressed copies. PAC processing handles at most one client and one
+    /// device claims buffer, so their combined decoded output is at most 2 MiB.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::UnsupportedClaimsCompressionFormat`] for an unknown format,
@@ -1112,6 +1124,9 @@ impl ClaimsSetMetadata {
     /// when the output size differs from `uncompressed_claims_set_size`.
     #[inline]
     pub fn decoded_claims_set_bytes(&self) -> Result<Vec<u8>, Error> {
+        (self.uncompressed_claims_set_size <= 0x0010_0000
+            && self.claims_set_bytes.len() <= 0x0010_0000)
+            .ok_or(Error::ClaimsOutputLimit)?;
         match self.compression_format {
             CLAIMS_COMPRESSION_FORMAT_NONE => Ok(self.claims_set_bytes.clone()),
             CLAIMS_COMPRESSION_FORMAT_LZNT1 => decompress_claims_set_bytes::<Lznt1>(
@@ -1659,21 +1674,25 @@ impl KerbValidationInfo {
     #[inline]
     pub fn group_membership_sids(&self) -> Vec<String> {
         let mut sids = Vec::new();
+        let mut seen = HashSet::new();
         if let Some(domain_sid) = &self.logon_domain_id {
             for group in &self.group_ids {
-                sids.push(format!("{domain_sid}-{}", group.relative_id));
+                let sid = format!("{domain_sid}-{}", group.relative_id);
+                if seen.insert(sid.clone()) {
+                    sids.push(sid);
+                }
             }
         }
         for extra_sid in &self.extra_sids {
             let sid = extra_sid.sid.to_string();
-            if !sids.iter().any(|existing| existing == &sid) {
+            if seen.insert(sid.clone()) {
                 sids.push(sid);
             }
         }
         if let Some(resource_domain_sid) = &self.resource_group_domain_sid {
             for group in &self.resource_group_ids {
                 let sid = format!("{resource_domain_sid}-{}", group.relative_id);
-                if !sids.iter().any(|existing| existing == &sid) {
+                if seen.insert(sid.clone()) {
                     sids.push(sid);
                 }
             }
@@ -1761,17 +1780,9 @@ fn kerberos_etype_for_checksum_type(signature_type: u32) -> Option<KerberosEtype
     KerberosEtype::from_checksum_type_id(signature_type.try_into().ok()?)
 }
 
-/// Whether MS-PAC flag number `flag` is set in an NTLM supplemental
-/// credential `Flags` value; out-of-range flag numbers are never set.
+/// Whether the numeric NTLM validity mask is set; reserved bits are ignored.
 const fn ntlm_supplemental_flag_set(flags: u32, flag: u32) -> bool {
-    // MS-PAC numbers flag bits from the most significant bit of each byte of
-    // the little-endian `Flags` field, so flag 31 is bit 0 of byte 3.
-    let byte_index = flag.div_euclid(8);
-    let bit_from_msb = flag.rem_euclid(8);
-    let position = byte_index
-        .saturating_mul(8)
-        .saturating_add(7_u32.saturating_sub(bit_from_msb));
-    matches!(flags.checked_shr(position), Some(shifted) if (shifted & 1) != 0)
+    flags & flag != 0
 }
 
 /// Returns `bytes[offset..offset + len]` of the named `target`.

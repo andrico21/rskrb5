@@ -6,6 +6,16 @@ use super::{
     RpcUnicodeString, SecpkgSupplementalCredential, Sid, SidAndAttributes, reader::Reader,
 };
 
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "ndr_tests.rs"]
+mod tests;
+
 /// Upper bound on any NDR conformant count, to stop hostile buffers from
 /// requesting huge allocations.
 const MAX_REASONABLE_NDR_COUNT: u32 = 1_000_000;
@@ -88,11 +98,10 @@ pub(super) fn read_ndr_wrapper(reader: &mut Reader<'_>, target: &'static str) ->
         });
     }
 
-    let integer_endian = reader.read_u8()?;
-    let character_set = reader.read_u8()?;
-    let floating_point = reader.read_u8()?;
-    let reserved = reader.read_u8()?;
-    if integer_endian != 1 || character_set != 0x10 || floating_point != 0x08 || reserved != 0 {
+    let version = reader.read_u8()?;
+    let endianness = reader.read_u8()?;
+    let common_header_length = reader.read_u16()?;
+    if version != 1 || endianness != 0x10 || common_header_length != 8 {
         return Err(Error::InvalidNdrHeader);
     }
 
@@ -100,7 +109,7 @@ pub(super) fn read_ndr_wrapper(reader: &mut Reader<'_>, target: &'static str) ->
     let raw_object_len = reader.read_u32()?;
     let _reserved = reader.read_u32()?;
     let object_len = ndr_len(raw_object_len)?;
-    if object_len > reader.len().saturating_sub(16) {
+    if object_len != reader.len().saturating_sub(16) || !object_len.is_multiple_of(8) {
         return Err(Error::InvalidNdrObjectLength {
             object_len,
             remaining: reader.len().saturating_sub(16),
@@ -212,7 +221,17 @@ pub(super) fn read_counted_supplemental_credentials(
     }
 
     let len = ndr_len(count)?;
-    let mut descriptors = Vec::with_capacity(len);
+    let descriptor_bytes = len.checked_mul(16).ok_or(Error::LengthOverflow)?;
+    (count <= MAX_REASONABLE_NDR_COUNT && descriptor_bytes <= reader.remaining()).ok_or(
+        Error::UnreasonableNdrCount {
+            target: "SECPKGSupplementalCred",
+            count,
+        },
+    )?;
+    let mut descriptors = Vec::new();
+    descriptors
+        .try_reserve_exact(len)
+        .map_err(|_allocation| Error::CredentialAllocation)?;
     for _ in 0..count {
         descriptors.push((
             RpcUnicodeStringDescriptor::read(reader)?,
@@ -221,7 +240,10 @@ pub(super) fn read_counted_supplemental_credentials(
         ));
     }
 
-    let mut supplemental_credentials = Vec::with_capacity(len);
+    let mut supplemental_credentials = Vec::new();
+    supplemental_credentials
+        .try_reserve_exact(len)
+        .map_err(|_allocation| Error::CredentialAllocation)?;
     for (package_name_descriptor, credential_size, credentials_ref) in descriptors {
         let package_name = read_deferred_unicode_string(
             reader,
@@ -237,7 +259,7 @@ pub(super) fn read_counted_supplemental_credentials(
         supplemental_credentials.push(SecpkgSupplementalCredential {
             package_name,
             credential_size,
-            credentials: credential_bytes,
+            credentials: credential_bytes.into(),
         });
     }
     Ok(supplemental_credentials)
@@ -517,7 +539,7 @@ fn read_deferred_u64_array(
     Ok(values)
 }
 
-/// Reads a deferred conformant array of boolean claim values (one byte each).
+/// Reads Boolean claim values as aligned ULONG64 zero/one values (MS-ADTS).
 ///
 /// # Errors
 ///
@@ -549,9 +571,14 @@ fn read_deferred_bool_array(
     let len = ndr_len(count)?;
     let mut values = Vec::with_capacity(len);
     for _ in 0..count {
-        values.push(reader.read_u8()? != 0);
+        let value = read_ndr_u64(reader)?;
+        let boolean = match value {
+            0 => false,
+            1 => true,
+            _ => return Err(Error::InvalidBooleanClaim(value)),
+        };
+        values.push(boolean);
     }
-    reader.align(4)?;
     Ok(values)
 }
 

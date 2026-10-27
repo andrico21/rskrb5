@@ -1552,6 +1552,9 @@ pub enum Pac {
     /// A claims compression format is not supported.
     #[error("unsupported PAC claims compression format: {0}")]
     UnsupportedClaimsCompressionFormat(u16),
+    /// Claims decoding would exceed the independent 1 MiB output ceiling.
+    #[error("PAC claims output exceeds the 1 MiB limit")]
+    ClaimsOutputLimit,
     /// PAC claims decompression failed.
     #[error("PAC claims decompression failed for format {compression_format}: {message}")]
     ClaimsDecompression {
@@ -1575,6 +1578,9 @@ pub enum Pac {
     /// A claims value type is not supported.
     #[error("unsupported PAC claim type: {0}")]
     UnsupportedClaimType(u16),
+    /// A Boolean ULONG64 claim was neither zero nor one.
+    #[error("invalid Boolean claim value: {0}")]
+    InvalidBooleanClaim(u64),
     /// A claim union discriminant did not match the entry type.
     #[error("invalid PAC claim union tag: claim type {claim_type}, union tag {union_tag}")]
     InvalidClaimUnionTag {
@@ -1600,6 +1606,12 @@ pub enum Pac {
     /// NTLM supplemental credential version was not zero.
     #[error("invalid NTLM supplemental credential version: {0}")]
     InvalidNtlmSupplementalCredentialVersion(u32),
+    /// Neither LM nor NT hash has a validity flag (MS-PAC 2.6.4).
+    #[error("NTLM supplemental credential has no hash validity flag")]
+    MissingNtlmValidityFlag,
+    /// Validated supplemental credential storage could not be reserved.
+    #[error("PAC supplemental credential allocation failed")]
+    CredentialAllocation,
     /// The PAC server checksum did not verify.
     #[error("PAC service checksum verification failed")]
     ServerChecksumVerificationFailed,
@@ -1607,6 +1619,14 @@ pub enum Pac {
     #[cfg(feature = "messages")]
     #[error("PAC authorization-data DER decode failed: {0}")]
     DerDecode(String),
+    /// PAC lookup would decode more than eight nested authorization wrappers.
+    #[cfg(feature = "messages")]
+    #[error("PAC authorization-data depth exceeds eight wrappers")]
+    AuthorizationDataDepthLimit,
+    /// PAC lookup would visit more than 1 MiB of cumulative payload bytes.
+    #[cfg(feature = "messages")]
+    #[error("PAC authorization-data byte budget exceeds 1 MiB")]
+    AuthorizationDataByteLimit,
     /// The NDR wrapper was not little-endian NDR64-compatible data.
     #[error("invalid NDR header")]
     InvalidNdrHeader,

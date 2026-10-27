@@ -5,6 +5,56 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Decrypted PAC credential ownership
+
+`SecpkgSupplementalCredential::credentials` is now `Zeroizing<Vec<u8>>`.
+Borrow it as a slice for intentional access; avoid extracting a nonzeroizing copy.
+Decryption scratch is zeroizing even on parse errors. NTLM credentials erase
+their owned optional hashes on Drop and redact Debug, as do package entries.
+Their array field types are unchanged, but moving fields out of a Drop type is
+restricted; borrow them instead. Copies deliberately made by callers, borrowed
+parser inputs, dependency-internal state and compiler/register copies are outside
+this guarantee. Abort does not run Drop.
+
+### Boolean claim values
+
+Boolean claim arrays are decoded as aligned ULONG64 values, not bytes.
+Values other than zero or one return `error::Pac::InvalidBooleanClaim`.
+
+### NTLM supplemental validity masks
+
+`NTLM_SUPPLEMENTAL_CRED_LMOWF` and `NTLM_SUPPLEMENTAL_CRED_NTOWF` now hold
+numeric masks 1 and 2, not the erroneous indices 31 and 30. Test these masks
+directly against the decoded flags. Reserved bits are ignored when receiving
+credentials; records with neither validity bit return
+`error::Pac::MissingNtlmValidityFlag` as required by MS-PAC 2.6.4.
+
+### Bounded supplemental credential allocation
+
+Credential data rejects counts above 1,000,000 or whose 16-byte fixed
+descriptors cannot fit the remaining input, before reserving either vector.
+Allocation failures after admission return `error::Pac::CredentialAllocation`.
+Zero credentials remain valid; no public signatures change.
+
+### Bounded claims output
+
+`ClaimsSetMetadata::decoded_claims_set_bytes` rejects declared output lengths
+or stored payloads above 1 MiB with `error::Pac::ClaimsOutputLimit` before
+framing, decompression or copying. The cap applies to mutable metadata and to
+uncompressed claims too. At most one client and one device claims buffer are
+processed, bounding total decoded claims output to 2 MiB per PAC. Existing
+decompressed-size correlation remains unchanged; no output is clamped.
+
+### Bounded public PAC lookup
+
+`pac::find_pac_in_authorization_data` now rejects more than eight nested
+AD-IF-RELEVANT wrappers with `Pac::AuthorizationDataDepthLimit` and more than
+1 MiB of cumulative visited entry payloads with `Pac::AuthorizationDataByteLimit`
+(both in `error::Pac`). The inclusive byte budget is shared across siblings and
+counts nested payloads again at each decoded level, before decoding or PAC
+processing. Its signature and first-PAC behavior are unchanged. Service acceptance
+already imposed these limits independently while validating all restrictions.
+
 ### HTTP replay-cache scope and binding limits
 
 Layer clones already share replay state. Independently constructed
