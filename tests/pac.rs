@@ -657,6 +657,27 @@ mod tests {
 
     /// Pins that the PAC is found inside AD-IF-RELEVANT authorization data.
     #[test]
+    fn ndr_rejects_underdeclared_object_length() -> Result<(), TestError> {
+        // Given: a complete device object with its declared extent reduced to zero.
+        let mut bytes = device_info_bytes()?;
+        bytes.get_mut(8..12).context("object length")?.fill(0);
+        // When: parsing would otherwise consume fields outside that extent.
+        let error = DeviceInfo::parse(&bytes)
+            .err()
+            .context("underdeclared object rejected")?;
+        // Then: the private-header boundary is enforced.
+        assert!(matches!(
+            error,
+            PacError::InvalidNdrObjectLength {
+                object_len: 0,
+                remaining: _
+            }
+        ));
+        Ok(())
+    }
+
+    /// Pins that the PAC is found inside AD-IF-RELEVANT authorization data.
+    #[test]
     fn extracts_pac_from_if_relevant_authorization_data() -> Result<(), TestError> {
         let pac_bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?;
         let nested =
@@ -1010,6 +1031,13 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 0x0002_0000);
         bytes.extend_from_slice(object);
+        align_vec(&mut bytes, 8);
+        let padded_len =
+            u32::try_from(bytes.len().saturating_sub(16)).context("padded NDR length")?;
+        bytes
+            .get_mut(8..12)
+            .context("NDR length field")?
+            .copy_from_slice(&padded_len.to_le_bytes());
         Ok(bytes)
     }
 

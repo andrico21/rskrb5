@@ -15,6 +15,8 @@ Full commands, red runs and scratch failure QA are recorded in
 
 ## Traversal policy and trust boundary
 
+| RSK-6A286805 | fixed | `ndr_rejects_underdeclared_object_length`; all existing NDR fixtures; commit suffix for this item | Serialized PAC NDR object length must equal the complete supplied object extent and include eight-byte serialization padding. No fields can be consumed beyond the declared extent. Common-header field names now match type serialization version 1. | N/A |
+
 | RSK-5E15962F | fixed | `ntlm_debug_redacts_hash_material`; commit suffix for this item | Decrypted scratch and package bytes have Zeroizing owners; NTLM hash slots have Drop erasure and redacted diagnostics. Credential container Debug delegates only to redacted package entries. | N/A |
 
 | RSK-8E17F182 | fixed | `boolean_claims_decode_aligned_u64_values`, `boolean_claims_reject_non_binary_u64`; commit suffix for this item | Boolean claims consume eight-byte-aligned ULONG64 values and reject values other than 0/1 with `Pac::InvalidBooleanClaim` (MS-ADTS CLAIM_ENTRY/CLAIM_TYPE). | N/A |

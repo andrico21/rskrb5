@@ -98,11 +98,10 @@ pub(super) fn read_ndr_wrapper(reader: &mut Reader<'_>, target: &'static str) ->
         });
     }
 
-    let integer_endian = reader.read_u8()?;
-    let character_set = reader.read_u8()?;
-    let floating_point = reader.read_u8()?;
-    let reserved = reader.read_u8()?;
-    if integer_endian != 1 || character_set != 0x10 || floating_point != 0x08 || reserved != 0 {
+    let version = reader.read_u8()?;
+    let endianness = reader.read_u8()?;
+    let common_header_length = reader.read_u16()?;
+    if version != 1 || endianness != 0x10 || common_header_length != 8 {
         return Err(Error::InvalidNdrHeader);
     }
 
@@ -110,7 +109,7 @@ pub(super) fn read_ndr_wrapper(reader: &mut Reader<'_>, target: &'static str) ->
     let raw_object_len = reader.read_u32()?;
     let _reserved = reader.read_u32()?;
     let object_len = ndr_len(raw_object_len)?;
-    if object_len > reader.len().saturating_sub(16) {
+    if object_len != reader.len().saturating_sub(16) || !object_len.is_multiple_of(8) {
         return Err(Error::InvalidNdrObjectLength {
             object_len,
             remaining: reader.len().saturating_sub(16),
