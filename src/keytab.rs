@@ -296,7 +296,7 @@ impl Keytab {
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a component count, string or key
-    /// length, or encryption type does not fit a `u16`, or an entry does not
+    /// length, or encryption type exceeds `i16::MAX`, or an entry does not
     /// fit an `i32` length.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
@@ -674,7 +674,7 @@ impl Principal {
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when the component count or a string
-    /// length does not fit a `u16`.
+    /// length exceeds `i16::MAX`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
         let component_count = if version == 1 {
             self.components
@@ -958,7 +958,7 @@ fn write_u32(out: &mut Vec<u8>, value: u32, endian: Endian) {
 ///
 /// # Errors
 ///
-/// Returns [`Error::LengthOverflow`] when `value` does not fit a `u16`.
+/// Returns [`Error::LengthOverflow`] when `value` exceeds `i16::MAX`.
 fn write_u16_checked<T>(out: &mut Vec<u8>, value: T, endian: Endian) -> Result<(), Error>
 where
     T: TryInto<u16>,
@@ -966,6 +966,9 @@ where
     let narrowed: u16 = value
         .try_into()
         .map_err(|_out_of_range| Error::LengthOverflow)?;
+    if narrowed > 0x7fff {
+        return Err(Error::LengthOverflow);
+    }
     out.extend_from_slice(&match endian {
         Endian::Big => narrowed.to_be_bytes(),
         Endian::Little => narrowed.to_le_bytes(),
@@ -977,7 +980,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`Error::LengthOverflow`] when the length does not fit a `u16`.
+/// Returns [`Error::LengthOverflow`] when the length exceeds `i16::MAX`.
 fn write_counted_string(out: &mut Vec<u8>, value: &str, endian: Endian) -> Result<(), Error> {
     write_u16_checked(out, value.len(), endian)?;
     out.extend_from_slice(value.as_bytes());

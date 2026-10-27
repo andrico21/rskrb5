@@ -24,6 +24,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use proptest::{collection, prelude::any, prop_assert_eq, proptest};
     use rskrb5_ng::{
         error::Keytab as Error,
         keytab::{EncryptionKey, Entry, Keytab, Name, Principal},
@@ -460,6 +461,108 @@ mod tests {
             .context("newest matching key exists")?;
         assert_eq!(kvno, 2);
         Ok(())
+    }
+
+    /// Serializer bounds match the signed fields accepted by the parser.
+    #[test]
+    fn serializer_rejects_unparseable_field_boundaries() -> Result<(), TestError> {
+        // Given entries with one field beyond the parser's signed range.
+        let fixture = Keytab::parse(&hex::decode(KTUTIL_USER_KEYTAB)?)?;
+        for field in 0_u8..5 {
+            let mut entry = fixture.entries().first().context("fixture entry")?.clone();
+            match field {
+                0 => entry.principal.realm = "r".repeat(0x8000),
+                1 => entry.principal.components = vec!["c".repeat(0x8000)],
+                2 => entry.principal.components = vec![String::new(); 0x8000],
+                3 => entry.key.value = vec![0; 0x8000],
+                _ => entry.key.etype = 0x8000_i32,
+            }
+            let mut keytab = Keytab::new();
+            keytab.entries_mut().push(entry);
+
+            // When serializing an entry the parser cannot represent.
+            let result = keytab.to_bytes();
+
+            // Then reject rather than emit bytes that fail or change on parsing.
+            assert!(
+                matches!(result, Err(Error::LengthOverflow)),
+                "field {field}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Signed length boundaries remain representable and round-trip exactly.
+    #[test]
+    fn serializer_accepts_largest_parseable_fields() -> Result<(), TestError> {
+        // Given the largest accepted lengths, count and encryption type.
+        let mut entry = synthetic_entry("user", 1, i32::from(i16::MAX), 100);
+        entry.principal.realm = "r".repeat(0x7fff);
+        entry.principal.components = vec![String::new(); 0x7fff];
+        *entry
+            .principal
+            .components
+            .first_mut()
+            .context("first component")? = "c".repeat(0x7fff);
+        entry.key.value = vec![7; 0x7fff];
+        let mut keytab = Keytab::new();
+        keytab.entries_mut().push(entry);
+
+        // When serializing and parsing boundary fields.
+        let parsed = Keytab::parse(&keytab.to_bytes()?)?;
+
+        // Then all accepted values survive unchanged.
+        assert_eq!(parsed, keytab);
+        Ok(())
+    }
+
+    /// Version one includes the realm in its checked component count.
+    #[test]
+    fn serializer_checks_version_one_realm_count() -> Result<(), TestError> {
+        // Given a version-one keytab with the largest admissible component count.
+        let mut keytab = Keytab::parse(&[5, 1])?;
+        let mut entry = synthetic_entry("user", 1, 18, 100);
+        entry.principal.name_type = 0_i32;
+        entry.principal.components = vec![String::new(); 0x7ffe];
+        keytab.entries_mut().push(entry);
+        assert_eq!(Keytab::parse(&keytab.to_bytes()?)?, keytab);
+        keytab
+            .entries_mut()
+            .first_mut()
+            .context("entry")?
+            .principal
+            .components
+            .push(String::new());
+
+        // When the realm-inclusive count would exceed the accepted range.
+        let result = keytab.to_bytes();
+
+        // Then serialization rejects the otherwise representable entry.
+        assert!(matches!(result, Err(Error::LengthOverflow)));
+        Ok(())
+    }
+
+    proptest! {
+        /// Every admitted synthetic keytab survives serialization and parsing.
+        #[test]
+        fn serialized_keytab_roundtrips(
+            realm in "[a-zA-Z.]{0,40}",
+            components in collection::vec("[a-zA-Z/]{0,40}", 0..8),
+            key in collection::vec(any::<u8>(), 0..128),
+            etype in 0_i32..=i32::from(i16::MAX),
+            timestamp in any::<u32>(),
+            kvno in 1_u32..=u32::MAX,
+            name_type in any::<i32>(),
+        ) {
+            let [.., kvno8] = kvno.to_be_bytes();
+            let mut keytab = Keytab::new();
+            keytab.entries_mut().push(Entry::new(
+                Principal::new(realm, name_type, components),
+                timestamp, kvno8, EncryptionKey::new(etype, key), kvno,
+            ));
+            let parsed = Keytab::parse(&keytab.to_bytes()?)?;
+            prop_assert_eq!(parsed, keytab);
+        }
     }
 
     /// Pins that empty, misversioned and truncated keytabs are rejected.

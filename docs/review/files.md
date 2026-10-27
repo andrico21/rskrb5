@@ -8,9 +8,10 @@ complete. Full commands, red runs and exit codes are recorded in
 | --- | --- | --- | --- | --- |
 | RSK-7F30E854 | fixed | `upsert_replaces_principal_identity_despite_name_type`, `upsert_preserves_distinct_principal_identities`; commit suffix `(RSK-7F30E854)` | Ccache upsert replaces records with the same client/server realms and components despite differing name-type hints (RFC 4120 §6.2); new hints are preserved. Structural principal equality and component-only lookup remain unchanged. | N/A |
 | RSK-01B7A90E | fixed | `serde_rejects_unsupported_ccache_versions`, `serde_supported_ccache_versions_roundtrip`; commit suffix `(RSK-01B7A90E)` | Serde decoding rejects ccache versions outside 1–4 using the binary parser's version admission rule; serialization also validates before emitting output. The serde field shape remains unchanged. | N/A |
+| RSK-98FEE876 | fixed | `serializer_rejects_unparseable_field_boundaries`, `serializer_accepts_largest_parseable_fields`, `serialized_keytab_roundtrips`; commit suffix `(RSK-98FEE876)` | Keytab serialization rejects component counts, strings, keys and encryption types above the parser's signed 16-bit range instead of emitting unparseable or sign-changed records. A version-one realm-inclusive component count uses the same checked bound. | N/A |
 
 ## Remaining work
 
 Private file creation, final-component symlink rejection, process identity
-tokens, keytab serialization bounds and
+tokens and
 secret scratch ownership remain under review.
