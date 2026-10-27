@@ -15,6 +15,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(feature = "serde")]
+use serde::de::Error as _;
+
 use crate::file_name;
 
 /// First byte of every MIT credential cache file.
@@ -118,6 +121,7 @@ impl FromStr for CacheName {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct CCache {
     /// File format version, 1 to 4.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_version"))]
     version: u8,
     /// Version 4 header; empty for older versions.
     header: Header,
@@ -151,7 +155,7 @@ impl CCache {
     where
         P: AsRef<Path>,
     {
-        let bytes = fs::read(path.as_ref())?;
+        let bytes = file_name::SecretBytes::new(fs::read(path.as_ref())?);
         Self::parse(&bytes)
     }
 
@@ -191,6 +195,9 @@ impl CCache {
 
     /// Save this credential cache to a file.
     ///
+    /// Unix creation uses owner-only mode 0600 and existing owner rights are
+    /// never widened. On Windows, supply a directory with an owner-only ACL.
+    ///
     /// # Errors
     ///
     /// Returns any error of [`CCache::to_bytes`], and [`Error::Io`] when the
@@ -200,7 +207,8 @@ impl CCache {
     where
         P: AsRef<Path>,
     {
-        fs::write(path.as_ref(), self.to_bytes()?)?;
+        let bytes = file_name::SecretBytes::new(self.to_bytes()?);
+        file_name::write_private(path.as_ref(), &bytes)?;
         Ok(())
     }
 
@@ -257,6 +265,8 @@ impl CCache {
 
     /// Parse credential cache bytes.
     ///
+    /// The borrowed input remains the caller's erasure responsibility.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::TooShort`] for input shorter than two bytes,
@@ -277,9 +287,7 @@ impl CCache {
             return Err(Error::InvalidFirstByte(first_byte));
         }
 
-        if !(1..=4).contains(&version) {
-            return Err(Error::InvalidVersion(version));
-        }
+        validate_version(version)?;
 
         let endian = Endian::for_version(version);
         let mut offset = 2_usize;
@@ -305,15 +313,19 @@ impl CCache {
 
     /// Serialize the credential cache to bytes.
     ///
+    /// Successful raw output is caller-owned secret material; erase it after use.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a length, count or encryption
-    /// type does not fit its on-disk field, and [`Error::InvalidHeaderField`]
+    /// type does not fit its on-disk field, [`Error::InvalidVersion`] for an
+    /// unsupported version, and [`Error::InvalidHeaderField`]
     /// when a KDC offset header field is not eight bytes long.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        validate_version(self.version)?;
         let endian = Endian::for_version(self.version);
-        let mut out = vec![CCACHE_FIRST_BYTE, self.version];
+        let mut out = file_name::SecretBytes::new(vec![CCACHE_FIRST_BYTE, self.version]);
         if self.version == 4 {
             self.header.write_to(&mut out, endian)?;
         }
@@ -322,7 +334,7 @@ impl CCache {
         for credential in &self.credentials {
             credential.write_to(&mut out, self.version, endian)?;
         }
-        Ok(out)
+        Ok(out.into_vec())
     }
 
     #[must_use]
@@ -385,12 +397,15 @@ impl CCache {
         &mut self.credentials
     }
 
-    /// Insert a credential, replacing an existing credential for the same
-    /// exact client and server principals.
+    /// Insert a credential, replacing the same client and server identities.
+    ///
+    /// Realm and name components define identity; name-type hints do not
+    /// (RFC 4120 §6.2). Replacement preserves the new credential's hints.
     #[inline]
     pub fn upsert_credential(&mut self, credential: Credential) -> Option<Credential> {
         if let Some(existing) = self.credentials.iter_mut().find(|existing| {
-            existing.client == credential.client && existing.server == credential.server
+            same_principal_identity(&existing.client, &credential.client)
+                && same_principal_identity(&existing.server, &credential.server)
         }) {
             Some(mem::replace(existing, credential))
         } else {
@@ -506,6 +521,34 @@ impl CCache {
     }
 }
 
+/// Admit only the versions supported by both binary and serde entry points.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidVersion`] outside versions 1 through 4.
+fn validate_version(version: u8) -> Result<(), Error> {
+    if (1..=4).contains(&version) {
+        Ok(())
+    } else {
+        Err(Error::InvalidVersion(version))
+    }
+}
+
+/// Deserialize a version through the same admission rule as the binary parser.
+///
+/// # Errors
+///
+/// Returns the deserializer error for a non-byte or unsupported version.
+#[cfg(feature = "serde")]
+fn deserialize_version<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let version = <u8 as serde::Deserialize>::deserialize(deserializer)?;
+    validate_version(version).map_err(D::Error::custom)?;
+    Ok(version)
+}
+
 /// Whether two principals share realm and name components; the name type is
 /// not significant.
 fn same_principal_identity(left: &Principal, right: &Principal) -> bool {
@@ -524,12 +567,18 @@ fn direct_file_path_from_cache_name(name: &str) -> Result<PathBuf, Error> {
     if let Some(path) = dir_subsidiary_path(name) {
         return validate_dir_subsidiary_path(path);
     }
-    file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(|error| match error {
+    file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(file_name_error)
+}
+
+/// Map the shared filename boundary into the credential-cache error domain.
+fn file_name_error(error: file_name::Error) -> Error {
+    match error {
         file_name::Error::Empty => Error::InvalidCacheName,
+        file_name::Error::IdentityUnavailable => Error::IdentityUnavailable,
         file_name::Error::UnsupportedType { name_type } => Error::UnsupportedCacheType {
             cache_type: name_type,
         },
-    })
+    }
 }
 
 /// The path of a subsidiary `DIR::path` cache name, or `None` for any other
@@ -561,7 +610,7 @@ fn validate_dir_subsidiary_path(path: &str) -> Result<PathBuf, Error> {
     if path.is_empty() {
         return Err(Error::InvalidCacheName);
     }
-    let expanded = PathBuf::from(file_name::expand_path_tokens(path));
+    let expanded = PathBuf::from(file_name::expand_path_tokens(path).map_err(file_name_error)?);
     let has_parent = expanded
         .parent()
         .is_some_and(|parent| !parent.as_os_str().is_empty());
@@ -586,12 +635,14 @@ fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     if directory.is_empty() {
         return Err(Error::InvalidCacheName);
     }
-    let collection = PathBuf::from(file_name::expand_path_tokens(directory));
+    let collection =
+        PathBuf::from(file_name::expand_path_tokens(directory).map_err(file_name_error)?);
     let primary_path = collection.join(DIR_PRIMARY_FILE);
+    file_name::reject_symlink(&primary_path)?;
     let primary = match fs::read_to_string(&primary_path) {
         Ok(contents) => parse_dir_primary_name(&contents)?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::write(
+            file_name::create_primary(
                 &primary_path,
                 format!("{DIR_DEFAULT_PRIMARY_CACHE}\n").as_bytes(),
             )?;

@@ -29,6 +29,16 @@ Do not treat an unknown outcome as a failed mutation or blindly retry it.
 UDP response limits now reject oversized responses with the new
 `Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
 
+### Credential filename identity tokens
+
+`%{uid}` and `%{euid}` in keytab and credential-cache names now use the
+Linux process's real and effective UIDs from `/proc/self/status`, respectively.
+The `UID` environment variable is never read for expansion. Missing or malformed
+procfs identity data, and all non-Linux platforms including macOS and Windows,
+return the new `error::Ccache::IdentityUnavailable` or
+`error::Keytab::IdentityUnavailable` variant. Use explicitly resolved literal
+paths on those platforms; token-free names do not require procfs.
+
 ### Decrypted PAC credential ownership
 
 `SecpkgSupplementalCredential::credentials` is now `Zeroizing<Vec<u8>>`.

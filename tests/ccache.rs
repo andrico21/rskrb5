@@ -147,6 +147,85 @@ mod tests {
         Ok(())
     }
 
+    /// Cache saves create private files and never widen existing owner modes.
+    #[cfg(unix)]
+    #[test]
+    fn saves_cache_with_private_permissions() -> Result<(), TestError> {
+        use std::{
+            fs::{Permissions, metadata, set_permissions},
+            os::unix::fs::PermissionsExt as _,
+        };
+        // Given a fresh destination and preexisting broad/restrictive files.
+        let cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+        for mode in [None, Some(0o644), Some(0o400)] {
+            let path = temp_file("private-mode")?;
+            if let Some(bits) = mode {
+                write(&path, b"old content")?;
+                set_permissions(&path, Permissions::from_mode(bits))?;
+            }
+
+            // When saving secret-bearing credentials.
+            cache.save(&path)?;
+
+            // Then permissions are owner-only and existing rights never widen.
+            let actual = metadata(&path)?.permissions().mode() & 0o777;
+            remove_file(&path)?;
+            assert_eq!(actual, mode.unwrap_or(0o600) & 0o600);
+        }
+        Ok(())
+    }
+
+    /// Symlinked final destinations and dangling DIR primaries are rejected.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_cache_destinations_and_primary() -> Result<(), TestError> {
+        use std::{
+            fs::{read, remove_dir_all},
+            os::unix::fs::symlink,
+        };
+        // Given a private tree with a linked cache and dangling primary.
+        let directory = temp_file("symlink")?;
+        create_dir_all(&directory)?;
+        let target = directory.join("outside");
+        write(&target, b"unchanged")?;
+        let link = directory.join("tktLINK");
+        symlink(&target, &link)?;
+        symlink(directory.join("missing"), directory.join("primary"))?;
+        let cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+
+        // When saving through links or resolving a dangling primary.
+        let saved = cache.save(&link);
+        let resolved = CCache::file_path_from_cache_name(&format!("DIR:{}", directory.display()));
+
+        // Then neither operation accepts the symlink or touches its referent.
+        assert!(matches!(saved, Err(Error::Io(_))));
+        assert!(matches!(resolved, Err(Error::Io(_))));
+        assert_eq!(read(&target)?, b"unchanged");
+        assert!(!directory.join("missing").exists());
+        remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// Parent-directory links remain supported, including macOS temporary paths.
+    #[cfg(unix)]
+    #[test]
+    fn saves_cache_through_symlinked_parent() -> Result<(), TestError> {
+        use std::{fs::remove_dir_all, os::unix::fs::symlink};
+        // Given a linked parent directory and regular final destination.
+        let directory = temp_file("linked-parent")?;
+        create_dir_all(directory.join("actual"))?;
+        symlink(directory.join("actual"), directory.join("alias"))?;
+        let cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+
+        // When saving through the directory alias.
+        cache.save(directory.join("alias/tkt"))?;
+
+        // Then the real cache is readable from the actual parent.
+        assert_eq!(CCache::load(directory.join("actual/tkt"))?, cache);
+        remove_dir_all(directory)?;
+        Ok(())
+    }
+
     /// Pins that a ccache saved under the `KRB5CCNAME` file name loads back unchanged.
     #[test]
     fn saves_and_loads_ccache_from_env() -> Result<(), TestError> {
@@ -240,7 +319,29 @@ mod tests {
             PathBuf::from("C:\\temp\\krb5cc")
         );
 
-        let user_id = var("UID").unwrap_or_else(|_| "0".to_owned());
+        Ok(())
+    }
+
+    /// Linux identity expansion ignores an inherited path-like UID value.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn resolves_process_identity_tokens_without_uid_environment() -> Result<(), TestError> {
+        const TEST_PATH: &str = "tests::resolves_process_identity_tokens_without_uid_environment";
+        if !env::in_child(TEST_PATH) {
+            env::try_run_in_child(TEST_PATH, &[("UID", Some("../../wrong-user".as_ref()))])?;
+            return Ok(());
+        }
+        // Given real and effective identities independently reported by procfs.
+        let status = read_to_string("/proc/self/status")?;
+        let mut ids = status
+            .lines()
+            .find_map(|line| line.strip_prefix("Uid:"))
+            .context("kernel reports identities")?
+            .split_whitespace();
+        let user_id = ids.next().context("real identity")?;
+        let effective_id = ids.next().context("effective identity")?;
+
+        // When resolving every file-backed cache name form.
         assert_eq!(
             CCache::file_path_from_cache_name("FILE:/tmp/krb5cc_%{uid}")
                 .context("uid path token resolves")?,
@@ -249,7 +350,7 @@ mod tests {
         assert_eq!(
             CCache::file_path_from_cache_name("WRFILE:/tmp/krb5cc_%{euid}")
                 .context("euid path token resolves")?,
-            PathBuf::from(format!("/tmp/krb5cc_{user_id}"))
+            PathBuf::from(format!("/tmp/krb5cc_{effective_id}"))
         );
         assert_eq!(
             CCache::file_path_from_cache_name("DIR::relative/tkt_%{uid}")
@@ -257,6 +358,23 @@ mod tests {
             PathBuf::from(format!("relative/tkt_{user_id}"))
         );
         Ok(())
+    }
+
+    /// Unsupported platforms reject UID tokens instead of inventing an identity.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn identity_tokens_require_linux_procfs() {
+        for name in [
+            "FILE:cache_%{uid}",
+            "WRFILE:cache_%{euid}",
+            "DIR::collection/tkt_%{uid}",
+            "DIR:collection_%{euid}",
+        ] {
+            assert!(matches!(
+                CCache::file_path_from_cache_name(name),
+                Err(Error::IdentityUnavailable)
+            ));
+        }
     }
 
     /// Pins the file paths of typed cache names, and that a `DIR:` collection
@@ -639,6 +757,105 @@ mod tests {
                 .starts_with("X-CACHECONF"),
             "the config entry is kept"
         );
+        Ok(())
+    }
+
+    /// Name-type hints do not create a second credential for the same identity.
+    #[test]
+    fn upsert_replaces_principal_identity_despite_name_type() -> Result<(), TestError> {
+        // Given a cached service ticket and replacement hints for each principal.
+        for (client_type, server_type) in [(0_i32, 1_i32), (1_i32, 2_i32), (0_i32, 2_i32)] {
+            let mut cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+            let mut replacement = cache
+                .get_entry(&["HTTP", "host.test.gokrb5"])
+                .context("service ticket exists")?
+                .clone();
+            replacement.client.name_type = client_type;
+            replacement.server.name_type = server_type;
+            replacement.ticket = b"replacement ticket".to_vec();
+
+            // When upserting the replacement.
+            let previous = cache.upsert_credential(replacement.clone());
+
+            // Then lookup observes the new ticket, without a duplicate entry.
+            assert!(previous.is_some());
+            assert_eq!(cache.credentials().len(), 3);
+            assert_eq!(
+                cache.get_entry(&["HTTP", "host.test.gokrb5"]),
+                Some(&replacement)
+            );
+        }
+        Ok(())
+    }
+
+    /// Realms and component boundaries remain significant for replacement.
+    #[test]
+    fn upsert_preserves_distinct_principal_identities() -> Result<(), TestError> {
+        // Given credentials that differ in a client realm or server components.
+        let mut cache = CCache::parse(&hex::decode(CCACHE_TEST)?)?;
+        let original = cache
+            .get_entry(&["HTTP", "host.test.gokrb5"])
+            .context("service ticket exists")?
+            .clone();
+        let mut other_client = original.clone();
+        other_client.client.realm = "OTHER.REALM".to_owned();
+        let mut other_server = original;
+        other_server.server.components = vec!["HTTP/host.test.gokrb5".to_owned()];
+
+        // When inserting the distinct identities.
+        let replaced_client = cache.upsert_credential(other_client);
+        let replaced_server = cache.upsert_credential(other_server);
+
+        // Then neither replaces an existing record.
+        assert!(replaced_client.is_none());
+        assert!(replaced_server.is_none());
+        assert_eq!(cache.credentials().len(), 5);
+        Ok(())
+    }
+
+    /// Serde cannot bypass the binary format's version allowlist.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_rejects_unsupported_ccache_versions() -> Result<(), TestError> {
+        // Given a structurally valid cache with an unsupported version.
+        let cache = CCache::new(Principal::new("EXAMPLE.ORG", 0, vec!["user".to_owned()]));
+        for version in [0_u8, 5, 9, u8::MAX] {
+            let mut value = serde_json::to_value(&cache)?;
+            *value
+                .get_mut("version")
+                .context("serialized version exists")? = version.into();
+
+            // When deserializing the cache.
+            let result = serde_json::from_value::<CCache>(value);
+
+            // Then the version is rejected before an invalid cache exists.
+            assert!(
+                result.is_err(),
+                "unsupported version {version} was admitted"
+            );
+        }
+        Ok(())
+    }
+
+    /// Supported serde versions retain binary serialize/parse compatibility.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_supported_ccache_versions_roundtrip() -> Result<(), TestError> {
+        // Given each supported format and a principal representable in version one.
+        let cache = CCache::new(Principal::new("EXAMPLE.ORG", 0, vec!["user".to_owned()]));
+        for version in 1_u8..=4 {
+            let mut value = serde_json::to_value(&cache)?;
+            *value
+                .get_mut("version")
+                .context("serialized version exists")? = version.into();
+            let decoded: CCache = serde_json::from_value(value)?;
+
+            // When serializing and parsing the admitted value.
+            let reparsed = CCache::parse(&decoded.to_bytes()?)?;
+
+            // Then the original admitted cache survives unchanged.
+            assert_eq!(reparsed, decoded);
+        }
         Ok(())
     }
 

@@ -16,6 +16,8 @@ mod tests {
         error,
         fmt::{Display, Write as _},
     };
+    #[cfg(target_os = "linux")]
+    use std::fs::read_to_string;
     use std::{
         env::{VarError, temp_dir, var},
         fs::remove_file,
@@ -24,6 +26,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use proptest::{collection, prelude::any, prop_assert_eq, proptest};
     use rskrb5_ng::{
         error::Keytab as Error,
         keytab::{EncryptionKey, Entry, Keytab, Name, Principal},
@@ -193,6 +196,61 @@ mod tests {
         Ok(())
     }
 
+    /// Keytab saves create private files without widening existing permissions.
+    #[cfg(unix)]
+    #[test]
+    fn saves_keytab_with_private_permissions() -> Result<(), TestError> {
+        use std::{
+            fs::{Permissions, metadata, set_permissions, write},
+            os::unix::fs::PermissionsExt as _,
+        };
+        // Given fresh and existing files with broad or restrictive modes.
+        let keytab = Keytab::parse(&hex::decode(KTUTIL_USER_KEYTAB)?)?;
+        for mode in [None, Some(0o644), Some(0o400)] {
+            let path = temp_file("private-mode")?;
+            if let Some(bits) = mode {
+                write(&path, b"old content")?;
+                set_permissions(&path, Permissions::from_mode(bits))?;
+            }
+
+            // When persisting the keytab.
+            keytab.save(&path)?;
+
+            // Then only the prior owner permissions survive.
+            let actual = metadata(&path)?.permissions().mode() & 0o777;
+            remove_file(&path)?;
+            assert_eq!(actual, mode.unwrap_or(0o600) & 0o600);
+        }
+        Ok(())
+    }
+
+    /// Keytab saves reject final symlinks without replacing their referents.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_keytab_destination() -> Result<(), TestError> {
+        use std::{
+            fs::{create_dir_all, read, remove_dir_all, write},
+            os::unix::fs::symlink,
+        };
+        // Given a symlink to a dummy file in the test tree.
+        let directory = temp_file("symlink")?;
+        create_dir_all(&directory)?;
+        let target = directory.join("outside");
+        write(&target, b"unchanged")?;
+        let link = directory.join("keytab");
+        symlink(&target, &link)?;
+        let keytab = Keytab::parse(&hex::decode(KTUTIL_USER_KEYTAB)?)?;
+
+        // When saving through the final symlink.
+        let result = keytab.save(&link);
+
+        // Then reject the link and preserve the original referent.
+        assert!(result.is_err());
+        assert_eq!(read(target)?, b"unchanged");
+        remove_dir_all(directory)?;
+        Ok(())
+    }
+
     /// Pins that a keytab saved under the `KRB5_KTNAME` file name loads back unchanged.
     #[test]
     fn saves_and_loads_keytab_from_env() -> Result<(), TestError> {
@@ -271,7 +329,29 @@ mod tests {
             PathBuf::from("C:\\temp\\krb5.keytab")
         );
 
-        let user_id = var("UID").unwrap_or_else(|_| "0".to_owned());
+        Ok(())
+    }
+
+    /// Linux keytab identity tokens use kernel identities, never UID text.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn resolves_keytab_process_identity_tokens() -> Result<(), TestError> {
+        const TEST_PATH: &str = "tests::resolves_keytab_process_identity_tokens";
+        if !env::in_child(TEST_PATH) {
+            env::try_run_in_child(TEST_PATH, &[("UID", Some("../../wrong-user".as_ref()))])?;
+            return Ok(());
+        }
+        // Given identities reported by the running kernel.
+        let status = read_to_string("/proc/self/status")?;
+        let mut ids = status
+            .lines()
+            .find_map(|line| line.strip_prefix("Uid:"))
+            .context("kernel reports identities")?
+            .split_whitespace();
+        let user_id = ids.next().context("real identity")?;
+        let effective_id = ids.next().context("effective identity")?;
+
+        // When resolving keytab tokens, both identity roles stay explicit.
         assert_eq!(
             Keytab::file_path_from_keytab_name("FILE:/tmp/krb5_%{uid}.keytab")
                 .context("uid path token resolves")?,
@@ -280,9 +360,19 @@ mod tests {
         assert_eq!(
             Keytab::file_path_from_keytab_name("WRFILE:/tmp/krb5_%{euid}.keytab")
                 .context("euid path token resolves")?,
-            PathBuf::from(format!("/tmp/krb5_{user_id}.keytab"))
+            PathBuf::from(format!("/tmp/krb5_{effective_id}.keytab"))
         );
         Ok(())
+    }
+
+    /// Unsupported platforms reject identity tokens with the named error.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn keytab_identity_tokens_require_linux_procfs() {
+        assert!(matches!(
+            Keytab::file_path_from_keytab_name("FILE:key_%{uid}_%{euid}"),
+            Err(Error::IdentityUnavailable)
+        ));
     }
 
     /// Pins the file paths of typed `FILE:`, `WRFILE:` and Windows keytab names.
@@ -460,6 +550,108 @@ mod tests {
             .context("newest matching key exists")?;
         assert_eq!(kvno, 2);
         Ok(())
+    }
+
+    /// Serializer bounds match the signed fields accepted by the parser.
+    #[test]
+    fn serializer_rejects_unparseable_field_boundaries() -> Result<(), TestError> {
+        // Given entries with one field beyond the parser's signed range.
+        let fixture = Keytab::parse(&hex::decode(KTUTIL_USER_KEYTAB)?)?;
+        for field in 0_u8..5 {
+            let mut entry = fixture.entries().first().context("fixture entry")?.clone();
+            match field {
+                0 => entry.principal.realm = "r".repeat(0x8000),
+                1 => entry.principal.components = vec!["c".repeat(0x8000)],
+                2 => entry.principal.components = vec![String::new(); 0x8000],
+                3 => entry.key.value = vec![0; 0x8000],
+                _ => entry.key.etype = 0x8000_i32,
+            }
+            let mut keytab = Keytab::new();
+            keytab.entries_mut().push(entry);
+
+            // When serializing an entry the parser cannot represent.
+            let result = keytab.to_bytes();
+
+            // Then reject rather than emit bytes that fail or change on parsing.
+            assert!(
+                matches!(result, Err(Error::LengthOverflow)),
+                "field {field}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Signed length boundaries remain representable and round-trip exactly.
+    #[test]
+    fn serializer_accepts_largest_parseable_fields() -> Result<(), TestError> {
+        // Given the largest accepted lengths, count and encryption type.
+        let mut entry = synthetic_entry("user", 1, i32::from(i16::MAX), 100);
+        entry.principal.realm = "r".repeat(0x7fff);
+        entry.principal.components = vec![String::new(); 0x7fff];
+        *entry
+            .principal
+            .components
+            .first_mut()
+            .context("first component")? = "c".repeat(0x7fff);
+        entry.key.value = vec![7; 0x7fff];
+        let mut keytab = Keytab::new();
+        keytab.entries_mut().push(entry);
+
+        // When serializing and parsing boundary fields.
+        let parsed = Keytab::parse(&keytab.to_bytes()?)?;
+
+        // Then all accepted values survive unchanged.
+        assert_eq!(parsed, keytab);
+        Ok(())
+    }
+
+    /// Version one includes the realm in its checked component count.
+    #[test]
+    fn serializer_checks_version_one_realm_count() -> Result<(), TestError> {
+        // Given a version-one keytab with the largest admissible component count.
+        let mut keytab = Keytab::parse(&[5, 1])?;
+        let mut entry = synthetic_entry("user", 1, 18, 100);
+        entry.principal.name_type = 0_i32;
+        entry.principal.components = vec![String::new(); 0x7ffe];
+        keytab.entries_mut().push(entry);
+        assert_eq!(Keytab::parse(&keytab.to_bytes()?)?, keytab);
+        keytab
+            .entries_mut()
+            .first_mut()
+            .context("entry")?
+            .principal
+            .components
+            .push(String::new());
+
+        // When the realm-inclusive count would exceed the accepted range.
+        let result = keytab.to_bytes();
+
+        // Then serialization rejects the otherwise representable entry.
+        assert!(matches!(result, Err(Error::LengthOverflow)));
+        Ok(())
+    }
+
+    proptest! {
+        /// Every admitted synthetic keytab survives serialization and parsing.
+        #[test]
+        fn serialized_keytab_roundtrips(
+            realm in "[a-zA-Z.]{0,40}",
+            components in collection::vec("[a-zA-Z/]{0,40}", 0..8),
+            key in collection::vec(any::<u8>(), 0..128),
+            etype in 0_i32..=i32::from(i16::MAX),
+            timestamp in any::<u32>(),
+            kvno in 1_u32..=u32::MAX,
+            name_type in any::<i32>(),
+        ) {
+            let [.., kvno8] = kvno.to_be_bytes();
+            let mut keytab = Keytab::new();
+            keytab.entries_mut().push(Entry::new(
+                Principal::new(realm, name_type, components),
+                timestamp, kvno8, EncryptionKey::new(etype, key), kvno,
+            ));
+            let parsed = Keytab::parse(&keytab.to_bytes()?)?;
+            prop_assert_eq!(parsed, keytab);
+        }
     }
 
     /// Pins that empty, misversioned and truncated keytabs are rejected.

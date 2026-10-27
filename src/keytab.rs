@@ -109,7 +109,7 @@ impl Keytab {
     where
         P: AsRef<Path>,
     {
-        let bytes = fs::read(path.as_ref())?;
+        let bytes = file_name::SecretBytes::new(fs::read(path.as_ref())?);
         Self::parse(&bytes)
     }
 
@@ -145,6 +145,8 @@ impl Keytab {
     }
 
     /// Parse keytab bytes.
+    ///
+    /// The borrowed input remains the caller's erasure responsibility.
     ///
     /// Entries with a negative length are holes left by deleted entries and
     /// are skipped; a zero length ends the entry list.
@@ -203,7 +205,10 @@ impl Keytab {
             let Ok(key_len) = usize::try_from(raw_key_len) else {
                 return Err(Error::NegativeLength(raw_key_len.into()));
             };
-            let key_value = read_bytes(entry_bytes, &mut entry_offset, key_len)?.to_vec();
+            let key = EncryptionKey {
+                etype,
+                value: read_bytes(entry_bytes, &mut entry_offset, key_len)?.to_vec(),
+            };
 
             let mut kvno = if entry_bytes.len().saturating_sub(entry_offset) >= 4 {
                 read_u32(entry_bytes, &mut entry_offset, endian)?
@@ -218,10 +223,7 @@ impl Keytab {
                 principal,
                 timestamp,
                 kvno8,
-                key: EncryptionKey {
-                    etype,
-                    value: key_value,
-                },
+                key,
                 kvno,
             });
         }
@@ -230,6 +232,9 @@ impl Keytab {
     }
 
     /// Save this keytab to a file.
+    ///
+    /// Unix creation uses owner-only mode 0600 and existing owner rights are
+    /// never widened. On Windows, supply a directory with an owner-only ACL.
     ///
     /// # Errors
     ///
@@ -240,7 +245,8 @@ impl Keytab {
     where
         P: AsRef<Path>,
     {
-        fs::write(path.as_ref(), self.to_bytes()?)?;
+        let bytes = file_name::SecretBytes::new(self.to_bytes()?);
+        file_name::write_private(path.as_ref(), &bytes)?;
         Ok(())
     }
 
@@ -285,6 +291,7 @@ impl Keytab {
     pub fn file_path_from_keytab_name(name: &str) -> Result<PathBuf, Error> {
         file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(|error| match error {
             file_name::Error::Empty => Error::InvalidKeytabName,
+            file_name::Error::IdentityUnavailable => Error::IdentityUnavailable,
             file_name::Error::UnsupportedType { name_type } => Error::UnsupportedKeytabType {
                 keytab_type: name_type,
             },
@@ -293,17 +300,19 @@ impl Keytab {
 
     /// Serialize the keytab to bytes.
     ///
+    /// Successful raw output is caller-owned secret material; erase it after use.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a component count, string or key
-    /// length, or encryption type does not fit a `u16`, or an entry does not
+    /// length, or encryption type exceeds `i16::MAX`, or an entry does not
     /// fit an `i32` length.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let endian = Endian::for_version(self.version);
-        let mut out = vec![KEYTAB_FIRST_BYTE, self.version];
+        let mut out = file_name::SecretBytes::new(vec![KEYTAB_FIRST_BYTE, self.version]);
         for entry in &self.entries {
-            let mut body = Vec::new();
+            let mut body = file_name::SecretBytes::new(Vec::new());
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
             body.push(entry.kvno8);
@@ -319,7 +328,7 @@ impl Keytab {
             write_i32(&mut out, body_len, endian);
             out.extend_from_slice(&body);
         }
-        Ok(out)
+        Ok(out.into_vec())
     }
 
     #[must_use]
@@ -389,17 +398,20 @@ impl Keytab {
         let etype_impl =
             KerberosEtype::from_etype_id(etype).ok_or(Error::UnsupportedEtype(etype))?;
         let salt = principal.default_password_salt();
-        let key = etype_impl.string_to_key(
-            password.as_ref(),
-            salt.as_bytes(),
-            etype_impl.default_s2kparams(),
-        )?;
         let seconds = system_time_to_u32_seconds(timestamp)?;
+        let key = EncryptionKey::new(
+            etype,
+            etype_impl.string_to_key(
+                password.as_ref(),
+                salt.as_bytes(),
+                etype_impl.default_s2kparams(),
+            )?,
+        );
         self.entries.push(Entry {
             principal,
             timestamp: seconds,
             kvno8: kvno,
-            key: EncryptionKey { etype, value: key },
+            key,
             kvno: kvno.into(),
         });
         Ok(())
@@ -674,7 +686,7 @@ impl Principal {
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when the component count or a string
-    /// length does not fit a `u16`.
+    /// length exceeds `i16::MAX`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
         let component_count = if version == 1 {
             self.components
@@ -958,7 +970,7 @@ fn write_u32(out: &mut Vec<u8>, value: u32, endian: Endian) {
 ///
 /// # Errors
 ///
-/// Returns [`Error::LengthOverflow`] when `value` does not fit a `u16`.
+/// Returns [`Error::LengthOverflow`] when `value` exceeds `i16::MAX`.
 fn write_u16_checked<T>(out: &mut Vec<u8>, value: T, endian: Endian) -> Result<(), Error>
 where
     T: TryInto<u16>,
@@ -966,6 +978,9 @@ where
     let narrowed: u16 = value
         .try_into()
         .map_err(|_out_of_range| Error::LengthOverflow)?;
+    if narrowed > 0x7fff {
+        return Err(Error::LengthOverflow);
+    }
     out.extend_from_slice(&match endian {
         Endian::Big => narrowed.to_be_bytes(),
         Endian::Little => narrowed.to_le_bytes(),
@@ -977,7 +992,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`Error::LengthOverflow`] when the length does not fit a `u16`.
+/// Returns [`Error::LengthOverflow`] when the length exceeds `i16::MAX`.
 fn write_counted_string(out: &mut Vec<u8>, value: &str, endian: Endian) -> Result<(), Error> {
     write_u16_checked(out, value.len(), endian)?;
     out.extend_from_slice(value.as_bytes());
