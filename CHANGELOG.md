@@ -92,6 +92,229 @@ retirement trigger.
   (`crossbeam-epoch` 0.9.18 to 0.9.21 and `crypto-bigint` 0.7.6 to 0.7.8
   among them).
 
+### Behaviour changes from the review
+
+Each fixed review item with an observable behaviour change, by area. The
+dispositions, tests and commits are indexed in `docs/review/README.md`.
+
+SPNEGO, GSS tokens, DER and OIDs:
+
+- OIDs under arc 2 encode, decode and round-trip for every valid `u32` arc;
+  a malformed first subidentifier is `InvalidOidEncoding` (RSK-7487E947).
+- DER state values and OID arcs that overflow are rejected instead of
+  truncated, and so are redundant integer sign octets and non-minimal arcs
+  (RSK-2A2C1928).
+- Initiation that requests delegation (DELEG) without a credential fails with
+  `DelegationRequiresCredential`; the raw checksum helper no longer fabricates
+  delegation fields (RSK-622F4664).
+- Sealed DES3 Wrap tokens round-trip for payloads of every length, and an
+  EC overflow is rejected (RSK-2A906A3A).
+- Unsealed Wrap tokens apply the right-rotation count (RRC) on encode and
+  decode (RFC 4121 §4.2.5) (RSK-84FA90AE).
+- The SPNEGO acceptor accepts only a first-choice Kerberos mechanism and keeps
+  its OID in the reply. A non-first Kerberos offer, a continuation or any
+  mechListMIC fails closed (`NegotiationRequiresState`,
+  `MechListMicRequiresState`), before AP-REQ validation and the replay cache
+  (RFC 4178 §§4-5) (RSK-C4BE57A0).
+- GSS acceptance checks the RFC 4121 §4.1.1 authenticator checksum type and
+  framing and requires a sequence number before replay insertion
+  (RSK-FAF64A85, run-2 lead `mandatory-gss-authenticator-fields`).
+- A Negotiate header longer than 65,536 bytes is rejected with
+  `NegotiateHeaderTooLong` before base64 decoding (upstream issue #9).
+
+Service acceptor and HTTP layer:
+
+- The Axum example sets the overlay's security response headers and removes
+  `Server`, `X-Powered-By` and the ASP.NET fingerprint headers on every status
+  (overlay deviation 8).
+- Nonzero fractional seconds in ticket times, the authenticator `ctime` and
+  AP-REP construction or verification are rejected with
+  `Service::FractionalKerberosTime` (RFC 4120 §5.2.3) (RSK-B161A328).
+- Authenticator and AP-REP microseconds outside 0..=999999 are rejected
+  (RSK-985742B6).
+- Replay caches own their skew and capacity (300 s and 65,536 records by
+  default), expire entries automatically, reject a wider shared skew and a
+  clock rollback, and fail closed when full (RSK-7D80FA41, run-2 lead
+  `ReplayCache:indefinite-entry-retention`).
+- Ticket and authenticator authorization data are validated before success:
+  unknown critical elements and unsupported AD-KDCIssued or AD-AND-OR are
+  rejected, within eight wrappers and 1 MiB of decoded payload (RFC 4120
+  §5.2.6) (RSK-D1D6BDC3, run-2 lead `mandatory-authorization-data-discarded`).
+- A cross-realm ticket without TRANSITED-POLICY-CHECKED is rejected unless a
+  caller-supplied `TransitValidator` accepts its path (RFC 4120 §§2.7,
+  3.3.3.2) (RSK-3E3C2278, run-2 lead `unchecked-cross-realm-transit`).
+- Tickets with `tkt-vno` other than 5 and authenticators with
+  `authenticator-vno` other than 5 are rejected (RSK-39F18D3B).
+
+Cryptography and key derivation:
+
+- RC4-HMAC encodes key usages as four-byte little-endian (RFC 4757 §3), so
+  high usages no longer alias (RSK-11BF294C).
+- The AES-SHA2 PRF accepts an empty input string (RFC 8009) (RSK-FA2BF25E).
+- AES string-to-key and password reply-key derivation reject iteration counts
+  above 2^24 with `Crypto::IterationCountTooHigh` before running PBKDF2
+  (RSK-F240C18F, run-2 lead
+  `s2kparams_to_iterations:unauthenticated-pbkdf2-work`).
+- AES-SHA2 decryption verifies the HMAC before decrypting (RFC 8009 §5)
+  (RSK-CE4ACA12).
+- AES-SHA1 and DES3 key derivation reject constants longer than the cipher
+  block with `Crypto::DerivationConstantTooLong` (RSK-8F3B02EE).
+- Key-derived scratch buffers are zeroized: password encodings, PBKDF2 and
+  DR intermediates, derived keys, decrypted buffers and HMAC key blocks
+  (RSK-DEF6C438, upstream issue #6).
+
+PAC and NDR:
+
+- PAC lookup in authorization data stops at eight wrappers and 1 MiB of
+  visited payload (RSK-6DF06BE8, run-2 lead
+  `pac.authorization-data.unbounded-if-relevant-recursion`).
+- Claims decompression has an independent 1 MiB output ceiling
+  (RSK-B5912AE2, run-2 lead `pac.claims-decompression.peer-controlled-cap`).
+- Credential counts (at most 1,000,000) are checked against the remaining
+  input before reserving memory (RSK-A9B8B032, run-2 lead
+  `pac.ndr.supplemental-credentials-unbounded-capacity`).
+- PAC_CREDENTIAL_DATA parsing consumes and checks the NDR conformant count
+  (MS-PAC 2.6.2) (RSK-DB101DC5).
+- NTLM supplemental credentials use the validity masks 1 and 2 and reject a
+  record with neither (MS-PAC 2.6.4) (RSK-8BA3D269).
+- Both fixed NTLM hash slots are consumed whatever the validity flags say
+  (RSK-59B45280).
+- Boolean claims decode as aligned 64-bit values and reject values other than
+  0 and 1 (RSK-8E17F182).
+- Decrypted PAC credentials are zeroized and print redacted (RSK-5E15962F).
+- The NDR private-header object length must equal the object extent
+  (RSK-6A286805).
+- SID summaries deduplicate with a set and keep first-seen order
+  (RSK-D33671B2).
+
+Client AS/TGS exchanges, renewal and caches:
+
+- TGS authenticators carry the client realm, not the ticket issuer realm
+  (RFC 4120 §5.5.1) (RSK-AFE184E0).
+- Password and keytab preauthentication retries echo the latest PA-FX-COOKIE
+  (RFC 6113 §5.2) (RSK-34601373).
+- Initial password AS replies use the reply's ETYPE-INFO2, ETYPE-INFO or
+  PW-SALT salt and parameters (RSK-072A268D).
+- AS request-integrity checks no longer require FAST to be advertised
+  (RFC 6806 §11) (RSK-2099CE19).
+- TGS replies are checked for the negotiated request checksum (RFC 6806 §11)
+  (RSK-BC016031).
+- An explicit login always replaces the primary TGT and clears dependent
+  service tickets (RSK-F526D18D).
+- Tickets with the INVALID flag are not used and not renewed in place of
+  validation (RSK-E48DA39B).
+- Service-ticket cache keys keep realm and component boundaries
+  (RSK-1922A31B).
+- Unarmored AS requests no longer set the canonicalize option (RFC 6806 §6)
+  (RSK-45397760).
+- S4U2Self and S4U2Proxy bind the delegated client to the decrypted ticket
+  and the request; a missing service key fails with `DelegationKeyRequired`,
+  a mismatch with `DelegationPrincipalMismatch` (run-2 lead
+  `s4u-delegation:delegated-client-unbound-to-ticket-payload`).
+
+kpasswd, KRB-PRIV/KRB-SAFE messages and secrets:
+
+- KRB-SAFE checksums are generated and verified over the whole DER KRB-SAFE
+  with an empty checksum placeholder (RFC 4120 §5.6.1), not over the body
+  only (RSK-A5F7D975).
+- Bare RFC 3244 KRB-ERROR replies to kpasswd are accepted and keep their
+  encoding; they never count as success (RSK-3B6BA222).
+- The kpasswd result checks the KRB-PRIV sequence number or timestamp (within
+  300 s), microseconds and sender addresses (RSK-789A6FBB).
+- Whole-message decoders (AP, KDC, ticket and KRB messages) reject trailing
+  bytes, and kpasswd frames must match their declared length
+  (RSK-0C0007B7).
+- Microsecond and whole-second KerberosTime limits apply to KRB-ERROR
+  diagnostics, kpasswd request values and kpasswd AP-REP times
+  (RSK-6A673A85).
+- Password plaintext copies are zeroized and print redacted (RSK-471362A3,
+  upstream issue #1).
+- A kpasswd exchange that fails after the request may have been delivered
+  returns `Client::KpasswdOutcomeUnknown` (RSK-14E2755A, upstream issue #8).
+
+Transport, DNS, IPv6, SRV and kpasswd retry:
+
+- Bare IPv6 literals keep their full address and the default port; an IPv6
+  port needs brackets (RSK-03EDCC7E).
+- The admin-server fallback for kpasswd keeps IPv6 hosts and uses port 464
+  (RSK-3F13B5FE).
+- UDP transport reaches IPv6-only endpoints (RSK-0D8D7D97).
+- An oversized UDP datagram is `Client::UdpResponseTooLarge`, never a
+  truncated success (RSK-484961E9).
+- The transport no longer reads `RSKRB5_DNS_SERVER`; set a DNS server with
+  `Tokio::with_dns_server` (ambient input `RSKRB5_DNS_SERVER`).
+- DNS admin-server fallback for kpasswd uses port 464 (RSK-4AD555A5).
+- An SRV record with target `.` returns `Client::DnsServiceUnavailable` and
+  stops the fallback (RSK-DF8D47BE).
+- DNS resolution keeps every address of each SRV target (RSK-521F824C).
+- SRV weights select targets by probability within a priority (RFC 2782)
+  (RSK-DBD57F3E).
+- KDC TCP framing uses 31-bit lengths and rejects the reserved high bit
+  (RFC 4120 §7.2.2); kpasswd framing is unchanged (RSK-351DC798).
+- kpasswd never retries on another endpoint or protocol once the request may
+  have been delivered; it returns `Client::KpasswdOutcomeUnknown`
+  (RSK-4DB854C8, upstream issue #7, run-2 lead
+  `send_to_endpoints/post-send-mutation-retry`).
+
+Config and enctype policy:
+
+- Repeated `[realms]` sections, path lists and includes merge per realm the
+  way MIT does, so configured KDCs no longer fall back to DNS (RSK-40161D92,
+  run-2 lead `apply_section/realms-replacement-dns-fallback`).
+- Enctype names are the only stored policy; the wire ids are derived through
+  methods, and an empty request list fails closed (RSK-77250646, upstream
+  issue #4).
+- An explicit enctype list naming an unsupported enctype is a parse error,
+  `Config::UnsupportedEnctype` (RSK-45AC5D3A).
+- The default enctypes are AES only. RC4 and DES3 need the
+  `[libdefaults]` flags `allow_rc4` and `allow_des3` (both false by
+  default); a disabled explicit entry is `Config::EnctypeDisabled`
+  (RSK-5ECE9681, run-2 lead `DEFAULT_ENCTYPES/deprecated-rc4-default`,
+  upstream issue #3).
+- `LibDefaults::new()` reads no environment; `LibDefaults::from_env()` reads
+  `HOME`. The default client keytab keeps the `%{euid}` template and
+  `k5login_directory` defaults to empty (upstream issue #10, project rule
+  (13)).
+
+Ccache, keytab and credential files:
+
+- Ccache upsert replaces a record with the same principal regardless of the
+  name type (RSK-7F30E854).
+- Serde rejects ccache versions outside 1-4 (RSK-01B7A90E).
+- Keytab serialization rejects counts, strings, keys and enctypes the parser
+  would reject (RSK-98FEE876).
+- `%{uid}` and `%{euid}` come from `/proc/self/status` on Linux and never from
+  the environment. **On macOS, Windows and other platforms these tokens now
+  fail with `IdentityUnavailable`** (RSK-DC80DC52, run-2 lead
+  `file-name/uid-token-environment-substitution`).
+- Credential files are saved with mode 0600 on Unix, through a new file and
+  a rename, and existing permissions are never widened (RSK-DF3180A2, run-2
+  lead `credential-file/save/inherited-permissions`).
+- Saves reject a symlinked destination file, and DIR primary initialization
+  rejects a symlink; parent-directory symlinks still work (RSK-58A6D5DD, run-2
+  lead `credential-file/path-write/followed-symlink`).
+- File read buffers, save buffers and partial serializer output holding key
+  material are zeroized (RSK-361F35CC).
+
+Release workflow, CI docs and fixture scripts:
+
+- The Release workflow has a secret-free `find-tag` job and a `publish` job
+  that runs only for a `vN.N.N` tag, in the `release` environment (required
+  reviewer), on a commit that is an ancestor of `main` (run-2 lead
+  `release.publish.crates-io-token.unprotected-tag-authorization`).
+  **Owner action:** move `CARGO_REGISTRY_TOKEN` from the repository secrets
+  into the `release` environment
+  (`gh secret set CARGO_REGISTRY_TOKEN --env release`, then
+  `gh secret delete CARGO_REGISTRY_TOKEN`); until then the environment gate
+  does not protect the token.
+- `scripts/check-github-ad-gate.py --dispatch` refuses to dispatch inputs the
+  CI workflow does not declare, and the parity manifest names the fork CI job
+  for each gate (RSK-E0AFE152).
+- The gated-integration runner writes its environment file with mode 0600 in
+  a private directory and prints keytab values as `<redacted>`;
+  `RSKRB5_INTEGRATION_ENV_FILE` is replaced by `RSKRB5_INTEGRATION_ENV_DIR`
+  (RSK-A8D595D8).
+
 ### Breaking
 
 - New enum variants on exhaustive enums: `client::Error::EnctypeNotRequested`,
