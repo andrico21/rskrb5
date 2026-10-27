@@ -4,7 +4,7 @@ use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use std::{env, io};
+use std::io;
 
 use hickory_resolver::{
     TokioResolver,
@@ -48,10 +48,6 @@ const MAX_UDP_DATAGRAM: usize = 65_507;
 /// Default maximum number of cross-realm referrals followed for one ticket.
 #[cfg(feature = "tokio")]
 const DEFAULT_MAX_REFERRALS: usize = 5;
-/// Environment variable naming an `ip[:port]` DNS server that overrides the
-/// system resolver for KDC discovery.
-#[cfg(feature = "tokio")]
-const RSKRB5_DNS_SERVER_ENV: &str = "RSKRB5_DNS_SERVER";
 /// Byte length of the RFC 4120 section 7.2.2 record mark prefixing each TCP message.
 #[cfg(feature = "tokio")]
 const TCP_RECORD_MARK_LEN: usize = 4;
@@ -147,6 +143,8 @@ impl KdcEndpoint {
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tokio {
+    /// Explicit DNS server; otherwise use the system resolver.
+    dns_server: Option<(IpAddr, u16)>,
     /// Timeout applied to each KDC exchange.
     timeout: Duration,
     /// Maximum accepted UDP response size.
@@ -170,6 +168,7 @@ impl Tokio {
     #[inline]
     pub const fn new() -> Self {
         Self {
+            dns_server: None,
             timeout: DEFAULT_KDC_TIMEOUT,
             udp_response_limit: MAX_UDP_DATAGRAM + 1,
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
@@ -182,6 +181,23 @@ impl Tokio {
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
+    }
+
+    /// Select an explicit DNS server using an IP literal and optional port.
+    ///
+    /// Blank input selects the system resolver. Bare IP literals use port 53.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DnsResolverConfig`] for malformed server literals.
+    #[inline]
+    pub fn with_dns_server(mut self, value: &str) -> Result<Self, Error> {
+        self.dns_server = if value.trim().is_empty() {
+            None
+        } else {
+            Some(parse_dns_server(value).map_err(Error::DnsResolverConfig)?)
+        };
+        Ok(self)
     }
 
     #[must_use]
@@ -1839,13 +1855,13 @@ impl Tokio {
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
     /// them by priority, then by descending weight.
     ///
-    /// With the `RSKRB5_DNS_SERVER` override set, each target is also resolved
+    /// With an explicit DNS server set, each target is also resolved
     /// to an IP address through the same resolver.
     ///
     /// # Errors
     ///
     /// Returns [`Error::DnsResolverConfig`] when the resolver or the
-    /// `RSKRB5_DNS_SERVER` override is invalid, and [`Error::DnsSrvLookup`] when
+    /// DNS server option is invalid, and [`Error::DnsSrvLookup`] when
     /// the SRV lookup or the resolution of a target fails.
     ///
     /// # Cancel safety
@@ -1863,7 +1879,7 @@ impl Tokio {
             KdcProtocol::Tcp => "_tcp",
         };
         let query = format!("{service}.{transport}.{realm}.");
-        let resolver = dns_resolver()?;
+        let resolver = dns_resolver(self.dns_server)?;
         let lookup = resolver
             .srv_lookup(query.as_str())
             .await
@@ -1901,7 +1917,7 @@ impl Tokio {
                 .then_with(|| left.3.cmp(&right.3))
         });
 
-        let resolve_targets = dns_server_override()?.is_some();
+        let resolve_targets = self.dns_server.is_some();
         let mut endpoints = Vec::with_capacity(records.len());
         for (_, _, target, port) in records {
             let host = if resolve_targets {
@@ -2187,15 +2203,15 @@ fn parse_kdc_port(endpoint: &str, port: &str) -> Result<u16, Error> {
         .ok_or_else(|| Error::InvalidKdcEndpoint(endpoint.to_owned()))
 }
 
-/// Build the DNS resolver, honouring the `RSKRB5_DNS_SERVER` override.
+/// Build the DNS resolver using the explicitly selected server, if any.
 ///
 /// # Errors
 ///
 /// Returns [`Error::DnsResolverConfig`] when the override is invalid or the
 /// resolver cannot be built.
 #[cfg(feature = "tokio")]
-fn dns_resolver() -> Result<TokioResolver, Error> {
-    if let Some((ip, port)) = dns_server_override()? {
+fn dns_resolver(server: Option<(IpAddr, u16)>) -> Result<TokioResolver, Error> {
+    if let Some((ip, port)) = server {
         let mut udp = ConnectionConfig::udp();
         udp.port = port;
         let mut tcp = ConnectionConfig::tcp();
@@ -2259,27 +2275,6 @@ async fn resolve_dns_endpoint_host(
             protocol,
             message: format!("target {target}: no address records found"),
         })
-}
-
-/// Read the `RSKRB5_DNS_SERVER` override; unset or blank means none.
-///
-/// # Errors
-///
-/// Returns [`Error::DnsResolverConfig`] when the variable is not valid
-/// Unicode or not an `ip` or `ip:port` literal.
-#[cfg(feature = "tokio")]
-fn dns_server_override() -> Result<Option<(IpAddr, u16)>, Error> {
-    match env::var(RSKRB5_DNS_SERVER_ENV) {
-        Ok(value) if !value.trim().is_empty() => {
-            parse_dns_server(&value).map(Some).map_err(|message| {
-                Error::DnsResolverConfig(format!("{RSKRB5_DNS_SERVER_ENV}: {message}"))
-            })
-        }
-        Ok(_) | Err(env::VarError::NotPresent) => Ok(None),
-        Err(source) => Err(Error::DnsResolverConfig(format!(
-            "{RSKRB5_DNS_SERVER_ENV}: {source}"
-        ))),
-    }
 }
 
 /// Parse an `ip` or `ip:port` DNS server literal, defaulting to port 53.

@@ -5,6 +5,17 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Explicit transport DNS configuration
+
+`client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications
+that choose this input must read it themselves and pass its value to
+`Tokio::new().with_dns_server(&value)?`. IP literals use port 53 unless an
+explicit port is provided; blank input selects the system resolver. Invalid
+input returns `Client::DnsResolverConfig`.
+
+UDP response limits now reject oversized responses with the new
+`Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
+
 ### Decrypted PAC credential ownership
 
 `SecpkgSupplementalCredential::credentials` is now `Zeroizing<Vec<u8>>`.

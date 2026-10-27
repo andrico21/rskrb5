@@ -61,6 +61,15 @@ mod tests {
     /// Error type of these tests; `Send` so stub KDC tasks can return it.
     type TestError = Box<dyn Error + Send + Sync>;
 
+    /// Library transport discovery must not read process environment overrides.
+    #[test]
+    fn transport_dns_has_no_ambient_environment_reads() {
+        assert!(
+            !include_str!("../src/client/transport.rs").contains("env::var("),
+            "DNS configuration must be explicitly supplied"
+        );
+    }
+
     /// Bare IPv6 literals retain every address component and the service default port.
     #[test]
     fn configured_endpoint_preserves_bare_ipv6() -> Result<(), TestError> {
