@@ -17,6 +17,9 @@ use std::{
 
 use crate::file_name;
 
+#[cfg(feature = "serde")]
+use serde::de::Error as _;
+
 /// First byte of every MIT credential cache file.
 const CCACHE_FIRST_BYTE: u8 = 5;
 /// Version 4 header field tag carrying the KDC clock offset.
@@ -118,6 +121,7 @@ impl FromStr for CacheName {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct CCache {
     /// File format version, 1 to 4.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_version"))]
     version: u8,
     /// Version 4 header; empty for older versions.
     header: Header,
@@ -277,9 +281,7 @@ impl CCache {
             return Err(Error::InvalidFirstByte(first_byte));
         }
 
-        if !(1..=4).contains(&version) {
-            return Err(Error::InvalidVersion(version));
-        }
+        validate_version(version)?;
 
         let endian = Endian::for_version(version);
         let mut offset = 2_usize;
@@ -308,10 +310,12 @@ impl CCache {
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a length, count or encryption
-    /// type does not fit its on-disk field, and [`Error::InvalidHeaderField`]
+    /// type does not fit its on-disk field, [`Error::InvalidVersion`] for an
+    /// unsupported version, and [`Error::InvalidHeaderField`]
     /// when a KDC offset header field is not eight bytes long.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        validate_version(self.version)?;
         let endian = Endian::for_version(self.version);
         let mut out = vec![CCACHE_FIRST_BYTE, self.version];
         if self.version == 4 {
@@ -507,6 +511,34 @@ impl CCache {
             .iter()
             .find(|credential| credential.server.matches_components(components))
     }
+}
+
+/// Admit only the versions supported by both binary and serde entry points.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidVersion`] outside versions 1 through 4.
+fn validate_version(version: u8) -> Result<(), Error> {
+    if (1..=4).contains(&version) {
+        Ok(())
+    } else {
+        Err(Error::InvalidVersion(version))
+    }
+}
+
+/// Deserialize a version through the same admission rule as the binary parser.
+///
+/// # Errors
+///
+/// Returns the deserializer error for a non-byte or unsupported version.
+#[cfg(feature = "serde")]
+fn deserialize_version<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let version = <u8 as serde::Deserialize>::deserialize(deserializer)?;
+    validate_version(version).map_err(D::Error::custom)?;
+    Ok(version)
 }
 
 /// Whether two principals share realm and name components; the name type is

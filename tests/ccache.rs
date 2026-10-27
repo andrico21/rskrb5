@@ -695,6 +695,52 @@ mod tests {
         Ok(())
     }
 
+    /// Serde cannot bypass the binary format's version allowlist.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_rejects_unsupported_ccache_versions() -> Result<(), TestError> {
+        // Given a structurally valid cache with an unsupported version.
+        let cache = CCache::new(Principal::new("EXAMPLE.ORG", 0, vec!["user".to_owned()]));
+        for version in [0_u8, 5, 9, u8::MAX] {
+            let mut value = serde_json::to_value(&cache)?;
+            *value
+                .get_mut("version")
+                .context("serialized version exists")? = version.into();
+
+            // When deserializing the cache.
+            let result = serde_json::from_value::<CCache>(value);
+
+            // Then the version is rejected before an invalid cache exists.
+            assert!(
+                result.is_err(),
+                "unsupported version {version} was admitted"
+            );
+        }
+        Ok(())
+    }
+
+    /// Supported serde versions retain binary serialize/parse compatibility.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_supported_ccache_versions_roundtrip() -> Result<(), TestError> {
+        // Given each supported format and a principal representable in version one.
+        let cache = CCache::new(Principal::new("EXAMPLE.ORG", 0, vec!["user".to_owned()]));
+        for version in 1_u8..=4 {
+            let mut value = serde_json::to_value(&cache)?;
+            *value
+                .get_mut("version")
+                .context("serialized version exists")? = version.into();
+            let decoded: CCache = serde_json::from_value(value)?;
+
+            // When serializing and parsing the admitted value.
+            let reparsed = CCache::parse(&decoded.to_bytes()?)?;
+
+            // Then the original admitted cache survives unchanged.
+            assert_eq!(reparsed, decoded);
+        }
+        Ok(())
+    }
+
     /// Pins the errors for empty, misversioned, truncated and negative-count ccaches.
     #[test]
     fn rejects_invalid_ccache_inputs() -> Result<(), TestError> {
