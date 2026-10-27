@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-rskrb5-ng = { version = "0.3.0", path = ".." }
+rskrb5-ng = { version = "0.3.0", path = "..", features = ["http"] }
 
 [[bin]]
 name = "kpasswd_reply"
@@ -23,6 +23,76 @@ bench = false
 [[bin]]
 name = "ccache_parse"
 path = "fuzz_targets/ccache_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "keytab_parse"
+path = "fuzz_targets/keytab_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pac_parse"
+path = "fuzz_targets/pac_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "spnego_token"
+path = "fuzz_targets/spnego_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gss_token"
+path = "fuzz_targets/gss_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kdc_reply"
+path = "fuzz_targets/kdc_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "krb5_conf"
+path = "fuzz_targets/krb5_conf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "der_oid"
+path = "fuzz_targets/der_oid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "krb_messages"
+path = "fuzz_targets/krb_messages.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "name_parse"
+path = "fuzz_targets/name_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_negotiate"
+path = "fuzz_targets/http_negotiate.rs"
 test = false
 doc = false
 bench = false
