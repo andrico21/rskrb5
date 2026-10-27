@@ -1,42 +1,30 @@
 # PAC and NDR review dispositions
 
-This lane is in progress. Unlisted items remain pending, not dismissed.
-Full commands, red runs and scratch failure QA are recorded in
-`task-32-rskrb5-ng-own-way.log`. Commit subjects identify the associated item.
+All ten items are fixed. Full commands, initial red runs and scratch failure QA
+are recorded in `task-32-rskrb5-ng-own-way.log`. Final acceptance is recorded
+there separately; a disposition is not itself a claim that acceptance passed.
 
 | ID | Status | Tests and commit | Behaviour change for CHANGELOG | Dismissal evidence |
 |---|---|---|---|---|
-| RSK-6DF06BE8 / lead `pac.authorization-data.unbounded-if-relevant-recursion` | fixed | `rejects_authorization_data_depth_above_eight`, `rejects_authorization_data_aggregate_bytes`, `rejects_authorization_data_bytes_before_decode`; boundary controls `extracts_pac_at_authorization_data_depth_eight`, `accepts_authorization_data_at_byte_budget`; commit subject suffix `(RSK-6DF06BE8)` | Public first-PAC lookup rejects a ninth AD-IF-RELEVANT wrapper or more than 1 MiB of cumulative visited payloads before decoding/processing, with named PAC errors. | N/A |
-| RSK-B5912AE2 / lead `pac.claims-decompression.peer-controlled-cap` | fixed | `claims_rejects_excessive_declared_output`, `claims_rejects_excessive_uncompressed_output`, `claims_accepts_output_limit`; commit suffix `(RSK-B5912AE2)` | Claims decode rejects declared output or raw input over 1 MiB before framing, decompressing or copying, using `Pac::ClaimsOutputLimit`. At most two processed claims buffers bound aggregate decoded output to 2 MiB. Existing compression output cap and exact-size checks remain. | N/A |
-| RSK-A9B8B032 / lead `pac.ndr.supplemental-credentials-unbounded-capacity` | fixed | `credentials_rejects_count_without_descriptor_extent`, `credentials_accepts_empty_count`; commit suffix `(RSK-A9B8B032)` | Before reservation, credential counts must be at most 1,000,000 and their checked 16-byte descriptor extent must fit the remaining input. Both vector reservations are fallible (`Pac::CredentialAllocation`). Conformant-count correlation follows in the next item. | N/A |
-| RSK-59B45280 | fixed | `ntlm_reads_nt_from_its_fixed_slot`, `ntlm_rejects_truncated_fixed_slots`; commit suffix `(RSK-59B45280)` | Both 16-byte NTLM hash slots are consumed unconditionally; validity flags govern exposure only. NT-only credentials now read the NT slot, and all validity combinations require the complete 40-byte structure (MS-PAC 2.6.4). | N/A |
-| RSK-8BA3D269 | fixed | `ntlm_uses_low_bit_validity_masks`, `ntlm_rejects_flags_without_valid_hash`; commit suffix `(RSK-8BA3D269)` | NTLM validity uses numeric LM=1 and NT=2 masks. Reserved bits are ignored on receipt; neither validity flag returns `Pac::MissingNtlmValidityFlag` (MS-PAC 2.6.4). Public constants now hold numeric masks rather than incorrect bit indices. | N/A |
-| RSK-DB101DC5 | fixed | `credentials_accepts_conformant_single_entry`, `credentials_rejects_mismatched_conformant_count`; corrected direct/encrypted fixture coverage; commit suffix `(RSK-DB101DC5)` | PAC_CREDENTIAL_DATA consumes and correlates the NDR32 conformant maximum count before CredentialCount (MS-PAC 2.6.2, DCE C706 structures containing arrays). Local credential fixtures now include both words and eight-byte serialization padding. | N/A |
+| RSK-6DF06BE8 | fixed | `rejects_authorization_data_depth_above_eight`, `rejects_authorization_data_aggregate_bytes`, `rejects_authorization_data_bytes_before_decode`; `5362fb8` | Public PAC lookup enforces eight wrappers and 1 MiB cumulative visited payloads before decoding/processing, including across siblings. | N/A |
+| RSK-B5912AE2 | fixed | `claims_rejects_excessive_declared_output`, `claims_rejects_excessive_uncompressed_output`, `claims_accepts_output_limit`; `9fd5f1b` | Claims output has an independent 1 MiB ceiling; at most two processed claims buffers bound aggregate decoded output to 2 MiB. Existing exact-size checks remain. | N/A |
+| RSK-A9B8B032 | fixed | `credentials_rejects_count_without_descriptor_extent`, `credentials_accepts_empty_count`; `a5fe98f` | Credential counts and checked 16-byte descriptor extent are admitted before fallible reservation. Count ceiling is 1,000,000. | N/A |
+| RSK-DB101DC5 | fixed | `credentials_accepts_conformant_single_entry`, `credentials_rejects_mismatched_conformant_count`; `9145554` | NDR32 conformant maximum count is consumed and correlated before CredentialCount; direct/encrypted fixtures include both words and serialization padding (MS-PAC 2.6.2). | N/A |
+| RSK-8BA3D269 | fixed | `ntlm_uses_low_bit_validity_masks`, `ntlm_rejects_flags_without_valid_hash`; `d4dfda1` | NTLM validity uses numeric masks 1/2, ignores reserved bits and rejects records with neither validity bit (MS-PAC 2.6.4). | N/A |
+| RSK-59B45280 | fixed | `ntlm_reads_nt_from_its_fixed_slot`, `ntlm_rejects_truncated_fixed_slots`; `a444917` | Both fixed NTLM slots are consumed regardless of validity flags; all valid combinations require the complete structure. | N/A |
+| RSK-8E17F182 | fixed | `boolean_claims_decode_aligned_u64_values`, `boolean_claims_reject_non_binary_u64`; `61993e7` | Boolean claims consume aligned ULONG64 values and reject values other than 0/1 (MS-ADTS CLAIM_ENTRY/CLAIM_TYPE). | N/A |
+| RSK-5E15962F | fixed | `ntlm_debug_redacts_hash_material`; `87219bc` | Decrypted scratch and package bytes have Zeroizing owners; NTLM hash slots have Drop erasure and redacted diagnostics. Container Debug delegates to redacted package entries. | N/A |
+| RSK-6A286805 | fixed | `ndr_rejects_underdeclared_object_length`; `35aaa1a` | Serialized NDR object length must equal the supplied object extent and include eight-byte padding. Common-header field names now match type serialization version 1. | N/A |
+| RSK-D33671B2 | fixed | `sid_summary_deduplicates_initial_user_groups`, `sid_summary_deduplicates_initial_device_groups`; `86097ca` | Membership sets replace quadratic output scans; every SID source follows first-seen deduplication while output order stays stable. | N/A |
 
-## Traversal policy and trust boundary
+## Trust and ownership boundaries
 
-| RSK-D33671B2 | fixed | `sid_summary_deduplicates_initial_user_groups`, `sid_summary_deduplicates_initial_device_groups`; existing cross-source vectors; commit suffix for this item | Both SID summaries use a membership HashSet alongside ordered output. Every source, including initial groups, follows first-seen deduplication rather than quadratic output scans. | N/A |
+The traversal limits match the existing service authorization validator. This
+closes the independently callable helper, not a demonstrated unauthenticated
+service exploit. First-PAC lookup does not replace whole-tree authorization
+validation. Ticket authorization data still requires service-key decryption.
 
-| RSK-6A286805 | fixed | `ndr_rejects_underdeclared_object_length`; all existing NDR fixtures; commit suffix for this item | Serialized PAC NDR object length must equal the complete supplied object extent and include eight-byte serialization padding. No fields can be consumed beyond the declared extent. Common-header field names now match type serialization version 1. | N/A |
-
-| RSK-5E15962F | fixed | `ntlm_debug_redacts_hash_material`; commit suffix for this item | Decrypted scratch and package bytes have Zeroizing owners; NTLM hash slots have Drop erasure and redacted diagnostics. Credential container Debug delegates only to redacted package entries. | N/A |
-
-| RSK-8E17F182 | fixed | `boolean_claims_decode_aligned_u64_values`, `boolean_claims_reject_non_binary_u64`; commit suffix for this item | Boolean claims consume eight-byte-aligned ULONG64 values and reject values other than 0/1 with `Pac::InvalidBooleanClaim` (MS-ADTS CLAIM_ENTRY/CLAIM_TYPE). | N/A |
-
-The inclusive limits match the existing service authorization validator: eight
-wrappers and 1 MiB of visited entry payloads. Every visited payload is charged,
-including ignored entries and PAC bytes; nested content is charged at each level
-and siblings share one budget. These local resource limits are not RFC limits.
-The first PAC still terminates lookup, so this helper is not a replacement for
-the service's mandatory-authorization-data validation of the whole tree.
-
-The service already validates these budgets before PAC lookup. This repair closes
-the independently callable public helper; it does not claim a newly demonstrated
-unauthenticated service exploit. Ticket authorization data still requires service
-key decryption, as recorded by the audit lead. No service call-site edit is needed.
-
-## Remaining work
-
-Four other todo-32 items remain pending. Final full STRICT, WIN-CLIPPY,
-FULL-TEST, DOCTEST, DOCS, NIGHTLY-FMT, GATES and exact doc-ID acceptance are
-deferred until all items are complete, as required by the lane instructions.
+Credential erasure covers owned decrypted scratch, package allocations and NTLM
+hash fields. Caller-created copies, borrowed inputs, dependency-internal state,
+compiler/register copies and allocator history are not claimed erased. Abort
+does not run destructors. Public field/API changes are in the migration guide.
