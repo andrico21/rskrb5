@@ -895,6 +895,11 @@ assert!(matches!(error, Client::PrincipalMismatch { .. }));
 ```
 # RFC 3244 bare error responses
 
+Password-specific `ChangePasswdData` Debug now redacts `new_passwd`. High-level
+password copies and owned DER staging buffers use zeroizing owners; immutable
+rasn `OctetString` fields remain dependency-owned residuals (see the review).
+
+
 `kadmin::Reply::parse` also accepts standalone KRB-ERROR responses. For these
 responses `version` is `CHANGE_PASSWORD_REQUEST_VERSION` (0xff80),
 `message_length` is the DER wire length and `ap_rep_length` is zero. `encode`

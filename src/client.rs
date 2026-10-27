@@ -2215,7 +2215,7 @@ impl Tokio {
     where
         P: AsRef<[u8]>,
     {
-        let new_password_bytes = new_password.as_ref().to_vec();
+        let new_password_bytes = Zeroizing::new(new_password.as_ref().to_vec());
         let client = self.client.clone();
         let service = Principal::new(
             target.realm.clone(),
@@ -2271,9 +2271,7 @@ impl Tokio {
         result.ensure_success()?;
 
         if update_password_credential {
-            self.credentials = Some(TokioClientCredentials::Password(Zeroizing::new(
-                new_password_bytes,
-            )));
+            self.credentials = Some(TokioClientCredentials::Password(new_password_bytes));
         }
 
         Ok(result)

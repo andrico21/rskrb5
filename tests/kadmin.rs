@@ -489,6 +489,19 @@ mod tests {
         Ok(())
     }
 
+    /// Redacts password-specific ownership rather than exposing bytes to loggers.
+    #[test]
+    fn password_plaintext_debug_is_redacted() -> Result<(), TestError> {
+        // Given a recognizable password, when rendered, then only its marker survives.
+        let data =
+            ChangePasswdData::for_target(b"password-secret-canary", 1, ["dummy"], "TEST.GOKRB5")?;
+        let rendered = format!("{data:?}");
+        assert!(!rendered.contains("password-secret-canary"));
+        assert!(!rendered.contains("112, 97, 115, 115"));
+        assert!(rendered.contains("[REDACTED]"));
+        Ok(())
+    }
+
     /// Pins that a built change-password message decrypts to its targeted payload.
     #[test]
     fn kpasswd_request_build_change_password_message_builds_and_decrypts_payload()

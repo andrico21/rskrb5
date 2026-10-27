@@ -1,6 +1,7 @@
 //! KRB-PRIV decoding and encrypted-part helpers.
 
 use rasn::{der, types::Integer};
+use zeroize::Zeroizing;
 
 use crate::{
     crypto::KerberosEtype,
@@ -216,7 +217,7 @@ where
     P: AsRef<[u8]>,
 {
     let enc_part = build_enc_krb_priv_part(user_data, options);
-    let plaintext = encode_enc_krb_priv_part(&enc_part)?;
+    let plaintext = Zeroizing::new(encode_enc_krb_priv_part(&enc_part)?);
     let encrypted_data = encrypt_krb_priv_enc_part(&plaintext, key, kvno, confounder)?;
 
     Ok(rasn_kerberos::KrbPriv {
@@ -276,11 +277,11 @@ pub fn decrypt_krb_priv_enc_part(
 
     let etype = KerberosEtype::from_etype_id(krb_priv.enc_part.etype)
         .ok_or(Error::UnsupportedEtype(krb_priv.enc_part.etype))?;
-    let plaintext = etype.decrypt_message(
+    let plaintext = Zeroizing::new(etype.decrypt_message(
         &key.value,
         krb_priv.enc_part.cipher.as_ref(),
         KRB_PRIV_ENCPART_USAGE,
-    )?;
+    )?);
     decode_enc_krb_priv_part(trim_zero_padded_der(&plaintext))
 }
 

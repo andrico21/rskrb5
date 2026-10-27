@@ -1,9 +1,12 @@
 //! RFC 3244 password-change protocol helpers.
 
+use core::fmt;
+
 use rasn::{
     AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
     types::{Integer, OctetString},
 };
+use zeroize::Zeroizing;
 
 use crate::{
     ap_rep, ap_req, crypto::KerberosEtype, der::decode_complete, error, keytab::EncryptionKey,
@@ -35,7 +38,7 @@ pub const KPASSWD_INITIAL_FLAG_NEEDED: u16 = 7;
 const HEADER_LEN: usize = 6;
 
 /// Payload encrypted inside a Kerberos password-change request.
-#[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
+#[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ChangePasswdData {
     /// New password bytes.
@@ -47,6 +50,22 @@ pub struct ChangePasswdData {
     /// Optional target realm.
     #[rasn(tag(explicit(2)))]
     pub targ_realm: Option<rasn_kerberos::Realm>,
+}
+
+impl fmt::Debug for ChangePasswdData {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            new_passwd: _,
+            targ_name,
+            targ_realm,
+        } = self;
+        f.debug_struct("ChangePasswdData")
+            .field("new_passwd", &"[REDACTED]")
+            .field("targ_name", targ_name)
+            .field("targ_realm", targ_realm)
+            .finish()
+    }
 }
 
 impl ChangePasswdData {
@@ -365,8 +384,12 @@ pub fn build_change_password_request_with_confounder(
     options: EncKrbPrivPartOptions,
     confounder: &[u8],
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let krb_priv =
-        build_krb_priv_with_confounder(change_data.encode_der()?, options, &reply_key, confounder)?;
+    let krb_priv = build_krb_priv_with_confounder(
+        Zeroizing::new(change_data.encode_der()?),
+        options,
+        &reply_key,
+        confounder,
+    )?;
     build_change_password_request_from_parts(ap_req, krb_priv, reply_key)
 }
 
@@ -539,7 +562,11 @@ pub fn build_change_password_request(
     reply_key: EncryptionKey,
     options: EncKrbPrivPartOptions,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let krb_priv = build_krb_priv(change_data.encode_der()?, options, &reply_key)?;
+    let krb_priv = build_krb_priv(
+        Zeroizing::new(change_data.encode_der()?),
+        options,
+        &reply_key,
+    )?;
     build_change_password_request_from_parts(ap_req, krb_priv, reply_key)
 }
 

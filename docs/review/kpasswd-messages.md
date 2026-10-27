@@ -12,6 +12,7 @@ and exit codes are in `task-34-rskrb5-ng-own-way.log` in the execution evidence.
 | RSK-789A6FBB | fixed | `kpasswd_rejects_invalid_protected_controls`, existing password mutation tests; commit subject suffix `(RSK-789A6FBB)` | High-level result consumption validates the verified AP-REP's server sequence, requires a complete timestamp/usec pair or negotiated sequence, rejects invalid microseconds/fractions and timestamps outside 300 seconds of the explicit request time. Sender addresses must be well-formed IPv4/IPv6; an explicit request recipient pins the peer, and any response recipient must match the request sender. | N/A |
 | RSK-0C0007B7 | fixed | `kpasswd_rejects_complete_frame_suffix`, `whole_message_rejects_trailing_value`, `authenticator_rejects_nonzero_authenticated_suffix`, `raw_codec_retains_prefix_contract`; commit subject suffix `(RSK-0C0007B7)` | Complete AP/KDC/ticket/KRB message codecs require an empty DER remainder, including decrypted parts after intentional zero-padding handling. Kpasswd frames require exact declared length. Generic `messages::decode_der` remains a raw prefix codec. | N/A |
 | RSK-6A673A85 | fixed | `protocol_time_rejects_out_of_domain_microseconds`, `protocol_time_rejects_fractional_kerberos_time`, `protocol_time_accepts_microsecond_boundaries`, `protocol_time_kpasswd_builder_rejects_invalid_scalars`; commit suffix `(RSK-6A673A85)` | Shared checked Microseconds/whole-second conversions reject invalid KRB-ERROR diagnostics, explicit kpasswd request scalars and kpasswd AP-REP time fields. Raw ASN.1 codecs remain raw; service validation retains its earlier stricter checks. | N/A |
+| RSK-471362A3 / upstream issue #1 | fixed | `password_plaintext_debug_is_redacted`, password mutation success/error probes; commit suffix `(RSK-471362A3)` | Redact password-specific Debug; attach `Zeroizing` immediately to the high-level password copy and to owned password DER, encrypted-part encoding and decrypted plaintext scratch on every return/cancellation path. | N/A |
 
 ## Checksum contract
 
@@ -26,9 +27,25 @@ used to replace the checksum; no caller message is mutated.
 
 ## Remaining work
 
-- Password plaintext ownership, erasure and redaction.
 - Cancellation and unknown-outcome contracts for mutation and wrappers.
 
 Full final acceptance (fresh-target STRICT, WIN-CLIPPY, FULL-TEST, DOCTEST,
 stable/nightly DOCS, NIGHTLY-FMT, GATES and exact review-ID coverage) is deferred
 until all items are complete. No full-todo acceptance is claimed here.
+
+## Secret ownership boundary
+
+The high-level password buffer is zeroizing before the first fallible await,
+and moves directly into credential storage on confirmed own-password success.
+Owned DER staging and encrypted-part plaintext allocations are zeroizing through
+encryption errors, success and normal unwinding. Password-specific Debug prints
+only a redaction marker for the password field, never its bytes.
+
+Residuals: public `ChangePasswdData::new_passwd` and
+`EncKrbPrivPart::user_data` are dependency-owned immutable `OctetString`s.
+Rasn 0.29 exposes no mutable erasure API for that storage; encoding/decoding
+also creates dependency-owned copies. These are not claimed erased. Closing
+that residual requires a separately reviewed secret ASN.1 owner or dependency
+API change; adding an allocator hook or mutating shared immutable bytes is not
+a valid substitute. Caller-owned returns/inputs, compiler copies, dependency
+cipher state and abort paths are outside the guarantee; abort does not run Drop.
