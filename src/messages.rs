@@ -359,10 +359,10 @@ impl KrbErrorInfo {
             cusec: error
                 .cusec
                 .as_ref()
-                .map(|value| integer_to_u32("cusec", value))
+                .map(|value| microseconds("cusec", value))
                 .transpose()?,
             stime: system_time_from_kerberos_time(&error.stime)?,
-            susec: integer_to_u32("susec", &error.susec)?,
+            susec: microseconds("susec", &error.susec)?,
             error_code: error.error_code,
             client,
             service: principal_from_parts(&error.realm, &error.sname)?,
@@ -427,15 +427,16 @@ fn validate_integer(field: &'static str, actual: &Integer, expected: i32) -> Res
     Ok(())
 }
 
-/// Convert a decoded ASN.1 integer field to `u32`.
+/// Convert an RFC 4120 Microseconds field in the inclusive 0..=999999 range.
 ///
 /// # Errors
 ///
 /// Returns [`Error::IntegerOutOfRange`] naming `field` when the value is
-/// negative or does not fit a `u32`.
-fn integer_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
+/// outside the protocol range.
+pub(crate) fn microseconds(field: &'static str, value: &Integer) -> Result<u32, Error> {
     u32::try_from(value)
         .ok()
+        .filter(|micros| *micros <= 999_999)
         .ok_or_else(|| Error::IntegerOutOfRange {
             field,
             value: value.to_string(),
@@ -472,13 +473,14 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
     Ok(str::from_utf8(value.as_bytes())?.to_owned())
 }
 
-/// Convert a Kerberos time to a `SystemTime`, keeping sub-second precision.
+/// Convert a whole-second Kerberos time to a `SystemTime`.
 ///
 /// # Errors
 ///
 /// Returns [`Error::TimeOverflow`] when the time is outside the `SystemTime`
 /// range.
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
+    whole_seconds(time)?;
     let seconds = time.0.timestamp();
     let nanos = time.0.timestamp_subsec_nanos();
     match u64::try_from(seconds) {
@@ -489,4 +491,19 @@ fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<
             .checked_sub(Duration::new(seconds.unsigned_abs(), nanos))
             .ok_or(Error::TimeOverflow),
     }
+}
+
+/// Enforce RFC 4120's whole-second `KerberosTime` domain without normalization.
+///
+/// # Errors
+/// Returns [`Error::InvalidMessage`] when a fractional component is present.
+pub(crate) fn whole_seconds(time: &rasn_kerberos::KerberosTime) -> Result<(), Error> {
+    if time.0.timestamp_subsec_nanos() != 0 {
+        return Err(Error::InvalidMessage {
+            field: "KerberosTime fraction",
+            expected: 0,
+            actual: time.0.timestamp_subsec_nanos().to_string(),
+        });
+    }
+    Ok(())
 }

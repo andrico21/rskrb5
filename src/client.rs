@@ -52,7 +52,7 @@ pub mod principal;
 /// KDC endpoint discovery and asynchronous transport.
 pub mod transport;
 #[cfg(feature = "tokio")]
-use self::kpasswd::{RequestOptions, build_kpasswd_request, verify_kpasswd_ap_rep};
+use self::kpasswd::{RequestOptions, build_kpasswd_request, validated_result};
 #[cfg(feature = "tokio")]
 use self::transport::{KdcEndpoint, KdcProtocol, Tokio as TokioKdcTransport};
 use self::{
@@ -2215,7 +2215,7 @@ impl Tokio {
     where
         P: AsRef<[u8]>,
     {
-        let new_password_bytes = new_password.as_ref().to_vec();
+        let new_password_bytes = Zeroizing::new(new_password.as_ref().to_vec());
         let client = self.client.clone();
         let service = Principal::new(
             target.realm.clone(),
@@ -2266,24 +2266,14 @@ impl Tokio {
                 &target.realm,
                 &request.request,
             )
-            .await?;
-        let verified = verify_kpasswd_ap_rep(&reply, &request)?;
-        let result_key = verified
-            .as_ref()
-            .and_then(|metadata| metadata.subkey.as_ref())
-            .unwrap_or(&request.reply_key);
-        let result = reply.decrypt_result(result_key)?;
-        if result.is_success() && verified.is_none() {
-            // A success result needs an authenticated AP-REP; a KRB-ERROR
-            // carries none, so its text must not flip the stored credential.
-            return Err(Error::MissingKpasswdApRep);
-        }
+            .await
+            .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
+        let result = validated_result(&reply, &request, &options)
+            .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
         result.ensure_success()?;
 
         if update_password_credential {
-            self.credentials = Some(TokioClientCredentials::Password(Zeroizing::new(
-                new_password_bytes,
-            )));
+            self.credentials = Some(TokioClientCredentials::Password(new_password_bytes));
         }
 
         Ok(result)

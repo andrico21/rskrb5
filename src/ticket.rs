@@ -2,7 +2,11 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{crypto::KerberosEtype, der::trim_zero_padded_der, keytab::EncryptionKey};
+use crate::{
+    crypto::KerberosEtype,
+    der::{decode_complete, trim_zero_padded_der},
+    keytab::EncryptionKey,
+};
 
 /// Kerberos ticket version.
 pub const KRB5_TKT_VNO: i32 = 5;
@@ -190,9 +194,9 @@ fn decode_der<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
+    decode_complete(bytes).map_err(|source| Error::Decode {
         target,
-        message: source.to_string(),
+        message: source,
     })
 }
 

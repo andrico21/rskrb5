@@ -60,6 +60,25 @@ fn top_level_der_end(bytes: &[u8]) -> Option<usize> {
     (end <= bytes.len()).then_some(end)
 }
 
+/// Decode exactly one DER value at a complete-message boundary.
+///
+/// # Errors
+///
+/// Returns the decoder diagnostic or a trailing-data diagnostic. Raw convenience
+/// codecs use rasn directly and retain their prefix-decoding contract.
+pub(crate) fn decode_complete<T>(bytes: &[u8]) -> Result<T, String>
+where
+    T: rasn::Decode,
+{
+    let (value, remainder) =
+        der::decode_with_remainder(bytes).map_err(|error| error.to_string())?;
+    if !remainder.is_empty() {
+        return Err("trailing bytes after complete DER message".to_owned());
+    }
+    Ok(value)
+}
+use rasn::der;
+
 #[cfg(test)]
 #[expect(
     clippy::missing_panics_doc,

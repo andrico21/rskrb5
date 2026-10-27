@@ -13,8 +13,9 @@ mod tests {
     use core::error;
 
     use pretty_assertions::assert_eq;
-    use rasn::types::Integer;
+    use rasn::{der, types::Integer};
     use rskrb5_ng::{
+        crypto::AesSha1Etype,
         error::KrbSafe as Error,
         keytab::EncryptionKey,
         krb_safe::{
@@ -125,6 +126,50 @@ mod tests {
         assert_eq!(checksum.r#type, 16_i32);
         assert_eq!(krb_safe.cksum, checksum);
         verify_krb_safe_checksum(&krb_safe, &key)?;
+        Ok(())
+    }
+
+    /// Checks generation against independently encoded RFC 4120 section 5.6.1 input.
+    #[test]
+    fn checksum_matches_whole_message_oracle() -> Result<(), TestError> {
+        // Given a peer message with the normative zero-type, empty checksum.
+        let mut peer = decode_krb_safe(&hex::decode(KRB_SAFE)?)?;
+        peer.cksum = rasn_kerberos::Checksum {
+            r#type: 0,
+            checksum: Vec::new().into(),
+        };
+        let key = reply_key()?;
+        let input = der::encode(&peer)?;
+        let expected = AesSha1Etype::Aes256.checksum(&key.value, &input, 15)?;
+
+        // When the public generator computes a checksum for that body.
+        let actual = krb_safe_checksum(&peer.body, &key)?;
+
+        // Then it matches the independently constructed whole-message MAC.
+        assert_eq!(actual.checksum.as_ref(), expected);
+        Ok(())
+    }
+
+    /// Checks that a normative peer MAC is accepted without using the local builder.
+    #[test]
+    fn verifies_independent_whole_message_checksum() -> Result<(), TestError> {
+        // Given an independently signed whole KRB-SAFE message.
+        let mut peer = decode_krb_safe(&hex::decode(KRB_SAFE)?)?;
+        peer.cksum = rasn_kerberos::Checksum {
+            r#type: 0,
+            checksum: Vec::new().into(),
+        };
+        let key = reply_key()?;
+        let input = der::encode(&peer)?;
+        peer.cksum = rasn_kerberos::Checksum {
+            r#type: 16,
+            checksum: AesSha1Etype::Aes256
+                .checksum(&key.value, &input, 15)?
+                .into(),
+        };
+
+        // When the peer checksum is verified, then it is accepted.
+        verify_krb_safe_checksum(&peer, &key)?;
         Ok(())
     }
 

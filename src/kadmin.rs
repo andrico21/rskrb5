@@ -1,13 +1,16 @@
 //! RFC 3244 password-change protocol helpers.
 
+use core::fmt;
+
 use rasn::{
     AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
     types::{Integer, OctetString},
 };
+use zeroize::Zeroizing;
 
 use crate::{
-    ap_rep, ap_req, crypto::KerberosEtype, error, keytab::EncryptionKey, krb_error, krb_priv,
-    krb_priv::EncKrbPrivPartOptions,
+    ap_rep, ap_req, crypto::KerberosEtype, der::decode_complete, error, keytab::EncryptionKey,
+    krb_error, krb_priv, krb_priv::EncKrbPrivPartOptions, messages,
 };
 
 /// Password-change request protocol version (`0xff80`).
@@ -35,7 +38,7 @@ pub const KPASSWD_INITIAL_FLAG_NEEDED: u16 = 7;
 const HEADER_LEN: usize = 6;
 
 /// Payload encrypted inside a Kerberos password-change request.
-#[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
+#[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ChangePasswdData {
     /// New password bytes.
@@ -47,6 +50,22 @@ pub struct ChangePasswdData {
     /// Optional target realm.
     #[rasn(tag(explicit(2)))]
     pub targ_realm: Option<rasn_kerberos::Realm>,
+}
+
+impl fmt::Debug for ChangePasswdData {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            new_passwd: _,
+            targ_name,
+            targ_realm,
+        } = self;
+        f.debug_struct("ChangePasswdData")
+            .field("new_passwd", &"[REDACTED]")
+            .field("targ_name", targ_name)
+            .field("targ_realm", targ_realm)
+            .finish()
+    }
 }
 
 impl ChangePasswdData {
@@ -365,8 +384,12 @@ pub fn build_change_password_request_with_confounder(
     options: EncKrbPrivPartOptions,
     confounder: &[u8],
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let krb_priv =
-        build_krb_priv_with_confounder(change_data.encode_der()?, options, &reply_key, confounder)?;
+    let krb_priv = build_krb_priv_with_confounder(
+        Zeroizing::new(change_data.encode_der()?),
+        options,
+        &reply_key,
+        confounder,
+    )?;
     build_change_password_request_from_parts(ap_req, krb_priv, reply_key)
 }
 
@@ -388,6 +411,12 @@ pub fn build_change_password_message_with_confounders(
     options: ChangePasswdMessageOptions,
     encryption: PasswordEncryption<'_>,
 ) -> Result<BuiltChangePasswordRequest, Error> {
+    messages::microseconds("cusec", &Integer::from(options.cusec))
+        .and_then(|_value| messages::whole_seconds(&options.timestamp))
+        .map_err(|source| Error::Encode {
+            target: "kpasswd request time",
+            message: source.to_string(),
+        })?;
     let PasswordEncryption {
         reply_key,
         ap_req_confounder,
@@ -533,7 +562,11 @@ pub fn build_change_password_request(
     reply_key: EncryptionKey,
     options: EncKrbPrivPartOptions,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let krb_priv = build_krb_priv(change_data.encode_der()?, options, &reply_key)?;
+    let krb_priv = build_krb_priv(
+        Zeroizing::new(change_data.encode_der()?),
+        options,
+        &reply_key,
+    )?;
     build_change_password_request_from_parts(ap_req, krb_priv, reply_key)
 }
 
@@ -541,9 +574,9 @@ pub fn build_change_password_request(
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Reply {
-    /// Total message length from the two-byte frame prefix.
+    /// Total wire length; bare RFC 3244 errors have no length prefix.
     pub message_length: u16,
-    /// Protocol version from the reply frame.
+    /// Framed version, or [`CHANGE_PASSWORD_REQUEST_VERSION`] for a bare RFC 3244 error.
     pub version: u16,
     /// DER byte length of the AP-REP section, or zero for a KRB-ERROR reply.
     pub ap_rep_length: u16,
@@ -571,6 +604,28 @@ impl Reply {
     /// error of KRB-ERROR e-data.
     #[inline]
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        if bytes.first() == Some(&0x7e)
+            && let Ok(krb_error) = krb_error::decode(bytes)
+        {
+            let result = krb_error
+                .e_data
+                .as_ref()
+                .map(|data| ChangePasswordResult::parse(data.as_ref()))
+                .transpose()?;
+            return Ok(Self {
+                message_length: u16::try_from(bytes.len()).map_err(|_overflow| {
+                    Error::FrameTooLarge {
+                        actual: bytes.len(),
+                    }
+                })?,
+                version: CHANGE_PASSWORD_REQUEST_VERSION,
+                ap_rep_length: 0,
+                ap_rep: None,
+                krb_priv: None,
+                krb_error: Some(krb_error),
+                result,
+            });
+        }
         let frame = parse_header(bytes)?;
         if frame.version != CHANGE_PASSWORD_REPLY_VERSION {
             return Err(Error::InvalidReplyVersion(frame.version));
@@ -683,6 +738,9 @@ impl Reply {
             let body = krb_error_part
                 .map(|message| krb_error::encode(message).map_err(krb_error_error))
                 .ok_or(Error::MissingKrb)??;
+            if self.version == CHANGE_PASSWORD_REQUEST_VERSION {
+                return Ok(body);
+            }
             // Saturating: a total past `usize::MAX` is past `u16::MAX` too, and
             // is refused as too large just below.
             let frame_length = HEADER_LEN.saturating_add(body.len());
@@ -815,9 +873,9 @@ fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
+    decode_complete(bytes).map_err(|source| Error::Decode {
         target,
-        message: source.to_string(),
+        message: source,
     })
 }
 
@@ -1005,6 +1063,9 @@ fn parse_header(bytes: &[u8]) -> Result<Frame<'_>, Error> {
     let message_length = u16::from_be_bytes([length_high, length_low]);
     let frame_len = usize::from(message_length);
     if frame_len < HEADER_LEN {
+        return Err(Error::InvalidMessageLength(message_length));
+    }
+    if frame_len < bytes.len() {
         return Err(Error::InvalidMessageLength(message_length));
     }
     let Some(body) = bytes.get(HEADER_LEN..frame_len) else {

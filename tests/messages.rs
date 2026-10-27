@@ -17,6 +17,7 @@ mod tests {
     use rasn_kerberos::{Checksum, KrbError};
     use rskrb5_ng::{
         error::Messages as Error,
+        krb_error,
         messages::{
             EncryptedData, KrbErrorInfo, PaForUser, PaPacOptions, PaReqEncPaRep, decode_der,
             encode_der,
@@ -64,6 +65,68 @@ mod tests {
     const TEST_CIPHER: &[u8] = b"krbASN.1 test message";
     /// Timestamp of the gokrb5 fixtures, in seconds since the Unix epoch.
     const TEST_TIME_SECONDS: u64 = 771_228_197;
+
+    /// Enforces the RFC Microseconds domain at semantic diagnostic conversion.
+    #[test]
+    fn protocol_time_rejects_out_of_domain_microseconds() -> Result<(), TestError> {
+        // Given valid KRB-ERRORs with invalid microsecond fields.
+        for value in [-1_i64, 1_000_000, 0xffff_ffff] {
+            let mut error: KrbError = der::decode(&hex::decode(KRB_ERROR)?)?;
+            error.susec = value.into();
+            // When semantic validation runs, then invalid values are rejected.
+            let _error = KrbErrorInfo::from_rasn(&error)
+                .err()
+                .ok_or("invalid susec accepted")?;
+        }
+        Ok(())
+    }
+
+    /// Rejects fractional `KerberosTime` rather than normalizing it.
+    #[test]
+    fn protocol_time_rejects_fractional_kerberos_time() -> Result<(), TestError> {
+        // Given an otherwise valid error with fractional server time.
+        let mut error: KrbError = der::decode(&hex::decode(KRB_ERROR)?)?;
+        error.stime.0 += chrono::Duration::nanoseconds(1);
+        // When semantic conversion runs, then the fraction is rejected.
+        let _error = KrbErrorInfo::from_rasn(&error)
+            .err()
+            .ok_or("fraction accepted")?;
+        Ok(())
+    }
+
+    /// Accepts both inclusive Microseconds boundaries without modifying them.
+    #[test]
+    fn protocol_time_accepts_microsecond_boundaries() -> Result<(), TestError> {
+        for value in [0_u32, 999_999] {
+            let mut error: KrbError = der::decode(&hex::decode(KRB_ERROR)?)?;
+            error.susec = value.into();
+            assert_eq!(KrbErrorInfo::from_rasn(&error)?.susec, value);
+        }
+        Ok(())
+    }
+
+    /// Rejects unchecked suffixes at complete KRB-ERROR decoding boundaries.
+    #[test]
+    fn whole_message_rejects_trailing_value() -> Result<(), TestError> {
+        // Given a valid error followed by a second DER value.
+        let mut bytes = hex::decode(KRB_ERROR)?;
+        bytes.extend_from_slice(&[0x05, 0]);
+        // When the validated codec is used, then the suffix is rejected.
+        let _error = krb_error::decode(&bytes).err().ok_or("suffix accepted")?;
+        Ok(())
+    }
+
+    /// Preserves the explicitly raw generic prefix decoder's existing contract.
+    #[test]
+    fn raw_codec_retains_prefix_contract() -> Result<(), TestError> {
+        // Given concatenated DER values at the raw convenience boundary.
+        let mut bytes = hex::decode(KRB_ERROR)?;
+        bytes.extend_from_slice(&[0x05, 0]);
+        // When prefix decoding is explicitly requested, then the first value survives.
+        let error: KrbError = decode_der("raw KRB-ERROR", &bytes)?;
+        assert_eq!(error.error_code, 60_i32);
+        Ok(())
+    }
 
     /// Pins that the gokrb5 `EncryptedData` fixtures decode with their kvno and re-encode byte for byte.
     #[test]

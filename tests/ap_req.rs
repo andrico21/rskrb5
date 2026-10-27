@@ -54,6 +54,31 @@ mod tests {
     /// AES256 key used to encrypt the authenticators.
     const REPLY_KEY: &str = "9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51";
 
+    /// Rejects authenticated nonzero suffixes while retaining intentional zero padding.
+    #[test]
+    fn authenticator_rejects_nonzero_authenticated_suffix() -> Result<(), TestError> {
+        // Given authenticator plaintext with an authenticated nonzero suffix.
+        let mut request = decode_ap_req(&hex::decode(MARSHALLED_AP_REQ)?)?;
+        let mut plaintext = hex::decode(MARSHALLED_AUTHENTICATOR)?;
+        plaintext.push(1);
+        let key = reply_key()?;
+        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("etype")?;
+        request.authenticator.etype = key.etype;
+        request.authenticator.cipher = etype
+            .encrypt_message_with_confounder(
+                &key.value,
+                &plaintext,
+                AP_REQ_AUTHENTICATOR_USAGE,
+                &[0; 16],
+            )?
+            .into();
+        // When the decrypted complete value is decoded, then the suffix is rejected.
+        let _error = decrypt_ap_req_authenticator(&request, &key, AP_REQ_AUTHENTICATOR_USAGE)
+            .err()
+            .ok_or("authenticated suffix accepted")?;
+        Ok(())
+    }
+
     /// Pins that the gokrb5 AP-REQ fixture decodes to the expected fields and re-encodes byte for byte.
     #[test]
     fn decodes_gokrb5_ap_req_fixture() -> Result<(), TestError> {

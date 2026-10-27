@@ -694,7 +694,7 @@ mod harness {
             ctime: authenticator.ctime.clone(),
             cusec: authenticator.cusec.clone(),
             subkey: Some(rasn_encryption_key(response_key)),
-            seq_number: authenticator.seq_number,
+            seq_number: Some(99),
         };
         let ap_rep = encode_build_ap_rep_with_confounder(
             &enc_ap_rep_part,
@@ -708,7 +708,7 @@ mod harness {
         result.extend_from_slice(text.as_bytes());
         let krb_priv = build_krb_priv_with_confounder(
             result,
-            EncKrbPrivPartOptions::new(ipv4_host_address([127, 0, 0, 1])),
+            EncKrbPrivPartOptions::new(ipv4_host_address([127, 0, 0, 1])).with_sequence_number(99),
             response_key,
             &decode_hex(PREAUTH_CONFOUNDER)?,
         )

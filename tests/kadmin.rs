@@ -457,6 +457,51 @@ mod tests {
         Ok(())
     }
 
+    /// Rejects invalid explicit time scalars before constructing a mutation frame.
+    #[test]
+    fn protocol_time_kpasswd_builder_rejects_invalid_scalars() -> Result<(), TestError> {
+        // Given a service ticket and explicit invalid request metadata.
+        for fractional in [false, true] {
+            let request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
+            let key = EncryptionKey::new(18, vec![0x11; 32]);
+            let mut time = kerberos_time(1_893_553_452)?;
+            if fractional {
+                time.0 += chrono::Duration::nanoseconds(1);
+            }
+            let options = ChangePasswdMessageOptions::new(
+                time,
+                if fractional { 0 } else { 1_000_000 },
+                42,
+                ipv4_host_address([127, 0, 0, 1]),
+            );
+            // When construction runs, then no invalid wire request is produced.
+            let _error = build_change_password_message(
+                rasn_principal_name(1, ["testuser1"])?,
+                "TEST.GOKRB5",
+                &ChangePasswdData::new(b"dummy-password"),
+                request.ap_req.ticket,
+                &key,
+                options,
+            )
+            .err()
+            .context("invalid request time rejected")?;
+        }
+        Ok(())
+    }
+
+    /// Redacts password-specific ownership rather than exposing bytes to loggers.
+    #[test]
+    fn password_plaintext_debug_is_redacted() -> Result<(), TestError> {
+        // Given a recognizable password, when rendered, then only its marker survives.
+        let data =
+            ChangePasswdData::for_target(b"password-secret-canary", 1, ["dummy"], "TEST.GOKRB5")?;
+        let rendered = format!("{data:?}");
+        assert!(!rendered.contains("password-secret-canary"));
+        assert!(!rendered.contains("112, 97, 115, 115"));
+        assert!(rendered.contains("[REDACTED]"));
+        Ok(())
+    }
+
     /// Pins that a built change-password message decrypts to its targeted payload.
     #[test]
     fn kpasswd_request_build_change_password_message_builds_and_decrypts_payload()
@@ -719,6 +764,59 @@ mod tests {
         let reply = Reply::parse(&bytes).context("KRB-ERROR reply parses")?;
 
         assert_eq!(reply.encode().context("reply encodes")?, bytes);
+        Ok(())
+    }
+
+    /// Accepts the RFC 3244 unencapsulated error and preserves its wire profile.
+    #[test]
+    fn kpasswd_bare_error_roundtrips() -> Result<(), TestError> {
+        // Given a standalone application-30 error, not a kpasswd frame.
+        let bytes = decode_hex(KRB_ERROR_WITH_EDATA)?;
+        // When the response parser dispatches it.
+        let reply = Reply::parse(&bytes)?;
+        // Then it retains the error result and bare encoding.
+        assert!(reply.is_krb_error());
+        assert_eq!(
+            reply.decrypt_result(&EncryptionKey::new(18, vec![0; 32]))?,
+            ChangePasswordResult::parse(b"krb5data")?
+        );
+        assert_eq!(reply.encode()?, bytes);
+        Ok(())
+    }
+
+    /// Rejects unauthenticated success in both bare and legacy wrapped errors.
+    #[test]
+    fn kpasswd_bare_error_cannot_assert_success() -> Result<(), TestError> {
+        // Given an error carrying a forged success result.
+        let mut error: KrbError = der::decode(&decode_hex(KRB_ERROR_WITH_EDATA)?)?;
+        error.e_data = Some(vec![0, 0].into());
+        let bare = der::encode(&error)?;
+        for bytes in [bare.clone(), kpasswd_reply_frame(0, &bare)?] {
+            // When the result is consumed, then unauthenticated success is rejected.
+            let reply = Reply::parse(&bytes)?;
+            assert!(matches!(
+                reply.decrypt_result(&EncryptionKey::new(18, vec![0; 32])),
+                Err(KadminError::UnauthenticatedSuccess)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Rejects extra bytes beyond a complete framed request or reply.
+    #[test]
+    fn kpasswd_rejects_complete_frame_suffix() -> Result<(), TestError> {
+        // Given complete frames followed by a second, unchecked value.
+        let mut request = decode_hex(MARSHALLED_KPASSWD_REQ)?;
+        let mut reply = decode_hex(MARSHALLED_KPASSWD_REP)?;
+        request.extend_from_slice(&[0x05, 0]);
+        reply.extend_from_slice(&[0x05, 0]);
+        // When each whole-frame boundary parses, then both reject the suffix.
+        let _request_error = Request::parse(&request)
+            .err()
+            .context("request suffix rejected")?;
+        let _reply_error = Reply::parse(&reply)
+            .err()
+            .context("reply suffix rejected")?;
         Ok(())
     }
 

@@ -7,6 +7,7 @@ use rasn::{der, types::Integer};
 use crate::{
     ccache,
     crypto::KerberosEtype,
+    der::decode_complete,
     error::Ticket as TicketError,
     keytab::EncryptionKey,
     ticket::{decode as decode_ticket, encode as encode_ticket},
@@ -527,9 +528,9 @@ fn decode_der<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
+    decode_complete(bytes).map_err(|source| Error::Decode {
         target,
-        message: source.to_string(),
+        message: source,
     })
 }
 
