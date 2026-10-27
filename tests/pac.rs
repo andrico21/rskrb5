@@ -9,6 +9,8 @@ mod pac_ad_win2k;
 mod pac_authorization;
 #[path = "support/pac_claim_limits.rs"]
 mod pac_claim_limits;
+#[path = "support/pac_credential_counts.rs"]
+mod pac_credential_counts;
 #[path = "support/pac_trust.rs"]
 mod pac_trust;
 

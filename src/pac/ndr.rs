@@ -212,7 +212,17 @@ pub(super) fn read_counted_supplemental_credentials(
     }
 
     let len = ndr_len(count)?;
-    let mut descriptors = Vec::with_capacity(len);
+    let descriptor_bytes = len.checked_mul(16).ok_or(Error::LengthOverflow)?;
+    (count <= MAX_REASONABLE_NDR_COUNT && descriptor_bytes <= reader.remaining()).ok_or(
+        Error::UnreasonableNdrCount {
+            target: "SECPKGSupplementalCred",
+            count,
+        },
+    )?;
+    let mut descriptors = Vec::new();
+    descriptors
+        .try_reserve_exact(len)
+        .map_err(|_allocation| Error::CredentialAllocation)?;
     for _ in 0..count {
         descriptors.push((
             RpcUnicodeStringDescriptor::read(reader)?,
@@ -221,7 +231,10 @@ pub(super) fn read_counted_supplemental_credentials(
         ));
     }
 
-    let mut supplemental_credentials = Vec::with_capacity(len);
+    let mut supplemental_credentials = Vec::new();
+    supplemental_credentials
+        .try_reserve_exact(len)
+        .map_err(|_allocation| Error::CredentialAllocation)?;
     for (package_name_descriptor, credential_size, credentials_ref) in descriptors {
         let package_name = read_deferred_unicode_string(
             reader,

@@ -1603,6 +1603,9 @@ pub enum Pac {
     /// NTLM supplemental credential version was not zero.
     #[error("invalid NTLM supplemental credential version: {0}")]
     InvalidNtlmSupplementalCredentialVersion(u32),
+    /// Validated supplemental credential storage could not be reserved.
+    #[error("PAC supplemental credential allocation failed")]
+    CredentialAllocation,
     /// The PAC server checksum did not verify.
     #[error("PAC service checksum verification failed")]
     ServerChecksumVerificationFailed,

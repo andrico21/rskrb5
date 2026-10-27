@@ -10,6 +10,8 @@ Full commands, red runs and scratch failure QA are recorded in
 
 | RSK-B5912AE2 / lead `pac.claims-decompression.peer-controlled-cap` | fixed | `claims_rejects_excessive_declared_output`, `claims_rejects_excessive_uncompressed_output`, `claims_accepts_output_limit`; commit suffix `(RSK-B5912AE2)` | Claims decode rejects declared output or raw input over 1 MiB before framing, decompressing or copying, using `Pac::ClaimsOutputLimit`. At most two processed claims buffers bound aggregate decoded output to 2 MiB. Existing compression output cap and exact-size checks remain. | N/A |
 
+| RSK-A9B8B032 / lead `pac.ndr.supplemental-credentials-unbounded-capacity` | fixed | `credentials_rejects_count_without_descriptor_extent`, `credentials_accepts_empty_count`; commit suffix `(RSK-A9B8B032)` | Before reservation, credential counts must be at most 1,000,000 and their checked 16-byte descriptor extent must fit the remaining input. Both vector reservations are fallible (`Pac::CredentialAllocation`). Conformant-count correlation follows in the next item. | N/A |
+
 ## Traversal policy and trust boundary
 
 The inclusive limits match the existing service authorization validator: eight
@@ -26,6 +28,6 @@ key decryption, as recorded by the audit lead. No service call-site edit is need
 
 ## Remaining work
 
-Eight other todo-32 items remain pending. Final full STRICT, WIN-CLIPPY,
+Seven other todo-32 items remain pending. Final full STRICT, WIN-CLIPPY,
 FULL-TEST, DOCTEST, DOCS, NIGHTLY-FMT, GATES and exact doc-ID acceptance are
 deferred until all items are complete, as required by the lane instructions.

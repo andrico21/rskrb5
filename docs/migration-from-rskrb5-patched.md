@@ -5,6 +5,13 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Bounded supplemental credential allocation
+
+Credential data rejects counts above 1,000,000 or whose 16-byte fixed
+descriptors cannot fit the remaining input, before reserving either vector.
+Allocation failures after admission return `error::Pac::CredentialAllocation`.
+Zero credentials remain valid; no public signatures change.
+
 ### Bounded claims output
 
 `ClaimsSetMetadata::decoded_claims_set_bytes` rejects declared output lengths
