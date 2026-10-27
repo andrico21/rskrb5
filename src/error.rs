@@ -373,6 +373,9 @@ pub enum Client {
     /// An authenticated kpasswd response violated its contextual control policy.
     #[error("invalid kpasswd response control: {0}")]
     KpasswdReplyControl(&'static str),
+    /// Delivery or reply validation failed after entering a mutation exchange.
+    #[error("password mutation outcome is unknown: {0}")]
+    KpasswdOutcomeUnknown(Box<Self>),
     /// A kpasswd AP-REP did not echo the AP-REQ authenticator timestamp.
     #[error("kpasswd AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
     KpasswdApRepTimestampMismatch {

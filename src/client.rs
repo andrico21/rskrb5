@@ -2266,8 +2266,10 @@ impl Tokio {
                 &target.realm,
                 &request.request,
             )
-            .await?;
-        let result = validated_result(&reply, &request, &options)?;
+            .await
+            .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
+        let result = validated_result(&reply, &request, &options)
+            .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
         result.ensure_success()?;
 
         if update_password_credential {

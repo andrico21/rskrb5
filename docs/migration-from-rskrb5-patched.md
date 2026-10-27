@@ -895,6 +895,15 @@ assert!(matches!(error, Client::PrincipalMismatch { .. }));
 ```
 # RFC 3244 bare error responses
 
+High-level password mutation exchange and reply-validation failures now return
+`Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
+The classification is conservative and may include failure before delivery.
+It does not mean rejection or rollback: reconcile with a fresh login before
+retrying. Dropping a mutation future returns no error at all; the caller must
+record unknown externally. Confirmed server rejection remains a normal result
+failure. Async Negotiate wrappers preserve this error and the same cancellation
+contract. Transport retry/deadline staging is a separate review item.
+
 Password-specific `ChangePasswdData` Debug now redacts `new_passwd`. High-level
 password copies and owned DER staging buffers use zeroizing owners; immutable
 rasn `OctetString` fields remain dependency-owned residuals (see the review).

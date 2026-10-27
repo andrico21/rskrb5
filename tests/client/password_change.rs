@@ -489,6 +489,47 @@ TEST.GOKRB5 = {{
         })
     }
 
+    /// Marks a lost reply as unknown rather than implying mutation rollback.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn kpasswd_lost_reply_has_unknown_outcome() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a peer that consumes the complete mutation before disconnecting.
+            let tgt = sample_tgt_session()?;
+            let ticket = current_changepw_ticket(&tgt)?;
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let mut client = Tokio::from_tgt_session(
+                config_with_kpasswd_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                tgt,
+            );
+            client.cache_service_ticket(ticket);
+            let task = tokio::spawn(async move {
+                let (_request, socket) = read_tcp_kdc_request(&listener).await?;
+                drop(socket);
+                Ok::<(), TestError>(())
+            });
+            // When the response is lost, then callers receive an explicit unknown class.
+            let error = client
+                .change_password_with_options(
+                    b"dummy-password",
+                    RequestOptions::new(
+                        timestamp(1_893_553_452)?,
+                        456_789,
+                        42,
+                        ipv4_host_address([127, 0, 0, 1]),
+                    ),
+                )
+                .await
+                .err()
+                .context("reply lost")?;
+            task.await??;
+            assert!(matches!(error, Error::KpasswdOutcomeUnknown(_)));
+            Ok(())
+        })
+    }
+
     /// Pins that the Tokio client sends the explicit target principal and new password to kpasswd.
     #[cfg(feature = "tokio")]
     #[test]
@@ -1010,7 +1051,8 @@ TEST.GOKRB5 = {{
                 };
                 assert!(matches!(
                     error,
-                    Error::Kadmin(KadminError::UnauthenticatedSuccess)
+                    Error::KpasswdOutcomeUnknown(source)
+                        if matches!(*source, Error::Kadmin(KadminError::UnauthenticatedSuccess))
                 ));
             }
 

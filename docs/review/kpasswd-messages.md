@@ -1,7 +1,6 @@
 # Kpasswd and message review dispositions
 
-This lane is incomplete. Only the row below is claimed fixed; the remaining
-todo 34 items have not yet been fixed or dismissed. Commit subjects identify
+All todo 34 IDs have a disposition. Commit subjects identify
 their atomic item without self-referential hashes. Full commands, red output
 and exit codes are in `task-34-rskrb5-ng-own-way.log` in the execution evidence.
 
@@ -13,6 +12,8 @@ and exit codes are in `task-34-rskrb5-ng-own-way.log` in the execution evidence.
 | RSK-0C0007B7 | fixed | `kpasswd_rejects_complete_frame_suffix`, `whole_message_rejects_trailing_value`, `authenticator_rejects_nonzero_authenticated_suffix`, `raw_codec_retains_prefix_contract`; commit subject suffix `(RSK-0C0007B7)` | Complete AP/KDC/ticket/KRB message codecs require an empty DER remainder, including decrypted parts after intentional zero-padding handling. Kpasswd frames require exact declared length. Generic `messages::decode_der` remains a raw prefix codec. | N/A |
 | RSK-6A673A85 | fixed | `protocol_time_rejects_out_of_domain_microseconds`, `protocol_time_rejects_fractional_kerberos_time`, `protocol_time_accepts_microsecond_boundaries`, `protocol_time_kpasswd_builder_rejects_invalid_scalars`; commit suffix `(RSK-6A673A85)` | Shared checked Microseconds/whole-second conversions reject invalid KRB-ERROR diagnostics, explicit kpasswd request scalars and kpasswd AP-REP time fields. Raw ASN.1 codecs remain raw; service validation retains its earlier stricter checks. | N/A |
 | RSK-471362A3 / upstream issue #1 | fixed | `password_plaintext_debug_is_redacted`, password mutation success/error probes; commit suffix `(RSK-471362A3)` | Redact password-specific Debug; attach `Zeroizing` immediately to the high-level password copy and to owned password DER, encrypted-part encoding and decrypted plaintext scratch on every return/cancellation path. | N/A |
+| RSK-14E2755A / upstream issue #8 | fixed | `kpasswd_lost_reply_has_unknown_outcome`; commit suffix `(RSK-14E2755A-RSK-8BBFC1EE)` | Return `Client::KpasswdOutcomeUnknown` with preserved cause for high-level exchange/reply-validation failure after entering the mutation exchange. Caller cancellation still returns nothing and must be recorded unknown externally. | N/A |
+| RSK-8BBFC1EE | dismissed | Whole-tree `prose_gate.py --enforce`; cancellation sections in `client/negotiate.rs` and `http.rs`; commit suffix `(RSK-14E2755A-RSK-8BBFC1EE)` | None for wrapper annotations: earlier prose migration already documents them. Wrappers propagate the high-level unknown-outcome variant. | Source probe confirms every async wrapper already has a Cancel safety section and mutation wrappers warn that cancellation does not roll back, outcome is unknown, and verification precedes retry. No prose-string unit test added. |
 
 ## Checksum contract
 
@@ -25,13 +26,14 @@ the builder. Existing round-trip, tampering and key/type mismatch tests remain.
 No public signature or error variant changes. Only owned message clones are
 used to replace the checksum; no caller message is mutated.
 
-## Remaining work
+## Acceptance and outcome limits
 
-- Cancellation and unknown-outcome contracts for mutation and wrappers.
-
-Full final acceptance (fresh-target STRICT, WIN-CLIPPY, FULL-TEST, DOCTEST,
-stable/nightly DOCS, NIGHTLY-FMT, GATES and exact review-ID coverage) is deferred
-until all items are complete. No full-todo acceptance is claimed here.
+Final acceptance results are recorded in the execution evidence, not inferred
+from the per-item checks. The unknown classification is conservative: it can
+include pre-delivery failures because this API does not expose delivery stage.
+Confirmed server rejection remains a normal password-change failure. No remote
+rollback or automatic reconciliation is claimed. Transport retry/deadline stage
+redesign remains todo 35; callers must not blindly retry unknown outcomes.
 
 ## Secret ownership boundary
 
