@@ -89,11 +89,11 @@ and hex takes precedence over base64.
 | `testuser3@USER.GOKRB5` | `TEST_AD_TESTUSER3_KEYTAB_PATH` | `TEST_AD_TESTUSER3_KEYTAB_HEX` | `TEST_AD_TESTUSER3_KEYTAB_BASE64` |
 | `sysHTTP@RES.GOKRB5` | `TEST_AD_SYSHTTP_KEYTAB_PATH` | `TEST_AD_SYSHTTP_KEYTAB_HEX` | `TEST_AD_SYSHTTP_KEYTAB_BASE64` |
 
-For GitHub Actions, the manual integration job reads the corresponding
-`*_BASE64` secret names when `test_ad=true`. The current job runs on
-GitHub-hosted `ubuntu-latest`, so the AD endpoints must be reachable from
-GitHub-hosted runners. The required repository or organization
-repository-selected secrets are:
+The rskrb5-ng CI workflow has no AD job ([`gated-integration.md`](gated-integration.md)).
+A restored hosted AD job would read the `*_BASE64` secret names, and on
+GitHub-hosted runners the AD endpoints must be reachable from GitHub's
+network. The repository or organization repository-selected secrets such a
+job needs are:
 
 - `TEST_AD_USER_KDC_ADDR`
 - `TEST_AD_RESOURCE_KDC_ADDR`
@@ -105,9 +105,9 @@ repository-selected secrets are:
 - `TEST_AD_SYSHTTP_KEYTAB_BASE64`
 
 The exact GitHub setup checklist is in
-[`github-ad-gate-setup.md`](github-ad-gate-setup.md). The current workflow does
-not set an Actions `environment:`, so plain Environment secrets are not visible
-to the AD job unless the workflow is changed.
+[`github-ad-gate-setup.md`](github-ad-gate-setup.md). A job without an Actions
+`environment:` can't see Environment secrets, so put these in the repository
+or organization secrets, or give the restored job an environment.
 
 For local or self-hosted shell runs, file paths are usually simpler:
 
@@ -157,58 +157,45 @@ when the lab network is intentionally unavailable. Use
 `TEST_AD_CHECK_ADMIN_REACHABILITY=1` to also require TCP reachability for the
 admin server endpoints.
 
-To run the GitHub Actions gate, use `workflow_dispatch` with `test_ad=true`.
-The Docker-backed MIT integration job remains separate; use `integration=true`
-when that gate should run in the same workflow dispatch.
+There is no hosted AD gate to dispatch in rskrb5-ng: `ci.yml` declares no
+`workflow_dispatch` inputs, and `scripts/check-github-ad-gate.py --dispatch`
+exits 2 without dispatching anything until an AD job and its inputs are
+restored. Run the strict gate locally with the command above.
 
-Check GitHub-side readiness before dispatching:
+Check GitHub-side secret readiness:
 
 ```sh
 scripts/check-github-ad-gate.py
 ```
 
-While endpoint secrets are unavailable, validate only keytab secret shape
-without making the workflow red:
-
-```sh
-scripts/check-github-ad-gate.py --dry-run --dispatch
-```
-
-The first captured green hosted dry-run is GitHub Actions run
+The upstream `clelange/rskrb5` workflow captured a green hosted keytab-secret
+dry-run in its GitHub Actions run
 [`28119806826`](https://github.com/clelange/rskrb5/actions/runs/28119806826).
-It validates only keytab secret shape; strict AD evidence still requires
-reachable endpoint secrets and `test_ad=true`.
+It validated only keytab secret shape and is historical upstream evidence.
 
 ## Current Deferred Blocker
 
-The strict AD gate is deferred from the `0.2.0` release path until these
-endpoint secrets exist and are reachable from GitHub-hosted runners:
+The strict AD gate stays blocked until these endpoints exist and are
+reachable from the runner:
 
 - `TEST_AD_USER_KDC_ADDR`
 - `TEST_AD_RESOURCE_KDC_ADDR`
 - `TEST_AD_USER_ADMIN_ADDR`
 - `TEST_AD_RESOURCE_ADMIN_ADDR`
 
-Keep the dry-run green while this blocker is deferred. Do not claim Windows AD
-PAC parity until `test_ad=true` passes without soft-skip.
-Do not add random, placeholder, or reserved endpoint secrets to make GitHub's
-strict readiness check pass; endpoint secrets must represent real reachable AD
-services. Without that, use only `test_ad_dry_run=true`.
+Do not claim Windows AD PAC parity until a strict `TESTAD_REQUIRED=1` run
+passes without soft-skip. Do not add random, placeholder, or reserved endpoint
+secrets to make GitHub's strict readiness check pass; endpoint secrets must
+represent real reachable AD services.
 
-After the required secrets are present, dispatch the gate:
-
-```sh
-scripts/check-github-ad-gate.py --dispatch
-```
-
-If this script reports missing endpoint or keytab secrets, follow
-[`github-ad-gate-setup.md`](github-ad-gate-setup.md). Do not dispatch the strict
-gate until the readiness check is green.
+If the readiness script reports missing endpoint or keytab secrets, follow
+[`github-ad-gate-setup.md`](github-ad-gate-setup.md).
 
 When running through the Docker MIT fixture helper, AD remains separate from the
 Docker environment. The helper preserves `TEST_AD_*` endpoint and keytab values
-in `target/gated-integration.env` for split `start` and `test` workflows, but
-it does not create AD domains:
+in its private environment file, `target/gated-integration/gated-integration.env`
+(mode 0600; `env` prints the keytab values as `<redacted>`), for split `start`
+and `test` runs, but it does not create AD domains:
 
 ```sh
 TESTAD=1 TESTAD_REQUIRED=1 scripts/run-gated-integration.sh test \
@@ -216,8 +203,8 @@ TESTAD=1 TESTAD_REQUIRED=1 scripts/run-gated-integration.sh test \
 ```
 
 Use a runner that can route to both AD KDCs and keep clock skew within Kerberos
-tolerance. A GitHub-hosted runner will only pass this gate if the lab is exposed
-or reachable through a configured network path.
+tolerance. A GitHub-hosted runner, should an AD job be restored, will only pass
+this gate if the lab is exposed or reachable through a configured network path.
 
 ## Upstream Mapping
 

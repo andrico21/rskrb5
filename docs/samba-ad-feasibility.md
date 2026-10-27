@@ -98,10 +98,11 @@ Export account-principal keytabs, not SPN-only keytabs:
 
 ## Validation Sequence
 
-Start with the non-live GitHub keytab secret dry-run:
+Start with the GitHub-side keytab secret readiness check, which makes no
+workflow dispatch:
 
 ```sh
-scripts/check-github-ad-gate.py --dry-run --dispatch --ref main
+scripts/check-github-ad-gate.py --dry-run
 ```
 
 Then run the strict local preflight against the Samba endpoints:
@@ -116,8 +117,9 @@ scripts/check-ad-integration-env.py
 cargo test --all-features --test client_ad_integration -- --nocapture
 ```
 
-Only after the strict local run passes should the endpoints be considered for
-GitHub-hosted `test_ad=true` dispatch.
+Only after the strict local run passes should the endpoints be considered for a
+hosted AD job. rskrb5-ng's CI has none today; see
+[`github-ad-gate-setup.md`](github-ad-gate-setup.md).
 
 ## Known Risks
 
