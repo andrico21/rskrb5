@@ -1862,7 +1862,7 @@ impl Tokio {
     }
 
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
-    /// them by priority, then by descending weight.
+    /// them by priority, then weighted selection without replacement.
     ///
     /// With an explicit DNS server set, each target is also resolved
     /// to an IP address through the same resolver.
@@ -1928,13 +1928,7 @@ impl Tokio {
             })
             .filter(|(_, _, target, _)| !target.is_empty() && target != ".")
             .collect::<Vec<_>>();
-        records.sort_by(|left, right| {
-            left.0
-                .cmp(&right.0)
-                .then_with(|| right.1.cmp(&left.1))
-                .then_with(|| left.2.cmp(&right.2))
-                .then_with(|| left.3.cmp(&right.3))
-        });
+        order_srv_records(&mut records, srv_draw)?;
 
         let resolve_targets = self.dns_server.is_some();
         let mut endpoints = Vec::with_capacity(records.len());
@@ -2145,6 +2139,79 @@ impl Tokio {
     }
 }
 
+/// Select without replacement within ascending priorities using RFC 2782 draws.
+///
+/// # Errors
+/// Returns the draw error or a transport error for an invalid draw.
+fn order_srv_records<F>(records: &mut [(u16, u16, String, u16)], mut draw: F) -> Result<(), Error>
+where
+    F: FnMut(u64) -> Result<u64, Error>,
+{
+    records.sort_by_key(|record| record.0);
+    for offset in 0..records.len() {
+        let remaining = records
+            .get_mut(offset..)
+            .ok_or_else(|| Error::Transport("SRV selection offset".to_owned()))?;
+        let Some(first) = remaining.first() else {
+            break;
+        };
+        let priority = first.0;
+        let count = remaining
+            .iter()
+            .take_while(|record| record.0 == priority)
+            .count();
+        let group = remaining
+            .get_mut(..count)
+            .ok_or_else(|| Error::Transport("SRV priority group".to_owned()))?;
+        group.sort_by_key(|record| record.1 != 0);
+        let total = group.iter().map(|record| u64::from(record.1)).sum::<u64>();
+        let selected = if total == 0 {
+            usize::try_from(draw(
+                u64::try_from(count.saturating_sub(1))
+                    .map_err(|error| Error::Transport(error.to_string()))?,
+            )?)
+            .map_err(|error| Error::Transport(error.to_string()))?
+        } else {
+            let ticket = draw(total)?;
+            let mut cumulative = 0_u64;
+            group
+                .iter()
+                .position(|record| {
+                    cumulative = cumulative.saturating_add(u64::from(record.1));
+                    cumulative >= ticket
+                })
+                .ok_or_else(|| Error::Transport("SRV draw outside weight range".to_owned()))?
+        };
+        group
+            .get_mut(..=selected)
+            .ok_or_else(|| Error::Transport("SRV draw outside group".to_owned()))?
+            .rotate_right(1);
+    }
+    Ok(())
+}
+
+/// Draw uniformly from the inclusive range, rejecting the biased remainder.
+///
+/// # Errors
+/// Returns a transport error if entropy acquisition or range construction fails.
+fn srv_draw(maximum: u64) -> Result<u64, Error> {
+    let range = maximum
+        .checked_add(1)
+        .ok_or_else(|| Error::Transport("SRV weight overflow".to_owned()))?;
+    let threshold = range
+        .wrapping_neg()
+        .checked_rem(range)
+        .ok_or_else(|| Error::Transport("empty SRV range".to_owned()))?;
+    loop {
+        let value = getrandom::u64()?;
+        if value >= threshold {
+            return value
+                .checked_rem(range)
+                .ok_or_else(|| Error::Transport("empty SRV range".to_owned()));
+        }
+    }
+}
+
 /// Reject an empty KDC reply.
 ///
 /// # Errors
@@ -2345,6 +2412,64 @@ mod tests {
     use core::net::IpAddr;
 
     use super::parse_dns_server;
+
+    /// A zero draw selects zero-weight records before weighted peers at equal priority.
+    #[test]
+    fn srv_zero_draw_selects_zero_weight() -> Result<(), super::Error> {
+        let mut records = vec![
+            (1, 3, "heavy".to_owned(), 88),
+            (1, 0, "zero".to_owned(), 88),
+            (2, 8, "later".to_owned(), 88),
+        ];
+        super::order_srv_records(&mut records, |_| Ok(0))?;
+        assert_eq!(
+            records.first().map(|record| record.2.as_str()),
+            Some("zero")
+        );
+        assert_eq!(
+            records.last().map(|record| record.2.as_str()),
+            Some("later")
+        );
+        Ok(())
+    }
+
+    /// Inclusive draws cover both weighted boundaries without replacing selected records.
+    #[test]
+    fn srv_weight_boundaries_select_each_peer() -> Result<(), super::Error> {
+        for (ticket, expected) in [(0, "light"), (1, "light"), (2, "heavy"), (4, "heavy")] {
+            let mut records = vec![
+                (1, 1, "light".to_owned(), 88),
+                (1, 3, "heavy".to_owned(), 88),
+            ];
+            let mut first = true;
+            super::order_srv_records(&mut records, |_| {
+                let value = if first { ticket } else { 0 };
+                first = false;
+                Ok(value)
+            })?;
+            assert_eq!(
+                records.first().map(|record| record.2.as_str()),
+                Some(expected)
+            );
+            assert_ne!(records.first(), records.last());
+        }
+        Ok(())
+    }
+
+    /// All-zero groups use the injected index draw rather than a fixed ordering.
+    #[test]
+    fn srv_all_zero_weights_use_uniform_index() -> Result<(), super::Error> {
+        let mut records = vec![
+            (1, 0, "first".to_owned(), 88),
+            (1, 0, "second".to_owned(), 88),
+        ];
+        super::order_srv_records(&mut records, Ok)?;
+        assert_eq!(
+            records.first().map(|record| record.2.as_str()),
+            Some("second")
+        );
+        Ok(())
+    }
 
     /// A bare IP literal selects the standard DNS port 53.
     #[test]
