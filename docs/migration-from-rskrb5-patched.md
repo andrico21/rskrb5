@@ -5,6 +5,15 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Strict Microseconds domain (RSK-985742B6)
+
+Service AP-REQ acceptance and `ValidatedApReq` AP-REP construction/verification
+now reject microseconds outside 0..=999999 using the existing
+`Service::IntegerOutOfRange` error (`authenticator.cusec` or `ap-rep.cusec`).
+Values at or above one million are not normalized into additional seconds.
+Construction rechecks the mutable public `authenticator_cusec` field. Zero and
+999999 remain valid. Public signatures and error variants are unchanged.
+
 ### Bounded replay-cache lifecycle (RSK-7D80FA41)
 
 `ReplayCache::new`/`default` now own an immutable 300-second skew ceiling and

@@ -132,9 +132,13 @@ impl ValidatedApReq {
         confounder: &[u8],
         options: &ApRepOptions,
     ) -> Result<Vec<u8>, Error> {
+        let cusec = microseconds_to_u32(
+            "authenticator.cusec",
+            &Integer::from(self.authenticator_cusec),
+        )?;
         let enc_part = rasn_kerberos::EncApRepPart {
             ctime: kerberos_time_from_system_time(self.authenticator_ctime)?,
-            cusec: Integer::from(self.authenticator_cusec),
+            cusec: Integer::from(cusec),
             subkey: options.subkey.as_ref().map(encryption_key_to_rasn),
             seq_number: options.sequence_number,
         };
@@ -166,7 +170,7 @@ impl ValidatedApReq {
         let enc_part =
             ap_rep::decrypt_ap_rep_enc_part(&ap_rep, &self.session_key).map_err(ap_rep_error)?;
         let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
-        let cusec = integer_to_u32("ap-rep.cusec", &enc_part.cusec)?;
+        let cusec = microseconds_to_u32("ap-rep.cusec", &enc_part.cusec)?;
         let authenticator_time = ctime
             .checked_add(Duration::from_micros(cusec.into()))
             .ok_or(Error::TimeOverflow)?;
@@ -743,7 +747,7 @@ impl<'keytab> Validator<'keytab> {
             .into());
         }
 
-        let cusec = integer_to_u32("authenticator.cusec", &authenticator.cusec)?;
+        let cusec = microseconds_to_u32("authenticator.cusec", &authenticator.cusec)?;
         let authenticator_ctime = system_time_from_kerberos_time(&authenticator.ctime)?;
         let authenticator_timestamp = authenticator_ctime
             .checked_add(Duration::from_micros(cusec.into()))
@@ -1335,17 +1339,18 @@ fn unix_timestamp_parts(time: SystemTime) -> Result<(i64, u32), Error> {
     }
 }
 
-/// Convert a wire integer to `u32`.
+/// Enforce the RFC 4120 Microseconds domain before timestamp arithmetic.
 ///
 /// # Errors
 ///
-/// Returns [`Error::IntegerOutOfRange`], naming `field`, when the value does
-/// not fit in `u32`.
-fn integer_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
+/// Returns [`Error::IntegerOutOfRange`], naming `field`, outside 0..=999999.
+fn microseconds_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
     value
         .to_string()
         .parse::<u32>()
-        .map_err(|_out_of_range| Error::IntegerOutOfRange {
+        .ok()
+        .filter(|parsed| *parsed <= 999_999)
+        .ok_or_else(|| Error::IntegerOutOfRange {
             field,
             value: value.to_string(),
         })

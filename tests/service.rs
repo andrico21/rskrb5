@@ -1814,6 +1814,125 @@ mod tests {
         Ok(der::encode(&request)?)
     }
 
+    /// Authenticator microseconds outside the RFC domain cannot normalize into another second.
+    #[test]
+    fn microseconds_rejects_out_of_domain_authenticator() -> Result<(), TestError> {
+        for value in [-1_i64, 1_000_000, 0x0001_0000_0000] {
+            let keytab = http_keytab()?;
+            let mut request = valid_ap_req_struct()?;
+            let session = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
+            let mut authenticator = decrypt_ap_req_authenticator(
+                &request,
+                &session,
+                AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+            )?;
+            authenticator.cusec = value.into();
+            request.authenticator.cipher = encrypt_message(
+                &session,
+                &der::encode(&authenticator)?,
+                AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
+                PAC_AUTHENTICATOR_CONFOUNDER,
+            )?
+            .into();
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert!(matches!(
+                validator
+                    .validate_ap_req(&der::encode(&request)?)
+                    .err()
+                    .context("invalid cusec rejected")?,
+                Error::IntegerOutOfRange {
+                    field: "authenticator.cusec",
+                    value: _
+                }
+            ));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// AP-REP construction rechecks public mutable microsecond fields before encoding.
+    #[test]
+    fn microseconds_rejects_invalid_reply_construction() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_cusec = 1_000_000;
+        assert!(matches!(
+            validated
+                .build_ap_rep_with_confounder(
+                    &decode_hex(AP_REP_CONFOUNDER)?,
+                    &ApRepOptions::default()
+                )
+                .err()
+                .context("invalid reply construction rejected")?,
+            Error::IntegerOutOfRange {
+                field: "authenticator.cusec",
+                value: _
+            }
+        ));
+        Ok(())
+    }
+
+    /// Reply verification rejects invalid microseconds even when public expected fields match them.
+    #[test]
+    fn microseconds_rejects_invalid_reply_verification() -> Result<(), TestError> {
+        let mut validated = valid_ap_req()?;
+        validated.authenticator_cusec = 1_000_000;
+        let reply = reply_with_microseconds(&validated, 1_000_000)?;
+        assert!(matches!(
+            validated
+                .verify_ap_rep(&reply)
+                .err()
+                .context("invalid reply microseconds rejected")?,
+            Error::IntegerOutOfRange {
+                field: "ap-rep.cusec",
+                value: _
+            }
+        ));
+        Ok(())
+    }
+
+    /// Both legal boundary values remain representable and round-trip in mutual replies.
+    #[test]
+    fn microseconds_reply_boundaries_roundtrip() -> Result<(), TestError> {
+        for value in [0_u32, 999_999] {
+            let mut validated = valid_ap_req()?;
+            validated.authenticator_cusec = value;
+            let reply = validated.build_ap_rep_with_confounder(
+                &decode_hex(AP_REP_CONFOUNDER)?,
+                &ApRepOptions::default(),
+            )?;
+            assert_eq!(validated.verify_ap_rep(&reply)?.cusec, value);
+        }
+        Ok(())
+    }
+
+    /// Builds independently encoded AP-REP input without the service builder's semantic checks.
+    fn reply_with_microseconds(
+        validated: &ValidatedApReq,
+        value: i64,
+    ) -> Result<Vec<u8>, TestError> {
+        let part = rasn_kerberos::EncApRepPart {
+            ctime: kerberos_time(1_893_553_447)?,
+            cusec: value.into(),
+            subkey: None,
+            seq_number: None,
+        };
+        let cipher = encrypt_message(
+            &validated.session_key,
+            &der::encode(&part)?,
+            12,
+            AP_REP_CONFOUNDER,
+        )?;
+        Ok(der::encode(&rasn_kerberos::ApRep {
+            pvno: 5_i32.into(),
+            msg_type: 15_i32.into(),
+            enc_part: rasn_kerberos::EncryptedData {
+                etype: 18,
+                kvno: None,
+                cipher: cipher.into(),
+            },
+        })?)
+    }
+
     /// Decodes a hex fixture.
     fn decode_hex(input: &str) -> Result<Vec<u8>, FromHexError> {
         hex::decode(input)
