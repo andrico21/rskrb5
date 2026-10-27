@@ -26,54 +26,66 @@ mod tests {
 
     /// RFC3961 AES DR and DK reject constants beyond a single cipher block.
     #[test]
-    fn aes_rfc3961_rejects_oversized_constants() {
+    fn aes_rfc3961_rejects_oversized_constants() -> Result<(), TestError> {
         // Given constants just beyond the block size and a formerly colliding zero pair.
         for etype in [AesSha1Etype::Aes128, AesSha1Etype::Aes256] {
             let key = vec![0x42; etype.key_len()];
             for length in [17, 32] {
                 let constant = vec![0; length];
                 // When either public derivation entry point receives the constant.
-                let results = [
-                    etype.derive_random(&key, &constant),
-                    etype.derive_key(&key, &constant),
+                let errors = [
+                    etype
+                        .derive_random(&key, &constant)
+                        .err()
+                        .ok_or("oversized AES DR constant accepted")?,
+                    etype
+                        .derive_key(&key, &constant)
+                        .err()
+                        .ok_or("oversized AES DK constant accepted")?,
                 ];
                 // Then neither reduces the oversized constant into an accepted block.
-                for result in results {
+                for error in errors {
                     assert_eq!(
-                        result,
-                        Err(Crypto::DerivationConstantTooLong {
+                        error,
+                        Crypto::DerivationConstantTooLong {
                             maximum: 16,
                             actual: length,
-                        })
+                        }
                     );
                 }
             }
         }
+        Ok(())
     }
 
     /// RFC3961 DES3 DR and DK reject constants beyond a single cipher block.
     #[test]
-    fn des3_rfc3961_rejects_oversized_constants() {
+    fn des3_rfc3961_rejects_oversized_constants() -> Result<(), TestError> {
         // Given a valid DES3 key and constants exceeding eight bytes.
         let key = [0x42; 24];
         for length in [9, 16] {
             let constant = vec![0; length];
             // When either public derivation entry point receives the constant.
-            let results = [
-                Des3CbcSha1KdEtype::derive_random(&key, &constant),
-                Des3CbcSha1KdEtype::derive_key(&key, &constant),
+            let errors = [
+                Des3CbcSha1KdEtype::derive_random(&key, &constant)
+                    .err()
+                    .ok_or("oversized DES3 DR constant accepted")?,
+                Des3CbcSha1KdEtype::derive_key(&key, &constant)
+                    .err()
+                    .ok_or("oversized DES3 DK constant accepted")?,
             ];
             // Then neither accepts an out-of-domain derivation constant.
-            for result in results {
+            for error in errors {
                 assert_eq!(
-                    result,
-                    Err(Crypto::DerivationConstantTooLong {
+                    error,
+                    Crypto::DerivationConstantTooLong {
                         maximum: 8,
                         actual: length,
-                    })
+                    }
                 );
             }
         }
+        Ok(())
     }
 
     /// Full-block RFC3961 constants and unrestricted SHA2 contexts remain accepted.
@@ -118,28 +130,31 @@ mod tests {
 
     /// Peer iteration hints above the local work ceiling are rejected without deriving.
     #[test]
-    fn s2kparams_rejects_excessive_iterations() {
+    fn s2kparams_rejects_excessive_iterations() -> Result<(), TestError> {
         // Given counts above the inclusive 2^24 work ceiling.
         for params in ["01000001", "ffffffff"] {
             // When the peer's work factor is parsed.
-            let result = s2kparams_to_iterations(params);
+            let error = s2kparams_to_iterations(params)
+                .err()
+                .ok_or("excessive peer work factor accepted")?;
             // Then it is rejected before any PBKDF2 operation.
             assert!(
                 matches!(
-                    result,
-                    Err(Crypto::IterationCountTooHigh {
+                    error,
+                    Crypto::IterationCountTooHigh {
                         maximum: 0x0100_0000,
                         actual: 0x0100_0001 | u32::MAX,
-                    })
+                    }
                 ),
-                "excessive peer work factor accepted"
+                "excessive peer work factor misreported: {error:?}"
             );
         }
+        Ok(())
     }
 
     /// The work ceiling is inclusive and preserves standard iteration counts.
     #[test]
-    fn s2kparams_accepts_iteration_policy_boundaries() {
+    fn s2kparams_accepts_iteration_policy_boundaries() -> Result<(), TestError> {
         // Given admissible boundary and default counts.
         for (params, count) in [
             ("00000001", 1),
@@ -148,31 +163,45 @@ mod tests {
             ("01000000", 0x0100_0000),
         ] {
             // When the count is parsed without deriving a password key.
-            let actual = s2kparams_to_iterations(params);
+            let actual = s2kparams_to_iterations(params)?;
             // Then the exact count is preserved, not silently clamped.
-            assert_eq!(actual, Ok(count));
+            assert_eq!(actual, count);
         }
+        Ok(())
     }
 
     /// All four AES string-to-key entry points reject excessive peer work factors.
     #[test]
-    fn aes_password_derivation_rejects_excessive_iterations() {
+    fn aes_password_derivation_rejects_excessive_iterations() -> Result<(), TestError> {
         // Given a count just beyond the inclusive local ceiling.
-        let expected = Err(Crypto::IterationCountTooHigh {
+        let expected = Crypto::IterationCountTooHigh {
             maximum: 0x0100_0000,
             actual: 0x0100_0001,
-        });
+        };
         // When each AES family derives a password key with that hint.
-        let results = [
-            AesSha1Etype::Aes128.string_to_key(b"password", b"salt", "01000001"),
-            AesSha1Etype::Aes256.string_to_key(b"password", b"salt", "01000001"),
-            AesSha2Etype::Aes128.string_to_key(b"password", b"salt", "01000001"),
-            AesSha2Etype::Aes256.string_to_key(b"password", b"salt", "01000001"),
+        let errors = [
+            AesSha1Etype::Aes128
+                .string_to_key(b"password", b"salt", "01000001")
+                .err()
+                .ok_or("AES-SHA1-128 accepted excessive work")?,
+            AesSha1Etype::Aes256
+                .string_to_key(b"password", b"salt", "01000001")
+                .err()
+                .ok_or("AES-SHA1-256 accepted excessive work")?,
+            AesSha2Etype::Aes128
+                .string_to_key(b"password", b"salt", "01000001")
+                .err()
+                .ok_or("AES-SHA2-128 accepted excessive work")?,
+            AesSha2Etype::Aes256
+                .string_to_key(b"password", b"salt", "01000001")
+                .err()
+                .ok_or("AES-SHA2-256 accepted excessive work")?,
         ];
         // Then all reject rather than allocating and running PBKDF2.
-        for result in results {
-            assert_eq!(result, expected);
+        for error in errors {
+            assert_eq!(error, expected);
         }
+        Ok(())
     }
 
     /// The SHA-256 PRF accepts empty context as defined by RFC 8009 sections 3 and 5.

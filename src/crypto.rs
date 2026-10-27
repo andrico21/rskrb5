@@ -57,6 +57,8 @@ impl DerefMut for SecretScratch {
     }
 }
 
+// Drop audit: zeroing a heap buffer in place never blocks, allocates or panics
+// (the erasure assertion and counter exist only under `cfg(test)`).
 impl Drop for SecretScratch {
     /// Erase live bytes; the Zeroizing field also erases spare capacity on drop.
     fn drop(&mut self) {
