@@ -5,6 +5,8 @@
 mod context;
 #[path = "support/pac_ad_win2k.rs"]
 mod pac_ad_win2k;
+#[path = "support/pac_authorization.rs"]
+mod pac_authorization;
 #[path = "support/pac_trust.rs"]
 mod pac_trust;
 

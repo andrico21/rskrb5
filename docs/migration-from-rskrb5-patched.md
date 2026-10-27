@@ -5,6 +5,16 @@ The version remains 0.3.0. Wire formats and field semantics are unchanged.
 
 ## Review backlog behaviour changes
 
+### Bounded public PAC lookup
+
+`pac::find_pac_in_authorization_data` now rejects more than eight nested
+AD-IF-RELEVANT wrappers with `Pac::AuthorizationDataDepthLimit` and more than
+1 MiB of cumulative visited entry payloads with `Pac::AuthorizationDataByteLimit`
+(both in `error::Pac`). The inclusive byte budget is shared across siblings and
+counts nested payloads again at each decoded level, before decoding or PAC
+processing. Its signature and first-PAC behavior are unchanged. Service acceptance
+already imposed these limits independently while validating all restrictions.
+
 ### HTTP replay-cache scope and binding limits
 
 Layer clones already share replay state. Independently constructed

@@ -15,6 +15,8 @@ use compcol::{
 
 use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
 
+#[cfg(feature = "messages")]
+mod authorization;
 mod ndr;
 mod reader;
 
@@ -368,31 +370,24 @@ impl Pac {
 /// Extract and process the first `AD-WIN2K-PAC` entry from Kerberos
 /// authorization data.
 ///
+/// Traversal permits at most eight `AD-IF-RELEVANT` wrappers and charges every
+/// visited entry's payload against one inclusive 1 MiB budget. Nested payloads
+/// are charged again at each decoded level; siblings share the same budget.
+/// Admission occurs before DER decoding or PAC processing. The first PAC still
+/// ends the search; this helper does not validate authorization restrictions.
+///
 /// # Errors
 ///
 /// Returns [`Error::DerDecode`] when nested `AD-IF-RELEVANT` data does not decode, and the
-/// errors of [`Pac::parse_and_process`] for the first PAC found.
+/// errors of [`Pac::parse_and_process`] for the first PAC found. Returns
+/// [`Error::AuthorizationDataDepthLimit`] or [`Error::AuthorizationDataByteLimit`]
+/// before exceeding the local traversal limits.
 #[cfg(feature = "messages")]
 #[inline]
 pub fn find_pac_in_authorization_data(
     authorization_data: &rasn_kerberos::AuthorizationData,
 ) -> Result<Option<Pac>, Error> {
-    use rasn::der;
-
-    for entry in authorization_data {
-        match entry.r#type {
-            AD_WIN2K_PAC => return Ok(Some(Pac::parse_and_process(entry.data.as_ref())?)),
-            AD_IF_RELEVANT => {
-                let nested = der::decode::<rasn_kerberos::AuthorizationData>(entry.data.as_ref())
-                    .map_err(|error| Error::DerDecode(error.to_string()))?;
-                if let Some(pac) = find_pac_in_authorization_data(&nested)? {
-                    return Ok(Some(pac));
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(None)
+    authorization::find(authorization_data, 0, &mut 0x0010_0000)
 }
 
 /// PAC info buffer table entry.

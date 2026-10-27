@@ -1607,6 +1607,14 @@ pub enum Pac {
     #[cfg(feature = "messages")]
     #[error("PAC authorization-data DER decode failed: {0}")]
     DerDecode(String),
+    /// PAC lookup would decode more than eight nested authorization wrappers.
+    #[cfg(feature = "messages")]
+    #[error("PAC authorization-data depth exceeds eight wrappers")]
+    AuthorizationDataDepthLimit,
+    /// PAC lookup would visit more than 1 MiB of cumulative payload bytes.
+    #[cfg(feature = "messages")]
+    #[error("PAC authorization-data byte budget exceeds 1 MiB")]
+    AuthorizationDataByteLimit,
     /// The NDR wrapper was not little-endian NDR64-compatible data.
     #[error("invalid NDR header")]
     InvalidNdrHeader,
