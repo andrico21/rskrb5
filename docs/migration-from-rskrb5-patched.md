@@ -389,9 +389,11 @@ over it, using usage 23 and the AP-REP acceptor subkey, authenticator subkey or
 ticket key (in that order). Verification uses usage 25 and the authenticator
 subkey or ticket key: no acceptor subkey exists in this initial leg. MIC sequence
 numbers must match the authenticator; response MICs use the AP-REP sequence,
-falling back to the authenticator sequence. A MIC consumes that per-direction
-sequence number; applications using per-message tokens next must increment it.
-The no-MIC first-choice AP-REP encoding is unchanged.
+falling back to the authenticator sequence. In that fallback the AP-REP carries
+the same number, so initiators that read the acceptor sequence from the AP-REP
+(as MIT does, 0 when absent) agree with the MIC. A MIC consumes that
+per-direction sequence number; applications using per-message tokens next must
+increment it. The no-MIC first-choice AP-REP encoding is unchanged.
 
 All `NegTokenResp` continuations still return `NegotiationRequiresState`: they
 lack the original offer and prior key/MIC phase. A peer needing a request-mic

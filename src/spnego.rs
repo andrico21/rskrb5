@@ -1588,6 +1588,10 @@ impl AcceptedContext {
 
     /// Build a `WWW-Authenticate` header containing an AP-REP response token.
     ///
+    /// With [`Self::mech_types_der`] set, the reply carries a reciprocal MIC. If
+    /// `options` names no sequence number, the MIC uses the authenticator's and
+    /// the AP-REP carries that same number.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Service`] when the AP-REP cannot be built or encrypted, and
@@ -1598,16 +1602,26 @@ impl AcceptedContext {
         confounder: &[u8],
         options: &ApRepOptions,
     ) -> Result<String, Error> {
+        // A reciprocal MIC consumes an acceptor sequence number; the AP-REP must name it.
+        let mic_options = self
+            .mech_types_der
+            .as_ref()
+            .map(|_| negotiation::response_options(&self.ap_req, options));
+        let reply_options = mic_options.as_ref().unwrap_or(options);
         let ap_rep = self
             .ap_req
-            .build_ap_rep_with_confounder(confounder, options)?;
+            .build_ap_rep_with_confounder(confounder, reply_options)?;
         let mut krb5_token = Krb5MechToken::ap_rep(ap_rep);
         krb5_token.oid = self.selected_mechanism.clone();
         let mut response =
             NegTokenResp::accept_completed().with_response_token(krb5_token.encode()?);
         response.supported_mech = Some(self.selected_mechanism.clone());
         if let Some(list) = &self.mech_types_der {
-            response.mech_list_mic = Some(negotiation::response_mic(list, &self.ap_req, options)?);
+            response.mech_list_mic = Some(negotiation::response_mic(
+                list,
+                &self.ap_req,
+                reply_options,
+            )?);
         }
         response_token_header(&response)
     }

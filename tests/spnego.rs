@@ -665,6 +665,58 @@ mod tests {
         Ok(())
     }
 
+    /// Independently decrypt a response header's AP-REP and return it with the response MIC.
+    fn response_ap_rep_part(
+        header: &str,
+    ) -> Result<(rasn_kerberos::EncApRepPart, Option<Vec<u8>>), TestError> {
+        let Token::Resp(response) = spnego::parse_negotiate_header(header)? else {
+            return Err("expected response".into());
+        };
+        let krb5 = Krb5MechToken::decode(&response.response_token.context("AP-REP")?)?;
+        let ap_rep: rasn_kerberos::ApRep = der::decode(&krb5.message).context("AP-REP decodes")?;
+        let part = AesSha1Etype::Aes256.decrypt_message(
+            &decode_hex(VALID_SESSION_KEY)?,
+            ap_rep.enc_part.cipher.as_ref(),
+            12,
+        )?;
+        Ok((
+            der::decode(&part).context("EncAPRepPart decodes")?,
+            response.mech_list_mic,
+        ))
+    }
+
+    /// The AP-REP must carry the sequence number its reciprocal MIC consumed.
+    #[test]
+    fn mech_list_mic_response_sequence_is_in_ap_rep() -> Result<(), TestError> {
+        // Given an authenticated non-first selection (authenticator sequence 42).
+        let accepted = accept_token(&Token::Init(mic_init()?))??;
+        for (options, expected) in [
+            (ApRepOptions::default(), 42_u32),
+            (ApRepOptions::default().with_sequence_number(Some(7)), 7_u32),
+        ] {
+            // When the acceptor answers with a reciprocal MIC.
+            let header = accepted.ap_rep_response_header_with_confounder(
+                &decode_hex(AP_REP_CONFOUNDER)?,
+                &options,
+            )?;
+            // Then the AP-REP seq-number equals the MIC's SND_SEQ, as MIT initiators expect.
+            let (part, response_mic) = response_ap_rep_part(&header)?;
+            let mic = response_mic.context("response MIC")?;
+            let snd_seq: [u8; 8] = mic.get(8..16).context("SND_SEQ")?.try_into()?;
+            assert_eq!(u64::from_be_bytes(snd_seq), u64::from(expected));
+            assert_eq!(part.seq_number, Some(expected));
+        }
+        // And a reply without a MIC keeps its AP-REP sequence number optional.
+        let plain = accept_token(&Token::Init(acceptor_init(ObjectIdentifier::krb5())?))??;
+        let header = plain.ap_rep_response_header_with_confounder(
+            &decode_hex(AP_REP_CONFOUNDER)?,
+            &ApRepOptions::default(),
+        )?;
+        let (part, mic) = response_ap_rep_part(&header)?;
+        assert_eq!((part.seq_number, mic), (None, None));
+        Ok(())
+    }
+
     /// A correct checksum does not excuse a context-inconsistent token header.
     #[test]
     fn mech_list_mic_rejects_wrong_direction_flags_and_sequence() -> Result<(), TestError> {

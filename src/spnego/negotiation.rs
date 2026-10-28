@@ -84,6 +84,19 @@ pub(super) fn verify_mic(
     Ok(())
 }
 
+/// AP-REP options for a reply carrying a reciprocal MIC.
+///
+/// Without a configured sequence number the MIC uses the authenticator's, so the
+/// AP-REP carries that number: MIT initiators read the acceptor sequence number
+/// from the AP-REP (0 when absent), and both sides must agree on it.
+pub(super) fn response_options(ap_req: &ValidatedApReq, options: &ApRepOptions) -> ApRepOptions {
+    let sequence = options
+        .sequence_number
+        .or(ap_req.sequence_number)
+        .unwrap_or(0);
+    options.clone().with_sequence_number(Some(sequence))
+}
+
 /// Sign with the acceptor subkey, initiator subkey, or ticket key, in that order.
 ///
 /// # Errors
