@@ -61,7 +61,7 @@ These are breaking; the migration guide maps each one.
 - New error variants, among them `error::Client::{EnctypeNotRequested,
   EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
   DnsServiceUnavailable}`, `error::Config::{EnctypeNotPermitted,
-  NoPermittedEnctypes, NoUsableEnctypes, UnsupportedEnctype, EnctypeDisabled}`,
+    NoPermittedEnctypes, NoUsableEnctypes}`,
   `error::Kadmin::UnauthenticatedSuccess`,
   `error::Ccache::IdentityUnavailable` and
   `http::NegotiateHttpError::MutualAuthenticationNotProven`.
@@ -171,7 +171,10 @@ SPNEGO, GSS tokens, DER and OIDs:
   the first offered Kerberos OID in `supportedMech`, preserving the token OID in
   AP-REP `thisMech` through the additive `AcceptedContext::token_mechanism` field
   (MIT/MS-SPNG behavior). Replies include a reciprocal MIC over the received list when
-  one was verified. Missing or invalid MICs fail closed (`MissingMechListMic`,
+  one was verified, retained in `AcceptedContext::mech_types_der`. Only RFC 4121
+  MIC tokens with AES session enctypes are supported for mechListMIC; RFC 4757
+  RC4 and RFC 1964 DES3 MIC formats fail closed as `InvalidMechListMic`.
+  Missing or invalid MICs fail closed (`MissingMechListMic`,
   `InvalidMechListMic`); stateless continuations remain `NegotiationRequiresState`
   (RFC 4178 §§4-5, RFC 4121 §2) (RSK-C4BE57A0, F2 M1).
 - GSS acceptance checks the RFC 4121 §4.1.1 authenticator checksum type and

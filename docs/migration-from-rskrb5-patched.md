@@ -100,8 +100,8 @@ Like 0.2.2, family names (`aes`, `aes-sha1`, `aes-sha2`, `camellia`, `rc4`,
 `des3`, `des`), `DEFAULT` and `-name` tokens do not expand or remove algorithms.
 They are skipped as unimplemented names; use concrete enctype names instead.
 Unlike 0.2.2's empty-ID result, a list containing only these tokens fails closed.
-The older `UnsupportedEnctype` and `EnctypeDisabled` variants remain available
-for source compatibility but are no longer emitted by this parser.
+The unconstructed `UnsupportedEnctype` and `EnctypeDisabled` variants were removed
+before 0.3.0 release; neither existed in 0.2.2.
 
 Defaults now advertise only AES (20, 19, 18, 17). Set `[libdefaults] allow_rc4`
 or `allow_des3` explicitly to true before configuring RC4 or DES3 names; both
@@ -403,6 +403,9 @@ the same number, so initiators that read the acceptor sequence from the AP-REP
 (as MIT does, 0 when absent) agree with the MIC. A MIC consumes that
 per-direction sequence number; applications using per-message tokens next must
 increment it. The no-MIC first-choice AP-REP encoding is unchanged.
+
+Only RFC 4121 MIC tokens with AES session enctypes are supported for mechListMIC.
+RC4 (RFC 4757) and DES3 (RFC 1964) MIC formats fail closed as `InvalidMechListMic`.
 
 All `NegTokenResp` continuations still return `NegotiationRequiresState`: they
 lack the original offer and prior key/MIC phase. A peer needing a request-mic

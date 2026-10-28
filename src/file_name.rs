@@ -63,7 +63,7 @@ impl Drop for SecretBytes {
 mod tests {
     use core::{cell::Cell, error::Error as StdError};
     use std::{
-        env, fs,
+        env, fs, io,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -158,6 +158,27 @@ mod tests {
         assert_eq!(fs::read(destination.join("keep"))?, b"existing");
         assert_eq!(fs::read_dir(&directory)?.count(), 1);
         fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// A failing stage cleanup must preserve the original write error.
+    #[test]
+    fn failed_private_cleanup_preserves_primary_error() -> Result<(), Box<dyn StdError>> {
+        // Given a directory stage: remove_file fails on every supported platform.
+        let directory = env::temp_dir().join(format!(
+            "private-cleanup-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        // When cleanup also fails after an interrupted write.
+        let result =
+            super::finish_private_stage(Err(io::ErrorKind::Interrupted.into()), &directory);
+        fs::remove_dir_all(directory)?;
+        // Then the write error wins over the real filesystem cleanup error.
+        assert_eq!(
+            result.err().map(|error| error.kind()),
+            Some(io::ErrorKind::Interrupted)
+        );
         Ok(())
     }
 }
@@ -318,13 +339,20 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
         drop(file);
         reject_symlink(path)?;
         fs::rename(&temporary, path)?;
-        #[cfg(unix)]
-        fs::File::open(parent)?.sync_all()?;
         Ok(())
     })();
+    finish_private_stage(result, &temporary)?;
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+/// Clean up a failed stage, preserving the primary error if removal also fails.
+///
+/// # Errors
+/// Returns the original staging result, never a secondary cleanup error.
+fn finish_private_stage(result: io::Result<()>, temporary: &Path) -> io::Result<()> {
     if result.is_err() {
-        // Preserve the primary failure, including a sync failure after rename
-        // has already removed the stage.
         let _cleanup = fs::remove_file(temporary);
     }
     result
