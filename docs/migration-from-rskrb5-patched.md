@@ -39,7 +39,7 @@ independently of `allow_weak_crypto`:
 
 Without them the default enctype lists are AES only, and an explicit
 `default_tkt_enctypes`, `default_tgs_enctypes` or `permitted_enctypes` entry
-naming RC4 or DES3 fails to parse with `error::Config::EnctypeDisabled`. In
+naming RC4 or DES3 is skipped; a list with no usable entry fails to parse. In
 code, set `LibDefaults::allow_rc4` and `LibDefaults::allow_des3` (both
 `config::Toggle`) or use their `with_*` builders. "Derived enctype policy"
 below has the details.
@@ -89,16 +89,33 @@ Serde input cannot inject cached IDs;
 the compatibility JSON snapshot derives IDs on demand. Empty request lists no
 longer substitute an unrelated built-in policy.
 
-Explicit enctype lists now return `error::Config::UnsupportedEnctype { key,
-enctype }` for unsupported names instead of silently removing them. This also
-applies when supported entries accompany the rejected name.
+Explicit enctype lists skip unsupported names, including camellia and typos,
+and policy-disabled names. Only usable names remain, in their original order.
+If none remains, request lists return `error::Config::NoUsableEnctypes { key,
+names }`; the permitted list returns `error::Config::NoPermittedEnctypes { names }`.
+Both errors retain the original input names. Empty lists also fail closed;
+neither case substitutes defaults or an unrestricted policy.
+
+Like 0.2.2, family names (`aes`, `aes-sha1`, `aes-sha2`, `camellia`, `rc4`,
+`des3`, `des`), `DEFAULT` and `-name` tokens do not expand or remove algorithms.
+They are skipped as unimplemented names; use concrete enctype names instead.
+Unlike 0.2.2's empty-ID result, a list containing only these tokens fails closed.
+The older `UnsupportedEnctype` and `EnctypeDisabled` variants remain available
+for source compatibility but are no longer emitted by this parser.
 
 Defaults now advertise only AES (20, 19, 18, 17). Set `[libdefaults] allow_rc4`
 or `allow_des3` explicitly to true before configuring RC4 or DES3 names; both
 are disabled by default, independently of `allow_weak_crypto`. Disabled names
-return `error::Config::EnctypeDisabled { key, enctype }`. Export RC4 additionally
+are skipped, with an error only if no usable name remains. Export RC4 additionally
 requires `allow_weak_crypto`. The flags are public `Toggle` fields and serde
 defaults missing flags to false. Policy is evaluated after all sections/includes.
+
+### Durable credential-file replacement
+
+Credential-file saves sync the parent directory after rename on Unix. A sync
+failure is returned even though replacement has already completed; cleanup
+failure never masks the original write, rename or sync error. Windows keeps
+the existing caller-provided owner-only directory ACL requirement.
 
 ### Environment-free configuration defaults
 

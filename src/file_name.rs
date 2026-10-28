@@ -139,6 +139,27 @@ mod tests {
         );
         Ok(())
     }
+
+    /// Failed replacement preserves the destination and removes the stage.
+    #[test]
+    fn failed_private_rename_preserves_destination() -> Result<(), Box<dyn StdError>> {
+        // Given a nonempty directory where a credential file should be.
+        let directory = env::temp_dir().join(format!(
+            "private-rename-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        let destination = directory.join("keytab");
+        fs::create_dir_all(&destination)?;
+        fs::write(destination.join("keep"), b"existing")?;
+        // When the real staged write cannot replace that directory.
+        let result = super::write_private(&destination, b"secret");
+        // Then the error is returned without damaging the existing destination.
+        assert!(result.is_err());
+        assert_eq!(fs::read(destination.join("keep"))?, b"existing");
+        assert_eq!(fs::read_dir(&directory)?.count(), 1);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
 }
 
 /// Why a credential file name could not be resolved to a path.
@@ -269,6 +290,8 @@ const fn process_identity() -> Result<(u32, u32), Error> {
 /// # Errors
 ///
 /// Returns filesystem errors from staging, writing, syncing or renaming.
+/// A Unix directory-sync error can occur after replacement has completed.
+/// Cleanup failures never replace the original error.
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     reject_symlink(path)?;
     let parent = path
@@ -294,10 +317,15 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
         file.sync_all()?;
         drop(file);
         reject_symlink(path)?;
-        fs::rename(&temporary, path)
+        fs::rename(&temporary, path)?;
+        #[cfg(unix)]
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
     })();
     if result.is_err() {
-        fs::remove_file(temporary)?;
+        // Preserve the primary failure, including a sync failure after rename
+        // has already removed the stage.
+        let _cleanup = fs::remove_file(temporary);
     }
     result
 }

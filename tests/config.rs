@@ -264,21 +264,139 @@ mod tests {
         Ok(())
     }
 
-    /// Explicit lists reject an unknown entry even when other entries work.
+    /// Unknown names are skipped when the list also contains a usable entry.
     #[test]
-    fn unsupported_explicit_enctype_names_are_rejected() -> Result<(), TestError> {
+    fn unsupported_explicit_enctype_names_are_skipped() -> Result<(), TestError> {
         for key in [
             "default_tkt_enctypes",
             "default_tgs_enctypes",
             "permitted_enctypes",
         ] {
             let input = format!("[libdefaults]\n {key} = aes256-cts typo-enctype\n");
+            // When parsing a mixed implemented/unknown list.
+            let config = Config::parse(&input)?;
+            // Then the configured list retains only its usable entry.
+            let names = match key {
+                "default_tkt_enctypes" => &config.libdefaults.default_tkt_enctypes,
+                "default_tgs_enctypes" => &config.libdefaults.default_tgs_enctypes,
+                _ => &config.libdefaults.permitted_enctypes,
+            };
+            assert_eq!(names, &["aes256-cts"]);
+        }
+        Ok(())
+    }
+
+    /// Stock Fedora/RHEL crypto policy retains implemented AES entries in order.
+    #[test]
+    fn crypto_policies_default_skips_camellia() -> Result<(), TestError> {
+        // Given the crypto-policies DEFAULT krb5 back-end output.
+        let input = "[libdefaults]\n permitted_enctypes = aes256-cts-hmac-sha384-192 aes128-cts-hmac-sha256-128 aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 camellia256-cts-cmac camellia128-cts-cmac\n";
+        // When parsing the distro configuration.
+        let config = Config::parse(input)?;
+        // Then only implemented enctypes remain, in the configured order.
+        assert_eq!(
+            config.libdefaults.permitted_enctype_ids(),
+            [20_i32, 19_i32, 18_i32, 17_i32]
+        );
+        assert_eq!(config.libdefaults.permitted_enctypes.len(), 4);
+        Ok(())
+    }
+
+    /// Camellia cannot prevent use of a neighboring supported algorithm.
+    #[test]
+    fn usable_enctype_with_camellia_parses() -> Result<(), TestError> {
+        // Given an unsupported entry before and after the implemented entry.
+        let input = "[libdefaults]\n default_tgs_enctypes = camellia128-cts-cmac aes128-cts camellia256-cts-cmac\n";
+        // When parsing the explicit request list.
+        let config = Config::parse(input)?;
+        // Then the name list and derived wire IDs agree.
+        assert_eq!(config.libdefaults.default_tgs_enctypes, ["aes128-cts"]);
+        assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [17_i32]);
+        Ok(())
+    }
+
+    /// An entirely disabled RC4 request never falls back to default algorithms.
+    #[test]
+    fn rc4_only_without_opt_in_has_no_usable_enctypes() -> Result<(), TestError> {
+        // Given an explicit list with no policy-enabled entry.
+        let input = "[libdefaults]\n default_tgs_enctypes = rc4-hmac\n";
+        // When parsing without allow_rc4.
+        let error = Config::parse(input)
+            .err()
+            .ok_or("disabled list was accepted")?;
+        // Then a named no-usable-list error identifies the key and input.
+        assert!(error.to_string().contains("no usable enctype"), "{error}");
+        assert!(
+            error.to_string().contains("default_tgs_enctypes"),
+            "{error}"
+        );
+        assert!(error.to_string().contains("rc4-hmac"), "{error}");
+        Ok(())
+    }
+
+    /// Family and DEFAULT tokens retain 0.2.2's lack of implicit expansion.
+    #[test]
+    fn family_and_default_tokens_do_not_invent_enctypes() -> Result<(), TestError> {
+        // Given unsupported family/selector tokens alongside a concrete name.
+        for tokens in [
+            "aes",
+            "aes-sha1",
+            "aes-sha2",
+            "DEFAULT -rc4",
+            "camellia",
+            "des",
+        ] {
+            let input = format!("[libdefaults]\n default_tgs_enctypes = {tokens} aes256-cts\n");
+            // When parsing the legacy-compatible concrete subset.
+            let config = Config::parse(&input)?;
+            // Then tokens do not expand into unrelated default algorithms.
+            assert_eq!(config.libdefaults.default_tgs_enctypes, ["aes256-cts"]);
+            assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [18_i32]);
+        }
+        Ok(())
+    }
+
+    /// Unsupported-only family/DEFAULT lists cannot silently become empty policy.
+    #[test]
+    fn family_and_default_only_lists_fail_closed() -> Result<(), TestError> {
+        // Given the F2 family/DEFAULT probe inputs that 0.2.2 mapped to no IDs.
+        for (key, names) in [
+            ("permitted_enctypes", "aes"),
+            ("default_tgs_enctypes", "DEFAULT -rc4"),
+        ] {
+            let input = format!("[libdefaults]\n {key} = {names}\n");
+            // When applying the explicit-list fail-if-empty contract.
             let error = Config::parse(&input)
                 .err()
-                .ok_or("unknown entry was accepted")?;
-            let message = error.to_string();
-            assert!(message.contains(key), "{message}");
-            assert!(message.contains("typo-enctype"), "{message}");
+                .ok_or("empty policy was accepted")?;
+            // Then the error names the list rather than selecting defaults.
+            assert!(error.to_string().contains("no usable enctype"), "{error}");
+            assert!(error.to_string().contains(key), "{error}");
+        }
+        Ok(())
+    }
+
+    /// Disabled families and weak variants are skipped without reordering AES.
+    #[test]
+    fn disabled_enctypes_are_skipped_in_mixed_lists() -> Result<(), TestError> {
+        // Given each list with independent family/weak policy disabled.
+        for key in [
+            "default_tkt_enctypes",
+            "default_tgs_enctypes",
+            "permitted_enctypes",
+        ] {
+            let input = format!(
+                "[libdefaults]\n {key} = rc4-hmac aes128-cts des3-cbc-sha1 aes256-cts rc4-hmac-exp\n"
+            );
+            // When parsing with default policy.
+            let config = Config::parse(&input)?;
+            // Then usable names and derived IDs retain their configured order.
+            let names = match key {
+                "default_tkt_enctypes" => &config.libdefaults.default_tkt_enctypes,
+                "default_tgs_enctypes" => &config.libdefaults.default_tgs_enctypes,
+                _ => &config.libdefaults.permitted_enctypes,
+            };
+            assert_eq!(names, &["aes128-cts", "aes256-cts"]);
         }
         Ok(())
     }
@@ -1486,8 +1604,8 @@ mod tests {
             assert!(
                 matches!(
                     &error,
-                    Error::UnsupportedEnctype { key: "permitted_enctypes", enctype }
-                        if names.split_whitespace().any(|name| name == enctype)
+                    Error::NoPermittedEnctypes { names: rejected }
+                        if rejected.join(" ") == names
                 ),
                 "unexpected error for {names}: {error:?}"
             );

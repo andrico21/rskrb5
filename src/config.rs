@@ -281,16 +281,19 @@ impl Config {
     /// on the final values after every `[libdefaults]` section of the expanded
     /// input (included files included) is applied.
     ///
-    /// Fails with [`Error::NoPermittedEnctypes`] when an explicit
-    /// `permitted_enctypes` names no supported enctype, for example only
-    /// unsupported names or only weak ones without `allow_weak_crypto`.
+    /// Unsupported and policy-disabled enctype names are skipped, retaining
+    /// usable names in order. Family names, `DEFAULT` and `-name` tokens are
+    /// not expanded, matching 0.2.2's concrete-name interpretation. An explicit
+    /// list with no usable entry fails with [`Error::NoUsableEnctypes`] for
+    /// requests or [`Error::NoPermittedEnctypes`] for the allowlist, never
+    /// falling back to defaults or unrestricted policy.
     ///
     /// # Errors
     ///
     /// Returns the include-expansion errors ([`Error::IncludeFile`],
     /// [`Error::IncludeDir`], [`Error::IncludeCycle`], [`Error::IncludeTooDeep`],
     /// [`Error::IncludeTooMany`], [`Error::IncludeTooLarge`]), the error of any
-    /// line or value a section parser refuses, and the two enctype policy
+    /// line or value a section parser refuses, and the enctype policy
     /// errors above.
     #[inline]
     pub fn parse(input: &str) -> Result<Self, Error> {
@@ -996,13 +999,11 @@ impl LibDefaults {
                 "default_keytab_name" => value.clone_into(&mut self.default_keytab_name),
                 "default_realm" => value.clone_into(&mut self.default_realm),
                 "default_tgs_enctypes" => {
-                    self.default_tgs_enctypes =
-                        parse_explicit_enctypes(value, "default_tgs_enctypes")?;
+                    self.default_tgs_enctypes = parse_words(value);
                     enctypes.tgs_explicit = true;
                 }
                 "default_tkt_enctypes" => {
-                    self.default_tkt_enctypes =
-                        parse_explicit_enctypes(value, "default_tkt_enctypes")?;
+                    self.default_tkt_enctypes = parse_words(value);
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
@@ -1029,7 +1030,7 @@ impl LibDefaults {
                     self.no_addresses = Toggle::from_bool(parse_boolean(value)?);
                 }
                 "permitted_enctypes" => {
-                    self.permitted_enctypes = parse_explicit_enctypes(value, "permitted_enctypes")?;
+                    self.permitted_enctypes = parse_words(value);
                     self.permitted_enctypes_explicit = Toggle::Enabled;
                 }
                 "preferred_preauth_types" => {
@@ -1062,43 +1063,29 @@ impl LibDefaults {
     /// not checked here; `AsReq::from_libdefaults` and
     /// `TgsReq::from_libdefaults` narrow them to the allowlist.
     ///
-    /// An explicit allowlist without any supported enctype is rejected as a
-    /// whole: treating it as "no policy" would permit every enctype.
+    /// Unsupported and policy-disabled names are skipped after all sections
+    /// are read. Every explicit list must retain at least one usable entry;
+    /// treating an empty allowlist as "no policy" would permit every enctype.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NoPermittedEnctypes`] when the explicit allowlist
-    /// resolves to no supported enctype, and [`Error::EnctypeNotPermitted`]
+    /// Returns [`Error::NoUsableEnctypes`] for an unusable request list,
+    /// [`Error::NoPermittedEnctypes`] when the explicit allowlist
+    /// resolves to no usable enctype, and [`Error::EnctypeNotPermitted`]
     /// naming the first explicit request list and enctype outside the
     /// allowlist.
-    fn validate_explicit_enctypes(&self, enctypes: EnctypeParseState) -> Result<(), Error> {
-        for (explicit, key, names) in [
-            (
-                enctypes.tkt_explicit,
-                "default_tkt_enctypes",
-                &self.default_tkt_enctypes,
-            ),
-            (
-                enctypes.tgs_explicit,
-                "default_tgs_enctypes",
-                &self.default_tgs_enctypes,
-            ),
-            (
-                self.permitted_enctypes_explicit.is_enabled(),
-                "permitted_enctypes",
-                &self.permitted_enctypes,
-            ),
-        ] {
-            if explicit {
-                for name in names {
-                    if !self.enctype_enabled(name) {
-                        return Err(Error::EnctypeDisabled {
-                            key,
-                            enctype: name.clone(),
-                        });
-                    }
-                }
-            }
+    fn validate_explicit_enctypes(&mut self, enctypes: EnctypeParseState) -> Result<(), Error> {
+        if enctypes.tkt_explicit {
+            self.default_tkt_enctypes =
+                self.usable_explicit_enctypes(&self.default_tkt_enctypes, "default_tkt_enctypes")?;
+        }
+        if enctypes.tgs_explicit {
+            self.default_tgs_enctypes =
+                self.usable_explicit_enctypes(&self.default_tgs_enctypes, "default_tgs_enctypes")?;
+        }
+        if self.permitted_enctypes_explicit.is_enabled() {
+            self.permitted_enctypes =
+                self.usable_explicit_enctypes(&self.permitted_enctypes, "permitted_enctypes")?;
         }
         if !self.permitted_enctypes_explicit.is_enabled() {
             return Ok(());
@@ -1138,6 +1125,35 @@ impl LibDefaults {
             }
         }
         Ok(())
+    }
+
+    /// Skip unsupported or disabled names under the final section's policy.
+    ///
+    /// # Errors
+    /// Returns a named error with the original input when no usable name remains.
+    fn usable_explicit_enctypes(
+        &self,
+        names: &[String],
+        key: &'static str,
+    ) -> Result<Vec<String>, Error> {
+        let usable: Vec<String> = names
+            .iter()
+            .filter(|name| supported_enctype_id(name).is_some() && self.enctype_enabled(name))
+            .cloned()
+            .collect();
+        if usable.is_empty() {
+            return Err(if key == "permitted_enctypes" {
+                Error::NoPermittedEnctypes {
+                    names: names.to_vec(),
+                }
+            } else {
+                Error::NoUsableEnctypes {
+                    key,
+                    names: names.to_vec(),
+                }
+            });
+        }
+        Ok(usable)
     }
     /// Whether both family policy and weak-crypto policy permit this name.
     fn enctype_enabled(&self, name: &str) -> bool {
@@ -1525,23 +1541,6 @@ pub fn parse_boolean(value: &str) -> Result<bool, Error> {
         "0" | "f" | "false" | "n" | "no" => Ok(false),
         _ => Err(Error::InvalidBoolean(value.to_owned())),
     }
-}
-
-/// Parses an explicit policy without silently dropping unsupported entries.
-///
-/// # Errors
-/// Returns [`Error::UnsupportedEnctype`] naming the first unsupported entry.
-fn parse_explicit_enctypes(value: &str, key: &'static str) -> Result<Vec<String>, Error> {
-    let names = parse_words(value);
-    for name in &names {
-        if supported_enctype_id(name).is_none() {
-            return Err(Error::UnsupportedEnctype {
-                key,
-                enctype: name.clone(),
-            });
-        }
-    }
-    Ok(names)
 }
 
 #[must_use]
