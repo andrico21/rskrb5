@@ -23,6 +23,11 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Kpasswd preserves definite pre-send errors and reports possible-delivery
+  failures as `Client::KpasswdOutcomeUnknown` exactly once, including malformed
+  replies. Connection refusal is safely retryable; unknown outcomes are not
+  (RSK-14E2755A).
+
 These are breaking; the migration guide maps each one.
 
 - Public structs and enums are `#[non_exhaustive]` and gain constructors or

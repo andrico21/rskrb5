@@ -948,7 +948,8 @@ impl Tokio {
     {
         let frame = request.encode()?;
         let response = self.send_password_once(protocol, addr, &frame).await?;
-        Ok(kadmin::Reply::parse(&response)?)
+        kadmin::Reply::parse(&response)
+            .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(Error::from(source))))
     }
 
     /// Send a framed kpasswd request to a configured kpasswd server and parse the reply.
@@ -977,7 +978,8 @@ impl Tokio {
         let response = self
             .send_to_kpasswd_realm(config, protocol, realm, &frame)
             .await?;
-        Ok(kadmin::Reply::parse(&response)?)
+        kadmin::Reply::parse(&response)
+            .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(Error::from(source))))
     }
 
     /// Send a framed kpasswd request and return a checked password-change result.

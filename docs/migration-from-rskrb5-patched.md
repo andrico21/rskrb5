@@ -371,14 +371,15 @@ protected ticket/evidence identity mismatches return `DelegationPrincipalMismatc
 
 ### Unknown password-mutation outcome (RSK-14E2755A, RSK-8BBFC1EE)
 
-High-level password mutation exchange and reply-validation failures now return
+Password mutation failures after possible delivery return exactly one
 `Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
-The classification is conservative and may include failure before delivery.
+Pre-send encoding, discovery and connection failures retain their definite error
+classes and may be retried safely. Malformed replies remain unknown outcomes.
 It does not mean rejection or rollback: reconcile with a fresh login before
 retrying. Dropping a mutation future returns no error at all; the caller must
 record unknown externally. Confirmed server rejection remains a normal result
 failure. Async Negotiate wrappers preserve this error and the same cancellation
-contract. Transport retry/deadline staging is a separate review item.
+contract. Transport stops failover after possible delivery.
 
 ### Password plaintext ownership (RSK-471362A3)
 

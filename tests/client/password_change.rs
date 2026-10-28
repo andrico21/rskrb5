@@ -489,6 +489,92 @@ TEST.GOKRB5 = {{
         })
     }
 
+    /// Connection refusal cannot have delivered a password mutation.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn kpasswd_classification_preserves_pre_send_failure() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a cached ticket and a local port with no listening server.
+            let tgt = sample_tgt_session()?;
+            let ticket = current_changepw_ticket(&tgt)?;
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            drop(listener);
+            let mut client = Tokio::from_tgt_session(
+                config_with_kpasswd_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                tgt,
+            );
+            client.cache_service_ticket(ticket);
+            // When connection establishment fails before sending anything.
+            let error = client
+                .change_password_with_options(
+                    b"dummy-password",
+                    RequestOptions::new(
+                        timestamp(1_893_553_452)?,
+                        456_789,
+                        42,
+                        ipv4_host_address([127, 0, 0, 1]),
+                    ),
+                )
+                .await
+                .err()
+                .context("connection refused")?;
+            // Then the definite endpoint failure remains safely retryable.
+            assert!(matches!(error, Error::KdcEndpointFailures { .. }));
+            Ok(())
+        })
+    }
+
+    /// A timeout after complete delivery has exactly one unknown-outcome wrapper.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn kpasswd_classification_wraps_post_send_timeout_once() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a peer that consumes the request but never answers it.
+            let tgt = sample_tgt_session()?;
+            let ticket = current_changepw_ticket(&tgt)?;
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let mut client = Tokio::from_tgt_session(
+                config_with_kpasswd_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                tgt,
+            )
+            .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(1)));
+            client.cache_service_ticket(ticket);
+            let (release, wait) = tokio::sync::oneshot::channel();
+            let task = tokio::spawn(async move {
+                let (_request, socket) = read_tcp_kdc_request(&listener).await?;
+                wait.await?;
+                drop(socket);
+                Ok::<(), TestError>(())
+            });
+            // When the reply deadline expires after delivery.
+            let error = client
+                .change_password_with_options(
+                    b"dummy-password",
+                    RequestOptions::new(
+                        timestamp(1_893_553_452)?,
+                        456_789,
+                        42,
+                        ipv4_host_address([127, 0, 0, 1]),
+                    ),
+                )
+                .await
+                .err()
+                .context("reply timeout")?;
+            release.send(()).map_err(|()| "release peer")?;
+            task.await??;
+            // Then the original transport timeout is the immediate cause.
+            assert!(matches!(
+                error,
+                Error::KpasswdOutcomeUnknown(source) if matches!(*source, Error::TransportTimeout(_))
+            ));
+            Ok(())
+        })
+    }
+
     /// Marks a lost reply as unknown rather than implying mutation rollback.
     #[cfg(feature = "tokio")]
     #[test]
@@ -526,6 +612,50 @@ TEST.GOKRB5 = {{
                 .context("reply lost")?;
             task.await??;
             assert!(matches!(error, Error::KpasswdOutcomeUnknown(_)));
+            Ok(())
+        })
+    }
+
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn kpasswd_classification_marks_malformed_reply_unknown() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            // Given a server that consumes the mutation and returns a malformed reply.
+            let tgt = sample_tgt_session()?;
+            let ticket = current_changepw_ticket(&tgt)?;
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let mut client = Tokio::from_tgt_session(
+                config_with_kpasswd_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                tgt,
+            );
+            client.cache_service_ticket(ticket);
+            let task = tokio::spawn(async move {
+                let (_request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                write_tcp_kdc_response(&mut socket, b"invalid").await?;
+                Ok::<(), TestError>(())
+            });
+            // When response parsing fails after delivery.
+            let error = client
+                .change_password_with_options(
+                    b"dummy-password",
+                    RequestOptions::new(
+                        timestamp(1_893_553_452)?,
+                        456_789,
+                        42,
+                        ipv4_host_address([127, 0, 0, 1]),
+                    ),
+                )
+                .await
+                .err()
+                .context("malformed reply")?;
+            task.await??;
+            // Then parsing failure cannot imply that the password was unchanged.
+            assert!(matches!(
+                error,
+                Error::KpasswdOutcomeUnknown(source) if matches!(*source, Error::Kadmin(_))
+            ));
             Ok(())
         })
     }
