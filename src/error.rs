@@ -2024,11 +2024,17 @@ pub enum Spnego {
     /// A mechanism switch or continuation needs retained SPNEGO negotiation state.
     #[error("SPNEGO mechanism switching and continuation require negotiation state")]
     NegotiationRequiresState,
-    /// A supplied MIC cannot be verified and answered by the one-shot acceptor.
-    #[error("SPNEGO mechListMIC exchange requires retained GSS and negotiation state")]
+    /// Extracting an AP-REQ alone cannot verify a supplied mechanism-list MIC.
+    #[error("SPNEGO mechListMIC requires validated Kerberos context keys")]
     MechListMicRequiresState,
-    /// The optimistic token is not for the first offered mechanism.
-    #[error("SPNEGO optimistic token mechanism differs from the first offer")]
+    /// A non-first mechanism requires a mechanism-list MIC.
+    #[error("SPNEGO mechListMIC is required for a non-first mechanism")]
+    MissingMechListMic,
+    /// The mechanism-list MIC is malformed or fails context integrity checks.
+    #[error("invalid SPNEGO mechListMIC")]
+    InvalidMechListMic,
+    /// The optimistic token's mechanism was not offered.
+    #[error("SPNEGO optimistic token mechanism is not in the offered list")]
     OptimisticMechanismMismatch,
     /// The GSS authenticator omitted its RFC 4121 checksum.
     #[error("GSS authenticator checksum is required")]

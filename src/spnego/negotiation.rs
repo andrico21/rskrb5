@@ -1,0 +1,114 @@
+//! RFC 4178 integrity for a complete optimistic Kerberos exchange.
+
+use super::{
+    ApRepOptions, EncryptionKey, Error, GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY, GSS_TOKEN_FLAG_SEALED,
+    GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, GSSAPI_ACCEPTOR_SIGN_USAGE, GSSAPI_INITIATOR_SIGN_USAGE,
+    Krb5MechToken, Krb5TokenId, MicToken, NegTokenInit, ValidatedApReq,
+    der::{DerReader, TAG_APPLICATION_0, TAG_CONTEXT_0, TAG_SEQUENCE, read_single_tlv},
+    encryption_key_from_rasn, ensure_kerberos_mechanism,
+};
+
+/// Select only an offered Kerberos OID and require integrity for non-first selection.
+///
+/// # Errors
+/// Returns token decode errors, or a named missing mechanism, AP-REQ or MIC error.
+pub(super) fn optimistic_token(init: &NegTokenInit) -> Result<Krb5MechToken, Error> {
+    ensure_kerberos_mechanism(&init.mech_types)?;
+    let token = Krb5MechToken::decode(init.mech_token.as_deref().ok_or(Error::MissingMechToken)?)?;
+    if !init.mech_types.contains(&token.oid) {
+        return Err(Error::OptimisticMechanismMismatch);
+    }
+    if token.token_id != Krb5TokenId::ApReq {
+        return Err(Error::MissingApReq);
+    }
+    if init.mech_types.first() != Some(&token.oid) && init.mech_list_mic.is_none() {
+        return Err(Error::MissingMechListMic);
+    }
+    Ok(token)
+}
+
+/// Retain the received `MechTypeList` TLV, not a canonicalized or explicitly tagged copy.
+///
+/// # Errors
+/// Returns DER errors or rejects absent or duplicate mechanism-list fields.
+pub(super) fn received_mech_types(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    let choice = if bytes.first() == Some(&TAG_APPLICATION_0) {
+        let wrapper = read_single_tlv(bytes, TAG_APPLICATION_0)?;
+        let mut reader = DerReader::new(wrapper.value());
+        let _oid = reader.read_tlv()?;
+        reader.remaining()
+    } else {
+        bytes
+    };
+    let init = read_single_tlv(choice, TAG_CONTEXT_0)?;
+    let sequence = read_single_tlv(init.value(), TAG_SEQUENCE)?;
+    let mut fields = DerReader::new(sequence.value());
+    let mut list = None;
+    while !fields.remaining().is_empty() {
+        let field = fields.read_tlv()?;
+        if field.tag() == TAG_CONTEXT_0 {
+            if list.is_some() {
+                return Err(Error::InvalidMechListMic);
+            }
+            list = Some(field.value().to_vec());
+        }
+    }
+    list.ok_or(Error::MissingMechTypes)
+}
+
+/// Verify direction, sequence and checksum before the validator commits replay state.
+///
+/// # Errors
+/// Returns `InvalidMechListMic` for malformed or context-inconsistent MICs.
+pub(super) fn verify_mic(
+    bytes: &[u8],
+    list: &[u8],
+    authenticator: &rasn_kerberos::Authenticator,
+    session_key: &EncryptionKey,
+) -> Result<(), Error> {
+    let mic = MicToken::decode(bytes, false).map_err(|_source| Error::InvalidMechListMic)?;
+    // No acceptor subkey exists before this one-shot AP-REP. Unknown flags are ignored.
+    if mic.flags & (GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY | GSS_TOKEN_FLAG_SEALED) != 0
+        || Some(mic.snd_seq_num) != authenticator.seq_number.map(u64::from)
+    {
+        return Err(Error::InvalidMechListMic);
+    }
+    let subkey = authenticator.subkey.as_ref().map(encryption_key_from_rasn);
+    let _verified = mic
+        .with_payload(list)
+        .verify(
+            subkey.as_ref().unwrap_or(session_key),
+            GSSAPI_INITIATOR_SIGN_USAGE,
+        )
+        .map_err(|_source| Error::InvalidMechListMic)?;
+    Ok(())
+}
+
+/// Sign with the acceptor subkey, initiator subkey, or ticket key, in that order.
+///
+/// # Errors
+/// Returns checksum construction or encoding errors for the selected context key.
+pub(super) fn response_mic(
+    list: &[u8],
+    ap_req: &ValidatedApReq,
+    options: &ApRepOptions,
+) -> Result<Vec<u8>, Error> {
+    let key = options
+        .subkey
+        .as_ref()
+        .or(ap_req.subkey.as_ref())
+        .unwrap_or(&ap_req.session_key);
+    let flags = GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR
+        | if options.subkey.is_some() {
+            GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY
+        } else {
+            0
+        };
+    let sequence = options
+        .sequence_number
+        .or(ap_req.sequence_number)
+        .unwrap_or(0);
+    let mut mic = MicToken::new(flags, u64::from(sequence)).with_payload(list);
+    mic.set_checksum(key, GSSAPI_ACCEPTOR_SIGN_USAGE)?;
+    mic.encode()
+}

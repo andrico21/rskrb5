@@ -160,9 +160,9 @@ gokrb5 behaviour cited is from the v8.4.4 source.
   `TransitValidator` accepts its path (RFC 4120 sections 2.7 and 3.3.3.2).
   gokrb5 v8.4.4 checks neither version field nor the transited encoding
   outside its tests.
-- **SPNEGO negotiation.** The acceptor takes only a first-choice Kerberos
-  mechanism and fails closed on a non-first offer, a continuation or a
-  mechListMIC (RFC 4178 sections 4 and 5). gokrb5 v8.4.4 marks
+- **SPNEGO negotiation.** The acceptor verifies supplied mechListMICs and
+  requires one for non-first Kerberos selection, replying with a reciprocal MIC
+  (RFC 4178 sections 4 and 5). Stateless continuations fail closed. gokrb5 v8.4.4 marks
   `MechListMIC` as unused for Kerberos (`spnego/negotiationToken.go`).
 - **Replay cache bounds.** Replay caches have their own skew and a capacity
   (300 s and 65,536 records by default), expire entries and fail closed when

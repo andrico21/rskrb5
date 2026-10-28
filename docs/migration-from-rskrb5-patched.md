@@ -346,19 +346,30 @@ unknown flags and extensions, and does not import delegated credentials.
 
 ### SPNEGO acceptor negotiation (RSK-C4BE57A0)
 
-`AcceptedContext::selected_mechanism` records the first offered Kerberos OID;
-AP-REP headers preserve it. Both the standard and Microsoft legacy Kerberos
-OIDs are supported, including raw Kerberos headers.
+`AcceptedContext::selected_mechanism` records the offered Kerberos OID matching
+the optimistic token, including a non-first OID. Both standard and Microsoft
+legacy OIDs are supported, including raw Kerberos headers. Non-first selection
+requires a valid RFC 4121 MIC; first-choice selection permits an absent MIC but
+verifies one if supplied. Handle `error::Spnego::MissingMechListMic` and
+`InvalidMechListMic`. Unoffered optimistic OIDs return
+`OptimisticMechanismMismatch`; unsupported mechanisms return `UnsupportedMechanism`.
 
-`NegTokenInit::krb5_ap_req`, `Token::krb5_ap_req` and
-`accept_sec_context_header` now fail closed for negotiation shapes the one-shot
-API cannot complete. Handle the new `error::Spnego` variants
-`NegotiationRequiresState`, `MechListMicRequiresState` and
-`OptimisticMechanismMismatch`. Supplied MICs are rejected, not verified;
-mechanism switches and continuations require a future stateful API retaining
-the original offer, GSS context state and final MIC exchange. Unsupported OIDs
-continue to use `UnsupportedMechanism`. Token codecs still permit inspection
-of these messages; successful decoding does not mean successful negotiation.
+The additive `AcceptedContext::mech_types_der` field retains the exact received
+list TLV when a MIC verified. AP-REP response helpers include a reciprocal MIC
+over it, using usage 23 and the AP-REP acceptor subkey, authenticator subkey or
+ticket key (in that order). Verification uses usage 25 and the authenticator
+subkey or ticket key: no acceptor subkey exists in this initial leg. MIC sequence
+numbers must match the authenticator; response MICs use the AP-REP sequence,
+falling back to the authenticator sequence. A MIC consumes that per-direction
+sequence number; applications using per-message tokens next must increment it.
+The no-MIC first-choice AP-REP encoding is unchanged.
+
+All `NegTokenResp` continuations still return `NegotiationRequiresState`: they
+lack the original offer and prior key/MIC phase. A peer needing a request-mic
+round trip must use a stateful implementation. The keyless extraction helpers
+`NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` retain
+`MechListMicRequiresState` for supplied MICs; use `accept_sec_context_header`
+for cryptographic verification. Decoding alone never authenticates negotiation.
 
 ### S4U frontend keys (delegated-client-unbound-to-ticket-payload)
 

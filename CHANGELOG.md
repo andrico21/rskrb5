@@ -153,11 +153,13 @@ SPNEGO, GSS tokens, DER and OIDs:
   EC overflow is rejected (RSK-2A906A3A).
 - Unsealed Wrap tokens apply the right-rotation count (RRC) on encode and
   decode (RFC 4121 §4.2.5) (RSK-84FA90AE).
-- The SPNEGO acceptor accepts only a first-choice Kerberos mechanism and keeps
-  its OID in the reply. A non-first Kerberos offer, a continuation or any
-  mechListMIC fails closed (`NegotiationRequiresState`,
-  `MechListMicRequiresState`), before AP-REQ validation and the replay cache
-  (RFC 4178 §§4-5) (RSK-C4BE57A0).
+- The SPNEGO acceptor accepts an optimistic token for any offered standard or
+  Microsoft Kerberos OID. Non-first selection requires a valid mechListMIC;
+  supplied first-choice MICs also verify before replay insertion. Replies select
+  that OID and include a reciprocal MIC over the received mechanism list when
+  one was verified. Missing or invalid MICs fail closed (`MissingMechListMic`,
+  `InvalidMechListMic`); stateless continuations remain `NegotiationRequiresState`
+  (RFC 4178 §§4-5, RFC 4121 §2) (RSK-C4BE57A0, F2 M1).
 - GSS acceptance checks the RFC 4121 §4.1.1 authenticator checksum type and
   framing and requires a sequence number before replay insertion
   (RSK-FAF64A85, run-2 lead `mandatory-gss-authenticator-fields`).

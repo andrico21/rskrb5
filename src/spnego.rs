@@ -24,6 +24,8 @@ use crate::{
 mod authenticator;
 /// Minimal DER reader and writer for the GSS-API and SPNEGO token layer.
 mod der;
+/// One-shot SPNEGO mechanism-list integrity processing.
+mod negotiation;
 /// GSS-API object identifiers.
 pub mod oid;
 
@@ -1105,35 +1107,26 @@ impl NegTokenInit {
         }
     }
 
-    /// Return the optimistic KRB5 AP-REQ for the first offered mechanism.
+    /// Return a first-choice KRB5 AP-REQ requiring no mechanism-list MIC.
     ///
-    /// This one-shot API cannot retain the mechanism-list transcript, GSS sequence
-    /// state or MIC exchange phase. It rejects mechanism switches and supplied
-    /// MICs rather than returning an AP-REQ with unverified negotiation integrity.
+    /// This extraction helper has no keys. Use [`accept_sec_context_header`] to
+    /// validate an initial exchange carrying a MIC or selecting a non-first OID.
     ///
     /// # Errors
     ///
     /// Returns [`Error::MissingMechTypes`] when no mechanism is offered,
     /// [`Error::UnsupportedMechanism`] when no offered mechanism is Kerberos 5,
-    /// [`Error::NegotiationRequiresState`] when Kerberos is not offered first,
     /// [`Error::MechListMicRequiresState`] when a MIC is supplied,
-    /// [`Error::OptimisticMechanismMismatch`] when the token OID differs from the first offer,
+    /// [`Error::MissingMechListMic`] when the selected mechanism is not first,
+    /// [`Error::OptimisticMechanismMismatch`] when the token OID was not offered,
     /// [`Error::MissingMechToken`] without a mechanism token, the errors of
     /// [`Krb5MechToken::decode`], and [`Error::MissingApReq`] when the mechanism token is not an
     /// AP-REQ.
     #[inline]
     pub fn krb5_ap_req(&self) -> Result<Vec<u8>, Error> {
-        ensure_kerberos_mechanism(&self.mech_types)?;
+        let krb5 = negotiation::optimistic_token(self)?;
         if self.mech_list_mic.is_some() {
             return Err(Error::MechListMicRequiresState);
-        }
-        let token = self.mech_token.as_deref().ok_or(Error::MissingMechToken)?;
-        let krb5 = Krb5MechToken::decode(token)?;
-        if self.mech_types.first() != Some(&krb5.oid) {
-            return Err(Error::OptimisticMechanismMismatch);
-        }
-        if krb5.token_id != Krb5TokenId::ApReq {
-            return Err(Error::MissingApReq);
         }
         Ok(krb5.message)
     }
@@ -1569,8 +1562,11 @@ impl InitiatorContext {
 pub struct AcceptedContext {
     /// Validated AP-REQ details.
     pub ap_req: ValidatedApReq,
-    /// Kerberos mechanism selected from the initiator's first offer.
+    /// Offered Kerberos mechanism matching the optimistic token's OID.
     pub selected_mechanism: ObjectIdentifier,
+    /// Received DER `MechTypeList` authenticated by the initiator MIC, if present.
+    /// The response helper signs these bytes, excluding the explicit `[0]` tag.
+    pub mech_types_der: Option<Vec<u8>>,
 }
 
 impl AcceptedContext {
@@ -1610,23 +1606,29 @@ impl AcceptedContext {
         let mut response =
             NegTokenResp::accept_completed().with_response_token(krb5_token.encode()?);
         response.supported_mech = Some(self.selected_mechanism.clone());
+        if let Some(list) = &self.mech_types_der {
+            response.mech_list_mic = Some(negotiation::response_mic(list, &self.ap_req, options)?);
+        }
         response_token_header(&response)
     }
 }
 
 /// Validate a SPNEGO HTTP `Authorization` header through a service validator.
 ///
-/// Only a first-choice Kerberos optimistic exchange without a `mechListMIC`
-/// is supported. RFC 4178 sections 4-5 require retained negotiation and GSS
-/// context state for mechanism switches and MIC exchanges; those flows fail
-/// closed before AP-REQ validation or replay-cache insertion.
+/// Accepts an optimistic token for any offered Kerberos OID. A non-first OID
+/// requires a valid RFC 4121 `mechListMIC`; a supplied first-choice MIC must also
+/// verify. MIC checks precede replay insertion and the response helper returns
+/// a reciprocal MIC. Continuations requiring a previous offer, key or MIC phase
+/// remain unsupported: this API only completes exchanges contained in one init.
 /// The authenticator must include the RFC 4121 checksum and sequence number.
 /// This no-channel-bindings API ignores initiator bindings and unknown extensions;
 /// it checks delegation framing but does not import delegated credentials.
 ///
 /// # Errors
 ///
-/// Returns the errors of [`parse_negotiate_header`] and [`Token::krb5_ap_req`], and
+/// Returns the errors of [`parse_negotiate_header`], [`Error::MissingMechListMic`]
+/// for non-first selection without a MIC, [`Error::InvalidMechListMic`] for a bad
+/// MIC, [`Error::NegotiationRequiresState`] for a continuation, and
 /// [`Error::Service`] when the validator rejects the AP-REQ. Missing or malformed
 /// GSS fields return [`Error::MissingAuthenticatorChecksum`],
 /// [`Error::InvalidAuthenticatorChecksum`] or [`Error::MissingAuthenticatorSequence`].
@@ -1635,19 +1637,33 @@ pub fn accept_sec_context_header(
     validator: &mut Validator<'_>,
     header: &str,
 ) -> Result<AcceptedContext, Error> {
-    let token = parse_negotiate_header(header)?;
-    let ap_req = token.krb5_ap_req()?;
-    let selected_mechanism = match token {
-        Token::Init(init) => init
-            .mech_types
-            .into_iter()
-            .next()
-            .ok_or(Error::MissingMechTypes)?,
-        Token::Resp(_) => return Err(Error::NegotiationRequiresState),
+    let bytes = decode_negotiate_header(header)?;
+    let token = Token::decode(&bytes)
+        .or_else(|spnego_error| raw_krb5_negotiate_token(&bytes, spnego_error))?;
+    let init = match token {
+        Token::Init(init) => init,
+        Token::Resp(response) => {
+            let _ap_req = Token::Resp(response).krb5_ap_req()?;
+            return Err(Error::NegotiationRequiresState);
+        }
     };
+    let krb5 = negotiation::optimistic_token(&init)?;
+    let mech_types_der = init
+        .mech_list_mic
+        .as_ref()
+        .map(|_| negotiation::received_mech_types(&bytes))
+        .transpose()?;
+    let ap_req = validator.validate_ap_req_with_check(&krb5.message, |auth, session_key| {
+        authenticator::validate(auth)?;
+        if let (Some(mic), Some(list)) = (&init.mech_list_mic, &mech_types_der) {
+            negotiation::verify_mic(mic, list, auth, session_key)?;
+        }
+        Ok::<(), Error>(())
+    })?;
     Ok(AcceptedContext {
-        ap_req: validator.validate_ap_req_with_check(&ap_req, authenticator::validate)?,
-        selected_mechanism,
+        ap_req,
+        selected_mechanism: krb5.oid,
+        mech_types_der,
     })
 }
 
@@ -1762,6 +1778,15 @@ pub fn authorization_header(
 /// [`Token::decode`] when the bytes are neither a SPNEGO token nor a raw KRB5 mech token.
 #[inline]
 pub fn parse_negotiate_header(header: &str) -> Result<Token, Error> {
+    let bytes = decode_negotiate_header(header)?;
+    Token::decode(&bytes).or_else(|spnego_error| raw_krb5_negotiate_token(&bytes, spnego_error))
+}
+
+/// Apply the HTTP size boundary before base64 decoding.
+///
+/// # Errors
+/// Returns header size, scheme, missing-token or base64 decoding errors.
+fn decode_negotiate_header(header: &str) -> Result<Vec<u8>, Error> {
     if header.len() > MAX_NEGOTIATE_HEADER_LEN {
         return Err(Error::NegotiateHeaderTooLong {
             maximum: MAX_NEGOTIATE_HEADER_LEN,
@@ -1774,10 +1799,9 @@ pub fn parse_negotiate_header(header: &str) -> Result<Token, Error> {
     if !scheme.eq_ignore_ascii_case(HTTP_NEGOTIATE) || encoded.trim().is_empty() {
         return Err(Error::InvalidNegotiateHeader);
     }
-    let bytes = general_purpose::STANDARD
+    general_purpose::STANDARD
         .decode(encoded.trim())
-        .map_err(Error::Base64)?;
-    Token::decode(&bytes).or_else(|spnego_error| raw_krb5_negotiate_token(&bytes, spnego_error))
+        .map_err(Error::Base64)
 }
 
 /// Encode a SPNEGO token as an HTTP `Negotiate` header value.
@@ -2239,25 +2263,22 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
     })
 }
 
-/// Require the first offered mechanism to be Kerberos for optimistic processing.
+/// Require at least one offered mechanism to be Kerberos.
 ///
 /// # Errors
 ///
 /// Returns [`Error::MissingMechTypes`] for an empty list, and [`Error::UnsupportedMechanism`] with
-/// the first listed OID when none is Kerberos 5. Returns [`Error::NegotiationRequiresState`]
-/// when selecting Kerberos would require a mechanism switch and a MIC exchange.
+/// the first listed OID when none is Kerberos 5.
 fn ensure_kerberos_mechanism(mech_types: &[ObjectIdentifier]) -> Result<(), Error> {
     let Some(first) = mech_types.first() else {
         return Err(Error::MissingMechTypes);
     };
 
-    if first.is_kerberos_mechanism() {
-        Ok(())
-    } else if mech_types
+    if mech_types
         .iter()
         .any(ObjectIdentifier::is_kerberos_mechanism)
     {
-        Err(Error::NegotiationRequiresState)
+        Ok(())
     } else {
         Err(Error::UnsupportedMechanism(first.clone()))
     }
