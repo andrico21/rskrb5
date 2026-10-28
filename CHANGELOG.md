@@ -194,6 +194,11 @@ Service acceptor and HTTP layer:
   default), expire entries automatically, reject a wider shared skew and a
   clock rollback larger than the configured maximum skew, tolerate smaller or
   equal backward steps without lowering the high-water mark, and fail closed
+  on replay even after a tolerated rollback. Retention is three times the skew
+  from each record's last-seen watermark, with expiry evaluated monotonically;
+  both replay indexes refresh existing timestamps without accepting the replay.
+  The default retention is 900 seconds; capacity planning needs 1.5 times the
+  previous two-skew window. Caches fail closed
   when full (RSK-7D80FA41, run-2 lead
   `ReplayCache:indefinite-entry-retention`).
 - Ticket and authenticator authorization data are validated before success:

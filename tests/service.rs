@@ -1808,10 +1808,86 @@ mod tests {
         let first = decode_hex(VALID_AP_REQ)?;
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         drop(validator.validate_ap_req(&first)?);
-        let second = replay_request_at(1_893_554_048)?;
-        validator = validator.with_now(timestamp(1_893_554_048)?);
+        let second = replay_request_at(1_893_554_348)?;
+        validator = validator.with_now(timestamp(1_893_554_348)?);
         drop(validator.validate_ap_req(&second)?);
         assert_eq!(validator.replay_cache_mut().len(), 1);
+        Ok(())
+    }
+
+    /// A tolerated rollback cannot revive a future-dated request after a later admission.
+    #[test]
+    fn replay_lifecycle_rejects_replay_after_tolerated_rollback() -> Result<(), TestError> {
+        // Given the F2 probe: client time x, first presentation x-9, skew 10.
+        let keytab = http_keytab()?;
+        let skew = Duration::from_secs(10);
+        let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
+        let captured = replay_request_at(1_893_553_447)?;
+        let mut validator = Validator::new(&keytab)
+            .with_max_clock_skew(skew)
+            .with_shared_replay_cache(cache)
+            .with_now(timestamp(1_893_553_438)?);
+        drop(validator.validate_ap_req(&captured)?);
+        validator = validator.with_now(timestamp(1_893_553_459)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_459)?)?);
+        assert!(matches!(
+            validator.validate_ap_req(&captured),
+            Err(Error::ClockSkew { max_clock_skew: _ })
+        ));
+        // When the sample rolls back three seconds, freshness passes again.
+        validator = validator.with_now(timestamp(1_893_553_456)?);
+        // Then the cache, not freshness, must reject the previously accepted AP-REQ.
+        assert!(matches!(
+            validator.validate_ap_req(&captured),
+            Err(Error::Replay)
+        ));
+        Ok(())
+    }
+
+    /// Last-seen timestamps use the watermark, even for insertions during rollback.
+    #[test]
+    fn replay_lifecycle_retention_uses_last_seen_watermark() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let skew = Duration::from_secs(10);
+        let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
+        let captured = replay_request_at(1_893_553_447)?;
+        let mut validator = Validator::new(&keytab)
+            .with_max_clock_skew(skew)
+            .with_shared_replay_cache(cache.clone())
+            .with_now(timestamp(1_893_553_447)?);
+        drop(validator.validate_ap_req(&captured)?);
+        validator = validator.with_now(timestamp(1_893_553_452)?);
+        assert!(matches!(
+            validator.validate_ap_req(&captured),
+            Err(Error::Replay)
+        ));
+        validator = validator.with_now(timestamp(1_893_553_450)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_450)?)?);
+        // Administrative pruning exposes the two last-seen timestamps independently.
+        assert_eq!(
+            cache.clear_older_than_at(Duration::from_secs(20), timestamp(1_893_553_472)?)?,
+            0
+        );
+        assert_eq!(cache.len()?, 2);
+        Ok(())
+    }
+
+    /// Automatic expiry uses the watermark rather than a tolerated older sample.
+    #[test]
+    fn replay_lifecycle_expiry_is_monotonic() -> Result<(), TestError> {
+        let keytab = http_keytab()?;
+        let skew = Duration::from_secs(10);
+        let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
+        let mut validator = Validator::new(&keytab)
+            .with_max_clock_skew(skew)
+            .with_shared_replay_cache(cache.clone())
+            .with_now(timestamp(1_893_553_447)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_447)?)?);
+        validator = validator.with_now(timestamp(1_893_553_478)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_478)?)?);
+        validator = validator.with_now(timestamp(1_893_553_477)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_477)?)?);
+        assert_eq!(cache.len()?, 2);
         Ok(())
     }
 

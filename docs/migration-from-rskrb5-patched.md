@@ -251,14 +251,20 @@ whose skew exceeds the cache ceiling fails admission with
 `Service::ReplayCacheSkewExceeded`; `with_max_clock_skew` does not widen a cache.
 This also applies to the shared cache created by a Tower layer.
 
-Each insert prunes records presented more than twice the cache skew ago, then
-checks replay and capacity atomically under the shared lock. Twice-skew retention
-covers authenticators first accepted up to one skew window in the future. Equality
+Each insert prunes records last seen more than three times the cache skew ago,
+evaluated against `max(watermark, presented_at)`, then checks replay and capacity
+atomically under the shared lock. Three-skew retention covers future authenticators
+and the additional one-skew rollback tolerance. Equality
 at the expiry boundary stays live. Backward validation samples up to the cache's
 configured maximum skew are tolerated, including out-of-order concurrent samples.
 The high-water mark never moves backwards; a rollback larger than the skew returns
 `ReplayCacheClockRollback`, and even explicit `clear` does not reset that mark.
-Expiry still uses each presentation's own time and the two-skew retention window.
+New records and existing records seen again are timestamped at the watermark,
+never at a stepped-back sample. Neither index expires a record within three
+skew windows of its latest sighting. At the default skew this is 900 seconds;
+size capacity for peak admissions over that window (1.5 times the previous
+600-second retention estimate). The 65,536-record default supports about 72
+new records/second sustained before bursts or replay refreshes need extra headroom.
 Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
 

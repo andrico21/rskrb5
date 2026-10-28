@@ -254,10 +254,10 @@ pub struct ReplayCache {
     /// Highest admission time, preserved even by explicit clearing.
     watermark: Option<SystemTime>,
     /// RFC 4120 replay keys of the accepted authenticators, each with the
-    /// time it was presented.
+    /// watermark when it was last seen.
     entries: HashMap<ReplayKey, SystemTime>,
     /// SHA-256 digests of the accepted authenticator ciphertexts, each with the
-    /// time it was presented, so a re-presented authenticator is a replay
+    /// watermark when it was last seen, so a re-presented authenticator is a replay
     /// whatever cleartext ticket field was rewritten around it.
     authenticators: HashMap<[u8; 32], SystemTime>,
 }
@@ -273,8 +273,8 @@ impl ReplayCache {
     /// Create an empty cache with immutable skew and live-entry admission limits.
     ///
     /// Validators exceeding `max_clock_skew` are rejected on admission. Zero
-    /// capacity rejects all new records. Expiry retains twice the skew from
-    /// presentation, covering authenticators first accepted in the future.
+    /// capacity rejects all new records. Expiry retains three times the skew
+    /// from the last-seen watermark, covering future authenticators and rollback.
     /// Backward clock samples up to this skew are tolerated without lowering
     /// the high-water mark; larger rollbacks fail closed.
     #[must_use]
@@ -341,9 +341,8 @@ impl ReplayCache {
 
     /// Record one presentation, or report it as a replay.
     ///
-    /// Returns `false`, recording nothing, when either the RFC 4120 replay key
-    /// or the authenticator digest was already seen; `true` once both are
-    /// recorded.
+    /// Returns `false`, refreshing existing timestamps, when either the RFC 4120
+    /// replay key or authenticator digest was already seen; `true` once both are recorded.
     ///
     /// # Errors
     ///
@@ -369,15 +368,21 @@ impl ReplayCache {
         }) {
             return Err(Error::ReplayCacheClockRollback);
         }
-        self.watermark = Some(
-            self.watermark
-                .map_or(presented_at, |latest| latest.max(presented_at)),
-        );
-        let retention = self.max_clock_skew.saturating_mul(2);
-        let _: usize = self.clear_older_than_at(retention, presented_at);
-        if self.entries.contains_key(&key)
-            || self.authenticators.contains_key(&authenticator_digest)
-        {
+        let latest = self
+            .watermark
+            .map_or(presented_at, |time| time.max(presented_at));
+        self.watermark = Some(latest);
+        // For first presentation P, c <= P+s. A tolerated sample T >= W-s
+        // can accept c only if c >= T-s, hence P >= W-3s. Keep equality live.
+        let retention = self.max_clock_skew.saturating_mul(3);
+        let _: usize = self.clear_older_than_at(retention, latest);
+        let entry = self.entries.get_mut(&key);
+        let digest = self.authenticators.get_mut(&authenticator_digest);
+        let replay = entry.is_some() || digest.is_some();
+        for seen in entry.into_iter().chain(digest) {
+            *seen = latest;
+        }
+        if replay {
             return Ok(false);
         }
         if self.entries.len() >= self.capacity {
@@ -386,10 +391,8 @@ impl ReplayCache {
             });
         }
         // Both lookups above missed, so neither insert replaces an entry.
-        let _: Option<SystemTime> = self.entries.insert(key, presented_at);
-        let _: Option<SystemTime> = self
-            .authenticators
-            .insert(authenticator_digest, presented_at);
+        let _: Option<SystemTime> = self.entries.insert(key, latest);
+        let _: Option<SystemTime> = self.authenticators.insert(authenticator_digest, latest);
         Ok(true)
     }
 }
