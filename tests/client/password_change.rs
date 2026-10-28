@@ -627,6 +627,7 @@ TEST.GOKRB5 = {{
 
     #[cfg(feature = "tokio")]
     #[test]
+    /// Preserves mutation uncertainty when the delivered request receives invalid framing.
     fn kpasswd_classification_marks_malformed_reply_unknown() -> Result<(), TestError> {
         runtime()?.block_on(async {
             // Given a server that consumes the mutation and returns a malformed reply.

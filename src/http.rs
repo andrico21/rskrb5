@@ -994,7 +994,7 @@ impl<'keytab> NegotiateLayer<'keytab> {
     /// AD cross-domain tickets lack TRANSITED-POLICY-CHECKED and are rejected
     /// by default. Opt in for a trusted endpoint pair with
     /// `Arc::new(service::TransitPolicy::direct("USER.REALM", "SERVICE.REALM"))`,
-    /// or use [`service::TransitPolicy::domain_x500_paths`] for exact trusted paths.
+    /// or use [`crate::service::TransitPolicy::domain_x500_paths`] for exact trusted paths.
     #[must_use]
     #[inline]
     pub fn with_transit_validator(mut self, validator: Arc<dyn TransitValidator>) -> Self {
