@@ -78,6 +78,8 @@ for first-choice selection (RSK-C4BE57A0)`. Regressions:
 `acceptor_accepts_optimistic_kerberos_alias`, `mech_list_mic_accepts_kerberos_after_ntlm`.
 The row's former `acceptor_rejects_optimistic_oid_mismatch` is replaced by the
 alias acceptance test; `acceptor_rejects_nonfirst_kerberos` now uses NTLM first.
+The alias semantics left `error::Spnego::OptimisticMechanismMismatch` unconstructed,
+so it was removed before 0.3.0 release (final review n8); 0.2.2 never had it.
 
 The mechanism-selection change addresses the acceptor only, as requested. The
 original review's initiator/HTTP response-classifier observations remain outside

@@ -61,7 +61,7 @@ These are breaking; the migration guide maps each one.
 - New error variants, among them `error::Client::{EnctypeNotRequested,
   EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
   DnsServiceUnavailable}`, `error::Config::{EnctypeNotPermitted,
-    NoPermittedEnctypes, NoUsableEnctypes}`,
+  NoPermittedEnctypes, NoUsableEnctypes}`,
   `error::Kadmin::UnauthenticatedSuccess`,
   `error::Ccache::IdentityUnavailable` and
   `http::NegotiateHttpError::MutualAuthenticationNotProven`.
@@ -198,12 +198,14 @@ Service acceptor and HTTP layer:
   clock rollback larger than the configured maximum skew, tolerate smaller or
   equal backward steps without lowering the high-water mark, and fail closed
   on replay even after a tolerated rollback. Retention is three times the skew
-  from each record's last-seen watermark, with expiry evaluated monotonically;
-  both replay indexes refresh existing timestamps without accepting the replay.
+  from each record's last-seen watermark; records admitted from a stepped-back
+  sample are stamped at the watermark, so they never expire before earlier
+  records. A replay refreshes the matched replay key and authenticator digest
+  together without accepting it, and both expire together, so a rewritten-sname
+  replay cannot keep a digest alive past its key record.
   The default retention is 900 seconds; capacity planning needs 1.5 times the
-  previous two-skew window. Caches fail closed
-  when full (RSK-7D80FA41, run-2 lead
-  `ReplayCache:indefinite-entry-retention`).
+  previous two-skew window. Caches fail closed when full (RSK-7D80FA41, run-2
+  lead `ReplayCache:indefinite-entry-retention`).
 - Ticket and authenticator authorization data are validated before success:
   unknown critical elements and unsupported AD-KDCIssued or AD-AND-OR are
   rejected, within eight wrappers and 1 MiB of decoded payload (RFC 4120
