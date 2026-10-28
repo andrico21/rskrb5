@@ -255,12 +255,22 @@ pub struct ReplayCache {
     watermark: Option<SystemTime>,
     /// RFC 4120 replay keys of the accepted authenticators, each with the digest
     /// admitted with it; the pair shares one last-seen record in `authenticators`.
-    entries: HashMap<ReplayKey, [u8; 32]>,
-    /// SHA-256 digests of the accepted authenticator ciphertexts, each with the
-    /// watermark when its key and digest pair was last seen, so a re-presented
+    entries: HashMap<Arc<ReplayKey>, [u8; 32]>,
+    /// SHA-256 digests of the accepted authenticator ciphertexts, each with its
+    /// key and the watermark when the pair was last seen, so a re-presented
     /// authenticator is a replay whatever cleartext ticket field was rewritten
-    /// around it.
-    authenticators: HashMap<[u8; 32], SystemTime>,
+    /// around it. Keys and digests pair one to one.
+    authenticators: HashMap<[u8; 32], DigestRecord>,
+}
+
+/// The digest-index record of one admitted key and digest pair.
+#[derive(Debug)]
+struct DigestRecord {
+    /// Watermark when the pair was last seen.
+    last_seen: SystemTime,
+    /// The replay key admitted with the digest, so expiry removes the pair
+    /// without scanning the key index.
+    key: Arc<ReplayKey>,
 }
 
 impl Default for ReplayCache {
@@ -334,16 +344,25 @@ impl ReplayCache {
     /// authenticator digest are removed together.
     #[inline]
     pub fn clear_older_than_at(&mut self, max_age: Duration, now: SystemTime) -> usize {
-        let before = self.entries.len();
-        self.authenticators.retain(|_, last_seen| {
-            now.duration_since(*last_seen)
-                .map_or(true, |age| age <= max_age)
+        let entries = &mut self.entries;
+        let before = entries.len();
+        // One pass over the digests; the key index is touched only for the
+        // pairs that expire, not probed once per live key.
+        self.authenticators.retain(|_, record| {
+            let live = now
+                .duration_since(record.last_seen)
+                .map_or(true, |age| age <= max_age);
+            if !live {
+                #[cfg(test)]
+                replay_tests::KEY_INDEX_VISITS
+                    .with(|visits| visits.set(visits.get().saturating_add(1)));
+                // Pairing is one to one, so this removes the digest's only key.
+                let _: Option<[u8; 32]> = entries.remove(&*record.key);
+            }
+            live
         });
-        let authenticators = &self.authenticators;
-        self.entries
-            .retain(|_, digest| authenticators.contains_key(digest));
-        // `retain` only removes entries, so the length cannot have grown.
-        before.saturating_sub(self.entries.len())
+        // Removal only shrinks the key index, so its length cannot have grown.
+        before.saturating_sub(entries.len())
     }
 
     /// Record one presentation, or report it as a replay.
@@ -389,8 +408,8 @@ impl ReplayCache {
         let paired = self.entries.get(&key).copied();
         let mut replay = paired.is_some();
         for digest in paired.into_iter().chain([authenticator_digest]) {
-            if let Some(seen) = self.authenticators.get_mut(&digest) {
-                *seen = latest;
+            if let Some(record) = self.authenticators.get_mut(&digest) {
+                record.last_seen = latest;
                 replay = true;
             }
         }
@@ -402,9 +421,19 @@ impl ReplayCache {
                 capacity: self.capacity,
             });
         }
-        // Both lookups above missed, so neither insert replaces an entry.
-        let _: Option<[u8; 32]> = self.entries.insert(key, authenticator_digest);
-        let _: Option<SystemTime> = self.authenticators.insert(authenticator_digest, latest);
+        // Both lookups above missed, so neither insert replaces an entry and
+        // the new key and digest pair one to one.
+        let shared_key = Arc::new(key);
+        let _: Option<[u8; 32]> = self
+            .entries
+            .insert(Arc::clone(&shared_key), authenticator_digest);
+        drop(self.authenticators.insert(
+            authenticator_digest,
+            DigestRecord {
+                last_seen: latest,
+                key: shared_key,
+            },
+        ));
         Ok(true)
     }
 }
@@ -1501,3 +1530,13 @@ fn abs_duration(left: SystemTime, right: SystemTime) -> Duration {
     left.duration_since(right)
         .unwrap_or_else(|later| SystemTimeError::duration(&later))
 }
+
+/// Replay-cache purge equivalence and cost regressions.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod replay_tests;

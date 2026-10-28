@@ -266,9 +266,15 @@ them together, so the digest index never holds more records than the key index.
 Neither index expires a record within three skew windows of its latest sighting.
 At the default skew this is 900 seconds; size capacity for peak admissions over
 that window (1.5 times the previous 600-second retention estimate). The
-65,536-record default supports about 72 new records/second sustained before
+65,536-record default holds about 72 new records/second sustained before
 bursts or replay refreshes need extra headroom. Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
+Each admission, replay included, scans the digest index once under the shared
+lock and touches the key index only for the records it expires. The cost grows
+with live records and depends on hardware: a release build on one 8-core x86-64
+laptop measured about 0.06 ms per admission at 4,400 live records, 0.25 ms at
+17,000 and 1.1-1.3 ms at 66,000. At full default occupancy that host serialises
+roughly 750 admissions/second per cache.
 
 Explicit `clear`/`clear_older_than*` remain administrative overrides that can erase
 live replay protection. Do not schedule aggressive pruning; automatic admission
