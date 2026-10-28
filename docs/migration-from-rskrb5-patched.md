@@ -79,8 +79,13 @@ describes each one.
 `LibDefaults` no longer stores writable `default_tkt_enctype_ids`,
 `default_tgs_enctype_ids` or `permitted_enctype_ids` fields. Call the methods
 with those names instead; each derives IDs from the current public name list
-and policy. Replace the three `with_*_enctype_ids` builders with their
-`with_*_enctypes` name-list counterparts. Serde input cannot inject cached IDs;
+and policy. Their signatures are `pub fn default_tkt_enctype_ids(&self) -> Vec<i32>`,
+`pub fn default_tgs_enctype_ids(&self) -> Vec<i32>` and
+`pub fn permitted_enctype_ids(&self) -> Vec<i32>`.
+Replace assignments to the old ID fields with updates to the corresponding
+`*_enctypes` name lists, directly or through `with_*_enctypes` builders. The 0.2.2
+`LibDefaults` API had public ID fields, not `with_*_enctype_ids` builders.
+Serde input cannot inject cached IDs;
 the compatibility JSON snapshot derives IDs on demand. Empty request lists no
 longer substitute an unrelated built-in policy.
 
@@ -232,9 +237,12 @@ This also applies to the shared cache created by a Tower layer.
 Each insert prunes records presented more than twice the cache skew ago, then
 checks replay and capacity atomically under the shared lock. Twice-skew retention
 covers authenticators first accepted up to one skew window in the future. Equality
-at the expiry boundary stays live. Backward validation time returns
-`ReplayCacheClockRollback` until time catches up to the high-water mark; even
-explicit `clear` does not reset that mark. Full capacity returns
+at the expiry boundary stays live. Backward validation samples up to the cache's
+configured maximum skew are tolerated, including out-of-order concurrent samples.
+The high-water mark never moves backwards; a rollback larger than the skew returns
+`ReplayCacheClockRollback`, and even explicit `clear` does not reset that mark.
+Expiry still uses each presentation's own time and the two-skew retention window.
+Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
 
 Explicit `clear`/`clear_older_than*` remain administrative overrides that can erase
@@ -455,7 +463,7 @@ and writable. `Option` builders accept the complete `Option<T>`, including
 | `client::PreauthKeyInfo` | `new(etype)`; `with_salt`, `with_s2kparams` |
 | `client::KdcError` | `new(stime, susec, error_code, service)`; `with_ctime`, `with_cusec`, `with_text`, `with_client`, `with_e_data`, `with_method_data`, `with_preauth_key_info` |
 | `client::PrunedSessions` | Existing `Default`; `with_primary_tgt`, `with_tgt_sessions`, `with_service_tickets` |
-| `config::LibDefaults` | Existing `Default`, `new`, or `new_without_env`; `with_<field>` for every public field. Environment-reading behavior is unchanged. |
+| `config::LibDefaults` | `Default`, `new`, and the compatibility alias `new_without_env` are environment-free; use `from_env()` explicitly for HOME discovery. Use `with_<field>` for public fields, or the derived ID methods described above. |
 | `config::Config`, `config::Realm` | Existing constructors or config parsing; modify public fields after construction |
 | `service::ApRepOptions` | Existing `Default`; `with_subkey`, `with_sequence_number`, `with_kvno` |
 | `messages::EncryptedData` | `new(etype, cipher)`; `with_kvno` |
@@ -849,6 +857,7 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `client::Tokio::fast_negotiation`: `pub const fn fast_negotiation(&self) -> bool`.
 - `client::Tokio::tgt_session`: `pub const fn tgt_session(&self) -> Option<&AsRepSession>`.
 - `client::build_tgs_req_for_realm`: `pub fn build_tgs_req_for_realm<P>( tgt: &AsRepSession, kdc_realm: P, service: Principal, options: TgsReq, ) -> Result<BuiltTgsReq, Error> where P: Into<String>,`.
+- `client::build_tgs_req_for_realm_with_subkey`: `pub fn build_tgs_req_for_realm_with_subkey<R>( tgt: &AsRepSession, kdc_realm: R, service: Principal, options: TgsReq, ) -> Result<TgsFastRequestParts, Error> where R: Into<String>,`. The realm argument changed from `impl Into<String>` to the named generic `R`.
 - `client::build_tgs_req_for_realm_with_confounder`: `pub fn build_tgs_req_for_realm_with_confounder<P>( tgt: &AsRepSession, kdc_realm: P, service: Principal, options: TgsReq, timestamp: SystemTime, cusec: u32, confounder: &[u8], ) -> Result<BuiltTgsReq, Error> where P: Into<String>,`.
 - `client::build_tgs_req_for_realm_with_confounder_and_subkey`: `pub fn build_tgs_req_for_realm_with_confounder_and_subkey<R>( tgt: &AsRepSession, kdc_realm: R, service: Principal, parts: TgsRequestParts<'_>, ) -> Result<TgsFastRequestParts, Error> where R: Into<String>,`.
 - `client::<'request>TgsRequestParts<'request>::new`: `pub const fn new( options: TgsReq, confounder: &'request [u8], subkey: &'request EncryptionKey, ) -> Self`.
@@ -995,6 +1004,7 @@ texts and runtime behavior are unchanged.
 | `ccache::Error` | `error::Ccache` |
 | `client::Error` | `error::Client` |
 | `config::Error` | `error::Config` |
+| `config::Realm::realm` | `config::Realm::name` |
 | `crypto::Error` | `error::Crypto` |
 | `http::Error` | `error::Http` |
 | `kadmin::Error` | `error::Kadmin` |

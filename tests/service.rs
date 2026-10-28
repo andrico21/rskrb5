@@ -26,6 +26,8 @@ mod tests {
         fs,
         path::PathBuf,
         process,
+        sync::Barrier,
+        thread,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -1713,18 +1715,110 @@ mod tests {
         Ok(())
     }
 
-    /// Moving the validation clock backwards fails closed even for a fresh distinct token.
+    /// Moving the validation clock backwards beyond the cache skew fails closed.
     #[test]
     fn replay_lifecycle_rejects_clock_rollback() -> Result<(), TestError> {
         let keytab = http_keytab()?;
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_448)?);
         drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
-        validator = validator.with_now(timestamp(1_893_553_447)?);
+        validator = validator.with_now(timestamp(1_893_553_147)?);
         let error = validator
-            .validate_ap_req(&replay_request_at(1_893_553_447)?)
+            .validate_ap_req(&replay_request_at(1_893_553_147)?)
             .err()
             .context("rollback rejected")?;
         assert!(matches!(error, Error::ReplayCacheClockRollback));
+        Ok(())
+    }
+
+    /// Distinct requests tolerate a one-microsecond inversion between shared validators.
+    #[test]
+    fn replay_lifecycle_accepts_one_microsecond_inversion() -> Result<(), TestError> {
+        // Given two validators with independently sampled clocks and one cache.
+        let keytab = http_keytab()?;
+        let cache = SharedReplayCache::new();
+        let now = timestamp(1_893_553_447)?;
+        let mut first = Validator::new(&keytab)
+            .with_now(now)
+            .with_shared_replay_cache(cache.clone());
+        drop(first.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
+        let mut second = Validator::new(&keytab)
+            .with_now(
+                now.checked_sub(Duration::from_micros(1))
+                    .context("earlier clock")?,
+            )
+            .with_shared_replay_cache(cache.clone());
+
+        // When the older sample reaches admission after the newer sample.
+        drop(second.validate_ap_req(&replay_request_at(1_893_553_447)?)?);
+
+        // Then both distinct requests are admitted and the first remains a replay.
+        assert_eq!(cache.len()?, 2);
+        assert!(matches!(
+            second.validate_ap_req(&decode_hex(VALID_AP_REQ)?),
+            Err(Error::Replay)
+        ));
+        Ok(())
+    }
+
+    /// The skew boundary is inclusive and tolerated steps never lower the watermark.
+    #[test]
+    fn replay_lifecycle_keeps_watermark_after_tolerated_rollback() -> Result<(), TestError> {
+        // Given an admission followed by a rollback of exactly the cache skew.
+        let keytab = http_keytab()?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_448)?);
+        drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
+        validator = validator.with_now(timestamp(1_893_553_148)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_148)?)?);
+
+        // When another sample is only one second older, but beyond the original skew.
+        validator = validator.with_now(timestamp(1_893_553_147)?);
+        let result = validator.validate_ap_req(&replay_request_at(1_893_553_147)?);
+
+        // Then the original high-water mark still rejects it.
+        assert!(matches!(result, Err(Error::ReplayCacheClockRollback)));
+        Ok(())
+    }
+
+    /// Concurrent distinct authentications share replay state despite older clock samples.
+    #[test]
+    fn replay_lifecycle_accepts_concurrent_shared_validations() -> Result<(), TestError> {
+        // Given one cache whose newest sample precedes eight concurrent older samples.
+        let keytab = http_keytab()?;
+        let cache = SharedReplayCache::new();
+        let now = timestamp(1_893_553_447)?;
+        let mut first = Validator::new(&keytab)
+            .with_now(now)
+            .with_shared_replay_cache(cache.clone());
+        drop(first.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
+        let barrier = Arc::new(Barrier::new(8));
+
+        // When all threads validate distinct AP-REQs through that shared cache.
+        thread::scope(|scope| -> Result<(), TestError> {
+            let mut handles = Vec::new();
+            for offset in 1_u64..=8 {
+                let bytes = replay_request_at(1_893_553_447_u64.saturating_add(offset))?;
+                let mut validator = Validator::new(&keytab)
+                    .with_now(
+                        now.checked_sub(Duration::from_micros(offset))
+                            .context("earlier clock")?,
+                    )
+                    .with_shared_replay_cache(cache.clone());
+                let start = Arc::clone(&barrier);
+                handles.push(scope.spawn(move || {
+                    let _wait = start.wait();
+                    validator.validate_ap_req(&bytes).map(drop)
+                }));
+            }
+            for handle in handles {
+                handle
+                    .join()
+                    .map_err(|_panic| "validation thread panicked")??;
+            }
+            Ok(())
+        })?;
+
+        // Then every authentication succeeded and all nine replay records remain.
+        assert_eq!(cache.len()?, 9);
         Ok(())
     }
 

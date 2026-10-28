@@ -39,8 +39,8 @@ These are breaking; the migration guide maps each one.
   `ServiceValidator` keep their names.
 - `config::LibDefaults` stores enctype names only:
   `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and
-  `permitted_enctype_ids` are methods that derive the ids, and the
-  `with_*_enctype_ids` builders are replaced by `with_*_enctypes`. Its
+  `permitted_enctype_ids` are methods that derive the ids; update the
+  `*_enctypes` name lists directly or through `with_*_enctypes` builders. Its
   thirteen boolean options use `config::Toggle`, and the new `allow_rc4` and
   `allow_des3` options join them.
 - `config::Realm::realm` is `name`. Several functions borrow their option
@@ -176,7 +176,9 @@ Service acceptor and HTTP layer:
   (RSK-985742B6).
 - Replay caches own their skew and capacity (300 s and 65,536 records by
   default), expire entries automatically, reject a wider shared skew and a
-  clock rollback, and fail closed when full (RSK-7D80FA41, run-2 lead
+  clock rollback larger than the configured maximum skew, tolerate smaller or
+  equal backward steps without lowering the high-water mark, and fail closed
+  when full (RSK-7D80FA41, run-2 lead
   `ReplayCache:indefinite-entry-retention`).
 - Ticket and authenticator authorization data are validated before success:
   unknown critical elements and unsupported AD-KDCIssued or AD-AND-OR are

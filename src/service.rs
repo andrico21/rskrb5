@@ -251,7 +251,7 @@ pub struct ReplayCache {
     max_clock_skew: Duration,
     /// Maximum live records; admission never evicts a live replay record.
     capacity: usize,
-    /// Latest admission time, preserved even by explicit clearing.
+    /// Highest admission time, preserved even by explicit clearing.
     watermark: Option<SystemTime>,
     /// RFC 4120 replay keys of the accepted authenticators, each with the
     /// time it was presented.
@@ -275,6 +275,8 @@ impl ReplayCache {
     /// Validators exceeding `max_clock_skew` are rejected on admission. Zero
     /// capacity rejects all new records. Expiry retains twice the skew from
     /// presentation, covering authenticators first accepted in the future.
+    /// Backward clock samples up to this skew are tolerated without lowering
+    /// the high-water mark; larger rollbacks fail closed.
     #[must_use]
     #[inline]
     pub fn with_limits(max_clock_skew: Duration, capacity: usize) -> Self {
@@ -360,10 +362,17 @@ impl ReplayCache {
                 requested: validator_skew,
             });
         }
-        if self.watermark.is_some_and(|latest| presented_at < latest) {
+        if self.watermark.is_some_and(|latest| {
+            latest
+                .duration_since(presented_at)
+                .is_ok_and(|rollback| rollback > self.max_clock_skew)
+        }) {
             return Err(Error::ReplayCacheClockRollback);
         }
-        self.watermark = Some(presented_at);
+        self.watermark = Some(
+            self.watermark
+                .map_or(presented_at, |latest| latest.max(presented_at)),
+        );
         let retention = self.max_clock_skew.saturating_mul(2);
         let _: usize = self.clear_older_than_at(retention, presented_at);
         if self.entries.contains_key(&key)
