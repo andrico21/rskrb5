@@ -51,7 +51,7 @@ These are breaking; the migration guide maps each one.
 - New error variants, among them `error::Client::{EnctypeNotRequested,
   EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
   DnsServiceUnavailable}`, `error::Config::{EnctypeNotPermitted,
-  NoPermittedEnctypes, UnsupportedEnctype, EnctypeDisabled}`,
+      NoPermittedEnctypes, NoUsableEnctypes, UnsupportedEnctype, EnctypeDisabled}`,
   `error::Kadmin::UnauthenticatedSuccess`,
   `error::Ccache::IdentityUnavailable` and
   `http::NegotiateHttpError::MutualAuthenticationNotProven`.
@@ -308,11 +308,16 @@ Config and enctype policy:
 - Enctype names are the only stored policy; the wire ids are derived through
   methods, and an empty request list fails closed (RSK-77250646, upstream
   issue #4).
-- An explicit enctype list naming an unsupported enctype is a parse error,
-  `Config::UnsupportedEnctype` (RSK-45AC5D3A).
+- Explicit enctype lists skip unimplemented names (including camellia) and
+  policy-disabled entries, retaining usable names in order. A list with no
+  usable entry fails with `Config::NoUsableEnctypes` (request lists) or
+  `Config::NoPermittedEnctypes` (allowlist), never defaults or empty policy.
+  As in 0.2.2, family names, `DEFAULT` and `-name` are not expanded; they are
+  skipped and an all-selector list fails closed (RSK-45AC5D3A).
 - The default enctypes are AES only. RC4 and DES3 need the
   `[libdefaults]` flags `allow_rc4` and `allow_des3` (both false by
-  default); a disabled explicit entry is `Config::EnctypeDisabled`
+  default); disabled explicit entries are skipped, with a named error if
+  no usable entry remains. Export RC4 also needs `allow_weak_crypto`
   (RSK-5ECE9681, run-2 lead `DEFAULT_ENCTYPES/deprecated-rc4-default`,
   upstream issue #3).
 - `LibDefaults::new()` reads no environment; `LibDefaults::from_env()` reads

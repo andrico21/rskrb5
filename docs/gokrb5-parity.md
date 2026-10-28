@@ -147,9 +147,10 @@ gokrb5 behaviour cited is from the v8.4.4 source.
 
 - **Enctype defaults and unsupported names.** The default enctype lists are
   AES only; RC4 and DES3 need `[libdefaults] allow_rc4` or `allow_des3`, and
-  an explicit list naming an unsupported or disabled enctype is a parse error
-  (`rskrb5_ng::error::Config::UnsupportedEnctype`,
-  `rskrb5_ng::error::Config::EnctypeDisabled`). gokrb5 v8.4.4 defaults to a
+explicit lists skip unsupported or disabled names and fail if none is usable
+(`rskrb5_ng::error::Config::NoUsableEnctypes` for requests,
+`rskrb5_ng::error::Config::NoPermittedEnctypes` for allowlists). Family names,
+`DEFAULT` and `-name` tokens are not expanded, as in 0.2.2. gokrb5 v8.4.4 defaults to a
   list that includes `des3-cbc-sha1` and `arcfour-hmac-md5`
   (`config.newLibDefaults`) and silently drops names it doesn't support
   (`config.parseETypes`).

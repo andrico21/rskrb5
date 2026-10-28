@@ -756,9 +756,17 @@ pub enum Config {
         /// The configured enctype name.
         enctype: String,
     },
-    /// An explicit `permitted_enctypes` allowlist names no supported enctype.
+    /// An explicit request list has no implemented, policy-enabled entry.
+    #[error("[libdefaults] {key} = {} has no usable enctype", names.join(" "))]
+    NoUsableEnctypes {
+        /// The configured request-list key.
+        key: &'static str,
+        /// The original configured names, before filtering.
+        names: Vec<String>,
+    },
+    /// An explicit `permitted_enctypes` allowlist names no usable enctype.
     #[error(
-        "[libdefaults] permitted_enctypes = {} names no supported enctype",
+        "[libdefaults] permitted_enctypes = {} has no usable enctype",
         names.join(" ")
     )]
     NoPermittedEnctypes {
