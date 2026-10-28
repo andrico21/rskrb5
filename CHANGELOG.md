@@ -39,8 +39,8 @@ These are breaking; the migration guide maps each one.
   `ServiceValidator` keep their names.
 - `config::LibDefaults` stores enctype names only:
   `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and
-  `permitted_enctype_ids` are methods that derive the ids, and the
-  `with_*_enctype_ids` builders are replaced by `with_*_enctypes`. Its
+  `permitted_enctype_ids` are methods that derive the ids; update the
+  `*_enctypes` name lists directly or through `with_*_enctypes` builders. Its
   thirteen boolean options use `config::Toggle`, and the new `allow_rc4` and
   `allow_des3` options join them.
 - `config::Realm::realm` is `name`. Several functions borrow their option
