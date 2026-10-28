@@ -332,7 +332,9 @@ Ccache, keytab and credential files:
   fail with `IdentityUnavailable`** (RSK-DC80DC52, run-2 lead
   `file-name/uid-token-environment-substitution`).
 - Credential files are saved with mode 0600 on Unix, through a new file and
-  a rename, and existing permissions are never widened (RSK-DF3180A2, run-2
+  a rename, and existing permissions are never widened. Unix saves also sync
+  the parent directory after replacement; cleanup failures preserve the
+  original write/rename/sync error (RSK-DF3180A2, run-2
   lead `credential-file/save/inherited-permissions`).
 - Saves reject a symlinked destination file, and DIR primary initialization
   rejects a symlink; parent-directory symlinks still work (RSK-58A6D5DD, run-2

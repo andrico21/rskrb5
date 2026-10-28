@@ -100,6 +100,13 @@ return `error::Config::EnctypeDisabled { key, enctype }`. Export RC4 additionall
 requires `allow_weak_crypto`. The flags are public `Toggle` fields and serde
 defaults missing flags to false. Policy is evaluated after all sections/includes.
 
+### Durable credential-file replacement
+
+Credential-file saves sync the parent directory after rename on Unix. A sync
+failure is returned even though replacement has already completed; cleanup
+failure never masks the original write, rename or sync error. Windows keeps
+the existing caller-provided owner-only directory ACL requirement.
+
 ### Environment-free configuration defaults
 
 `LibDefaults::new`, `Config::new` and parsing no longer read `UID` or `HOME`.
