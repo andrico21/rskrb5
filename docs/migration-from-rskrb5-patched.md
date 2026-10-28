@@ -279,6 +279,18 @@ represent cross-realm transit. Reject unknown encodings unless your implementati
 understands them. The library does not decode or implicitly trust transit paths.
 Same-realm tickets and KDC-checked cross-realm tickets are unaffected.
 
+**Active Directory:** MS-KILE §3.1.5.4 does not set this flag, so cross-domain
+and forest-trust tickets require explicit policy; the secure default is unchanged.
+Use `Arc::new(service::TransitPolicy::direct("USER.REALM", "SERVICE.REALM"))`
+with either builder for a trusted direct endpoint pair (type 1, empty contents).
+For indirect tickets, `TransitPolicy::domain_x500_paths(client, service, paths)`
+accepts an allow-list of exact complete DOMAIN-X500-COMPRESS encoded byte paths,
+not individual realms. For example, `[b"TRUSTED.REALM".as_slice()]` trusts only
+that complete path; a path containing an extra untrusted realm is rejected.
+Include `b""` explicitly to allow direct transit in a path allow-list. Empty
+allow-lists, empty endpoint names, type 0 and unknown encoding types are rejected.
+No hierarchy inference, suffix matching or permissive fallback is performed.
+
 ### RFC3961 derivation constant bounds (RSK-8F3B02EE)
 
 AES-SHA1 `derive_random` and `derive_key` now reject constants longer than
@@ -371,14 +383,15 @@ protected ticket/evidence identity mismatches return `DelegationPrincipalMismatc
 
 ### Unknown password-mutation outcome (RSK-14E2755A, RSK-8BBFC1EE)
 
-High-level password mutation exchange and reply-validation failures now return
+Password mutation failures after possible delivery return exactly one
 `Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
-The classification is conservative and may include failure before delivery.
+Pre-send encoding, discovery and connection failures retain their definite error
+classes and may be retried safely. Malformed replies remain unknown outcomes.
 It does not mean rejection or rollback: reconcile with a fresh login before
 retrying. Dropping a mutation future returns no error at all; the caller must
 record unknown externally. Confirmed server rejection remains a normal result
 failure. Async Negotiate wrappers preserve this error and the same cancellation
-contract. Transport retry/deadline staging is a separate review item.
+contract. Transport stops failover after possible delivery.
 
 ### Password plaintext ownership (RSK-471362A3)
 

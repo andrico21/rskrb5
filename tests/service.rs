@@ -20,7 +20,7 @@ mod pac_ad_win2k;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use alloc::sync::Arc;
-    use core::time::Duration;
+    use core::{iter, time::Duration};
     use std::{
         env::{temp_dir, var},
         fs,
@@ -46,8 +46,8 @@ mod tests {
         keytab::{EncryptionKey, Keytab},
         pac,
         service::{
-            ApRepOptions, Principal, ReplayCache, SharedReplayCache, TransitValidator,
-            ValidatedApReq, Validator,
+            ApRepOptions, Principal, ReplayCache, SharedReplayCache, TransitPolicy,
+            TransitValidator, ValidatedApReq, Validator,
         },
         ticket::decrypt_ticket_enc_part,
     };
@@ -1465,6 +1465,106 @@ mod tests {
                 .context("policy rejects path")?,
             Error::TransitPolicyRejected
         ));
+        Ok(())
+    }
+
+    #[test]
+    /// Accepts AD-style direct transit only after the caller explicitly trusts its endpoints.
+    fn transit_ad_direct_preset_requires_explicit_opt_in() -> Result<(), TestError> {
+        // Given a direct AD-style ticket lacking TRANSITED-POLICY-CHECKED.
+        let keytab = http_keytab()?;
+        let bytes = transit_ap_req("FOREIGN.DUMMY", 1, b"", false)?;
+        let mut default = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        assert!(matches!(
+            default.validate_ap_req(&bytes),
+            Err(Error::TransitPolicyRejected)
+        ));
+        let policy = TransitPolicy::direct("FOREIGN.DUMMY", "TEST.GOKRB5");
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_transit_validator(Arc::new(policy));
+        // When the caller explicitly trusts this direct endpoint pair.
+        let accepted = validator.validate_ap_req(&bytes)?;
+        // Then the cross-domain identity is accepted without weakening the default.
+        assert_eq!(accepted.client.realm, "FOREIGN.DUMMY");
+        Ok(())
+    }
+
+    #[test]
+    /// Accepts a complete encoded transit path listed by the caller.
+    fn transit_ad_path_allow_list_accepts_exact_path() -> Result<(), TestError> {
+        // Given a caller that trusts one complete path between pinned endpoints.
+        let keytab = http_keytab()?;
+        let bytes = transit_ap_req("FOREIGN.DUMMY", 1, b"TRUSTED.DUMMY", false)?;
+        let policy =
+            TransitPolicy::domain_x500_paths("FOREIGN.DUMMY", "TEST.GOKRB5", [b"TRUSTED.DUMMY"]);
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_transit_validator(Arc::new(policy));
+        // When the ticket contains precisely the trusted path.
+        let accepted = validator.validate_ap_req(&bytes)?;
+        // Then the path policy permits it.
+        assert_eq!(accepted.client.realm, "FOREIGN.DUMMY");
+        Ok(())
+    }
+
+    #[test]
+    /// Rejects unlisted realms and encodings before replay admission.
+    fn transit_ad_presets_reject_untrusted_paths_and_encodings() -> Result<(), TestError> {
+        // Given explicit direct and exact-path policies.
+        for policy in [
+            TransitPolicy::direct("FOREIGN.DUMMY", "TEST.GOKRB5"),
+            TransitPolicy::domain_x500_paths("FOREIGN.DUMMY", "TEST.GOKRB5", [b"TRUSTED.DUMMY"]),
+            TransitPolicy::domain_x500_paths(
+                "FOREIGN.DUMMY",
+                "TEST.GOKRB5",
+                iter::empty::<&[u8]>(),
+            ),
+        ] {
+            for (client_realm, encoding, path) in [
+                (
+                    "FOREIGN.DUMMY",
+                    1_i32,
+                    b"TRUSTED.DUMMY,EVIL.DUMMY".as_slice(),
+                ),
+                ("FOREIGN.DUMMY", 0_i32, b""),
+                ("FOREIGN.DUMMY", 99_i32, b""),
+                ("FOREIGN.DUMMY", 99_i32, b"TRUSTED.DUMMY"),
+                ("EVIL.DUMMY", 1_i32, b""),
+            ] {
+                let keytab = http_keytab()?;
+                let bytes = transit_ap_req(client_realm, encoding, path, false)?;
+                let mut validator = Validator::new(&keytab)
+                    .with_now(timestamp(1_893_553_447)?)
+                    .with_transit_validator(Arc::new(policy.clone()));
+                // When any path, endpoint or encoding is outside the allow-list.
+                let result = validator.validate_ap_req(&bytes);
+                // Then rejection happens before replay admission.
+                assert!(matches!(result, Err(Error::TransitPolicyRejected)));
+                assert_eq!(validator.replay_cache_mut().len(), 0);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// An empty path allow-list does not authorize direct transit.
+    fn transit_ad_empty_allow_list_rejects_direct_ticket() -> Result<(), TestError> {
+        // Given an empty allow-list, not explicit permission for direct transit.
+        let keytab = http_keytab()?;
+        let bytes = transit_ap_req("FOREIGN.DUMMY", 1, b"", false)?;
+        let policy = TransitPolicy::domain_x500_paths(
+            "FOREIGN.DUMMY",
+            "TEST.GOKRB5",
+            iter::empty::<&[u8]>(),
+        );
+        let mut validator = Validator::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_transit_validator(Arc::new(policy));
+        // When an unchecked direct ticket is presented.
+        let result = validator.validate_ap_req(&bytes);
+        // Then an empty allow-list does not mean allow all.
+        assert!(matches!(result, Err(Error::TransitPolicyRejected)));
         Ok(())
     }
 

@@ -532,6 +532,82 @@ pub trait TransitValidator: Debug + Send + Sync {
     ) -> bool;
 }
 
+/// Explicit trust in exact DOMAIN-X500-COMPRESS paths between two realms.
+///
+/// Active Directory does not set TRANSITED-POLICY-CHECKED (MS-KILE 3.1.5.4).
+/// Attach this opt-in through [`Validator::with_transit_validator`]; the default
+/// still rejects unchecked cross-realm tickets, as required by RFC 4120 §2.7.
+/// Paths are matched byte-for-byte, not decoded or inferred from realm suffixes.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct TransitPolicy {
+    /// Trusted client endpoint realm, compared case-sensitively.
+    client_realm: String,
+    /// Trusted service endpoint realm, compared case-sensitively.
+    service_realm: String,
+    /// Complete trusted DOMAIN-X500-COMPRESS encodings, including direct paths.
+    paths: Vec<Vec<u8>>,
+}
+
+impl TransitPolicy {
+    /// Trust only a direct cross-realm ticket between the named endpoint realms.
+    ///
+    /// Requires encoding type 1 (DOMAIN-X500-COMPRESS) with empty contents.
+    /// Empty endpoint names and all other encodings are rejected.
+    #[must_use]
+    #[inline]
+    pub fn direct(client_realm: &str, service_realm: &str) -> Self {
+        Self {
+            client_realm: client_realm.to_owned(),
+            service_realm: service_realm.to_owned(),
+            paths: vec![Vec::new()],
+        }
+    }
+
+    /// Trust a caller-supplied allow-list of complete DOMAIN-X500-COMPRESS paths.
+    ///
+    /// Each entry is the exact RFC 4120 §3.3.3.2 encoded path, not an individual
+    /// realm. Include an empty entry explicitly to permit direct transit. An
+    /// empty allow-list rejects every unchecked path. Unknown encoding types
+    /// are always rejected, even if their contents match an allowed entry.
+    #[must_use]
+    #[inline]
+    pub fn domain_x500_paths<I, P>(client_realm: &str, service_realm: &str, paths: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<[u8]>,
+    {
+        Self {
+            client_realm: client_realm.to_owned(),
+            service_realm: service_realm.to_owned(),
+            paths: paths
+                .into_iter()
+                .map(|path| path.as_ref().to_vec())
+                .collect(),
+        }
+    }
+}
+
+impl TransitValidator for TransitPolicy {
+    #[inline]
+    fn accepts(
+        &self,
+        client_realm: &str,
+        service_realm: &str,
+        transited: &rasn_kerberos::TransitedEncoding,
+    ) -> bool {
+        !self.client_realm.is_empty()
+            && !self.service_realm.is_empty()
+            && client_realm == self.client_realm
+            && service_realm == self.service_realm
+            && transited.r#type == 1
+            && self
+                .paths
+                .iter()
+                .any(|path| path.as_slice() == transited.contents.as_ref())
+    }
+}
+
 /// AP-REQ validator backed by a service keytab.
 #[derive(Debug)]
 pub struct Validator<'keytab> {
@@ -627,6 +703,10 @@ impl<'keytab> Validator<'keytab> {
     }
 
     /// Accept unchecked cross-realm paths only when this policy explicitly trusts them.
+    ///
+    /// For AD cross-domain tickets, which lack TRANSITED-POLICY-CHECKED, use
+    /// [`TransitPolicy::direct`] for a trusted endpoint pair or
+    /// [`TransitPolicy::domain_x500_paths`] for an exact-path allow-list.
     #[must_use]
     #[inline]
     pub fn with_transit_validator(mut self, validator: Arc<dyn TransitValidator>) -> Self {

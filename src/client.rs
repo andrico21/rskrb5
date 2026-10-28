@@ -2281,8 +2281,7 @@ impl Tokio {
                 &target.realm,
                 &request.request,
             )
-            .await
-            .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
+            .await?;
         let result = validated_result(&reply, &request, &options)
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
         result.ensure_success()?;
