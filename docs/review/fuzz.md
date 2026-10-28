@@ -55,6 +55,10 @@ an `EncTicketPart` whose authorization data carries the gokrb5 PAC, and the
 structured inputs that pass the reply checks up to the encrypted padata).
 The seeds alone reach every mapped parser: the coverage proof below runs
 `cargo fuzz coverage` on the committed corpus only.
+The F2 M1 seed `spnego_token/accept-header-mech-list-mic` uses mode 5 and the
+synthetic service fixture, offering MS Kerberos first and standard Kerberos
+second with an independently constructed initiator MIC. It reaches mechanism
+selection, raw list retention, MIC verification and reciprocal response signing.
 `keytab_parse` also holds `truncated-two-bytes`, a deliberately truncated
 2-byte keytab; the runs stay clean with it.
 
@@ -122,6 +126,14 @@ count either. `--inventory` checks that every function the search
 `rg -n 'fn (parse|decode|load_bytes|from_bytes|read)\w*' src` finds, plus
 `find_pac_in_authorization_data`, is a row, and that every named target is in
 `cargo fuzz list`.
+
+F2 M1 re-ran `cargo fuzz coverage spnego_token` with the new MIC seed and
+exported that target with `llvm-cov export`. Applying the same script's
+`coverage_index` and `check_coverage` functions to the `spnego_token` rows proved
+all 37 mappings, including the five new helpers (record:
+`m1-spnego-coverage.tsv` in the execution evidence). The all-target coverage
+record was not regenerated: the other eleven targets were unchanged and were
+not rebuilt in this lane. A full refresh uses the commands above for all targets.
 
 ## Round-trip properties
 
@@ -440,6 +452,11 @@ does.
 | `rskrb5_ng::spnego::WrapToken::decrypt_payload` | `src/spnego.rs` | `gss_token` |  |
 | `rskrb5_ng::spnego::WrapToken::verify` | `src/spnego.rs` | `gss_token` |  |
 | `rskrb5_ng::spnego::accept_sec_context_header` | `src/spnego.rs` | `spnego_token` |  |
+| `rskrb5_ng::spnego::decode_negotiate_header` | `src/spnego.rs` | `spnego_token` |  |
+| `rskrb5_ng::spnego::negotiation::optimistic_token` | `src/spnego/negotiation.rs` | `spnego_token` |  |
+| `rskrb5_ng::spnego::negotiation::received_mech_types` | `src/spnego/negotiation.rs` | `spnego_token` |  |
+| `rskrb5_ng::spnego::negotiation::verify_mic` | `src/spnego/negotiation.rs` | `spnego_token` |  |
+| `rskrb5_ng::spnego::negotiation::response_mic` | `src/spnego/negotiation.rs` | `spnego_token` |  |
 | `rskrb5_ng::spnego::decode_neg_token_init` | `src/spnego.rs` | `spnego_token` |  |
 | `rskrb5_ng::spnego::decode_neg_token_resp` | `src/spnego.rs` | `spnego_token` |  |
 | `rskrb5_ng::spnego::decode_negotiation_choice` | `src/spnego.rs` | `spnego_token` |  |

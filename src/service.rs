@@ -761,7 +761,7 @@ impl<'keytab> Validator<'keytab> {
     /// approving caller policy returns [`Error::TransitPolicyRejected`].
     #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
-        self.validate_ap_req_with_check(bytes, |_| Ok::<(), Error>(()))
+        self.validate_ap_req_with_check(bytes, |_, _| Ok::<(), Error>(()))
     }
 
     /// Apply a protocol-specific authenticator check before committing replay state.
@@ -775,7 +775,7 @@ impl<'keytab> Validator<'keytab> {
         check: F,
     ) -> Result<ValidatedApReq, E>
     where
-        F: FnOnce(&rasn_kerberos::Authenticator) -> Result<(), E>,
+        F: FnOnce(&rasn_kerberos::Authenticator, &EncryptionKey) -> Result<(), E>,
         E: From<Error>,
     {
         let ap_req = ap_req::decode(bytes).map_err(ap_req_error)?;
@@ -849,7 +849,7 @@ impl<'keytab> Validator<'keytab> {
             .into());
         }
 
-        check(&authenticator)?;
+        check(&authenticator, &session_key)?;
 
         // RFC 4120 section 3.2.3 keys the replay cache on the server name, the
         // client name, the time and the microseconds. Section 6.2 makes the

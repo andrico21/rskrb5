@@ -454,18 +454,277 @@ mod tests {
         .with_key_expiration(None))
     }
 
-    /// The one-shot acceptor must not authenticate a non-first optimistic mechanism.
+    // Independent RFC 4178 MechTypeList DER, without the explicit [0] tag.
+    const MS_THEN_KRB5: &str = "301606092a864882f71201020206092a864886f712010202";
+    const KRB5_ONLY: &str = "300b06092a864886f712010202";
+
+    fn test_tlv(tag: u8, value: &[u8]) -> Result<Vec<u8>, TestError> {
+        let mut bytes = vec![tag, 0x82];
+        bytes.extend_from_slice(&u16::try_from(value.len())?.to_be_bytes());
+        bytes.extend_from_slice(value);
+        Ok(bytes)
+    }
+
+    /// A canonicalized transcript must not authenticate different received bytes.
     #[test]
-    fn acceptor_rejects_nonfirst_kerberos() -> Result<(), TestError> {
-        for mic in [None, Some(vec![0xde, 0xad])] {
-            let mut init = acceptor_init(ObjectIdentifier::krb5())?;
-            init.mech_types.insert(0, ObjectIdentifier::spnego());
-            init.mech_list_mic = mic;
+    fn mech_list_mic_does_not_normalize_received_encoding() -> Result<(), TestError> {
+        // Given a tolerated long-form list length, signed in its canonical form instead.
+        let init = mic_init()?;
+        let list = decode_hex(MS_THEN_KRB5)?;
+        let raw_list = test_tlv(0x30, list.get(2..).context("list contents")?)?;
+        let mut fields = test_tlv(0xa0, &raw_list)?;
+        fields.extend_from_slice(&test_tlv(
+            0xa2,
+            &test_tlv(4, &init.mech_token.context("token")?)?,
+        )?);
+        fields.extend_from_slice(&test_tlv(
+            0xa3,
+            &test_tlv(4, &init.mech_list_mic.context("MIC")?)?,
+        )?);
+        let wire = test_tlv(0xa0, &test_tlv(0x30, &fields)?)?;
+        let header = format!("Negotiate {}", base64_encode(&wire));
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        // When verified, then re-encoding cannot hide a wire transcript change.
+        assert!(matches!(
+            spnego::accept_sec_context_header(&mut validator, &header),
+            Err(Spnego::InvalidMechListMic)
+        ));
+        Ok(())
+    }
+
+    /// Construct RFC 4121 wire bytes without using the SPNEGO MIC implementation.
+    fn independent_mic(list: &str, key: &[u8], acceptor: bool) -> Result<Vec<u8>, TestError> {
+        independent_mic_flags(list, key, u8::from(acceptor))
+    }
+
+    fn independent_mic_flags(list: &str, key: &[u8], flags: u8) -> Result<Vec<u8>, TestError> {
+        let mut header = vec![4, 4, flags, 255, 255, 255, 255, 255];
+        header.extend_from_slice(&42_u64.to_be_bytes());
+        let mut signed = decode_hex(list)?;
+        signed.extend_from_slice(&header);
+        let checksum =
+            AesSha1Etype::Aes256.checksum(key, &signed, if flags & 1 != 0 { 23 } else { 25 })?;
+        header.extend_from_slice(&checksum);
+        Ok(header)
+    }
+
+    fn mic_init() -> Result<NegTokenInit, TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_types
+            .insert(0, ObjectIdentifier::ms_legacy_krb5());
+        init.mech_list_mic = Some(independent_mic(
+            MS_THEN_KRB5,
+            &decode_hex(VALID_SESSION_KEY)?,
+            false,
+        )?);
+        Ok(init)
+    }
+
+    /// A non-first offered Kerberos OID succeeds only with an authenticated list.
+    #[test]
+    fn mech_list_mic_accepts_nonfirst_and_authenticates_response() -> Result<(), TestError> {
+        // Given an independently signed MS-first / standard optimistic token.
+        let init = mic_init()?;
+        // When the one-shot acceptor verifies the complete exchange.
+        let accepted = accept_token(&Token::Init(init))??;
+        // Then its response selects the optimistic OID and signs the same list.
+        assert_eq!(accepted.selected_mechanism, ObjectIdentifier::krb5());
+        let header = accepted.ap_rep_response_header_with_confounder(
+            &decode_hex(AP_REP_CONFOUNDER)?,
+            &ApRepOptions::default().with_sequence_number(Some(42)),
+        )?;
+        let Token::Resp(response) = spnego::parse_negotiate_header(&header)? else {
+            return Err("expected response".into());
+        };
+        assert_eq!(response.neg_state, Some(NegState::AcceptCompleted));
+        assert_eq!(response.supported_mech, Some(ObjectIdentifier::krb5()));
+        assert_eq!(
+            response.mech_list_mic,
+            Some(independent_mic(
+                MS_THEN_KRB5,
+                &decode_hex(VALID_SESSION_KEY)?,
+                true
+            )?)
+        );
+        let krb5 = Krb5MechToken::decode(&response.response_token.context("AP-REP")?)?;
+        assert_eq!(krb5.oid, ObjectIdentifier::krb5());
+        drop(accepted.ap_req.verify_ap_rep(&krb5.message)?);
+        Ok(())
+    }
+
+    /// An optional first-choice MIC must also verify and receive a MIC response.
+    #[test]
+    fn mech_list_mic_accepts_first_choice() -> Result<(), TestError> {
+        // Given a first-choice token with an independent MIC.
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_list_mic = Some(independent_mic(
+            KRB5_ONLY,
+            &decode_hex(VALID_SESSION_KEY)?,
+            false,
+        )?);
+        // When accepted.
+        let accepted = accept_token(&Token::Init(init))??;
+        // Then the list is mutually authenticated even though MIC was optional.
+        let header = accepted.ap_rep_response_header_with_confounder(
+            &decode_hex(AP_REP_CONFOUNDER)?,
+            &ApRepOptions::default().with_sequence_number(Some(42)),
+        )?;
+        let Token::Resp(response) = spnego::parse_negotiate_header(&header)? else {
+            return Err("expected response".into());
+        };
+        assert_eq!(
+            response.mech_list_mic,
+            Some(independent_mic(
+                KRB5_ONLY,
+                &decode_hex(VALID_SESSION_KEY)?,
+                true
+            )?)
+        );
+        Ok(())
+    }
+
+    /// List reordering and checksum corruption must fail, without consuming replay state.
+    #[test]
+    fn mech_list_mic_rejects_tampering_before_replay_commit() -> Result<(), TestError> {
+        // Given a valid AP-REQ with two different invalid MICs.
+        let valid = mic_init()?;
+        let mut tampered = valid.clone();
+        *tampered
+            .mech_list_mic
+            .as_mut()
+            .context("MIC")?
+            .last_mut()
+            .context("tag")? ^= 1;
+        let mut other_list = valid.clone();
+        other_list.mech_list_mic = Some(independent_mic(
+            KRB5_ONLY,
+            &decode_hex(VALID_SESSION_KEY)?,
+            false,
+        )?);
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        // When either invalid MIC is presented.
+        for init in [tampered, other_list] {
+            let header = spnego::negotiate_header(&Token::Init(init))?;
+            assert!(matches!(
+                spnego::accept_sec_context_header(&mut validator, &header),
+                Err(Spnego::InvalidMechListMic)
+            ));
+            assert!(
+                validator.replay_cache_mut().is_empty(),
+                "invalid MIC must not consume replay state"
+            );
+        }
+        // Then a correctly signed retransmission can still establish the context.
+        let header = spnego::negotiate_header(&Token::Init(valid))?;
+        let accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
+        assert_eq!(accepted.ap_req.client.name(), "testuser1");
+        Ok(())
+    }
+
+    /// Context subkeys take precedence over the ticket key in each direction.
+    #[test]
+    fn mech_list_mic_uses_context_subkeys() -> Result<(), TestError> {
+        // Given an AP-REQ whose subkey differs from the ticket key.
+        let initiator_key = EncryptionKey::new(18, vec![0x35; 32]);
+        let acceptor_key = EncryptionKey::new(18, vec![0x76; 32]);
+        let built = build_ap_req_with_confounder(
+            &service_ticket_session_from_valid_ap_req()?,
+            ApReq::new()
+                .with_checksum(Some(gss_checksum(&[])))
+                .with_sequence_number(Some(42))
+                .with_subkey(Some(initiator_key.clone())),
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        let mut init = mic_init()?;
+        init.mech_token = Some(Krb5MechToken::ap_req(built.der).encode()?);
+        assert!(matches!(
+            accept_token(&Token::Init(init.clone()))?,
+            Err(Spnego::InvalidMechListMic)
+        ));
+        init.mech_list_mic = Some(independent_mic(MS_THEN_KRB5, &initiator_key.value, false)?);
+        // When the authenticator subkey authenticates the list.
+        let accepted = accept_token(&Token::Init(init))??;
+        // Then response MICs use the initiator subkey unless AP-REP supplies an acceptor subkey.
+        for subkey in [None, Some(acceptor_key)] {
+            let flags = if subkey.is_some() { 5 } else { 1 };
+            let key = subkey.as_ref().unwrap_or(&initiator_key);
+            let expected = independent_mic_flags(MS_THEN_KRB5, &key.value, flags)?;
+            let header = accepted.ap_rep_response_header_with_confounder(
+                &decode_hex(AP_REP_CONFOUNDER)?,
+                &ApRepOptions::default().with_subkey(subkey),
+            )?;
+            let Token::Resp(response) = spnego::parse_negotiate_header(&header)? else {
+                return Err("expected response".into());
+            };
+            assert_eq!(response.mech_list_mic, Some(expected));
+        }
+        Ok(())
+    }
+
+    /// A correct checksum does not excuse a context-inconsistent token header.
+    #[test]
+    fn mech_list_mic_rejects_wrong_direction_flags_and_sequence() -> Result<(), TestError> {
+        // Given correctly checksummed but context-inconsistent MIC headers.
+        for flags in [1, 2, 4] {
+            let mut init = mic_init()?;
+            init.mech_list_mic = Some(independent_mic_flags(
+                MS_THEN_KRB5,
+                &decode_hex(VALID_SESSION_KEY)?,
+                flags,
+            )?);
+            // When checked against the initiator context, then reject.
             assert!(matches!(
                 accept_token(&Token::Init(init))?,
-                Err(Spnego::NegotiationRequiresState)
+                Err(Spnego::InvalidMechListMic)
             ));
         }
+        let mut init = mic_init()?;
+        let mut mic = independent_mic(MS_THEN_KRB5, &decode_hex(VALID_SESSION_KEY)?, false)?;
+        *mic.get_mut(15).context("sequence")? = 43;
+        let mut signed = decode_hex(MS_THEN_KRB5)?;
+        signed.extend_from_slice(mic.get(..16).context("MIC header")?);
+        mic.truncate(16);
+        mic.extend_from_slice(&AesSha1Etype::Aes256.checksum(
+            &decode_hex(VALID_SESSION_KEY)?,
+            &signed,
+            25,
+        )?);
+        init.mech_list_mic = Some(mic);
+        assert!(matches!(
+            accept_token(&Token::Init(init))?,
+            Err(Spnego::InvalidMechListMic)
+        ));
+        Ok(())
+    }
+
+    /// Bare init tokens retain the same authenticated transcript as GSS-wrapped init tokens.
+    #[test]
+    fn mech_list_mic_supports_bare_init_and_preserves_received_list() -> Result<(), TestError> {
+        // Given a bare init instead of the GSS SPNEGO wrapper.
+        let init = mic_init()?;
+        let header = format!("Negotiate {}", base64_encode(&init.encode()?));
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        // When accepted, then retain the actual list TLV rather than its [0] wrapper.
+        let accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
+        assert_eq!(accepted.mech_types_der, Some(decode_hex(MS_THEN_KRB5)?));
+        Ok(())
+    }
+
+    /// Non-first selection without a MIC must not authenticate.
+    #[test]
+    fn acceptor_rejects_nonfirst_kerberos() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_types
+            .insert(0, ObjectIdentifier::ms_legacy_krb5());
+        assert!(matches!(
+            accept_token(&Token::Init(init))?,
+            Err(Spnego::MissingMechListMic)
+        ));
         Ok(())
     }
 
@@ -477,7 +736,7 @@ mod tests {
             init.mech_list_mic = Some(mic);
             assert!(matches!(
                 accept_token(&Token::Init(init))?,
-                Err(Spnego::MechListMicRequiresState)
+                Err(Spnego::InvalidMechListMic)
             ));
         }
         Ok(())
@@ -548,12 +807,11 @@ mod tests {
         Ok(())
     }
 
-    /// Kerberos aliases remain distinct offered OIDs, not permission to switch silently.
+    /// A supported but unoffered OID is not permission to switch mechanisms.
     #[test]
     fn acceptor_rejects_optimistic_oid_mismatch() -> Result<(), TestError> {
         let mut init = acceptor_init(ObjectIdentifier::krb5())?;
-        init.mech_types
-            .insert(0, ObjectIdentifier::ms_legacy_krb5());
+        init.mech_types = vec![ObjectIdentifier::ms_legacy_krb5()];
         assert!(matches!(
             accept_token(&Token::Init(init))?,
             Err(Spnego::OptimisticMechanismMismatch)
@@ -591,7 +849,7 @@ mod tests {
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         assert!(matches!(
             spnego::accept_sec_context_header(&mut validator, &bad),
-            Err(Spnego::MechListMicRequiresState)
+            Err(Spnego::InvalidMechListMic)
         ));
         let accepted = spnego::accept_sec_context_header(&mut validator, &good)?;
         assert_eq!(accepted.ap_req.client.name(), "testuser1");
@@ -954,6 +1212,7 @@ mod tests {
         let mut authenticator = ap_req::decrypt_ap_req_authenticator(&original, &key, 11)?;
         authenticator.cksum = Some(gss_checksum(&[]));
         authenticator.seq_number = Some(42);
+        authenticator.subkey = None;
         let message = ap_req::build_ap_req_with_confounder(
             original.ticket,
             original.ap_options,
