@@ -198,8 +198,11 @@ Service acceptor and HTTP layer:
   clock rollback larger than the configured maximum skew, tolerate smaller or
   equal backward steps without lowering the high-water mark, and fail closed
   on replay even after a tolerated rollback. Retention is three times the skew
-  from each record's last-seen watermark, with expiry evaluated monotonically;
-  both replay indexes refresh existing timestamps without accepting the replay.
+  from each record's last-seen watermark; records admitted from a stepped-back
+  sample are stamped at the watermark, so they never expire before earlier
+  records. A replay refreshes the matched replay key and authenticator digest
+  together without accepting it, and both expire together, so a rewritten-sname
+  replay cannot keep a digest alive past its key record.
   The default retention is 900 seconds; capacity planning needs 1.5 times the
   previous two-skew window. Caches fail closed
   when full (RSK-7D80FA41, run-2 lead

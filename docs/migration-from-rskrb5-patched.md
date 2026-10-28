@@ -260,8 +260,11 @@ configured maximum skew are tolerated, including out-of-order concurrent samples
 The high-water mark never moves backwards; a rollback larger than the skew returns
 `ReplayCacheClockRollback`, and even explicit `clear` does not reset that mark.
 New records and existing records seen again are timestamped at the watermark,
-never at a stepped-back sample. Neither index expires a record within three
-skew windows of its latest sighting. At the default skew this is 900 seconds;
+never at a stepped-back sample. A replay key and its authenticator digest share
+one last-seen time: a replay matching either refreshes both, and pruning removes
+them together, so the digest index never holds more records than the key index.
+Neither index expires a record within three skew windows of its latest sighting.
+At the default skew this is 900 seconds;
 size capacity for peak admissions over that window (1.5 times the previous
 600-second retention estimate). The 65,536-record default supports about 72
 new records/second sustained before bursts or replay refreshes need extra headroom.

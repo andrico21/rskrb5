@@ -1055,6 +1055,50 @@ mod tests {
         Ok(())
     }
 
+    /// Pins that a shared-key alias replay refreshes the replay key with its digest,
+    /// so the digest index never outlives the key record it was admitted with.
+    #[test]
+    fn replay_lifecycle_alias_replay_refreshes_key_and_digest_together() -> Result<(), TestError> {
+        let keytab = http_keytab_with_alias()?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        drop(
+            validator
+                .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
+                .map_err(|cause| format!("first AP-REQ validates: {cause}"))?,
+        );
+        // Given a rewritten-sname replay, which matches only the authenticator digest.
+        validator = validator.with_now(timestamp(1_893_553_452)?);
+        assert!(matches!(
+            validator
+                .validate_ap_req(&alias_ap_req()?)
+                .err()
+                .ok_or("same authenticator under a shared-key alias is a replay")?,
+            Error::Replay
+        ));
+
+        // When pruning by last-seen age, the key record was refreshed with the digest.
+        assert_eq!(
+            validator
+                .replay_cache_mut()
+                .clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_460)?),
+            0
+        );
+        assert_eq!(validator.replay_cache_mut().len(), 1);
+        // Then key and digest age out together, so the alias is no longer a replay.
+        assert_eq!(
+            validator
+                .replay_cache_mut()
+                .clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_463)?),
+            1
+        );
+        drop(
+            validator
+                .validate_ap_req(&alias_ap_req()?)
+                .map_err(|cause| format!("the digest left with its key record: {cause}"))?,
+        );
+        Ok(())
+    }
+
     /// Pins that an authenticator client realm differing from the ticket's is rejected.
     #[test]
     fn rejects_authenticator_client_realm_mismatch() -> Result<(), TestError> {
@@ -1872,7 +1916,8 @@ mod tests {
         Ok(())
     }
 
-    /// Automatic expiry uses the watermark rather than a tolerated older sample.
+    /// A record admitted during a tolerated rollback never expires before an
+    /// earlier admission: both carry the watermark, so expiry is monotonic.
     #[test]
     fn replay_lifecycle_expiry_is_monotonic() -> Result<(), TestError> {
         let keytab = http_keytab()?;
@@ -1881,12 +1926,18 @@ mod tests {
         let mut validator = Validator::new(&keytab)
             .with_max_clock_skew(skew)
             .with_shared_replay_cache(cache.clone())
-            .with_now(timestamp(1_893_553_447)?);
-        drop(validator.validate_ap_req(&replay_request_at(1_893_553_447)?)?);
-        validator = validator.with_now(timestamp(1_893_553_478)?);
+            .with_now(timestamp(1_893_553_478)?);
         drop(validator.validate_ap_req(&replay_request_at(1_893_553_478)?)?);
+        // Given a later admission from a sample one tolerated second older.
         validator = validator.with_now(timestamp(1_893_553_477)?);
         drop(validator.validate_ap_req(&replay_request_at(1_893_553_477)?)?);
+        // When three skews have passed since the watermark, both are still live.
+        validator = validator.with_now(timestamp(1_893_553_508)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_508)?)?);
+        assert_eq!(cache.len()?, 3);
+        // Then one second later they expire together.
+        validator = validator.with_now(timestamp(1_893_553_509)?);
+        drop(validator.validate_ap_req(&replay_request_at(1_893_553_509)?)?);
         assert_eq!(cache.len()?, 2);
         Ok(())
     }

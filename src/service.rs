@@ -253,12 +253,13 @@ pub struct ReplayCache {
     capacity: usize,
     /// Highest admission time, preserved even by explicit clearing.
     watermark: Option<SystemTime>,
-    /// RFC 4120 replay keys of the accepted authenticators, each with the
-    /// watermark when it was last seen.
-    entries: HashMap<ReplayKey, SystemTime>,
+    /// RFC 4120 replay keys of the accepted authenticators, each with the digest
+    /// admitted with it; the pair shares one last-seen record in `authenticators`.
+    entries: HashMap<ReplayKey, [u8; 32]>,
     /// SHA-256 digests of the accepted authenticator ciphertexts, each with the
-    /// watermark when it was last seen, so a re-presented authenticator is a replay
-    /// whatever cleartext ticket field was rewritten around it.
+    /// watermark when its key and digest pair was last seen, so a re-presented
+    /// authenticator is a replay whatever cleartext ticket field was rewritten
+    /// around it.
     authenticators: HashMap<[u8; 32], SystemTime>,
 }
 
@@ -317,32 +318,39 @@ impl ReplayCache {
         self.entries.is_empty()
     }
 
-    /// Remove entries presented more than `max_age` ago.
+    /// Remove entries last seen more than `max_age` ago.
+    ///
+    /// Entries are aged by the watermark at which they were last seen, not by
+    /// the clock sample of their presentation.
     #[inline]
     pub fn clear_older_than(&mut self, max_age: Duration) -> usize {
         self.clear_older_than_at(max_age, SystemTime::now())
     }
 
-    /// Remove entries presented more than `max_age` before `now`.
+    /// Remove entries last seen more than `max_age` before `now`.
+    ///
+    /// Entries are aged by the watermark at which they were last seen, not by
+    /// the clock sample of their presentation. A replay key and its
+    /// authenticator digest are removed together.
     #[inline]
     pub fn clear_older_than_at(&mut self, max_age: Duration, now: SystemTime) -> usize {
         let before = self.entries.len();
-        self.entries.retain(|_, presented_at| {
-            now.duration_since(*presented_at)
+        self.authenticators.retain(|_, last_seen| {
+            now.duration_since(*last_seen)
                 .map_or(true, |age| age <= max_age)
         });
-        self.authenticators.retain(|_, presented_at| {
-            now.duration_since(*presented_at)
-                .map_or(true, |age| age <= max_age)
-        });
+        let authenticators = &self.authenticators;
+        self.entries
+            .retain(|_, digest| authenticators.contains_key(digest));
         // `retain` only removes entries, so the length cannot have grown.
         before.saturating_sub(self.entries.len())
     }
 
     /// Record one presentation, or report it as a replay.
     ///
-    /// Returns `false`, refreshing existing timestamps, when either the RFC 4120
-    /// replay key or authenticator digest was already seen; `true` once both are recorded.
+    /// Returns `false` when either the RFC 4120 replay key or authenticator digest
+    /// was already seen, refreshing every matched key and digest pair together;
+    /// `true` once both are recorded.
     ///
     /// # Errors
     ///
@@ -376,11 +384,15 @@ impl ReplayCache {
         // can accept c only if c >= T-s, hence P >= W-3s. Keep equality live.
         let retention = self.max_clock_skew.saturating_mul(3);
         let _: usize = self.clear_older_than_at(retention, latest);
-        let entry = self.entries.get_mut(&key);
-        let digest = self.authenticators.get_mut(&authenticator_digest);
-        let replay = entry.is_some() || digest.is_some();
-        for seen in entry.into_iter().chain(digest) {
-            *seen = latest;
+        // A key hit refreshes the digest admitted with it, and a digest hit
+        // refreshes its own record, so a pair never ages apart.
+        let paired = self.entries.get(&key).copied();
+        let mut replay = paired.is_some();
+        for digest in paired.into_iter().chain([authenticator_digest]) {
+            if let Some(seen) = self.authenticators.get_mut(&digest) {
+                *seen = latest;
+                replay = true;
+            }
         }
         if replay {
             return Ok(false);
@@ -391,7 +403,7 @@ impl ReplayCache {
             });
         }
         // Both lookups above missed, so neither insert replaces an entry.
-        let _: Option<SystemTime> = self.entries.insert(key, latest);
+        let _: Option<[u8; 32]> = self.entries.insert(key, authenticator_digest);
         let _: Option<SystemTime> = self.authenticators.insert(authenticator_digest, latest);
         Ok(true)
     }
@@ -454,7 +466,10 @@ impl SharedReplayCache {
         self.with_cache(ReplayCache::is_empty)
     }
 
-    /// Remove entries presented more than `max_age` ago.
+    /// Remove entries last seen more than `max_age` ago.
+    ///
+    /// Entries are aged by the watermark at which they were last seen, not by
+    /// the clock sample of their presentation.
     ///
     /// # Errors
     ///
@@ -464,7 +479,11 @@ impl SharedReplayCache {
         self.with_cache_mut(|cache| cache.clear_older_than(max_age))
     }
 
-    /// Remove entries presented more than `max_age` before `now`.
+    /// Remove entries last seen more than `max_age` before `now`.
+    ///
+    /// Entries are aged by the watermark at which they were last seen, not by
+    /// the clock sample of their presentation. A replay key and its
+    /// authenticator digest are removed together.
     ///
     /// # Errors
     ///
