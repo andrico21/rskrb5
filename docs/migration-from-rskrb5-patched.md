@@ -100,8 +100,8 @@ Like 0.2.2, family names (`aes`, `aes-sha1`, `aes-sha2`, `camellia`, `rc4`,
 `des3`, `des`), `DEFAULT` and `-name` tokens do not expand or remove algorithms.
 They are skipped as unimplemented names; use concrete enctype names instead.
 Unlike 0.2.2's empty-ID result, a list containing only these tokens fails closed.
-The older `UnsupportedEnctype` and `EnctypeDisabled` variants remain available
-for source compatibility but are no longer emitted by this parser.
+The unconstructed `UnsupportedEnctype` and `EnctypeDisabled` variants were removed
+before 0.3.0 release; neither existed in 0.2.2.
 
 Defaults now advertise only AES (20, 19, 18, 17). Set `[libdefaults] allow_rc4`
 or `allow_des3` explicitly to true before configuring RC4 or DES3 names; both
@@ -251,14 +251,20 @@ whose skew exceeds the cache ceiling fails admission with
 `Service::ReplayCacheSkewExceeded`; `with_max_clock_skew` does not widen a cache.
 This also applies to the shared cache created by a Tower layer.
 
-Each insert prunes records presented more than twice the cache skew ago, then
-checks replay and capacity atomically under the shared lock. Twice-skew retention
-covers authenticators first accepted up to one skew window in the future. Equality
+Each insert prunes records last seen more than three times the cache skew ago,
+evaluated against `max(watermark, presented_at)`, then checks replay and capacity
+atomically under the shared lock. Three-skew retention covers future authenticators
+and the additional one-skew rollback tolerance. Equality
 at the expiry boundary stays live. Backward validation samples up to the cache's
 configured maximum skew are tolerated, including out-of-order concurrent samples.
 The high-water mark never moves backwards; a rollback larger than the skew returns
 `ReplayCacheClockRollback`, and even explicit `clear` does not reset that mark.
-Expiry still uses each presentation's own time and the two-skew retention window.
+New records and existing records seen again are timestamped at the watermark,
+never at a stepped-back sample. Neither index expires a record within three
+skew windows of its latest sighting. At the default skew this is 900 seconds;
+size capacity for peak admissions over that window (1.5 times the previous
+600-second retention estimate). The 65,536-record default supports about 72
+new records/second sustained before bursts or replay refreshes need extra headroom.
 Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
 
@@ -375,13 +381,16 @@ unknown flags and extensions, and does not import delegated credentials.
 
 ### SPNEGO acceptor negotiation (RSK-C4BE57A0)
 
-`AcceptedContext::selected_mechanism` records the offered Kerberos OID matching
-the optimistic token, including a non-first OID. Both standard and Microsoft
-legacy OIDs are supported, including raw Kerberos headers. Non-first selection
-requires a valid RFC 4121 MIC; first-choice selection permits an absent MIC but
-verifies one if supplied. Handle `error::Spnego::MissingMechListMic` and
-`InvalidMechListMic`. Unoffered optimistic OIDs return
-`OptimisticMechanismMismatch`; unsupported mechanisms return `UnsupportedMechanism`.
+`AcceptedContext::selected_mechanism` records the first offered Kerberos OID,
+echoed as SPNEGO `supportedMech`. The additive `token_mechanism` field preserves
+the optimistic token's OID for the inner AP-REP `thisMech`. Both standard and
+Microsoft legacy OIDs identify the same mechanism, including raw Kerberos headers.
+An MS-KRB5-first offer with a standard Kerberos AP-REQ and no MIC is accepted,
+as sent by Windows SSPI. Its reply uses MS-KRB5 `supportedMech` and standard
+`thisMech`, matching MIT and MS-SPNG; equal offer/token OIDs are unchanged.
+Only a non-Kerberos first preference (such as NTLM) requires a valid RFC 4121 MIC.
+A supplied first-choice MIC still verifies. Handle `error::Spnego::MissingMechListMic`
+and `InvalidMechListMic`; unsupported mechanisms return `UnsupportedMechanism`.
 
 The additive `AcceptedContext::mech_types_der` field retains the exact received
 list TLV when a MIC verified. AP-REP response helpers include a reciprocal MIC
@@ -394,6 +403,9 @@ the same number, so initiators that read the acceptor sequence from the AP-REP
 (as MIT does, 0 when absent) agree with the MIC. A MIC consumes that
 per-direction sequence number; applications using per-message tokens next must
 increment it. The no-MIC first-choice AP-REP encoding is unchanged.
+
+Only RFC 4121 MIC tokens with AES session enctypes are supported for mechListMIC.
+RC4 (RFC 4757) and DES3 (RFC 1964) MIC formats fail closed as `InvalidMechListMic`.
 
 All `NegTokenResp` continuations still return `NegotiationRequiresState`: they
 lack the original offer and prior key/MIC phase. A peer needing a request-mic

@@ -10,7 +10,7 @@ Full red runs and acceptance output: `task-29-rskrb5-ng-own-way.log` in the exec
 | RSK-622F4664 | fixed | `initiator_rejects_delegation_without_credentials`, `initiator_wrappers_reject_delegation`, `initiator_preserves_nondelegating_flag_masks`, `authenticator_checksum_delegation_prefix_is_mask_independent`; commit `93a2f4a` | Checked initiation rejects DELEG in split or combined masks with `DelegationRequiresCredential`; the raw checksum helper returns a consistent 24-byte prefix without fabricated delegation fields. | N/A |
 | RSK-2A906A3A | fixed | `sealed_des3_wrap_roundtrips_all_payload_residues`, `sealed_des3_wrap_completes_manual_filler`, `sealed_des3_wrap_rejects_filler_overflow`; commit `e628f9e` | Sealed DES3 Wrap derives sufficient pre-header filler and EC, preserves sufficient explicit filler and application trailing zeroes, and rejects EC overflow. Generic DES3 decryption remains padding-preserving. | N/A |
 | RSK-84FA90AE | fixed | `unsealed_wrap_applies_rrc_on_decode_and_encode`; commit `e405f7c` | Unsealed Wrap tokens apply RRC modulo body length on encoding and decoding. | N/A |
-| RSK-C4BE57A0 | fixed | `mech_list_mic_accepts_nonfirst_and_authenticates_response`, `mech_list_mic_accepts_first_choice`, `mech_list_mic_rejects_tampering_before_replay_commit`, `mech_list_mic_uses_context_subkeys`, `mech_list_mic_rejects_wrong_direction_flags_and_sequence`, `mech_list_mic_supports_bare_init_and_preserves_received_list`, `mech_list_mic_response_sequence_is_in_ap_rep`; original `acceptor_rejects_nonfirst_kerberos`, `acceptor_rejects_unverified_mech_list_mic`, `acceptor_rejects_stateless_continuation`, `acceptor_preserves_selected_kerberos_oid`, `acceptor_rejects_unsupported_mechanisms`, `acceptor_rejects_optimistic_oid_mismatch`, `acceptor_accepts_raw_ms_kerberos`, `acceptor_rejection_preserves_replay_cache`; original commit `f84e3f8`, F2 M1 follow-up subjects `spnego: verify mechanism-list integrity (RSK-C4BE57A0)` and `spnego: carry the response MIC sequence number in the AP-REP (RSK-C4BE57A0)` | Verify required non-first and optional supplied first-choice MICs before replay insertion; reply with selected OID, AP-REP and reciprocal MIC. Reject missing/invalid MICs and stateless continuations. | N/A |
+| RSK-C4BE57A0 | fixed | `acceptor_accepts_windows_sspi_smb_capture`, `acceptor_accepts_windows_sspi_ldap_capture`, `acceptor_accepts_optimistic_kerberos_alias`, `mech_list_mic_accepts_kerberos_after_ntlm`, `mech_list_mic_accepts_nonfirst_and_authenticates_response`, `mech_list_mic_accepts_first_choice`, `mech_list_mic_rejects_tampering_before_replay_commit`, `mech_list_mic_uses_context_subkeys`, `mech_list_mic_rejects_wrong_direction_flags_and_sequence`, `mech_list_mic_supports_bare_init_and_preserves_received_list`, `mech_list_mic_response_sequence_is_in_ap_rep`, `acceptor_rejects_nonfirst_kerberos`, `acceptor_rejects_unverified_mech_list_mic`, `acceptor_rejects_stateless_continuation`, `acceptor_preserves_selected_kerberos_oid`, `acceptor_rejects_unsupported_mechanisms`, `acceptor_accepts_raw_ms_kerberos`, `acceptor_rejection_preserves_replay_cache`; original `f84e3f8`, MIC fixes `0e62cc0`, `f3ada25`; follow-up subject `spnego: treat both Kerberos OIDs as one mechanism for first-choice selection (RSK-C4BE57A0)` | Windows token shape accepted without MIC when the first offered mechanism is either Kerberos OID. Echo first offered Kerberos OID as supportedMech and token OID as inner thisMech, per MIT/MS-SPNG. Non-Kerberos-first selection requires a MIC; supplied MICs verify before replay insertion and receive reciprocal MICs. Reject invalid MICs and stateless continuations. | N/A |
 | RSK-FAF64A85 / run-2 lead `src/spnego.rs:accept_sec_context_header:mandatory-gss-authenticator-fields` | fixed | `gss_authenticator_requires_checksum`, `gss_authenticator_requires_sequence`, `gss_authenticator_rejects_wrong_checksum_type`, `gss_authenticator_rejects_short_checksum`, `gss_authenticator_rejects_invalid_binding_length`, `gss_authenticator_rejects_malformed_delegation`, `gss_authenticator_rejection_preserves_generic_validation`, `gss_authenticator_deterministic_builder_requires_sequence`; commit `f11a3db` | GSS acceptance checks RFC 4121 checksum type/framing and requires a sequence before replay insertion; deterministic initiation rejects an omitted sequence. Generic Kerberos validation is unchanged. | N/A |
 | upstream issue #9 | fixed | `negotiate_header_limit_rejects_base64_before_der`, `negotiate_header_limit_precedes_base64_validation`, `negotiate_header_limit_counts_whitespace`, `negotiate_header_limit_accepts_boundary`, plus small-header error controls; commit subject suffix `(upstream-9)` | Reject header values over 65,536 bytes before scanning/base64 allocation with `NegotiateHeaderTooLong { maximum, actual }`; include scheme and whitespace in the cap. | N/A |
 
@@ -35,7 +35,8 @@ claim is made.
 ## One-shot acceptor integrity and scope
 
 Only `1.2.840.113554.1.2.2` and `1.2.840.48018.1.2.2` are accepted. The optimistic
-OID must occur in the offer; non-first selection requires a mechListMIC per
+token may use either Kerberos OID: both identify the same mechanism per RFC 4178
+Appendix C. A non-Kerberos first preference requires a mechListMIC per
 RFC 4178 sections 4-5. A supplied first-choice MIC must also verify. The signed
 payload is the received MechTypeList TLV, excluding its explicit `[0]` wrapper.
 No reconstruction, sorting or alias substitution changes the transcript.
@@ -54,15 +55,29 @@ independently and compares its seq-number with the MIC's SND_SEQ. The
 first-choice no-MIC fixture remains byte-identical. Tests construct MIC headers independently and
 call only the lower-level AES checksum primitive, not the MIC implementation.
 
+Only RFC 4121 MIC tokens with AES session enctypes are supported for mechListMIC.
+RC4 (RFC 4757) and DES3 (RFC 1964) MIC formats fail closed as `InvalidMechListMic`;
+support for their Kerberos AP-REQs does not imply support for those MIC formats.
+
 Absent required MICs return `MissingMechListMic`; malformed, tampered, wrong-list
 or context-inconsistent MICs return `InvalidMechListMic`. Unsupported mechanisms
-return `UnsupportedMechanism`; unoffered optimistic OIDs return
-`OptimisticMechanismMismatch`. All continuations still return
+return `UnsupportedMechanism`. All continuations still return
 `NegotiationRequiresState`: this one-shot API cannot correlate a NegTokenResp
 with a previous offer, established key, request-mic phase or consumed sequence.
 It supports MICs already present in the initial token, not request-mic round
-trips. In particular, an MS-first/standard-inner token without a MIC still fails
-closed; this is not a claim of compatibility with all Windows SSPI exchanges.
+trips. Windows MS-first/standard-inner tokens without MIC are accepted. Following
+MIT and MS-SPNG, replies echo the first offered Kerberos OID in `supportedMech`,
+but preserve the optimistic token OID in inner AP-REP `thisMech`. The additive
+`AcceptedContext::token_mechanism` field keeps those values separate; equal-OID
+replies are unchanged. The two public Windows capture fixtures test original
+AP-REQ extraction and test-key full acceptance with the same negotiation shape.
+
+F2 M1-R follow-up commit subject: `spnego: treat both Kerberos OIDs as one mechanism
+for first-choice selection (RSK-C4BE57A0)`. Regressions:
+`acceptor_accepts_windows_sspi_smb_capture`, `acceptor_accepts_windows_sspi_ldap_capture`,
+`acceptor_accepts_optimistic_kerberos_alias`, `mech_list_mic_accepts_kerberos_after_ntlm`.
+The row's former `acceptor_rejects_optimistic_oid_mismatch` is replaced by the
+alias acceptance test; `acceptor_rejects_nonfirst_kerberos` now uses NTLM first.
 
 The mechanism-selection change addresses the acceptor only, as requested. The
 original review's initiator/HTTP response-classifier observations remain outside

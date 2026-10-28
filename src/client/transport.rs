@@ -927,8 +927,8 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns an error when the request cannot be encoded, the errors of
-    /// [`Self::send`], and an error when the reply is not a well-formed kpasswd
-    /// reply.
+    /// the password transport, and [`Error::KpasswdOutcomeUnknown`] wrapping
+    /// [`Error::Kadmin`] when a delivered request receives a malformed reply.
     ///
     /// # Cancel safety
     ///
@@ -957,8 +957,8 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns an error when the request cannot be encoded, the errors of
-    /// [`Self::send_to_kpasswd_realm`], and an error when the reply is not a
-    /// well-formed kpasswd reply.
+    /// [`Self::send_to_kpasswd_realm`], and [`Error::KpasswdOutcomeUnknown`]
+    /// wrapping [`Error::Kadmin`] when a delivered request receives a malformed reply.
     ///
     /// # Cancel safety
     ///

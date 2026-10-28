@@ -1118,7 +1118,6 @@ impl NegTokenInit {
     /// [`Error::UnsupportedMechanism`] when no offered mechanism is Kerberos 5,
     /// [`Error::MechListMicRequiresState`] when a MIC is supplied,
     /// [`Error::MissingMechListMic`] when the selected mechanism is not first,
-    /// [`Error::OptimisticMechanismMismatch`] when the token OID was not offered,
     /// [`Error::MissingMechToken`] without a mechanism token, the errors of
     /// [`Krb5MechToken::decode`], and [`Error::MissingApReq`] when the mechanism token is not an
     /// AP-REQ.
@@ -1562,8 +1561,10 @@ impl InitiatorContext {
 pub struct AcceptedContext {
     /// Validated AP-REQ details.
     pub ap_req: ValidatedApReq,
-    /// Offered Kerberos mechanism matching the optimistic token's OID.
+    /// First offered Kerberos OID, echoed as the response's `supportedMech`.
     pub selected_mechanism: ObjectIdentifier,
+    /// Optimistic token OID, preserved as the inner AP-REP's `thisMech`.
+    pub token_mechanism: ObjectIdentifier,
     /// Received DER `MechTypeList` authenticated by the initiator MIC, if present.
     /// The response helper signs these bytes, excluding the explicit `[0]` tag.
     pub mech_types_der: Option<Vec<u8>>,
@@ -1612,7 +1613,7 @@ impl AcceptedContext {
             .ap_req
             .build_ap_rep_with_confounder(confounder, reply_options)?;
         let mut krb5_token = Krb5MechToken::ap_rep(ap_rep);
-        krb5_token.oid = self.selected_mechanism.clone();
+        krb5_token.oid = self.token_mechanism.clone();
         let mut response =
             NegTokenResp::accept_completed().with_response_token(krb5_token.encode()?);
         response.supported_mech = Some(self.selected_mechanism.clone());
@@ -1629,7 +1630,8 @@ impl AcceptedContext {
 
 /// Validate a SPNEGO HTTP `Authorization` header through a service validator.
 ///
-/// Accepts an optimistic token for any offered Kerberos OID. A non-first OID
+/// Accepts either Kerberos token OID when Kerberos is offered. Both Kerberos
+/// OIDs name the same mechanism: only a non-Kerberos first preference
 /// requires a valid RFC 4121 `mechListMIC`; a supplied first-choice MIC must also
 /// verify. MIC checks precede replay insertion and the response helper returns
 /// a reciprocal MIC. Continuations requiring a previous offer, key or MIC phase
@@ -1662,6 +1664,12 @@ pub fn accept_sec_context_header(
         }
     };
     let krb5 = negotiation::optimistic_token(&init)?;
+    let selected_mechanism = init
+        .mech_types
+        .iter()
+        .find(|oid| oid.is_kerberos_mechanism())
+        .ok_or(Error::MissingMechTypes)?
+        .clone();
     let mech_types_der = init
         .mech_list_mic
         .as_ref()
@@ -1676,7 +1684,8 @@ pub fn accept_sec_context_header(
     })?;
     Ok(AcceptedContext {
         ap_req,
-        selected_mechanism: krb5.oid,
+        selected_mechanism,
+        token_mechanism: krb5.oid,
         mech_types_der,
     })
 }
