@@ -375,13 +375,16 @@ unknown flags and extensions, and does not import delegated credentials.
 
 ### SPNEGO acceptor negotiation (RSK-C4BE57A0)
 
-`AcceptedContext::selected_mechanism` records the offered Kerberos OID matching
-the optimistic token, including a non-first OID. Both standard and Microsoft
-legacy OIDs are supported, including raw Kerberos headers. Non-first selection
-requires a valid RFC 4121 MIC; first-choice selection permits an absent MIC but
-verifies one if supplied. Handle `error::Spnego::MissingMechListMic` and
-`InvalidMechListMic`. Unoffered optimistic OIDs return
-`OptimisticMechanismMismatch`; unsupported mechanisms return `UnsupportedMechanism`.
+`AcceptedContext::selected_mechanism` records the first offered Kerberos OID,
+echoed as SPNEGO `supportedMech`. The additive `token_mechanism` field preserves
+the optimistic token's OID for the inner AP-REP `thisMech`. Both standard and
+Microsoft legacy OIDs identify the same mechanism, including raw Kerberos headers.
+An MS-KRB5-first offer with a standard Kerberos AP-REQ and no MIC is accepted,
+as sent by Windows SSPI. Its reply uses MS-KRB5 `supportedMech` and standard
+`thisMech`, matching MIT and MS-SPNG; equal offer/token OIDs are unchanged.
+Only a non-Kerberos first preference (such as NTLM) requires a valid RFC 4121 MIC.
+A supplied first-choice MIC still verifies. Handle `error::Spnego::MissingMechListMic`
+and `InvalidMechListMic`; unsupported mechanisms return `UnsupportedMechanism`.
 
 The additive `AcceptedContext::mech_types_der` field retains the exact received
 list TLV when a MIC verified. AP-REP response helpers include a reciprocal MIC

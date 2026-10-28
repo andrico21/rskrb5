@@ -458,6 +458,24 @@ mod tests {
     const MS_THEN_KRB5: &str = "301606092a864882f71201020206092a864886f712010202";
     const KRB5_ONLY: &str = "300b06092a864886f712010202";
 
+    /// A valid MIC permits selecting Kerberos after an NTLM preference.
+    #[test]
+    fn mech_list_mic_accepts_kerberos_after_ntlm() -> Result<(), TestError> {
+        let mut init = acceptor_init(ObjectIdentifier::krb5())?;
+        init.mech_types.insert(
+            0,
+            ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?,
+        );
+        init.mech_list_mic = Some(independent_mic(
+            "3017060a2b06010401823702020a06092a864886f712010202",
+            &decode_hex(VALID_SESSION_KEY)?,
+            false,
+        )?);
+        let accepted = accept_token(&Token::Init(init))??;
+        assert_eq!(accepted.selected_mechanism, ObjectIdentifier::krb5());
+        Ok(())
+    }
+
     fn test_tlv(tag: u8, value: &[u8]) -> Result<Vec<u8>, TestError> {
         let mut bytes = vec![tag, 0x82];
         bytes.extend_from_slice(&u16::try_from(value.len())?.to_be_bytes());
@@ -521,15 +539,18 @@ mod tests {
         Ok(init)
     }
 
-    /// A non-first offered Kerberos OID succeeds only with an authenticated list.
+    /// A supplied MIC on an alias-first offer authenticates both directions.
     #[test]
     fn mech_list_mic_accepts_nonfirst_and_authenticates_response() -> Result<(), TestError> {
         // Given an independently signed MS-first / standard optimistic token.
         let init = mic_init()?;
         // When the one-shot acceptor verifies the complete exchange.
         let accepted = accept_token(&Token::Init(init))??;
-        // Then its response selects the optimistic OID and signs the same list.
-        assert_eq!(accepted.selected_mechanism, ObjectIdentifier::krb5());
+        // Then its response selects the offered alias and signs the same list.
+        assert_eq!(
+            accepted.selected_mechanism,
+            ObjectIdentifier::ms_legacy_krb5()
+        );
         let header = accepted.ap_rep_response_header_with_confounder(
             &decode_hex(AP_REP_CONFOUNDER)?,
             &ApRepOptions::default().with_sequence_number(Some(42)),
@@ -538,7 +559,10 @@ mod tests {
             return Err("expected response".into());
         };
         assert_eq!(response.neg_state, Some(NegState::AcceptCompleted));
-        assert_eq!(response.supported_mech, Some(ObjectIdentifier::krb5()));
+        assert_eq!(
+            response.supported_mech,
+            Some(ObjectIdentifier::ms_legacy_krb5())
+        );
         assert_eq!(
             response.mech_list_mic,
             Some(independent_mic(
@@ -767,17 +791,68 @@ mod tests {
         Ok(())
     }
 
-    /// Non-first selection without a MIC must not authenticate.
+    /// Selecting Kerberos after a non-Kerberos preference requires a MIC.
     #[test]
     fn acceptor_rejects_nonfirst_kerberos() -> Result<(), TestError> {
         let mut init = acceptor_init(ObjectIdentifier::krb5())?;
-        init.mech_types
-            .insert(0, ObjectIdentifier::ms_legacy_krb5());
+        init.mech_types.insert(
+            0,
+            ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?,
+        );
         assert!(matches!(
             accept_token(&Token::Init(init))?,
             Err(Spnego::MissingMechListMic)
         ));
         Ok(())
+    }
+
+    /// Check captured negotiation bytes and a test-key version of the same offer.
+    fn accept_windows_capture(capture: &str) -> Result<(), TestError> {
+        let request_header = format!("Negotiate {}", capture.trim());
+        let Token::Init(mut init) = spnego::parse_negotiate_header(&request_header)? else {
+            return Err("expected captured init".into());
+        };
+        let inner = Krb5MechToken::decode(init.mech_token.as_deref().context("token")?)?;
+        assert_eq!(
+            init.mech_types.first(),
+            Some(&ObjectIdentifier::ms_legacy_krb5())
+        );
+        assert_eq!(inner.oid, ObjectIdentifier::krb5());
+        assert_eq!(init.mech_list_mic, None);
+        // When selected, then the captured AP-REQ is extracted unchanged.
+        assert_eq!(init.krb5_ap_req()?, inner.message);
+        // Capture keys are unavailable. Keep its offer/OID/MIC shape, but
+        // substitute our test AP-REQ for full validation and reply verification.
+        init.mech_token = acceptor_init(inner.oid)?.mech_token;
+        let accepted = accept_token(&Token::Init(init))??;
+        let header = accepted.ap_rep_response_header_with_confounder(
+            &decode_hex(AP_REP_CONFOUNDER)?,
+            &ApRepOptions::default(),
+        )?;
+        let Token::Resp(response) = spnego::parse_negotiate_header(&header)? else {
+            return Err("expected response".into());
+        };
+        assert_eq!(
+            response.supported_mech,
+            Some(ObjectIdentifier::ms_legacy_krb5())
+        );
+        assert_eq!(response.mech_list_mic, None);
+        let reply = Krb5MechToken::decode(&response.response_token.context("AP-REP")?)?;
+        assert_eq!(reply.oid, ObjectIdentifier::krb5());
+        drop(accepted.ap_req.verify_ap_rep(&reply.message)?);
+        Ok(())
+    }
+
+    /// Windows Server 2019 SMB offers MS-KRB5 first with a standard inner token.
+    #[test]
+    fn acceptor_accepts_windows_sspi_smb_capture() -> Result<(), TestError> {
+        accept_windows_capture(include_str!("fixtures/win2019_sspi_init.b64"))
+    }
+
+    /// Windows LDAP offers MS-KRB5 first with a standard inner token.
+    #[test]
+    fn acceptor_accepts_windows_sspi_ldap_capture() -> Result<(), TestError> {
+        accept_windows_capture(include_str!("fixtures/ldap_sspi_init.b64"))
     }
 
     /// Even an optional MIC must not be silently ignored.
@@ -859,15 +934,16 @@ mod tests {
         Ok(())
     }
 
-    /// A supported but unoffered OID is not permission to switch mechanisms.
+    /// A sole Kerberos alias offer still accepts a standard Kerberos optimistic token.
     #[test]
-    fn acceptor_rejects_optimistic_oid_mismatch() -> Result<(), TestError> {
+    fn acceptor_accepts_optimistic_kerberos_alias() -> Result<(), TestError> {
         let mut init = acceptor_init(ObjectIdentifier::krb5())?;
         init.mech_types = vec![ObjectIdentifier::ms_legacy_krb5()];
-        assert!(matches!(
-            accept_token(&Token::Init(init))?,
-            Err(Spnego::OptimisticMechanismMismatch)
-        ));
+        let accepted = accept_token(&Token::Init(init))??;
+        assert_eq!(
+            accepted.selected_mechanism,
+            ObjectIdentifier::ms_legacy_krb5()
+        );
         Ok(())
     }
 

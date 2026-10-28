@@ -164,9 +164,13 @@ SPNEGO, GSS tokens, DER and OIDs:
 - Unsealed Wrap tokens apply the right-rotation count (RRC) on encode and
   decode (RFC 4121 §4.2.5) (RSK-84FA90AE).
 - The SPNEGO acceptor accepts an optimistic token for any offered standard or
-  Microsoft Kerberos OID. Non-first selection requires a valid mechListMIC;
+  Microsoft Kerberos OID. Both OIDs are one mechanism for first-choice selection:
+  Windows SSPI MS-KRB5-first / standard-inner AP-REQs work without mechListMIC.
+  Only a non-Kerberos first preference requires a valid mechListMIC;
   supplied first-choice MICs also verify before replay insertion. Replies select
-  that OID and include a reciprocal MIC over the received mechanism list when
+  the first offered Kerberos OID in `supportedMech`, preserving the token OID in
+  AP-REP `thisMech` through the additive `AcceptedContext::token_mechanism` field
+  (MIT/MS-SPNG behavior). Replies include a reciprocal MIC over the received list when
   one was verified. Missing or invalid MICs fail closed (`MissingMechListMic`,
   `InvalidMechListMic`); stateless continuations remain `NegotiationRequiresState`
   (RFC 4178 §§4-5, RFC 4121 §2) (RSK-C4BE57A0, F2 M1).

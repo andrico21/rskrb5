@@ -3,7 +3,7 @@
 use super::{
     ApRepOptions, EncryptionKey, Error, GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY, GSS_TOKEN_FLAG_SEALED,
     GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, GSSAPI_ACCEPTOR_SIGN_USAGE, GSSAPI_INITIATOR_SIGN_USAGE,
-    Krb5MechToken, Krb5TokenId, MicToken, NegTokenInit, ValidatedApReq,
+    Krb5MechToken, Krb5TokenId, MicToken, NegTokenInit, ObjectIdentifier, ValidatedApReq,
     der::{DerReader, TAG_APPLICATION_0, TAG_CONTEXT_0, TAG_SEQUENCE, read_single_tlv},
     encryption_key_from_rasn, ensure_kerberos_mechanism,
 };
@@ -15,13 +15,16 @@ use super::{
 pub(super) fn optimistic_token(init: &NegTokenInit) -> Result<Krb5MechToken, Error> {
     ensure_kerberos_mechanism(&init.mech_types)?;
     let token = Krb5MechToken::decode(init.mech_token.as_deref().ok_or(Error::MissingMechToken)?)?;
-    if !init.mech_types.contains(&token.oid) {
-        return Err(Error::OptimisticMechanismMismatch);
-    }
     if token.token_id != Krb5TokenId::ApReq {
         return Err(Error::MissingApReq);
     }
-    if init.mech_types.first() != Some(&token.oid) && init.mech_list_mic.is_none() {
+    // RFC 4178 Appendix C: both OIDs identify the same Kerberos mechanism.
+    if !init
+        .mech_types
+        .first()
+        .is_some_and(ObjectIdentifier::is_kerberos_mechanism)
+        && init.mech_list_mic.is_none()
+    {
         return Err(Error::MissingMechListMic);
     }
     Ok(token)
