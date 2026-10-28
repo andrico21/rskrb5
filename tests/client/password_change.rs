@@ -25,6 +25,8 @@ mod tests {
         client::{AsRepSession, TgsRepSession},
         kadmin::decrypt_krb_priv_enc_part,
     };
+    #[cfg(feature = "tokio")]
+    use tokio::sync::oneshot;
 
     use super::*;
 
@@ -521,7 +523,14 @@ TEST.GOKRB5 = {{
                 .err()
                 .context("connection refused")?;
             // Then the definite endpoint failure remains safely retryable.
-            assert!(matches!(error, Error::KdcEndpointFailures { .. }));
+            assert!(matches!(
+                error,
+                Error::KdcEndpointFailures {
+                    realm: _,
+                    protocol: _,
+                    failures: _
+                }
+            ));
             Ok(())
         })
     }
@@ -543,7 +552,7 @@ TEST.GOKRB5 = {{
             )
             .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(1)));
             client.cache_service_ticket(ticket);
-            let (release, wait) = tokio::sync::oneshot::channel();
+            let (release, wait) = oneshot::channel();
             let task = tokio::spawn(async move {
                 let (_request, socket) = read_tcp_kdc_request(&listener).await?;
                 wait.await?;

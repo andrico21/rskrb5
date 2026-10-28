@@ -23,6 +23,11 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Add opt-in `service::TransitPolicy::{direct, domain_x500_paths}` presets for
+  AD cross-domain tickets without TRANSITED-POLICY-CHECKED. Both pin endpoint
+  realms; the latter allow-lists exact complete encoded paths. Default rejection
+  and rejection of unknown encodings remain unchanged (RSK-3E3C2278).
+
 - Kpasswd preserves definite pre-send errors and reports possible-delivery
   failures as `Client::KpasswdOutcomeUnknown` exactly once, including malformed
   replies. Connection refusal is safely retryable; unknown outcomes are not

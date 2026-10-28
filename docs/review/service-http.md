@@ -29,3 +29,19 @@ The transit item adds the documented policy trait/builders and a named service
 error; nested-version signatures and errors remain unchanged. Existing
 v5 fixture acceptance is the positive control. No external service, KDC or
 upstream issue was modified or contacted.
+
+## F2 m2: Active Directory cross-domain opt-in
+
+RSK-3E3C2278 follow-up: `service: ready-made transit policies for AD cross-domain
+tickets (RSK-3E3C2278)`. Tests `transit_ad_direct_preset_requires_explicit_opt_in`,
+`transit_ad_path_allow_list_accepts_exact_path` and
+`transit_ad_presets_reject_untrusted_paths_and_encodings` cover the new policy.
+MS-KILE §3.1.5.4 means AD never sets TRANSITED-POLICY-CHECKED; the RFC 4120 §2.7
+secure default is intentionally retained. Attach `Arc::new(TransitPolicy::direct(
+"USER.REALM", "SERVICE.REALM"))` through the service or HTTP transit builder.
+For indirect paths use `TransitPolicy::domain_x500_paths` with exact complete
+DOMAIN-X500-COMPRESS byte encodings. This is a path allow-list, not a decoder or
+an inferred realm hierarchy. Unknown/type-0 encodings and empty endpoint names
+fail closed; an empty allow-list rejects all paths. Empty type-1 contents are
+accepted only when direct transit is explicitly permitted. API additions are
+these two constructors and the concrete `TransitPolicy: TransitValidator`.
