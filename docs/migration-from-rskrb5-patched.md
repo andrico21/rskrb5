@@ -391,6 +391,8 @@ as sent by Windows SSPI. Its reply uses MS-KRB5 `supportedMech` and standard
 Only a non-Kerberos first preference (such as NTLM) requires a valid RFC 4121 MIC.
 A supplied first-choice MIC still verifies. Handle `error::Spnego::MissingMechListMic`
 and `InvalidMechListMic`; unsupported mechanisms return `UnsupportedMechanism`.
+The unconstructed `error::Spnego::OptimisticMechanismMismatch` variant was removed
+before 0.3.0 release; it never existed in 0.2.2.
 
 The additive `AcceptedContext::mech_types_der` field retains the exact received
 list TLV when a MIC verified. AP-REP response helpers include a reciprocal MIC

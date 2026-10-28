@@ -2025,9 +2025,6 @@ pub enum Spnego {
     /// The mechanism-list MIC is malformed or fails context integrity checks.
     #[error("invalid SPNEGO mechListMIC")]
     InvalidMechListMic,
-    /// The optimistic token's mechanism was not offered.
-    #[error("SPNEGO optimistic token mechanism is not in the offered list")]
-    OptimisticMechanismMismatch,
     /// The GSS authenticator omitted its RFC 4121 checksum.
     #[error("GSS authenticator checksum is required")]
     MissingAuthenticatorChecksum,
