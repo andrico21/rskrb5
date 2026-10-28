@@ -61,7 +61,7 @@ These are breaking; the migration guide maps each one.
 - New error variants, among them `error::Client::{EnctypeNotRequested,
   EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
   DnsServiceUnavailable}`, `error::Config::{EnctypeNotPermitted,
-    NoPermittedEnctypes, NoUsableEnctypes}`,
+  NoPermittedEnctypes, NoUsableEnctypes}`,
   `error::Kadmin::UnauthenticatedSuccess`,
   `error::Ccache::IdentityUnavailable` and
   `http::NegotiateHttpError::MutualAuthenticationNotProven`.
@@ -204,9 +204,8 @@ Service acceptor and HTTP layer:
   together without accepting it, and both expire together, so a rewritten-sname
   replay cannot keep a digest alive past its key record.
   The default retention is 900 seconds; capacity planning needs 1.5 times the
-  previous two-skew window. Caches fail closed
-  when full (RSK-7D80FA41, run-2 lead
-  `ReplayCache:indefinite-entry-retention`).
+  previous two-skew window. Caches fail closed when full (RSK-7D80FA41, run-2
+  lead `ReplayCache:indefinite-entry-retention`).
 - Ticket and authenticator authorization data are validated before success:
   unknown critical elements and unsupported AD-KDCIssued or AD-AND-OR are
   rejected, within eight wrappers and 1 MiB of decoded payload (RFC 4120
