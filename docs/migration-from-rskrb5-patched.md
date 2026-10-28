@@ -232,9 +232,12 @@ This also applies to the shared cache created by a Tower layer.
 Each insert prunes records presented more than twice the cache skew ago, then
 checks replay and capacity atomically under the shared lock. Twice-skew retention
 covers authenticators first accepted up to one skew window in the future. Equality
-at the expiry boundary stays live. Backward validation time returns
-`ReplayCacheClockRollback` until time catches up to the high-water mark; even
-explicit `clear` does not reset that mark. Full capacity returns
+at the expiry boundary stays live. Backward validation samples up to the cache's
+configured maximum skew are tolerated, including out-of-order concurrent samples.
+The high-water mark never moves backwards; a rollback larger than the skew returns
+`ReplayCacheClockRollback`, and even explicit `clear` does not reset that mark.
+Expiry still uses each presentation's own time and the two-skew retention window.
+Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
 
 Explicit `clear`/`clear_older_than*` remain administrative overrides that can erase

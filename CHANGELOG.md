@@ -176,7 +176,9 @@ Service acceptor and HTTP layer:
   (RSK-985742B6).
 - Replay caches own their skew and capacity (300 s and 65,536 records by
   default), expire entries automatically, reject a wider shared skew and a
-  clock rollback, and fail closed when full (RSK-7D80FA41, run-2 lead
+  clock rollback larger than the configured maximum skew, tolerate smaller or
+  equal backward steps without lowering the high-water mark, and fail closed
+  when full (RSK-7D80FA41, run-2 lead
   `ReplayCache:indefinite-entry-retention`).
 - Ticket and authenticator authorization data are validated before success:
   unknown critical elements and unsupported AD-KDCIssued or AD-AND-OR are
