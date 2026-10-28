@@ -194,13 +194,47 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Remove Homebrew rust shim (macOS arm64 PATH precedence)
+      # macOS images ship Rust through Homebrew (`/opt/homebrew/bin`): image
+      # 20261013 has Homebrew rustup with no toolchain, 20261021+ has Homebrew
+      # rustup owning a preinstalled stable in `~/.rustup`. Remove the Homebrew
+      # formulae, their PATH shims and the image's rustup home, so that on
+      # every image `dtolnay/rust-toolchain` finds no rustup, installs its own
+      # into `~/.cargo/bin` (prepended to PATH) and a fresh floating stable.
+      - name: Remove the image's Homebrew Rust (macOS)
         if: runner.os == 'macOS'
+        shell: bash
         run: |
-          brew uninstall --ignore-dependencies rustup rust 2>/dev/null || true
-          rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
+          for formula in rustup rust; do
+            if brew list --formula "$formula" >/dev/null 2>&1; then
+              brew uninstall --ignore-dependencies --formula "$formula"
+            fi
+          done
+          for bin in cargo cargo-clippy cargo-fmt clippy-driver rustc rustdoc rustfmt rustup rustup-init; do
+            rm -f "/opt/homebrew/bin/$bin"
+          done
+          rm -rf "$HOME/.rustup"
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      # `cache-bin: false`: this job installs no cargo binaries, so
+      # `~/.cargo/bin` holds only the rustup proxies just installed above, and
+      # restoring a copy saved on another runner image left no `cargo` (run
+      # 40595898288 attempt 1: `cargo: command not found` on macOS image
+      # 20261021 after restoring a Darwin cache saved on 20261013). Without
+      # `~/.cargo/bin` the cache path set differs, so `actions/cache` never
+      # restores an entry saved with it. An image-version key was not chosen:
+      # it would drop the target cache at every image update and still restore
+      # `~/.cargo/bin` within one image.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-bin: false
+      # Fail fast, naming the runner image, if no working toolchain is on PATH.
+      - name: Toolchain guard (cargo and rustc on PATH)
+        shell: bash
+        run: |
+          if command -v cargo && cargo -V && rustc -V; then
+            exit 0
+          fi
+          echo "::error::no working cargo/rustc on PATH after rust-cache on runner image ${ImageOS:-unknown} ${ImageVersion:-unknown} (${RUNNER_OS:-unknown} ${RUNNER_ARCH:-unknown})"
+          exit 1
       - name: Tests (--all-features, at least 32 test targets ok)
         shell: bash
         run: |
