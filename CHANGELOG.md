@@ -61,7 +61,7 @@ These are breaking; the migration guide maps each one.
 - New error variants, among them `error::Client::{EnctypeNotRequested,
   EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
   DnsServiceUnavailable}`, `error::Config::{EnctypeNotPermitted,
-      NoPermittedEnctypes, NoUsableEnctypes, UnsupportedEnctype, EnctypeDisabled}`,
+  NoPermittedEnctypes, NoUsableEnctypes, UnsupportedEnctype, EnctypeDisabled}`,
   `error::Kadmin::UnauthenticatedSuccess`,
   `error::Ccache::IdentityUnavailable` and
   `http::NegotiateHttpError::MutualAuthenticationNotProven`.
