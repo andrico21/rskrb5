@@ -204,7 +204,30 @@ mod tests {
 
     /// Inner response with explicit application policy and a fingerprint to remove.
     #[cfg(feature = "tower")]
+    #[derive(Clone)]
     struct PolicyService;
+
+    /// Clones share replay evidence from the same validator.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn cloned_services_share_replay_state() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .layer(PolicyService);
+        let mut cloned = service.clone();
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        assert_eq!(
+            run_ready(service.call(request.clone()))??.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            run_ready(cloned.call(request))??.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        Ok(())
+    }
 
     /// A Send inner future remains movable onto an executor worker thread.
     #[cfg(feature = "tower")]
