@@ -52,7 +52,7 @@ reason = "rasn-derive 0.29.0 / rasn-derive-impl 0.29.0 / snafu-derive 0.8.9 via 
 [[bans.skip]]
 name = "getrandom"
 version = "=0.2.17"
-reason = "ring 0.17.14 -> hickory-proto 0.26.3 (optional edge, cargo metadata resolve only); getrandom 0.4.3 is the rskrb5-ng direct dependency and arrives via rand 0.10.3 (hickory-net/hickory-proto/hickory-resolver 0.26.3, picky-krb 0.13.0) and uuid 1.29.0 (moka 0.12.16, picky-krb 0.13.0, rasn-derive-impl 0.29.0)"
+reason = "ring 0.17.14 -> hickory-proto 0.26.3 (optional edge, cargo metadata resolve only); getrandom 0.4.3 is the rskrb5-ng direct dependency and arrives via rand 0.10.3 (hickory-net/hickory-proto/hickory-resolver 0.26.3, picky-krb 0.13.1) and uuid 1.29.0 (moka 0.12.16, picky-krb 0.13.1, rasn-derive-impl 0.29.0)"
 
 [[bans.skip]]
 name = "windows-sys"
