@@ -116,6 +116,42 @@ mod tests {
         "8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07";
     const AP_REP_CONFOUNDER: &str = "000102030405060708090a0b0c0d0e0f";
 
+    /// Context debugging must not expose a usable Authorization token or AP-REQ bytes.
+    #[test]
+    fn initiator_debug_redacts_credentials() -> Result<(), TestError> {
+        // Given a live initiator context.
+        let context = initiator_context()?;
+        // When formatted for diagnostics, then both credential representations are absent.
+        let rendered = format!("{context:?}");
+        assert!(!rendered.contains(&context.header));
+        assert!(!rendered.contains(&format!("{:?}", context.ap_req_der)));
+        #[cfg(feature = "tokio")]
+        {
+            let header = context.header.clone();
+            let mut client = negotiate_client_with_cached_service_ticket()?;
+            let calls = Cell::new(0_u32);
+            let result = runtime()?.block_on(krb_http::send_with_negotiate(
+                &mut client,
+                context.service,
+                || Request::new(()),
+                |_| {
+                    calls.set(calls.get().saturating_add(1));
+                    ready(Ok::<_, Infallible>(if calls.get() == 1 {
+                        krb_http::challenge_response::<()>()
+                    } else {
+                        Response::new(())
+                    }))
+                },
+            ))?;
+            assert!(!format!("{result:?}").contains(&header));
+            assert!(
+                !format!("{result:?}")
+                    .contains(&result.context.as_ref().context("retry context")?.header)
+            );
+        }
+        Ok(())
+    }
+
     /// Pins that the HTTP helpers set and read the Negotiate headers and build the 401 challenge.
     #[test]
     fn http_helpers_set_headers_and_challenge() -> Result<(), TestError> {

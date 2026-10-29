@@ -5,7 +5,7 @@
 //! NegTokenInit/NegTokenResp negotiation tokens, and HTTP `Negotiate` header
 //! encoding/decoding.
 
-use core::{iter, time::Duration};
+use core::{fmt, iter, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose};
@@ -1471,7 +1471,7 @@ impl Default for InitiatorContextOptions {
 }
 
 /// Built client SPNEGO initiator context.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InitiatorContext {
     /// ASN.1 AP-REQ message.
@@ -1500,6 +1500,38 @@ pub struct InitiatorContext {
     pub sequence_number: Option<u32>,
     /// GSS-API context flags requested when this context was built.
     pub context_flags: Vec<u32>,
+}
+
+impl fmt::Debug for InitiatorContext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            ap_req: _,
+            ap_req_der,
+            krb5_token: _,
+            spnego_token: _,
+            header,
+            client,
+            service,
+            session_key: _,
+            authenticator_ctime,
+            authenticator_cusec,
+            authenticator_time,
+            sequence_number,
+            context_flags,
+        } = self;
+        formatter
+            .debug_struct("InitiatorContext")
+            .field("ap_req_len", &ap_req_der.len())
+            .field("header_len", &header.len())
+            .field("client", client)
+            .field("service", service)
+            .field("authenticator_ctime", authenticator_ctime)
+            .field("authenticator_cusec", authenticator_cusec)
+            .field("authenticator_time", authenticator_time)
+            .field("sequence_number", sequence_number)
+            .field("context_flags", context_flags)
+            .finish()
+    }
 }
 
 impl InitiatorContext {

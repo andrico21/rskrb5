@@ -44,7 +44,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load_default()?;
     let mut client = BlockingNegotiateClient::from_default_ccache(config)?;
     let header = client.authorization_header_for_host("HTTP", "www.example.com")?;
-    println!("Authorization: {header}");
+    // Send the header over TLS; never log this credential.
+    drop(header);
     Ok(())
 }
 ```
