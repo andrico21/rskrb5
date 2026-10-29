@@ -284,14 +284,15 @@ impl Keytab {
 
     /// Resolve a MIT-style keytab name to a file path.
     ///
-    /// This does not touch the filesystem; it only validates that the name
+    /// Identity tokens read Linux procfs; otherwise this only validates that the name
     /// denotes a keytab format backed by this module.
     ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeytabName`] when the name or its path is
     /// empty, and [`Error::UnsupportedKeytabType`] for a type prefix other
-    /// than `FILE` or `WRFILE`.
+    /// than `FILE` or `WRFILE`. [`Error::IdentityUnavailable`] means identity
+    /// token expansion cannot read Linux procfs or is unsupported on this platform.
     #[inline]
     pub fn file_path_from_keytab_name(name: &str) -> Result<PathBuf, Error> {
         file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(|error| match error {

@@ -159,7 +159,7 @@ limits are recorded under FU-OPS-03.
 | FU-DOC-12 | info | Service review incorrectly says fractional-time rejection has no negative tests | open | - | - | - |
 | FU-DOC-13 | minor | Vendored project facts name deleted semver path/incomplete blocking jobs | open | - | - | - |
 | FU-DOC-14 | minor | File/config module docs describe pre-rename porting milestones | fixed | ledger negative search (exact exit 1), compatibility-report title synchronized; commit `docs: describe the current configuration and file surface (FU-DOC-14)` | none | task-6-rskrb5-ng-zero-open-items.log: before matched stale DER wiring/report title; after no matches |
-| FU-DOC-15 | minor | File-name docs omit procfs I/O and IdentityUnavailable | open | - | - | - |
+| FU-DOC-15 | minor | File-name docs omit procfs I/O and IdentityUnavailable | fixed | ledger negative search and review of all four named error contracts; commit `docs: disclose credential-name identity lookup failures (FU-DOC-15)` | none | task-6-rskrb5-ng-zero-open-items.log: before filesystem-free claim matched; after exact exit-1 no matches; CacheName::parse, CCache::file_path_from_cache_name, Keytab::file_path_from_keytab_name and internal file_path_from_name document IdentityUnavailable |
 | FU-DOC-16 | minor | Cache insert-or-replace docs hide keep-better behavior | open | - | - | - |
 | FU-DOC-17 | minor | DNS override docs omit bracket requirement for IPv6 ports | open | - | - | - |
 | FU-DOC-18 | minor | Transport Errors docs omit newly named framing/discovery errors | open | - | - | - |

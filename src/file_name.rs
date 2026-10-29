@@ -207,7 +207,8 @@ pub(crate) enum Error {
 ///
 /// Returns [`Error::Empty`] when `name` or its residual is empty, and
 /// [`Error::UnsupportedType`] when the prefix is not one of `allowed_types`
-/// (compared case-insensitively).
+/// (compared case-insensitively). [`Error::IdentityUnavailable`] means identity
+/// tokens cannot read Linux procfs or are unsupported on this platform.
 pub(crate) fn file_path_from_name(name: &str, allowed_types: &[&str]) -> Result<PathBuf, Error> {
     if name.is_empty() {
         return Err(Error::Empty);

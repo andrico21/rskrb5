@@ -78,7 +78,8 @@ impl CacheName {
     /// Returns [`Error::InvalidCacheName`] when the name or its path is empty
     /// or a `DIR::path` name is not a `tkt*` file inside a directory, and
     /// [`Error::UnsupportedCacheType`] for any other type prefix, `DIR:`
-    /// collections included.
+    /// collections included. [`Error::IdentityUnavailable`] means process identity
+    /// token expansion cannot read Linux procfs or is unsupported on this platform.
     #[inline]
     pub fn parse<P>(name: P) -> Result<Self, Error>
     where
@@ -259,7 +260,8 @@ impl CCache {
     /// collection's `primary` file does not name a `tkt*` cache on its first
     /// line; [`Error::UnsupportedCacheType`] for a type prefix other than
     /// `FILE`, `WRFILE` or `DIR`; and [`Error::Io`] when the `primary` file
-    /// cannot be read or created.
+    /// cannot be read or created. [`Error::IdentityUnavailable`] means identity
+    /// token expansion cannot read Linux procfs or is unsupported on this platform.
     #[inline]
     pub fn file_path_from_cache_name(name: &str) -> Result<PathBuf, Error> {
         if let Some(directory) = dir_collection_path(name) {
