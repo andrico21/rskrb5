@@ -1689,6 +1689,81 @@ mod tests {
         }))
     }
 
+    /// Split and combined flag masks fail closed in both wrappers for every missing-proof path.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn mutual_mask_matrix_rejects_unproven_responses() -> Result<(), TestError> {
+        for flags in [
+            vec![spnego::CONTEXT_FLAG_MUTUAL, spnego::CONTEXT_FLAG_INTEG],
+            vec![spnego::CONTEXT_FLAG_MUTUAL | spnego::CONTEXT_FLAG_INTEG],
+        ] {
+            for challenged in [false, true] {
+                for completed in [false, true] {
+                    // Given either representation of the same wire mask.
+                    let options = InitiatorContextOptions::new().with_context_flags(flags.clone());
+                    let final_header = www_authenticate(&spnego::accept_completed_header()?)?;
+                    let response_for = |call: usize| {
+                        if challenged && call == 1 {
+                            krb_http::challenge_response::<Vec<u8>>()
+                        } else if completed {
+                            response_with_www_authenticate_body(final_header.clone(), Vec::new())
+                        } else {
+                            Response::new(Vec::new())
+                        }
+                    };
+                    let service = Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]);
+                    let mut client = negotiate_client_with_cached_service_ticket()?;
+                    let calls = Cell::new(0_usize);
+                    // When the peer never proves its identity.
+                    let result = runtime()?.block_on(krb_http::send_with_negotiate_options(
+                        &mut client,
+                        service.clone(),
+                        options.clone(),
+                        || Request::new(()),
+                        |_| {
+                            calls.set(calls.get().saturating_add(1));
+                            ready(Ok::<_, Infallible>(response_for(calls.get())))
+                        },
+                    ));
+                    // Then async and blocking entry points reject, not merely classify.
+                    assert!(matches!(
+                        result,
+                        Err(
+                            krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
+                                negotiation: _,
+                                response: _
+                            }
+                        )
+                    ));
+                    let mut blocking = BlockingNegotiateClient::new(
+                        negotiate_client_with_cached_service_ticket()?,
+                    )?;
+                    calls.set(0);
+                    let blocking_result = krb_http::send_with_blocking_negotiate_options(
+                        &mut blocking,
+                        service,
+                        options,
+                        || Request::new(()),
+                        |_| {
+                            calls.set(calls.get().saturating_add(1));
+                            Ok::<_, Infallible>(response_for(calls.get()))
+                        },
+                    );
+                    assert!(matches!(
+                        blocking_result,
+                        Err(
+                            krb_http::NegotiateHttpError::MutualAuthenticationNotProven {
+                                negotiation: _,
+                                response: _
+                            }
+                        )
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Initiator options that request mutual authentication through the context flags.
     #[cfg(feature = "tokio")]
     fn mutual_context_flag_options() -> InitiatorContextOptions {

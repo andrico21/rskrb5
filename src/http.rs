@@ -643,7 +643,14 @@ fn should_retry_with_negotiate<B>(response: &Response<B>) -> Result<bool> {
 #[cfg(feature = "tokio")]
 fn mutual_requested_by(options: &spnego::InitiatorContextOptions) -> bool {
     options.ap_option_bits & AP_OPTION_MUTUAL_REQUIRED != 0
-        || options.context_flags.contains(&spnego::CONTEXT_FLAG_MUTUAL)
+        || mutual_requested(&options.context_flags)
+}
+
+/// Test every flag mask, matching the authenticator's bitwise encoding.
+fn mutual_requested(flags: &[u32]) -> bool {
+    flags
+        .iter()
+        .any(|mask| mask & spnego::CONTEXT_FLAG_MUTUAL != 0)
 }
 
 /// The outcome when the first response carried no Negotiate challenge, so no
@@ -751,7 +758,7 @@ const AP_OPTION_MUTUAL_REQUIRED: u32 = 0x2000_0000;
 /// Whether the initiator asked for mutual authentication in any supported form.
 fn mutual_authentication_requested(context: &spnego::InitiatorContext) -> bool {
     ap_options_to_bits(&context.ap_req.ap_options) & AP_OPTION_MUTUAL_REQUIRED != 0
-        || context.context_flags.contains(&spnego::CONTEXT_FLAG_MUTUAL)
+        || mutual_requested(&context.context_flags)
 }
 
 /// Classify one Negotiate challenge of a client-side exchange, verifying an

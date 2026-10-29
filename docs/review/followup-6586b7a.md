@@ -32,7 +32,7 @@ limits are recorded under FU-OPS-03.
 | FU-SPN-05 | minor | DER reader accepts nonminimal length forms | open | - | - | - |
 | FU-HTTP-01 | minor | Example invokes handler after AP-REP construction failure | open | - | - | - |
 | FU-HTTP-02 | major | Credential HeaderValues lack sensitivity flags | open | - | - | - |
-| FU-HTTP-03 | major | Combined context masks bypass mutual-required enforcement | open | - | - | - |
+| FU-HTTP-03 | major | Combined context masks bypass mutual-required enforcement | fixed | `mutual_mask_matrix_rejects_unproven_responses`; commit `http: enforce mutual authentication for combined masks (FU-HTTP-03)` | Combined context-flag masks now require verified AP-REP, identically to split masks, in async and blocking wrappers and response classification. | Task 3 evidence: pre-fix test exit 101; post-fix test exit 0; all-target/all-feature clippy exit 0. |
 | FU-HTTP-04 | minor | Library responses lack required hardening policy | open | - | - | - |
 | FU-HTTP-05 | major | Client accepts unfinished/unbound SPNEGO metadata | open | - | - | - |
 | FU-HTTP-06 | minor | Erased Tower future loses Send unconditionally | open | - | - | - |
