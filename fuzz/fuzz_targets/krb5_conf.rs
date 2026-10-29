@@ -7,21 +7,14 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rskrb5_ng::{Config, config};
+use rskrb5_ng::Config;
 
 fuzz_target!(|data: &[u8]| {
     let text = String::from_utf8_lossy(data);
     if let Ok(config) = Config::parse(&text) {
         let defaults = &config.libdefaults;
-        for list in [
-            &defaults.default_tkt_enctypes,
-            &defaults.default_tgs_enctypes,
-            &defaults.permitted_enctypes,
-        ] {
-            drop(config::parse_supported_enctype_ids(
-                list,
-                defaults.allow_weak_crypto.is_enabled(),
-            ));
-        }
+        drop(defaults.default_tkt_enctype_ids());
+        drop(defaults.default_tgs_enctype_ids());
+        drop(defaults.permitted_enctype_ids());
     }
 });

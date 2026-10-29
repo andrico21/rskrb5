@@ -1503,8 +1503,12 @@ pub fn parse_boolean(value: &str) -> Result<bool, Error> {
 #[must_use]
 /// Parse enctype names to the subset of IDs implemented by gokrb5-compatible
 /// crypto.
+#[cfg(test)]
 #[inline]
-pub fn parse_supported_enctype_ids(enctypes: &[String], allow_weak_crypto: bool) -> Vec<i32> {
+pub(crate) fn parse_supported_enctype_ids(
+    enctypes: &[String],
+    allow_weak_crypto: bool,
+) -> Vec<i32> {
     enctypes
         .iter()
         .filter(|name| allow_weak_crypto || !is_weak_enctype(name))
@@ -2492,6 +2496,10 @@ mod fork_tests {
     /// environment-reading constructor's, printed for the parent to assert on.
     #[test]
     fn env_free_fields_probe_child() -> Result<(), Box<dyn error::Error>> {
+        assert_eq!(
+            super::parse_supported_enctype_ids(&["rc4-hmac".to_owned()], false),
+            [23]
+        );
         if env::var_os(PROBE_MARKER).is_none() {
             return Ok(());
         }
