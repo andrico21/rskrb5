@@ -482,6 +482,9 @@ jobs:
         run: python3 scripts/lint-gates/feature_closures.py check-ci .github/workflows/ci.yml
       - name: Fuzz lint profile
         run: python3 scripts/lint-gates/fuzz_lint.py --enforce
+      # Targets come from fuzz/Cargo.toml, so this needs no cargo-fuzz.
+      - name: Fuzz inventory (every parser has a row, every row a live function)
+        run: python3 scripts/lint-gates/fuzz_coverage.py --enforce
       - name: No dead options or helpers in the gate scripts
         run: python3 scripts/lint-gates/gate_hygiene.py --enforce
       - name: No lint-migration attributes
