@@ -82,7 +82,7 @@ limits are recorded under FU-OPS-03.
 | FU-CRY-01 | major | Unauthenticated peer s2k count can weaken password derivation to one round | open | - | - | - |
 | FU-CRY-02 | minor | Hand-written MAC equality lacks audited constant-time primitive | open | - | - | - |
 | FU-CRY-03 | minor | Aggregate erasure counters do not pin each sensitive crypto owner | open | - | - | - |
-| FU-CRY-04 | info | Cipher-setup backlog dismissal remains justified | open | - | - | - |
+| FU-CRY-04 | info | Cipher-setup backlog dismissal remains justified | dismissed | `aes_cipher_setup_is_once_per_raw_operation`, `des3_cipher_setup_is_once_per_raw_operation`: 2 passed; commit `crypto: record cipher-setup dismissal evidence (FU-CRY-04)` | none | Planner ruling; critic u4 line 144 confirms constructors outside block loops. Task-5 evidence observes exactly one setup per raw operation across block counts. |
 | FU-MSG-01 | major | Secret-bearing message DER staging is not zeroized | open | - | - | - |
 | FU-MSG-02 | major | Strict AP-REP/KRB-CRED decode rejects valid DES3 padding | open | - | - | - |
 | FU-MSG-03 | minor | KRB-CRED semantic import truncates fractional times | open | - | - | - |
