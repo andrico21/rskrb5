@@ -34,8 +34,31 @@ pub(super) fn response_length(
     framing: TcpFraming,
     max: usize,
 ) -> Result<usize, Error> {
+    match framing {
+        TcpFraming::Kdc => super::kdc_tcp_record_length(header, max),
+        TcpFraming::Kpasswd => bounded_length(header, max),
+    }
+}
+
+/// Apply KDC-specific record rules before returning a bounded allocation size.
+///
+/// # Errors
+/// Returns reserved-bit, size-limit and empty-response errors.
+pub(super) fn kdc_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
+    validate_tcp_length(u32::from_be_bytes(header), TcpFraming::Kdc)?;
+    let length = bounded_length(header, max)?;
+    if length == 0 {
+        return Err(Error::EmptyKdcResponse);
+    }
+    Ok(length)
+}
+
+/// Convert and cap a record's unsigned length without allocating a body.
+///
+/// # Errors
+/// Returns a response-size error above the cap or platform address space.
+fn bounded_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
     let response_len = u32::from_be_bytes(header);
-    validate_tcp_length(response_len, framing)?;
     let Some(response_len_usize) = usize::try_from(response_len).ok().filter(|len| *len <= max)
     else {
         return Err(Error::TcpResponseTooLarge {
@@ -44,4 +67,51 @@ pub(super) fn response_length(
         });
     };
     Ok(response_len_usize)
+}
+
+/// Public record-mark boundary regressions.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use crate::{client::transport::kdc_tcp_record_length, error::Client};
+
+    /// A reserved bit is rejected independently of the configured cap.
+    #[test]
+    fn reserved_record_bit_is_rejected() {
+        // Given a reserved-bit record mark, when parsed, then reject its framing.
+        assert!(matches!(
+            kdc_tcp_record_length(0x8000_0001_u32.to_be_bytes(), usize::MAX),
+            Err(Client::TcpReservedBitSet)
+        ));
+    }
+
+    /// Empty records cannot represent a KDC response.
+    #[test]
+    fn empty_record_is_rejected() {
+        // Given a zero mark, when parsed, then reject the empty response.
+        assert!(matches!(
+            kdc_tcp_record_length([0; 4], 16),
+            Err(Client::EmptyKdcResponse)
+        ));
+    }
+
+    /// The configured cap is inclusive and enforced before allocation.
+    #[test]
+    fn record_cap_is_inclusive() -> Result<(), Client> {
+        // Given marks at and beyond a small cap, when parsed, then only the boundary fits.
+        assert_eq!(kdc_tcp_record_length(16_u32.to_be_bytes(), 16)?, 16);
+        assert!(matches!(
+            kdc_tcp_record_length(17_u32.to_be_bytes(), 16),
+            Err(Client::TcpResponseTooLarge {
+                actual: 17,
+                limit: 16
+            })
+        ));
+        Ok(())
+    }
 }

@@ -144,7 +144,7 @@ limits are recorded under FU-OPS-03.
 | FU-CI-06 | minor | Verify-build and later registry token share one runner | open | - | - | - |
 | FU-CI-07 | major | Upload-success/release-failure cannot recover by rerun | open | - | - | - |
 | FU-FUZ-01 | major | Mutation campaign is incomplete and missed mutants are untriaged | open | - | - | - |
-| FU-FUZ-02 | info | TCP outer record-mark parser lacks fuzz target by current organization | open | - | - | - |
+| FU-FUZ-02 | info | TCP outer record-mark parser lacks fuzz target by current organization | fixed | `reserved_record_bit_is_rejected`, `empty_record_is_rejected`, `record_cap_is_inclusive`; kdc_tcp_frame 120-second run; commit `fuzz: exercise production KDC TCP record validation (FU-FUZ-02)` | Adds public client::transport::kdc_tcp_record_length([u8;4], usize); production shares its existing reserved-bit and cap semantics, rejecting zero before body allocation | Red unresolved public API; green 3 tests. Done 24229707 runs in 121 seconds, 0 artifacts; seed-only coverage matched exact public symbol/source with count20 using fuzz_coverage.py; separate fuzz-t4 directory deleted after run and coverage export |
 | FU-DOC-01 | minor | Config comments reference nonexistent contributor/editor files | open | - | - | - |
 | FU-DOC-02 | minor | Packaged Markdown links target excluded files | open | - | - | - |
 | FU-DOC-03 | minor | Changelog0.2.2 tag date conflicts with publication date | open | - | - | - |

@@ -8,6 +8,17 @@ use std::io;
 
 /// Service-specific TCP record length validation.
 mod framing;
+
+/// Validate a KDC TCP record mark before allocating its response body.
+///
+/// # Errors
+/// Returns [`Error::TcpReservedBitSet`] for the RFC 4120 reserved high bit,
+/// [`Error::TcpResponseTooLarge`] above `max`, and [`Error::EmptyKdcResponse`]
+/// for a zero-length record. This validator does not apply to kpasswd framing.
+#[inline]
+pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
+    framing::kdc_record_length(header, max)
+}
 /// Password result consumption after a transport exchange.
 mod password_result;
 use framing::tcp_request_length;
