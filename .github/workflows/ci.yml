@@ -561,8 +561,14 @@ jobs:
   geiger:
     name: geiger
     runs-on: ubuntu-latest
-    # Informational only: cargo-geiger exits non-zero whenever it finds unsafe
-    # code (including in dependencies), so it must never gate merges.
+    # Informational only: an unsafe-code inventory, never a merge gate. The
+    # text output exits 1 on its own "Dependency file was never scanned"
+    # warnings (run 40742338863: "error: Found 333 warnings"), which made a
+    # completed scan look failed, so the scan writes JSON and
+    # `geiger_report.py` classifies those files (build-script output and
+    # included non-Rust files) and exits 0 when the scan is complete. Unsafe
+    # code in dependencies is a reported result, not a failure; a fatal scan
+    # error or an unscanned Rust source fails the step.
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -570,8 +576,22 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-geiger
         run: cargo install cargo-geiger --locked
-      - name: Run cargo geiger
-        run: cargo geiger --all-features
+      - name: Run cargo geiger (JSON report)
+        run: cargo geiger --all-features --locked --output-format Json > geiger.json 2> geiger.log
+      - name: Classify the scan and summarize unsafe counts
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/lint-gates/geiger_report.py geiger.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload the geiger report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: geiger-report
+          path: |
+            geiger.json
+            geiger.log
+          retention-days: 14
 
   rustdoc-nightly-canary:
     name: rustdoc-nightly-canary
