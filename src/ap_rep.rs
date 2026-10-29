@@ -1,5 +1,6 @@
 //! AP-REP decoding and encrypted-part helpers.
 
+use crate::messages::secret_der::SecretDer;
 use rasn::{der, types::Integer};
 
 use crate::{
@@ -83,13 +84,16 @@ pub fn decrypt_ap_rep_enc_part(
     }
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let plaintext = etype.decrypt_message(
-        &key.value,
-        ap_rep.enc_part.cipher.as_ref(),
-        AP_REP_ENCPART_USAGE,
-    )?;
+    let plaintext = SecretDer::new(
+        etype.decrypt_message(
+            &key.value,
+            ap_rep.enc_part.cipher.as_ref(),
+            AP_REP_ENCPART_USAGE,
+        )?,
+        "ap-rep decrypt",
+    );
     let trimmed = trim_zero_padded_der(&plaintext);
-    let der = if key.etype == 16 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
+    let der = if key.etype == 16_i32 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
         trimmed
     } else {
         &plaintext
@@ -131,7 +135,7 @@ pub fn build_ap_rep_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::ApRep, Error> {
-    let plaintext = encode_der("EncApRepPart", enc_part)?;
+    let plaintext = SecretDer::new(encode_der("EncApRepPart", enc_part)?, "ap-rep encode");
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(

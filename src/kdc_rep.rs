@@ -1,5 +1,6 @@
 //! AS-REP/TGS-REP decoding and encrypted-part helpers.
 
+use crate::messages::secret_der::SecretDer;
 use rasn::{der, types::Integer};
 
 /// Mapping of ticket validation errors into reply errors.
@@ -213,7 +214,7 @@ pub fn encrypt_as_rep_enc_part_with_confounder(
     confounder: &[u8],
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
     encrypt_kdc_rep_enc_part(
-        &encode_enc_as_rep_part(enc_part)?,
+        &SecretDer::new(encode_enc_as_rep_part(enc_part)?, "as-rep encode"),
         key,
         kvno,
         AS_REP_ENCPART_USAGE,
@@ -256,7 +257,7 @@ pub fn encrypt_tgs_rep_enc_part_with_confounder(
     confounder: &[u8],
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
     encrypt_kdc_rep_enc_part(
-        &encode_enc_tgs_rep_part(enc_part)?,
+        &SecretDer::new(encode_enc_tgs_rep_part(enc_part)?, "tgs-rep encode"),
         key,
         kvno,
         TGS_REP_ENCPART_SESSION_KEY_USAGE,
@@ -297,7 +298,10 @@ fn decrypt_kdc_rep_enc_part(
     }
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let plaintext = etype.decrypt_message(&key.value, encrypted_data.cipher.as_ref(), usage)?;
+    let plaintext = SecretDer::new(
+        etype.decrypt_message(&key.value, encrypted_data.cipher.as_ref(), usage)?,
+        "kdc-rep decrypt",
+    );
     decode_enc_kdc_rep_part(trim_zero_padded_der(&plaintext))
 }
 

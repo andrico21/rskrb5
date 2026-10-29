@@ -5,6 +5,7 @@ mod conversion;
 
 use conversion::{ccache_credential_to_krb_cred_info, krb_cred_info_to_ccache_credential};
 
+use crate::messages::secret_der::SecretDer;
 use rasn::{der, types::Integer};
 
 use crate::{
@@ -70,13 +71,16 @@ pub fn decrypt_krb_cred_enc_part(
     }
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let plaintext = etype.decrypt_message(
-        &key.value,
-        krb_cred.enc_part.cipher.as_ref(),
-        KRB_CRED_ENCPART_USAGE,
-    )?;
+    let plaintext = SecretDer::new(
+        etype.decrypt_message(
+            &key.value,
+            krb_cred.enc_part.cipher.as_ref(),
+            KRB_CRED_ENCPART_USAGE,
+        )?,
+        "krb-cred decrypt",
+    );
     let trimmed = trim_zero_padded_der(&plaintext);
-    let der = if key.etype == 16 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
+    let der = if key.etype == 16_i32 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
         trimmed
     } else {
         &plaintext
@@ -192,7 +196,7 @@ pub fn encrypt_ccache_credentials_to_krb_cred_with_confounder(
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbCred, Error> {
     let (tickets, enc_part) = ccache_credentials_to_krb_cred_parts(credentials)?;
-    let plaintext = encode_der("EncKrbCredPart", &enc_part)?;
+    let plaintext = SecretDer::new(encode_der("EncKrbCredPart", &enc_part)?, "krb-cred encode");
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(

@@ -2,6 +2,8 @@
 
 /// Signed key-version conversion for encrypted data.
 mod encrypted_data;
+/// Owning boundary for secret-bearing message DER staging.
+pub(crate) mod secret_der;
 
 use core::{
     str::{self},
@@ -330,7 +332,7 @@ where
     })
 }
 
-use crate::error::Messages as Error;
+use crate::{der::decode_complete, error::Messages as Error};
 
 /// Decode one complete value at a named message boundary.
 ///
@@ -340,7 +342,7 @@ fn decode_named<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: Decode,
 {
-    crate::der::decode_complete(bytes).map_err(|message| Error::Decode { target, message })
+    decode_complete(bytes).map_err(|message| Error::Decode { target, message })
 }
 
 /// Check that a decoded protocol integer such as `pvno` equals `expected`.
