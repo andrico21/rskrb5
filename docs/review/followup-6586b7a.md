@@ -65,7 +65,7 @@ limits are recorded under FU-OPS-03.
 | FU-CLI-15 | major | Keytab challenge selects offered enctype without available key | open | - | - | - |
 | FU-CLI-16 | minor | Renewal predicate ignores renewable flag and valid time window | open | - | - | - |
 | FU-CLI-17 | minor | Blocking runtime operations and destruction may panic in async context | open | - | - | - |
-| FU-TRN-01 | minor | Local request-time errors are labeled authenticated reply-control errors | open | - | - | - |
+| FU-TRN-01 | minor | Local request-time errors are labeled authenticated reply-control errors | fixed | `client::kpasswd::request::tests::{fractional_request_time_is_local,excessive_request_microseconds_are_local,maximum_request_microseconds_build}`; commit `kpasswd: classify invalid request times before delivery (FU-TRN-01)` | Fractional request timestamps and cusec >= 1000000 return Client::Encode with target kpasswd request time, not KpasswdReplyControl; no frame is built or sent | Red: 2 failed / 1 passed; green: 3 passed; task-4 evidence; pure split `36539fa` preceded red |
 | FU-TRN-02 | major | Reflected request KRB-PRIV can become password-bearing failure text | open | - | - | - |
 | FU-TRN-03 | major | Unsigned rejection is treated as definitive password-change failure | open | - | - | - |
 | FU-TRN-04 | minor | Windows oversized UDP reports Io instead of promised size error | open | - | - | - |
