@@ -1237,9 +1237,10 @@ impl EncryptionKey {
 impl fmt::Debug for EncryptionKey {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { etype, value } = self;
         f.debug_struct("EncryptionKey")
-            .field("etype", &self.etype)
-            .field("value_len", &self.value.len())
+            .field("etype", etype)
+            .field("value_len", &value.len())
             .finish()
     }
 }

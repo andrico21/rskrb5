@@ -61,6 +61,17 @@ mod tests {
         Ok(())
     }
 
+    /// Manual key formatting explicitly accounts for every field before redaction.
+    #[test]
+    fn key_debug_has_exhaustive_field_audit() {
+        // Given the actual manual formatting implementation.
+        let source = include_str!("../src/ccache.rs");
+        // When selecting its field-audit pattern.
+        let audited = source.contains("let Self { etype, value } = self;");
+        // Then no rest pattern can swallow future secret fields.
+        assert!(audited);
+    }
+
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
     trait Context<T> {

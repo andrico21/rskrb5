@@ -665,6 +665,17 @@ mod tests {
         }
     }
 
+    /// Manual key formatting explicitly accounts for every field before redaction.
+    #[test]
+    fn key_debug_has_exhaustive_field_audit() {
+        // Given the actual manual formatting implementation.
+        let source = include_str!("../src/keytab.rs");
+        // When selecting its field-audit pattern.
+        let audited = source.contains("let Self { etype, value } = self;");
+        // Then no rest pattern can swallow future secret fields.
+        assert!(audited);
+    }
+
     /// An interrupted next-entry size is not a clean end of file.
     #[test]
     fn rejects_partial_next_entry_sizes() -> Result<(), TestError> {
