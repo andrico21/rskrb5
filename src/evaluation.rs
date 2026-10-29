@@ -19,7 +19,7 @@ struct MarkdownReport;
 
 impl Display for MarkdownReport {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("# rskrb5 Compatibility Spike\n\n")?;
+        f.write_str("# rskrb5-ng Compatibility Report\n\n")?;
         f.write_str("This report is generated from `rskrb5_ng::evaluation` and captures the dependency decision gate and ongoing candidate matrix for a gokrb5-equivalent Rust implementation.\n\n")?;
 
         render_contract(f)?;

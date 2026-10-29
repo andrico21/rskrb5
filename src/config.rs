@@ -1,8 +1,8 @@
 //! Kerberos `krb5.conf` parsing.
 //!
-//! This module covers the gokrb5-compatible configuration surface needed by
-//! later client and service modules: libdefaults, realm host mappings, domain
-//! realm lookup, duration parsing, and configured KDC discovery.
+//! Configuration includes bounded include expansion, libdefaults, realm host
+//! mappings, domain-realm lookup, durations and KDC discovery. Enctype ID
+//! accessors apply the configured family opt-ins and permitted list.
 
 use alloc::collections::BTreeMap;
 use core::{

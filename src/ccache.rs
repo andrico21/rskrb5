@@ -1,9 +1,8 @@
 //! MIT credential cache parsing and serialization.
 //!
-//! This module handles the file credential cache format surface needed before
-//! client flows can persist and reload KDC-issued credentials. Ticket bodies
-//! remain opaque DER bytes until the crypto and ASN.1 message layers are wired
-//! together.
+//! FILE/WRFILE and DIR caches support credential lookup, metadata, persistence
+//! and X-CACHECONF entries. Ticket bytes are preserved without interpretation;
+//! the client and message modules handle their cryptographic contents.
 
 use alloc::fmt;
 use core::{
@@ -38,7 +37,7 @@ const X_CACHECONF_COMPONENT: &str = "krb5_ccache_conf_data";
 
 /// Parsed MIT-style credential cache name.
 ///
-/// `rskrb5` currently supports direct file-backed cache names, including
+/// `rskrb5-ng` supports direct file-backed cache names, including
 /// subsidiary `DIR::path` cache names which point directly at a FILE-format
 /// cache in a DIR collection. Keeping the parsed name explicit gives callers a
 /// stable validation point and leaves room for platform stores to grow into

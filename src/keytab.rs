@@ -1,7 +1,7 @@
 //! Kerberos keytab parsing and serialization.
 //!
-//! This module covers the MIT keytab file format surface needed before client
-//! and service flows can consume long-term keys.
+//! MIT keytabs support long-term key lookup, password-derived entry generation,
+//! file-name resolution, private persistence and redacted metadata.
 
 use alloc::fmt;
 use core::{
@@ -23,7 +23,7 @@ const KRB5_KTNAME_ENV: &str = "KRB5_KTNAME";
 
 /// Parsed MIT-style keytab name.
 ///
-/// `rskrb5` currently supports file-backed keytabs only. The explicit name
+/// `rskrb5-ng` supports file-backed keytabs only. The explicit name
 /// type gives callers a validation point before attempting filesystem access.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
