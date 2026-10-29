@@ -18,7 +18,7 @@ mod tests {
     fn builder_rejects_invalid_scalars() -> Result<(), Box<dyn Error>> {
         // Given fractional time and out-of-range microseconds set directly.
         let key = EncryptionKey::new(17, vec![0x42; 16]);
-        for (nanos, usec) in [(1_u32, 0_i32), (0, -1), (0, 1_000_000)] {
+        for (nanos, usec) in [(1_u32, 0_i32), (0, -1_i32), (0, 1_000_000_i32)] {
             let utc = chrono::DateTime::from_timestamp(1, nanos).ok_or("time")?;
             let offset = chrono::FixedOffset::east_opt(0).ok_or("offset")?;
             let mut options =

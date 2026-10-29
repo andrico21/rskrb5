@@ -10,6 +10,7 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
+    use rasn::der;
 
     use rskrb5_ng::{ccache, krb_cred};
 
@@ -19,7 +20,7 @@ mod tests {
         // Given a valid credential with all four time fields.
         let principal = ccache::Principal::new("EXAMPLE.COM", 1, vec!["user".into()]);
         let ticket = rasn_kerberos::Ticket {
-            tkt_vno: 5.into(),
+            tkt_vno: 5_i32.into(),
             realm: rasn_kerberos::Realm::from_bytes(b"EXAMPLE.COM")?,
             sname: rasn_kerberos::PrincipalName {
                 r#type: 1,
@@ -37,12 +38,12 @@ mod tests {
             ccache::EncryptionKey::new(17, vec![0x42; 16]),
             ccache::CredentialTimes::default(),
             [0; 4],
-            rasn::der::encode(&ticket)?,
+            der::encode(&ticket)?,
         );
         let (tickets, part) = krb_cred::ccache_credentials_to_krb_cred_parts(&[credential])?;
         let message = rasn_kerberos::KrbCred {
-            pvno: 5.into(),
-            msg_type: 22.into(),
+            pvno: 5_i32.into(),
+            msg_type: 22_i32.into(),
             tickets,
             enc_part: rasn_kerberos::EncryptedData {
                 etype: 17,
@@ -50,7 +51,7 @@ mod tests {
                 cipher: Vec::new().into(),
             },
         };
-        for field in 0..4 {
+        for field in 0_usize..4 {
             let mut mutated = part.clone();
             let info = mutated.ticket_info.first_mut().ok_or("ticket info")?;
             let time = match field {

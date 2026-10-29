@@ -5,7 +5,7 @@ use super::{CHECKSUM_HMAC_MD5_UNSIGNED, KerberosEtype};
 /// Kerberos encryption type whose checksum is `signature_type`, if any.
 pub(super) fn kerberos_etype_for_checksum_type(signature_type: u32) -> Option<KerberosEtype> {
     let signed = match signature_type {
-        CHECKSUM_HMAC_MD5_UNSIGNED => -138,
+        CHECKSUM_HMAC_MD5_UNSIGNED => -138_i32,
         positive => i32::try_from(positive).ok()?,
     };
     KerberosEtype::from_checksum_type_id(signed)

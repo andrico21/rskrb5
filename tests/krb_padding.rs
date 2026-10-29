@@ -10,6 +10,7 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
+    use rasn::der;
 
     use rskrb5_ng::{ap_rep, crypto::KerberosEtype, keytab::EncryptionKey, krb_cred};
 
@@ -19,7 +20,7 @@ mod tests {
         // Given AP-REP and KRB-CRED parts with variable-length key values.
         let utc = chrono::DateTime::from_timestamp(1, 0).ok_or("time")?;
         let offset = chrono::FixedOffset::east_opt(0).ok_or("offset")?;
-        for id in [16, 17, 18, 19, 20, 23] {
+        for id in [16_i32, 17_i32, 18_i32, 19_i32, 20_i32, 23_i32] {
             let etype = KerberosEtype::from_etype_id(id).ok_or("etype")?;
             let key = EncryptionKey::new(id, vec![0x42; etype.key_len()]);
             let confounder = vec![0x24; etype.confounder_len()];
@@ -27,14 +28,14 @@ mod tests {
             for length in 1..=8 {
                 let part = rasn_kerberos::EncApRepPart {
                     ctime: rasn_kerberos::KerberosTime(utc.with_timezone(&offset)),
-                    cusec: 0.into(),
+                    cusec: 0_i32.into(),
                     subkey: Some(rasn_kerberos::EncryptionKey {
                         r#type: 17,
                         value: vec![0x33; length].into(),
                     }),
                     seq_number: None,
                 };
-                let bytes = rasn::der::encode(&part)?;
+                let bytes = der::encode(&part)?;
                 *residues
                     .get_mut(bytes.len().rem_euclid(8))
                     .ok_or("residue")? = true;
@@ -62,8 +63,8 @@ mod tests {
                 let reply = ap_rep::build_ap_rep_with_confounder(&part, &key, None, &confounder)?;
                 assert_eq!(ap_rep::decrypt_ap_rep_enc_part(&reply, &key)?, part);
                 let cred = rasn_kerberos::KrbCred {
-                    pvno: 5.into(),
-                    msg_type: 22.into(),
+                    pvno: 5_i32.into(),
+                    msg_type: 22_i32.into(),
                     tickets: Vec::new(),
                     enc_part: rasn_kerberos::EncryptedData {
                         etype: id,
@@ -71,7 +72,7 @@ mod tests {
                         cipher: etype
                             .encrypt_message_with_confounder(
                                 &key.value,
-                                &rasn::der::encode(&cred_part)?,
+                                &der::encode(&cred_part)?,
                                 14,
                                 &confounder,
                             )?
@@ -91,15 +92,15 @@ mod tests {
     fn encrypted_parts_reject_invalid_padding() -> Result<(), Box<dyn Error>> {
         // Given a minimal valid AP-REP part with authenticated suffixes.
         let bytes = hex::decode("7B1C301AA011180F31393934303631303036303331375AA105020301E240")?;
-        for id in [16, 17, 18, 19, 20, 23] {
+        for id in [16_i32, 17_i32, 18_i32, 19_i32, 20_i32, 23_i32] {
             let etype = KerberosEtype::from_etype_id(id).ok_or("etype")?;
             let key = EncryptionKey::new(id, vec![0x42; etype.key_len()]);
             for suffix in [vec![1], vec![0; 8]] {
                 let mut plaintext = bytes.clone();
                 plaintext.extend(suffix);
                 let reply = rasn_kerberos::ApRep {
-                    pvno: 5.into(),
-                    msg_type: 15.into(),
+                    pvno: 5_i32.into(),
+                    msg_type: 15_i32.into(),
                     enc_part: rasn_kerberos::EncryptedData {
                         etype: id,
                         kvno: None,
