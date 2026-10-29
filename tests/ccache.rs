@@ -862,6 +862,27 @@ mod tests {
         Ok(())
     }
 
+    /// Legacy output rejects fields that its version cannot represent.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn legacy_ccaches_reject_unrepresentable_fields() -> Result<(), TestError> {
+        // Given legacy versions with a nonempty v4 header or v1 name type.
+        let cache = CCache::new(Principal::new("EXAMPLE.ORG", 1, vec!["user".to_owned()]));
+        for version in 1_u8..=3 {
+            let mut value = serde_json::to_value(&cache)?;
+            value["version"] = version.into();
+            if version != 1 {
+                value["header"]["fields"] = serde_json::json!([{"tag":2,"value":[42]}]);
+            }
+            let decoded: CCache = serde_json::from_value(value)?;
+            // When trying to serialize a value that would lose fields.
+            let result = decoded.to_bytes();
+            // Then reject instead of successfully writing a different object.
+            assert!(result.err().is_some());
+        }
+        Ok(())
+    }
+
     /// Pins the errors for empty, misversioned, truncated and negative-count ccaches.
     #[test]
     fn rejects_invalid_ccache_inputs() -> Result<(), TestError> {

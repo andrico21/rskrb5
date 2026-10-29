@@ -330,6 +330,9 @@ impl CCache {
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         validate_version(self.version)?;
+        if self.version < 4 && !self.header.fields.is_empty() {
+            return Err(Error::InvalidHeaderLength);
+        }
         let endian = Endian::for_version(self.version);
         let mut out = file_name::SecretBytes::new(vec![CCACHE_FIRST_BYTE, self.version]);
         if self.version == 4 {
@@ -889,6 +892,9 @@ impl Principal {
     /// Returns [`Error::LengthOverflow`] when the component count or a string
     /// length does not fit an `i32`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
+        if version == 1 && self.name_type != 0 {
+            return Err(Error::LengthOverflow);
+        }
         if version != 1 {
             write_i32(out, self.name_type, endian);
         }
