@@ -358,8 +358,7 @@ impl AesSha1Etype {
 
         let integrity_key =
             SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x55))?);
-        let expected = SecretScratch::new(hmac_sha1_96(&integrity_key, &plain));
-        if !constant_time_eq(&expected, mac) {
+        if !verification::sha1(&integrity_key, &plain, mac, Self::hmac_len()) {
             return Err(Error::IntegrityCheckFailed);
         }
 
@@ -666,8 +665,9 @@ impl AesSha2Etype {
             self.hmac_len(),
             self.hmac_len().saturating_add(Self::confounder_len()),
         )?;
-        let expected = SecretScratch::new(self.integrity_hash(protocol_key, usage, encrypted)?);
-        if !constant_time_eq(&expected, mac) {
+        let integrity_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x55))?);
+        if !verification::sha2(self, &integrity_key, &[&ZERO_AES_IV, encrypted], mac) {
             return Err(Error::IntegrityCheckFailed);
         }
 
@@ -1089,8 +1089,7 @@ impl Des3CbcSha1KdEtype {
             protocol_key,
             &usage_constant(usage, 0x55),
         )?);
-        let expected = SecretScratch::new(hmac_sha1(&integrity_key, &plain));
-        if !constant_time_eq(&expected, mac) {
+        if !verification::sha1(&integrity_key, &plain, mac, Self::hmac_len()) {
             return Err(Error::IntegrityCheckFailed);
         }
 
@@ -1361,8 +1360,7 @@ impl Rc4HmacEtype {
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
-        let expected = SecretScratch::new(hmac_md5(&usage_key, &plain));
-        if !constant_time_eq(&expected, checksum) {
+        if !verification::md5(&usage_key, &plain, checksum) {
             return Err(Error::IntegrityCheckFailed);
         }
 
@@ -2207,7 +2205,6 @@ fn hmac_sha384(key: &[u8], data: &[u8]) -> Vec<u8> {
 
 /// MAC verification boundary.
 mod verification;
-use verification::constant_time_eq;
 
 /// Rotate `bytes`, read as one big-endian bit string, right by `steps` bits.
 fn rotate_right(bytes: &[u8], steps: usize) -> Vec<u8> {
