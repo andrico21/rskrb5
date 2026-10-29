@@ -2,6 +2,45 @@
 
 use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
+/// Framed extensions preserve known fields; truncated extensions still fail.
+#[test]
+fn sequences_accept_framed_extensions() -> Result<(), Error> {
+    // Given known fields followed by an unknown extension-region field.
+    let init_fields = vec![0xa0, 5, 0x30, 3, 6, 1, 0x2a];
+    let resp_fields = vec![0xa0, 3, 0x0a, 1, 0];
+    let extension = [0xa4, 2, 5, 0];
+    let init_wire = encode_tlv(
+        0xa0,
+        &encode_tlv(0x30, &[init_fields.as_slice(), &extension].concat()),
+    );
+    let resp_wire = encode_tlv(
+        0xa1,
+        &encode_tlv(0x30, &[resp_fields.as_slice(), &extension].concat()),
+    );
+    // When parsed, then the extension does not change the known token fields.
+    assert_eq!(
+        NegTokenInit::decode(&init_wire)?,
+        NegTokenInit::decode(&encode_tlv(0xa0, &encode_tlv(0x30, &init_fields)))?
+    );
+    assert_eq!(
+        NegTokenResp::decode(&resp_wire)?,
+        NegTokenResp::decode(&encode_tlv(0xa1, &encode_tlv(0x30, &resp_fields)))?
+    );
+    for (tag, fields) in [(0xa0, init_fields), (0xa1, resp_fields)] {
+        let truncated = encode_tlv(
+            tag,
+            &encode_tlv(0x30, &[fields.as_slice(), &[0xa4, 3, 5, 0]].concat()),
+        );
+        let result = if tag == 0xa0 {
+            NegTokenInit::decode(&truncated).map(|_| ())
+        } else {
+            NegTokenResp::decode(&truncated).map(|_| ())
+        };
+        assert!(matches!(result, Err(Error::LengthExceedsInput)));
+    }
+    Ok(())
+}
+
 /// Duplicate fields and adjacent reversals must fail for both negotiation choices.
 #[test]
 fn sequences_reject_duplicate_and_reordered_fields() -> Result<(), Error> {

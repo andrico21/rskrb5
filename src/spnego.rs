@@ -2220,6 +2220,7 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
                         .to_vec(),
                 );
             }
+            0xa4..=0xbe => {}
             actual => {
                 return Err(Error::UnexpectedTag {
                     expected: TAG_CONTEXT_0,
@@ -2289,6 +2290,7 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
                         .to_vec(),
                 );
             }
+            0xa4..=0xbe => {}
             actual => {
                 return Err(Error::UnexpectedTag {
                     expected: TAG_CONTEXT_0,
