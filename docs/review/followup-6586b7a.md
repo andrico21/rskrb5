@@ -167,7 +167,7 @@ limits are recorded under FU-OPS-03.
 | FU-DOC-20 | minor | Password transport comments contradict no-retry/discovery boundaries | open | - | - | - |
 | FU-DOC-21 | minor | Enctype policy docs describe old defaults/construction/validation phase | open | - | - | - |
 | FU-DOC-22 | minor | Ccache I/O display calls write failures read failures | open | - | - | - |
-| FU-DOC-23 | nit | Bare kpasswd reply profile is omitted from parse contract | open | - | - | - |
+| FU-DOC-23 | nit | Bare kpasswd reply profile is omitted from parse contract | fixed | Reply::parse attached rustdoc contract check; `tests::kpasswd_bare_error_roundtrips`; commit `docs: explain standalone kpasswd reply parsing (FU-DOC-23)` | none; documents existing standalone application-30 dispatch and synthetic 0xff80 version | Before: contract terms absent; after: all present at Reply::parse; round-trip passed; rustdoc -D warnings passed; task-4 evidence |
 | FU-DOC-24 | minor | KRB-ERROR scalar validation docs describe obsolete u32-only checks | open | - | - | - |
 | FU-DOC-25 | nit | Stale helper prose and repeated test cfg attributes | open | - | - | - |
 | FU-DOC-26 | nit | NDR rejection test comment describes unrelated PAC discovery | open | - | - | - |

@@ -11,11 +11,17 @@ use crate::{ap_rep, keytab::EncryptionKey, krb_error};
 impl Reply {
     /// Parse a password-change reply frame.
     ///
+    /// A standalone KRB-ERROR (application 30) is accepted before checking the
+    /// framed header. Its synthetic version is `0xff80`
+    /// ([`CHANGE_PASSWORD_REQUEST_VERSION`]), preserving its bare wire profile
+    /// when re-encoded. Version rejection applies only to framed replies;
+    /// standalone errors have no kpasswd version field.
+    ///
     /// # Errors
     ///
     /// Returns the frame header errors ([`Error::FrameTooShort`],
     /// [`Error::InvalidMessageLength`], [`Error::TruncatedFrame`]),
-    /// [`Error::InvalidReplyVersion`] for a version other than
+    /// [`Error::InvalidReplyVersion`] for a framed version other than
     /// [`CHANGE_PASSWORD_REPLY_VERSION`], [`Error::InvalidApRepLength`] when the
     /// AP-REP length leaves no room for the KRB-PRIV, the decode errors of the
     /// KRB-ERROR, AP-REP or KRB-PRIV, and the [`ChangePasswordResult::parse`]
