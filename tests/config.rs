@@ -15,7 +15,7 @@ mod tests {
     use core::{error, fmt::Display, time::Duration};
     use std::{
         env::{join_paths, split_paths, temp_dir, var_os},
-        fs,
+        fs, io,
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -35,7 +35,7 @@ mod tests {
         client::{build_tgt_as_req, options::AsReq},
     };
     use rskrb5_ng::{
-        config::{Config, parse_duration},
+        config::{Config, Realm, parse_duration},
         error::Config as Error,
     };
     #[cfg(feature = "serde")]
@@ -52,10 +52,10 @@ mod tests {
         // Given an explicit realm name.
         let name = "EXAMPLE.COM";
         // When constructing without parsing a profile.
-        let realm = rskrb5_ng::config::Realm::new(name.to_owned())?;
+        let realm = Realm::new(name.to_owned())?;
         // Then its name is preserved and an empty name is rejected.
         assert_eq!(realm.name, name);
-        assert!(rskrb5_ng::config::Realm::new(String::new()).err().is_some());
+        assert!(Realm::new(String::new()).err().is_some());
         Ok(())
     }
 
@@ -912,10 +912,10 @@ mod tests {
         let cause = error::Error::source(&failure).context("I/O source retained")?;
         assert_eq!(
             cause
-                .downcast_ref::<std::io::Error>()
+                .downcast_ref::<io::Error>()
                 .context("I/O cause")?
                 .kind(),
-            std::io::ErrorKind::NotFound
+            io::ErrorKind::NotFound
         );
         Ok(())
     }

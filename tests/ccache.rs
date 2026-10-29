@@ -19,6 +19,7 @@ mod tests {
     use std::{
         env::{VarError, temp_dir, var},
         fs::{create_dir_all, read_to_string, remove_dir, remove_file, write},
+        io,
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -54,8 +55,8 @@ mod tests {
         let ipv6 = HostAddress::ipv6([0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         // Then metadata is preserved and malformed offset headers are rejected.
         assert_eq!(field.value, value);
-        assert_eq!((ipv4.addr_type, ipv4.address), (2, vec![192, 0, 2, 1]));
-        assert_eq!(ipv6.addr_type, 24);
+        assert_eq!((ipv4.addr_type, ipv4.address), (2_i32, vec![192, 0, 2, 1]));
+        assert_eq!(ipv6.addr_type, 24_i32);
         assert_eq!(ipv6.address.len(), 16);
         assert!(HeaderField::new(1, vec![0; 7]).err().is_some());
         Ok(())
@@ -63,21 +64,22 @@ mod tests {
 
     /// Manual key formatting explicitly accounts for every field before redaction.
     #[test]
-    fn key_debug_has_exhaustive_field_audit() {
+    fn key_debug_has_exhaustive_field_audit() -> Result<(), TestError> {
         // Given the actual manual formatting implementation.
-        let source = include_str!("../src/ccache.rs");
+        let source = read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ccache.rs"))?;
         // When selecting its field-audit pattern.
         let audited = source.contains("let Self { etype, value } = self;");
         // Then no rest pattern can swallow future secret fields.
         assert!(audited);
+        Ok(())
     }
 
     /// Save failures have operation-neutral wording and preserve the I/O cause.
     #[test]
     fn io_display_covers_write_failures_and_retains_source() -> Result<(), TestError> {
         // Given a representative failed rename or symlink rejection.
-        let failure = Error::Io(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
+        let failure = Error::Io(io::Error::new(
+            io::ErrorKind::PermissionDenied,
             "save denied",
         ));
         // When formatting and traversing the public error.
@@ -87,10 +89,10 @@ mod tests {
         assert!(display.contains("read or written"));
         assert_eq!(
             source
-                .downcast_ref::<std::io::Error>()
+                .downcast_ref::<io::Error>()
                 .context("I/O error")?
                 .kind(),
-            std::io::ErrorKind::PermissionDenied
+            io::ErrorKind::PermissionDenied
         );
         Ok(())
     }
@@ -922,9 +924,12 @@ mod tests {
         let cache = CCache::new(Principal::new("EXAMPLE.ORG", 1, vec!["user".to_owned()]));
         for version in 1_u8..=3 {
             let mut value = serde_json::to_value(&cache)?;
-            value["version"] = version.into();
+            *value.get_mut("version").context("version")? = version.into();
             if version != 1 {
-                value["header"]["fields"] = serde_json::json!([{"tag":2,"value":[42]}]);
+                *value
+                    .get_mut("header")
+                    .and_then(|header| header.get_mut("fields"))
+                    .context("header fields")? = serde_json::json!([{"tag":2_u16,"value":[42_u8]}]);
             }
             let decoded: CCache = serde_json::from_value(value)?;
             // When trying to serialize a value that would lose fields.

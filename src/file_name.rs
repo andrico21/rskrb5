@@ -67,7 +67,8 @@ mod tests {
         error::Error as StdError,
     };
     use std::{
-        env, fs, io,
+        env, fs,
+        io::{self, Write as _},
         sync::{Barrier, BarrierWaitResult},
         thread,
         time::{SystemTime, UNIX_EPOCH},
@@ -227,6 +228,30 @@ mod tests {
             .1
             .map_err(|_panic| "second initializer panicked")??;
         assert_eq!(fs::read(&path)?, b"tkt\n");
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// Interrupted staging never publishes a partial primary and removes the private stage.
+    #[test]
+    fn primary_partial_write_failure_cleans_stage() -> Result<(), Box<dyn StdError>> {
+        // Given an absent primary and a writer that fails after one byte.
+        let directory = env::temp_dir().join(format!(
+            "primary-failure-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        // When the real staged publication encounters the interrupted write.
+        let result = super::create_primary_with(&directory.join("primary"), |file| {
+            file.write_all(b"t")?;
+            Err(io::ErrorKind::Interrupted.into())
+        });
+        // Then the causal error is returned and no partial public or private file remains.
+        assert_eq!(
+            result.err().map(|error| error.kind()),
+            Some(io::ErrorKind::Interrupted)
+        );
+        assert_eq!(fs::read_dir(&directory)?.count(), 0);
         fs::remove_dir_all(directory)?;
         Ok(())
     }
@@ -433,6 +458,17 @@ pub(crate) fn reject_symlink(path: &Path) -> io::Result<()> {
 /// Returns stage/write/sync or publication errors. An existing regular primary
 /// wins without replacement; existing symlinks are rejected.
 pub(crate) fn create_primary(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    create_primary_with(path, |file| file.write_all(bytes))
+}
+
+/// Stage a primary using the same fallible write boundary as production.
+///
+/// # Errors
+/// Returns write, sync, publication or cleanup errors, preserving the write cause.
+fn create_primary_with<F>(path: &Path, write: F) -> io::Result<()>
+where
+    F: FnOnce(&mut fs::File) -> io::Result<()>,
+{
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut random = [0_u8; 16];
     getrandom::fill(&mut random).map_err(io::Error::other)?;
@@ -446,7 +482,7 @@ pub(crate) fn create_primary(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let _: &mut OpenOptions = options.mode(0o600);
     let mut file = options.open(&temporary)?;
     let result = (|| {
-        file.write_all(bytes)?;
+        write(&mut file)?;
         file.sync_all()?;
         drop(file);
         match fs::hard_link(&temporary, path) {

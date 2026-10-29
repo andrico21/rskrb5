@@ -16,11 +16,9 @@ mod tests {
         error,
         fmt::{Display, Write as _},
     };
-    #[cfg(target_os = "linux")]
-    use std::fs::read_to_string;
     use std::{
         env::{VarError, temp_dir, var},
-        fs::remove_file,
+        fs::{read_to_string, remove_file},
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -633,13 +631,17 @@ mod tests {
 
     /// Construction makes the extended-zero fallback explicit before lookup or save.
     #[test]
-    fn zero_extended_kvno_is_canonical_at_construction() {
+    fn zero_extended_kvno_is_canonical_at_construction() -> Result<(), TestError> {
         // Given a fixed KVNO of seven and the zero extended sentinel.
         let principal = Principal::new("EXAMPLE.COM", 1, ["user"]);
         // When constructing the entry.
         let entry = Entry::new(principal, 100, 7, EncryptionKey::new(18, vec![7; 16]), 0);
         // Then the effective lookup identity already matches the file interpretation.
         assert_eq!(entry.kvno, 7);
+        let mut keytab = Keytab::new();
+        keytab.entries_mut().push(entry);
+        assert_eq!(Keytab::parse(&keytab.to_bytes()?)?, keytab);
+        Ok(())
     }
 
     proptest! {
@@ -667,13 +669,14 @@ mod tests {
 
     /// Manual key formatting explicitly accounts for every field before redaction.
     #[test]
-    fn key_debug_has_exhaustive_field_audit() {
+    fn key_debug_has_exhaustive_field_audit() -> Result<(), TestError> {
         // Given the actual manual formatting implementation.
-        let source = include_str!("../src/keytab.rs");
+        let source = read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/keytab.rs"))?;
         // When selecting its field-audit pattern.
         let audited = source.contains("let Self { etype, value } = self;");
         // Then no rest pattern can swallow future secret fields.
         assert!(audited);
+        Ok(())
     }
 
     /// An interrupted next-entry size is not a clean end of file.
@@ -691,7 +694,14 @@ mod tests {
                 // When parsing the interrupted file.
                 let result = Keytab::parse(&bytes);
                 // Then truncation is reported rather than silently discarding data.
-                assert!(matches!(result, Err(Error::Truncated { .. })));
+                assert!(matches!(
+                    result,
+                    Err(Error::Truncated {
+                        offset: _,
+                        needed: _,
+                        remaining: _
+                    })
+                ));
             }
         }
         Ok(())

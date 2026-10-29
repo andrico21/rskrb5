@@ -244,10 +244,10 @@ impl CCache {
     where
         P: AsRef<str>,
     {
-        let name = name.as_ref();
-        self.save(Self::file_path_from_cache_name(name)?)?;
-        if dir_collection_path(name).is_some() {
-            let _published = Self::file_path_from_cache_name(name)?;
+        let cache_name = name.as_ref();
+        self.save(Self::file_path_from_cache_name(cache_name)?)?;
+        if dir_collection_path(cache_name).is_some() {
+            let _published = Self::file_path_from_cache_name(cache_name)?;
         }
         Ok(())
     }
