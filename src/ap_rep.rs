@@ -2,7 +2,11 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{crypto::KerberosEtype, der::decode_complete, keytab::EncryptionKey};
+use crate::{
+    crypto::KerberosEtype,
+    der::{decode_complete, trim_zero_padded_der},
+    keytab::EncryptionKey,
+};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -84,7 +88,13 @@ pub fn decrypt_ap_rep_enc_part(
         ap_rep.enc_part.cipher.as_ref(),
         AP_REP_ENCPART_USAGE,
     )?;
-    decode_enc_ap_rep_part(&plaintext)
+    let trimmed = trim_zero_padded_der(&plaintext);
+    let der = if key.etype == 16 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
+        trimmed
+    } else {
+        &plaintext
+    };
+    decode_enc_ap_rep_part(der)
 }
 
 /// Build an AP-REP message using a random confounder.
