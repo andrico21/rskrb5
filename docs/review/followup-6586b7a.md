@@ -171,7 +171,7 @@ limits are recorded under FU-OPS-03.
 | FU-DOC-24 | minor | KRB-ERROR scalar validation docs describe obsolete u32-only checks | open | - | - | - |
 | FU-DOC-25 | nit | Stale helper prose and repeated test cfg attributes | open | - | - | - |
 | FU-DOC-26 | nit | NDR rejection test comment describes unrelated PAC discovery | open | - | - | - |
-| FU-OPS-01 | minor | Release token owner migration is outstanding despite fixed status | open | - | - | - |
+| FU-OPS-01 | minor | Release token owner migration is outstanding despite fixed status | fixed | Verified 2026-10-29 via `gh api`: the repository secret list lacks `CARGO_REGISTRY_TOKEN`; the `release` environment has it (updated 2026-10-29T09:33:33Z); `can_admins_bypass=false`; the environment deployment policy is only `[0-9]*.[0-9]*.[0-9]*` (type tag); ruleset 25943056 includes `refs/tags/[0-9]*.[0-9]*.[0-9]*` | none | - |
 | FU-OPS-02 | nit | Main checkout/boulder/review worktree need later housekeeping | open | - | - | - |
 | FU-OPS-03 | info | Review-finder tool availability/degraded round limits independence | open | - | - | - |
 | FU-HTTP-R01 | minor | Example `load_keytab` re-implements keytab-name parsing: `WRFILE:` fails and keytab bytes are not zeroized (`examples/axum-negotiate.rs`) | open | - | - | - |
