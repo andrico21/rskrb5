@@ -1,10 +1,12 @@
 name: CI
 
-# CI and the release gate: `release.yml` triggers on this workflow's
-# completion. Its secret-free `find-tag` job looks for a `vN.N.N` tag at the
-# run's head SHA; only then does its `publish` job run, in the reviewed
-# `release` environment and only for a tagged commit on `main`. Every job's
-# `name:` equals its job id.
+# CI and the release gate: the secret-free coordinator `release.yml` runs on
+# this workflow's completion. Its `find-tag` job looks for an `N.N.N` tag at
+# the run's head SHA and, for the CI run on that tag's ref, dispatches
+# `publish.yml` at the tag; `publish.yml` re-verifies the tag, the commit's
+# ancestry on `main` and this workflow's success, and uploads only in the
+# reviewed `release` environment (docs/RELEASING.md). Every job's `name:`
+# equals its job id.
 #
 # Lint profile. The crate adopts the core Section 9 `[lints]` tables of the
 # vendored Rust guidelines unchanged, the core `clippy.toml` sample,
@@ -43,9 +45,10 @@ name: CI
 on:
   push:
     branches: [main]
-    # Release tags (`v*`, creatable by repository admins only, per the tag
-    # ruleset): `release.yml` publishes only from a green run on the tag.
-    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+    # Release tags (`N.N.N` without a `v`, creatable by repository admins
+    # only, per the tag ruleset): `release.yml` dispatches `publish.yml` only
+    # from a green run on the tag.
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
   schedule:
     # Weekly, Monday 03:37 UTC: the advisory mutants + fuzz pass.

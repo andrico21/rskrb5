@@ -67,3 +67,19 @@ documentation todo (42):
 - `docs/publishing.md` and `docs/release-notes.md` (upstream history) moved
   to `docs/history/` with an attribution note; `docs/RELEASING.md` is the
   release procedure.
+
+## Release workflow after the `6586b7a` review
+
+The follow-up register ([`followup-6586b7a.md`](followup-6586b7a.md)) rows
+FU-CI-05, FU-CI-06 and FU-CI-07 replace the single release workflow described
+in the first row above. Release tags are `N.N.N` without a `v` (owner decision
+D14). `release.yml` is now a secret-free coordinator that dispatches
+`publish.yml` at the tag. `publish.yml` re-verifies the tag, the commit's
+ancestry on `main` and the CI result in a token-free `verify` job that
+verify-builds and packages the crate. Its `publish` job in the `release`
+environment builds nothing: it requires the verified sha256, uploads with
+`--no-verify`, and on a re-dispatch after an earlier upload creates the
+missing GitHub release only when the published `.crate` has the tag's
+sha256. The release toolchain uses the same `dtolnay/rust-toolchain` stable
+revision as CI. [`../RELEASING.md`](../RELEASING.md) describes the flow and
+the recovery.
