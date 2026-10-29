@@ -38,6 +38,8 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -377,6 +379,21 @@ def self_test() -> int:
         assert main(["--enforce", "--root", str(root)]) == 1
         (root / "src/der.rs").write_text(ACCEPTED[1][1])
         assert main(["--enforce", "--root", str(root)]) == 0
+        # A build script and a custom-path Cargo target are scanned too.
+        (root / "tools").mkdir()
+        (root / "Cargo.toml").write_text(
+            '[package]\nname = "p"\nbuild = "build.rs"\n'
+            '[[bin]]\nname = "probe"\npath = "tools/probe.rs"\n'
+        )
+        (root / "build.rs").write_text(REJECTED[0][2])
+        (root / "tools/probe.rs").write_text(
+            HIDDEN_LINT.format(lint="clippy::unwrap_used")
+        )
+        printed = StringIO()
+        with redirect_stdout(printed):
+            assert main(["--enforce", "--root", str(root)]) == 1
+        assert "build.rs:1:" in printed.getvalue(), printed.getvalue()
+        assert "tools/probe.rs:1:" in printed.getvalue(), printed.getvalue()
     print(
         "exception_gate self-test: ok (six sanctioned forms and a deny opt-in "
         "accepted; five rejected forms, seven near misses, "
@@ -395,7 +412,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
-    hits = report(args.root)
+    try:
+        hits = report(args.root)
+    except common.source_set.SourceSetError as error:
+        print(f"exception_gate: {error}")
+        return 1
     print(
         "\n".join(
             hits

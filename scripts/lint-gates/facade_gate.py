@@ -99,7 +99,11 @@ def main() -> int:
     args = parser.parse_args()
     if args.self_test:
         return self_test()
-    hits = report(args.root, args.paths)
+    try:
+        hits = report(args.root, args.paths)
+    except common.source_set.SourceSetError as error:
+        print(f"facade_gate: {error}")
+        return 1
     for hit in hits:
         print(f"{hit.file}:{hit.line}: clippy::pub_use outside the crate-root facade")
     print(f"facade_gate: {len(hits)} violations")

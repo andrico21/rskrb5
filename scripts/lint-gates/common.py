@@ -18,7 +18,9 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Iterator
+from typing import Final
+
+import source_set
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 CORE_REL: Final = Path("docs/rust-guidelines/RUST_GUIDELINES.md")
@@ -37,9 +39,9 @@ from rust_lex import (
 )
 
 
-def iter_rust_files(root: Path) -> Iterator[Path]:
-    for base in ROOTS:
-        yield from sorted((root / base).rglob("*.rs"))
+def iter_rust_files(root: Path) -> list[Path]:
+    """The fixed roots plus every source the checkout's Cargo manifests compile."""
+    return source_set.rust_sources(root, ROOTS)
 
 
 def read_source(path: Path) -> tuple[str, str]:
