@@ -1215,16 +1215,23 @@ pub struct Realm {
 }
 
 impl Realm {
-    /// An entry for `realm` with every list empty.
-    const fn new(realm: String) -> Self {
-        Self {
+    /// Create a named realm with empty server lists.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidRealmsSection`] for an empty realm name.
+    #[inline]
+    pub fn new(realm: String) -> Result<Self, Error> {
+        if realm.is_empty() {
+            return Err(Error::InvalidRealmsSection("empty realm name".to_owned()));
+        }
+        Ok(Self {
             name: realm,
             admin_server: Vec::new(),
             default_domain: String::new(),
             kdc: Vec::new(),
             kpasswd_server: Vec::new(),
             master_kdc: Vec::new(),
-        }
+        })
     }
 
     /// Parse the lines of one realm's `{ ... }` block.
@@ -1234,7 +1241,7 @@ impl Realm {
     /// Returns [`Error::InvalidLine`] for a line that is not an assignment, and
     /// [`Error::UnsupportedDirective`] for a `v4_` directive.
     fn parse(name: &str, lines: &[Line]) -> Result<Self, Error> {
-        let mut realm = Self::new(name.to_owned());
+        let mut realm = Self::new(name.to_owned())?;
         let mut admin_final = false;
         let mut kdc_final = false;
         let mut kpasswd_final = false;

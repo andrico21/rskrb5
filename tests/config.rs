@@ -46,6 +46,19 @@ mod tests {
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
 
+    /// A realm has a public validating construction path without text or serde.
+    #[test]
+    fn constructs_validated_realm() -> Result<(), TestError> {
+        // Given an explicit realm name.
+        let name = "EXAMPLE.COM";
+        // When constructing without parsing a profile.
+        let realm = rskrb5_ng::config::Realm::new(name.to_owned())?;
+        // Then its name is preserved and an empty name is rejected.
+        assert_eq!(realm.name, name);
+        assert!(rskrb5_ng::config::Realm::new(String::new()).err().is_some());
+        Ok(())
+    }
+
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
     trait Context<T> {

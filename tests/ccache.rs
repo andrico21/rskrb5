@@ -33,7 +33,7 @@ mod tests {
     use rskrb5_ng::{
         ccache::{
             AuthorizationDataEntry, CCache, CacheName, Credential, CredentialTimes, EncryptionKey,
-            HostAddress, Principal,
+            HeaderField, HostAddress, Principal,
         },
         error::Ccache as Error,
     };
@@ -42,6 +42,24 @@ mod tests {
 
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
+
+    /// External callers can construct validated headers and both IP families without serde.
+    #[test]
+    fn constructs_header_and_ip_addresses() -> Result<(), TestError> {
+        // Given explicit metadata and IP addresses.
+        let value = vec![0; 8];
+        // When constructing through the public input API.
+        let field = HeaderField::new(1, value.clone())?;
+        let ipv4 = HostAddress::ipv4([192, 0, 2, 1]);
+        let ipv6 = HostAddress::ipv6([0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        // Then metadata is preserved and malformed offset headers are rejected.
+        assert_eq!(field.value, value);
+        assert_eq!((ipv4.addr_type, ipv4.address), (2, vec![192, 0, 2, 1]));
+        assert_eq!(ipv6.addr_type, 24);
+        assert_eq!(ipv6.address.len(), 16);
+        assert!(HeaderField::new(1, vec![0; 7]).err().is_some());
+        Ok(())
+    }
 
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
@@ -1142,23 +1160,6 @@ mod tests {
         )
     }
 
-    /// A host address built through the serde form, the only public
-    /// constructor of the non-exhaustive address type.
-    #[cfg(feature = "serde")]
-    fn host_address(addr_type: i16, address: &[u8]) -> Option<HostAddress> {
-        serde_json::from_value(serde_json::json!({
-            "addr_type": addr_type,
-            "address": address,
-        }))
-        .ok()
-    }
-
-    /// Without serde no address can be built, so credentials carry none.
-    #[cfg(not(feature = "serde"))]
-    const fn host_address(_addr_type: i16, _address: &[u8]) -> Option<HostAddress> {
-        None
-    }
-
     /// Builds the credential `parts` describes.
     fn credential(parts: CredentialParts) -> Credential {
         let (
@@ -1186,7 +1187,7 @@ mod tests {
         .with_addresses(
             addresses
                 .into_iter()
-                .filter_map(|(addr_type, address)| host_address(addr_type, &address))
+                .map(|(addr_type, address)| HostAddress::new(addr_type, address))
                 .collect(),
         )
         .with_auth_data(

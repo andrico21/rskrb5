@@ -777,6 +777,19 @@ pub struct HeaderField {
 }
 
 impl HeaderField {
+    /// Construct a header field with a representable, tag-valid value.
+    ///
+    /// # Errors
+    /// Returns [`Error::LengthOverflow`] for values larger than `u16::MAX`,
+    /// or [`Error::InvalidHeaderField`] for a malformed KDC offset.
+    #[inline]
+    pub fn new(tag: u16, value: Vec<u8>) -> Result<Self, Error> {
+        let _length = u16::try_from(value.len()).map_err(|_range| Error::LengthOverflow)?;
+        let field = Self { tag, value };
+        field.validate()?;
+        Ok(field)
+    }
+
     /// Check the field value length that its tag requires.
     ///
     /// # Errors
@@ -1258,6 +1271,30 @@ pub struct HostAddress {
 }
 
 impl HostAddress {
+    /// Construct an opaque address, preserving its signed wire type.
+    #[must_use]
+    #[inline]
+    pub fn new(addr_type: i16, address: Vec<u8>) -> Self {
+        Self {
+            addr_type: i32::from(addr_type),
+            address,
+        }
+    }
+
+    /// Construct an IPv4 address (Kerberos address type 2).
+    #[must_use]
+    #[inline]
+    pub fn ipv4(address: [u8; 4]) -> Self {
+        Self::new(2, address.to_vec())
+    }
+
+    /// Construct an IPv6 address (Kerberos address type 24).
+    #[must_use]
+    #[inline]
+    pub fn ipv6(address: [u8; 16]) -> Self {
+        Self::new(24, address.to_vec())
+    }
+
     /// Parse a host address at `offset`, advancing it past the address.
     ///
     /// # Errors
