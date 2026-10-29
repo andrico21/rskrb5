@@ -483,10 +483,10 @@ mod tests {
         Ok(bytes)
     }
 
-    /// A canonicalized transcript must not authenticate different received bytes.
+    /// Nonminimal transcript lengths are rejected before MIC authentication.
     #[test]
     fn mech_list_mic_does_not_normalize_received_encoding() -> Result<(), TestError> {
-        // Given a tolerated long-form list length, signed in its canonical form instead.
+        // Given a nonminimal long-form list length, signed in its canonical form instead.
         let init = mic_init()?;
         let list = decode_hex(MS_THEN_KRB5)?;
         let raw_list = test_tlv(0x30, list.get(2..).context("list contents")?)?;
@@ -506,7 +506,7 @@ mod tests {
         // When verified, then re-encoding cannot hide a wire transcript change.
         assert!(matches!(
             spnego::accept_sec_context_header(&mut validator, &header),
-            Err(Spnego::InvalidMechListMic)
+            Err(Spnego::NonminimalLength)
         ));
         Ok(())
     }

@@ -29,7 +29,7 @@ limits are recorded under FU-OPS-03.
 | FU-SPN-02 | major | Initiator/context Debug prints live Authorization tokens | open | - | - | - |
 | FU-SPN-03 | minor | SPNEGO SEQUENCE permits duplicate/reordered known fields | open | - | - | - |
 | FU-SPN-04 | minor | Unknown SPNEGO extensions are rejected | open | - | - | - |
-| FU-SPN-05 | minor | DER reader accepts nonminimal length forms | open | - | - | - |
+| FU-SPN-05 | minor | DER reader accepts nonminimal length forms | fixed | `der_lengths_reject_nonminimal_forms`, `der_lengths_accept_minimal_boundaries`; commit `spnego: reject nonminimal DER lengths (FU-SPN-05)` | New `Spnego::NonminimalLength`; redundant long lengths rejected. Existing nonminimal transcript fixture now expects DER rejection rather than `InvalidMechListMic`, with identical input bytes. | Task 3 evidence: red exit 101, green 2 boundary tests and 47 SPNEGO integration tests; no tests removed. |
 | FU-HTTP-01 | minor | Example invokes handler after AP-REP construction failure | open | - | - | - |
 | FU-HTTP-02 | major | Credential HeaderValues lack sensitivity flags | open | - | - | - |
 | FU-HTTP-03 | major | Combined context masks bypass mutual-required enforcement | fixed | `mutual_mask_matrix_rejects_unproven_responses`; commit `http: enforce mutual authentication for combined masks (FU-HTTP-03)` | Combined context-flag masks now require verified AP-REP, identically to split masks, in async and blocking wrappers and response classification. | Task 3 evidence: pre-fix test exit 101; post-fix test exit 0; all-target/all-feature clippy exit 0. |

@@ -1987,6 +1987,9 @@ pub enum Spnego {
     /// DER used an unsupported indefinite length.
     #[error("indefinite DER length is not supported")]
     IndefiniteLength,
+    /// DER length uses redundant octets instead of its shortest representation.
+    #[error("nonminimal DER length")]
+    NonminimalLength,
     /// DER length exceeds the remaining input.
     #[error("DER length exceeds remaining input")]
     LengthExceedsInput,
