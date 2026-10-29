@@ -106,8 +106,9 @@ async fn negotiate(
         .ok();
     let mut response = next.run(request).await;
     if let Some(header) = ap_rep_header
-        && let Ok(value) = HeaderValue::from_str(&header)
+        && let Ok(mut value) = HeaderValue::from_str(&header)
     {
+        value.set_sensitive(true);
         drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
     }
     response

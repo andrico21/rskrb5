@@ -200,11 +200,9 @@ pub fn authorization_header<B>(request: &Request<B>) -> Result<&str> {
 /// value.
 #[inline]
 pub fn set_authorization_header<B>(request: &mut Request<B>, value: &str) -> Result<()> {
-    drop(
-        request
-            .headers_mut()
-            .insert(AUTHORIZATION, HeaderValue::from_str(value)?),
-    );
+    let mut header = HeaderValue::from_str(value)?;
+    header.set_sensitive(true);
+    drop(request.headers_mut().insert(AUTHORIZATION, header));
     Ok(())
 }
 
@@ -533,6 +531,9 @@ where
 
 /// Validate the request's Negotiate header and attach the accepted context to extensions.
 ///
+/// Incoming Authorization values are retained for forwarding, but marked sensitive
+/// before validation so downstream Debug output and HTTP compression respect them.
+///
 /// # Errors
 ///
 /// Returns the errors of [`authorization_header`], and [`Error::Spnego`] when
@@ -542,6 +543,11 @@ pub fn accept_request<B>(
     validator: &mut Validator<'_>,
     request: &mut Request<B>,
 ) -> Result<AcceptedContext> {
+    for (name, header) in request.headers_mut() {
+        if name == AUTHORIZATION {
+            header.set_sensitive(true);
+        }
+    }
     let accepted = spnego::accept_sec_context_header(validator, authorization_header(request)?)?;
     drop(request.extensions_mut().insert(accepted.clone()));
     Ok(accepted)
@@ -906,11 +912,9 @@ where
 {
     let mut response = Response::new(B::default());
     *response.status_mut() = status;
-    drop(
-        response
-            .headers_mut()
-            .insert(WWW_AUTHENTICATE, HeaderValue::from_str(header)?),
-    );
+    let mut value = HeaderValue::from_str(header)?;
+    value.set_sensitive(true);
+    drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
     Ok(response)
 }
 
@@ -1374,9 +1378,10 @@ where
         Box::pin(async move {
             let mut response = future.await.map_err(TowerError::Inner)?;
             if let Some(header) = ap_rep_header {
-                let value = HeaderValue::from_str(&header)
+                let mut value = HeaderValue::from_str(&header)
                     .map_err(Error::InvalidHeaderValue)
                     .map_err(TowerError::Http)?;
+                value.set_sensitive(true);
                 drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
             }
             Ok(response)

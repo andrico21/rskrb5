@@ -116,6 +116,47 @@ mod tests {
         "8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07";
     const AP_REP_CONFOUNDER: &str = "000102030405060708090a0b0c0d0e0f";
 
+    /// Generated and forwarded credentials are sensitive before request diagnostics run.
+    #[test]
+    fn credential_headers_are_sensitive() -> Result<(), TestError> {
+        // Given an outgoing credential and an incoming raw header.
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, "Negotiate distinctive-secret")?;
+        // When formatted, then the sensitive value is withheld.
+        assert!(
+            request
+                .headers()
+                .get("authorization")
+                .context("header")?
+                .is_sensitive()
+        );
+        assert!(!format!("{request:?}").contains("distinctive-secret"));
+        let incoming = valid_authorization_header()?;
+        drop(
+            request
+                .headers_mut()
+                .insert("authorization", HeaderValue::from_str(&incoming)?),
+        );
+        let keytab = keytab()?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        drop(krb_http::accept_request(&mut validator, &mut request)?);
+        assert!(
+            request
+                .headers()
+                .get("authorization")
+                .context("incoming header")?
+                .is_sensitive()
+        );
+        assert!(
+            krb_http::reject_response::<()>()?
+                .headers()
+                .get(WWW_AUTHENTICATE)
+                .context("reply")?
+                .is_sensitive()
+        );
+        Ok(())
+    }
+
     /// Context debugging must not expose a usable Authorization token or AP-REQ bytes.
     #[test]
     fn initiator_debug_redacts_credentials() -> Result<(), TestError> {
