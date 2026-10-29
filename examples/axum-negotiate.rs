@@ -17,7 +17,7 @@ use axum::{
     routing::get,
 };
 use rskrb5_ng::{
-    error::Http as HttpError,
+    error::{Http as HttpError, Spnego as SpnegoError},
     http as krb_http,
     keytab::Keytab,
     service::{ApRepOptions, Validator},
@@ -101,16 +101,36 @@ async fn negotiate(
         }
     };
 
-    let ap_rep_header = accepted
-        .ap_rep_response_header(&ApRepOptions::default())
-        .ok();
+    complete_response(
+        accepted.ap_rep_response_header(&ApRepOptions::default()),
+        request,
+        next,
+    )
+    .await
+}
+
+/// Finish authentication before allowing the application handler to run.
+// cancel-safe: header validation is synchronous; cancellation drops the inner response future.
+async fn complete_response(
+    reply: Result<String, SpnegoError>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let header_result = reply
+        .map_err(HttpError::Spnego)
+        .and_then(|header| HeaderValue::from_str(&header).map_err(HttpError::InvalidHeaderValue));
+    let mut credential = match header_result {
+        Ok(value) => value,
+        Err(error) => {
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            drop(response.extensions_mut().insert(Arc::new(error)));
+            return harden_response(response);
+        }
+    };
+    credential.set_sensitive(true);
     let mut response = next.run(request).await;
-    if let Some(header) = ap_rep_header
-        && let Ok(mut value) = HeaderValue::from_str(&header)
-    {
-        value.set_sensitive(true);
-        drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
-    }
+    drop(response.headers_mut().insert(WWW_AUTHENTICATE, credential));
     response
 }
 
@@ -181,8 +201,37 @@ async fn security_response(response: Response) -> Response {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use super::*;
     use std::{fs, process};
+
+    use super::*;
+
+    /// Reply-generation failure never reaches the protected handler.
+    #[tokio::test]
+    async fn reply_failure_does_not_call_handler() -> Result<(), Box<dyn Error>> {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+        use tower_service::Service as _;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let mut app = Router::new()
+            .route(
+                "/",
+                get(move || {
+                    let counter = Arc::clone(&observed);
+                    async move {
+                        let _: usize = counter.fetch_add(1, Ordering::SeqCst);
+                        "protected"
+                    }
+                }),
+            )
+            .layer(middleware::from_fn(async |request, next| {
+                complete_response(Err(SpnegoError::MissingApRep), request, next).await
+            }));
+        let response = app.call(Request::new(Body::empty())).await?;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
+        Ok(())
+    }
 
     /// The example delegates WRFILE names to the zeroizing keytab loader.
     #[test]
