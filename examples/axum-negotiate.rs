@@ -5,7 +5,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::error::Error;
-use std::{env, fs, path::PathBuf, sync::Mutex};
+use std::{env, sync::Mutex};
 
 use axum::{
     Router,
@@ -114,20 +114,18 @@ async fn negotiate(
     response
 }
 
-/// Reads the service keytab named by `KRB5_KTNAME` (an optional `FILE:`
-/// prefix is stripped), or `http.keytab` when the variable is unset.
+/// Reads the service keytab named by `KRB5_KTNAME`, or `http.keytab` when unset.
+/// Bare paths, FILE and WRFILE names use the library's zeroizing file loader.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be read or is not a valid keytab.
 fn load_keytab() -> Result<Keytab, Box<dyn Error>> {
-    let configured =
-        env::var_os("KRB5_KTNAME").map_or_else(|| PathBuf::from("http.keytab"), PathBuf::from);
-    let path = configured
-        .to_string_lossy()
-        .strip_prefix("FILE:")
-        .map_or_else(|| configured.clone(), PathBuf::from);
-    Ok(Keytab::parse(&fs::read(path)?)?)
+    match env::var("KRB5_KTNAME") {
+        Ok(name) => Ok(Keytab::load_name(name)?),
+        Err(env::VarError::NotPresent) => Ok(Keytab::load_name("http.keytab")?),
+        Err(error @ env::VarError::NotUnicode(_)) => Err(error.into()),
+    }
 }
 
 /// Applies the example's response security policy.
@@ -184,6 +182,33 @@ async fn security_response(response: Response) -> Response {
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use super::*;
+    use std::{fs, process};
+
+    /// The example delegates WRFILE names to the zeroizing keytab loader.
+    #[test]
+    fn keytab_loader_accepts_wrfile() -> Result<(), Box<dyn Error>> {
+        use std::process::Command;
+        // Given a child process with an explicit WRFILE credential source.
+        if env::var_os("TASK3_KEYTAB_CHILD").is_some() {
+            assert_eq!(load_keytab()?.entries().len(), 0);
+            return Ok(());
+        }
+        let path = env::temp_dir().join(format!("task3-http-{}.keytab", process::id()));
+        fs::write(&path, [5, 2])?;
+        // When the example loader runs, then it accepts the supported store prefix.
+        let status = Command::new(env::current_exe()?)
+            .args([
+                "--exact",
+                "tests::keytab_loader_accepts_wrfile",
+                "--nocapture",
+            ])
+            .env("TASK3_KEYTAB_CHILD", "1")
+            .env("KRB5_KTNAME", format!("WRFILE:{}", path.display()))
+            .status()?;
+        fs::remove_file(path)?;
+        assert!(status.success());
+        Ok(())
+    }
 
     /// Security headers override insecure values on success, challenge, error and fallback responses.
     #[test]
