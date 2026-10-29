@@ -25,10 +25,20 @@ use crate::{
 mod authenticator;
 /// Minimal DER reader and writer for the GSS-API and SPNEGO token layer.
 mod der;
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod erasure_tests;
 /// One-shot SPNEGO mechanism-list integrity processing.
 mod negotiation;
 /// GSS-API object identifiers.
 pub mod oid;
+/// Plaintext staging owners.
+mod scratch;
 
 /// HTTP Negotiate header size boundary regressions.
 #[cfg(test)]
@@ -306,9 +316,10 @@ impl MicToken {
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Zeroizing::new(Vec::with_capacity(
-            payload.len().saturating_add(GSS_MIC_HEADER_LEN),
-        ));
+        let mut data = scratch::Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
+            "mic-checksum",
+        );
         data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
 
@@ -494,7 +505,7 @@ impl WrapToken {
             });
         }
 
-        let unrotated = Zeroizing::new(rotate_left(body, usize::from(rrc)));
+        let unrotated = scratch::Scratch::new(rotate_left(body, usize::from(rrc)), "wrap-decode");
         let checksum_len = usize::from(ec);
         let Some((payload, checksum)) = unrotated
             .len()
@@ -548,11 +559,14 @@ impl WrapToken {
             });
         }
 
-        let mut bytes = Zeroizing::new(Vec::with_capacity(
-            GSS_WRAP_HEADER_LEN
-                .saturating_add(payload.len())
-                .saturating_add(checksum.len()),
-        ));
+        let mut bytes = scratch::Scratch::new(
+            Vec::with_capacity(
+                GSS_WRAP_HEADER_LEN
+                    .saturating_add(payload.len())
+                    .saturating_add(checksum.len()),
+            ),
+            "wrap-encode",
+        );
         bytes.extend_from_slice(&self.header(self.rrc));
         bytes.extend_from_slice(payload);
         bytes.extend_from_slice(checksum);
@@ -618,7 +632,10 @@ impl WrapToken {
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         if self.is_sealed() {
-            drop(Zeroizing::new(self.decrypt_payload(key, key_usage)?));
+            drop(scratch::Scratch::new(
+                self.decrypt_payload(key, key_usage)?,
+                "wrap-verify",
+            ));
             return Ok(());
         }
 
@@ -743,12 +760,15 @@ impl WrapToken {
             }
             KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => self.ec,
         };
-        let mut plaintext = Zeroizing::new(Vec::with_capacity(
-            payload
-                .len()
-                .saturating_add(usize::from(ec))
-                .saturating_add(GSS_WRAP_HEADER_LEN),
-        ));
+        let mut plaintext = scratch::Scratch::new(
+            Vec::with_capacity(
+                payload
+                    .len()
+                    .saturating_add(usize::from(ec))
+                    .saturating_add(GSS_WRAP_HEADER_LEN),
+            ),
+            "wrap-seal",
+        );
         plaintext.extend_from_slice(payload);
         plaintext.extend(iter::repeat_n(0, usize::from(ec)));
         plaintext.extend_from_slice(&wrap_header(flags, ec, 0, self.snd_seq_num));
@@ -786,8 +806,10 @@ impl WrapToken {
         let encrypted = rotate_left(encrypted_body, usize::from(self.rrc));
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-        let mut plaintext =
-            Zeroizing::new(etype.decrypt_message(&key.value, &encrypted, key_usage)?);
+        let mut plaintext = scratch::Scratch::new(
+            etype.decrypt_message(&key.value, &encrypted, key_usage)?,
+            "wrap-decrypt",
+        );
 
         let trailer_len = GSS_WRAP_HEADER_LEN.saturating_add(usize::from(self.ec));
         let too_short = || Error::GssDecryptedTokenTooShort {
@@ -840,9 +862,10 @@ impl WrapToken {
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Zeroizing::new(Vec::with_capacity(
-            payload.len().saturating_add(GSS_WRAP_HEADER_LEN),
-        ));
+        let mut data = scratch::Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
+            "wrap-checksum",
+        );
         data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
 
