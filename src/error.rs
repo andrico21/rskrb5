@@ -997,6 +997,14 @@ pub enum Kadmin {
         /// kpasswd result text as received, before lossy UTF-8 conversion.
         text_raw: Vec<u8>,
     },
+    /// An unsigned kpasswd refusal is diagnostic data, not a confirmed outcome.
+    #[error("unauthenticated kpasswd rejection with code {code}")]
+    UnauthenticatedRejection {
+        /// Unauthenticated kpasswd result code.
+        code: u16,
+        /// Unauthenticated result bytes, retained verbatim for diagnostics.
+        text_raw: Vec<u8>,
+    },
     /// DER decoding failed for a framed Kerberos message.
     #[error("{target} decode failed: {message}")]
     Decode {

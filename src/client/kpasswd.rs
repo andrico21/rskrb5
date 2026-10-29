@@ -19,6 +19,9 @@ use crate::{
 mod request;
 use request::{build_kpasswd_ap_req_with_confounder, kpasswd_krb_priv_options};
 
+#[cfg(feature = "tokio")]
+use crate::error::Kadmin;
+
 /// Reflected password ciphertext regressions.
 #[cfg(test)]
 #[cfg(feature = "tokio")]
@@ -29,6 +32,17 @@ use request::{build_kpasswd_ap_req_with_confounder, kpasswd_krb_priv_options};
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod reflection_tests;
+
+/// Unsigned rejection classification regressions.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod rejection_tests;
 
 /// Options for constructing a kpasswd request from a service ticket.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -263,9 +277,12 @@ pub(super) fn validated_result(
         return Err(Error::KpasswdReplyControl("reflected ciphertext"));
     }
     let Some(verified) = verify_kpasswd_ap_rep(reply, request)? else {
-        return reply
-            .decrypt_result(&request.reply_key)
-            .map_err(Error::from);
+        let result = reply.decrypt_result(&request.reply_key)?;
+        return Err(Kadmin::UnauthenticatedRejection {
+            code: result.code,
+            text_raw: result.text_raw,
+        }
+        .into());
     };
     let key = verified.subkey.as_ref().unwrap_or(&request.reply_key);
     let part = kadmin::decrypt_krb_priv_enc_part(
