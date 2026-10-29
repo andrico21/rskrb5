@@ -140,11 +140,9 @@ mod tests {
         let acceptor = MicToken::decode(&decode_hex(MIC_FROM_ACCEPTOR)?, true)
             .context("acceptor MIC decodes")?
             .with_payload(decode_hex(MIC_PAYLOAD)?);
-        assert!(
-            acceptor
-                .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
-                .context("acceptor MIC verifies")?
-        );
+        acceptor
+            .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+            .context("acceptor MIC verifies")?;
         assert!(matches!(
             acceptor.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE),
             Err(Error::GssChecksumMismatch)
@@ -185,11 +183,9 @@ mod tests {
         let acceptor = MicToken::decode(&acceptor_bytes, true)
             .context("RC4 acceptor MIC decodes")?
             .with_payload(decode_hex(MIC_PAYLOAD)?);
-        assert!(
-            acceptor
-                .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
-                .context("RC4 acceptor MIC verifies")?
-        );
+        acceptor
+            .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+            .context("RC4 acceptor MIC verifies")?;
 
         let initiator = MicToken::new_initiator(decode_hex(MIC_PAYLOAD)?, &key)
             .context("RC4 initiator MIC builds")?;
@@ -201,11 +197,9 @@ mod tests {
         let decoded = MicToken::decode(&decode_hex(RC4_MIC_FROM_INITIATOR)?, false)
             .context("RC4 MIC decodes")?
             .with_payload(decode_hex(MIC_PAYLOAD)?);
-        assert!(
-            decoded
-                .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
-                .context("RC4 initiator MIC verifies")?
-        );
+        decoded
+            .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
+            .context("RC4 initiator MIC verifies")?;
         assert_eq!(
             hex_encode(&decoded.encode().context("RC4 MIC roundtrips")?),
             RC4_MIC_FROM_INITIATOR
@@ -221,11 +215,9 @@ mod tests {
         let acceptor = MicToken::decode(&acceptor_bytes, true)
             .context("DES3 acceptor MIC decodes")?
             .with_payload(decode_hex(MIC_PAYLOAD)?);
-        assert!(
-            acceptor
-                .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
-                .context("DES3 acceptor MIC verifies")?
-        );
+        acceptor
+            .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+            .context("DES3 acceptor MIC verifies")?;
 
         let initiator = MicToken::new_initiator(decode_hex(MIC_PAYLOAD)?, &key)
             .context("DES3 initiator MIC builds")?;
@@ -237,11 +229,9 @@ mod tests {
         let decoded = MicToken::decode(&decode_hex(DES3_MIC_FROM_INITIATOR)?, false)
             .context("DES3 MIC decodes")?
             .with_payload(decode_hex(MIC_PAYLOAD)?);
-        assert!(
-            decoded
-                .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
-                .context("DES3 initiator MIC verifies")?
-        );
+        decoded
+            .verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)
+            .context("DES3 initiator MIC verifies")?;
         assert_eq!(
             hex_encode(&decoded.encode().context("DES3 MIC roundtrips")?),
             DES3_MIC_FROM_INITIATOR
@@ -314,11 +304,9 @@ mod tests {
             .context("RC4 wrap decodes")?;
         assert_eq!(acceptor.ec, 16);
         assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)?));
-        assert!(
-            acceptor
-                .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
-                .context("RC4 acceptor wrap verifies")?
-        );
+        acceptor
+            .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
+            .context("RC4 acceptor wrap verifies")?;
 
         let initiator =
             WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key).context("RC4 wrap builds")?;
@@ -345,11 +333,9 @@ mod tests {
             .context("DES3 wrap decodes")?;
         assert_eq!(acceptor.ec, 20);
         assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)?));
-        assert!(
-            acceptor
-                .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
-                .context("DES3 acceptor wrap verifies")?
-        );
+        acceptor
+            .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
+            .context("DES3 acceptor wrap verifies")?;
 
         let initiator = WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key)
             .context("DES3 wrap builds")?;
@@ -405,11 +391,9 @@ mod tests {
         let key = session_key()?;
         let acceptor = WrapToken::decode(&decode_hex(WRAP_FROM_ACCEPTOR)?, true)
             .context("acceptor wrap decodes")?;
-        assert!(
-            acceptor
-                .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
-                .context("acceptor wrap verifies")?
-        );
+        acceptor
+            .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
+            .context("acceptor wrap verifies")?;
         assert!(matches!(
             acceptor.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE),
             Err(Error::GssChecksumMismatch)
@@ -475,11 +459,9 @@ mod tests {
                 .context("sealed wrap decrypts")?,
             decode_hex(WRAP_PAYLOAD)?
         );
-        assert!(
-            decoded
-                .verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)
-                .context("sealed wrap verifies")?
-        );
+        decoded
+            .verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)
+            .context("sealed wrap verifies")?;
 
         assert_eq!(
             decoded
@@ -581,7 +563,7 @@ mod tests {
                 .context("nonempty body")?;
             body.rotate_right(shift);
             let decoded = WrapToken::decode(&wire, false)?;
-            assert!(decoded.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?);
+            decoded.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?;
             assert_eq!(decoded.payload, Some(decode_hex(WRAP_PAYLOAD)?));
             assert_eq!(
                 WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key)?

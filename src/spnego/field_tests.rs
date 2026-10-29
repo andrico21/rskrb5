@@ -2,6 +2,19 @@
 
 use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
+/// Verification has one success state rather than an unreachable false result.
+#[test]
+fn verification_returns_unit() -> Result<(), Error> {
+    use super::{GSSAPI_INITIATOR_SEAL_USAGE, GSSAPI_INITIATOR_SIGN_USAGE, MicToken, WrapToken};
+    use crate::keytab::EncryptionKey;
+    let key = EncryptionKey::new(17, vec![0x42; 16]);
+    let mic = MicToken::new_initiator(vec![1], &key)?;
+    let wrap = WrapToken::new_initiator(vec![1], &key)?;
+    let mic_result: Result<(), Error> = mic.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE);
+    mic_result?;
+    wrap.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)
+}
+
 /// Failed sealing preserves every field of an existing unsealed token.
 #[test]
 fn failed_sealing_preserves_token() {

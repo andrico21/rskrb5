@@ -265,16 +265,15 @@ impl MicToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, [`Error::Crypto`] when the checksum computation fails,
     /// [`Error::MissingGssChecksum`] when the token carries no checksum, and
-    /// [`Error::GssChecksumMismatch`] when the checksum does not match. It never returns
-    /// `Ok(false)`.
+    /// [`Error::GssChecksumMismatch`] when the checksum does not match.
     #[inline]
-    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<bool, Error> {
+    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         let expected = self.compute_checksum(key, key_usage)?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
         if !constant_time_eq(&expected, actual) {
             return Err(Error::GssChecksumMismatch);
         }
-        Ok(true)
+        Ok(())
     }
 
     /// Build an initiator MIC token and compute its checksum.
@@ -593,13 +592,12 @@ impl WrapToken {
     /// returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, [`Error::Crypto`] when the checksum computation fails,
     /// [`Error::MissingGssChecksum`] when the token carries no checksum, and
-    /// [`Error::GssChecksumMismatch`] when the checksum does not match. It never returns
-    /// `Ok(false)`.
+    /// [`Error::GssChecksumMismatch`] when the checksum does not match.
     #[inline]
-    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<bool, Error> {
+    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         if self.is_sealed() {
             drop(self.decrypt_payload(key, key_usage)?);
-            return Ok(true);
+            return Ok(());
         }
 
         let expected = self.compute_checksum(key, key_usage)?;
@@ -607,7 +605,7 @@ impl WrapToken {
         if !constant_time_eq(&expected, actual) {
             return Err(Error::GssChecksumMismatch);
         }
-        Ok(true)
+        Ok(())
     }
 
     /// Build an initiator wrap token and compute its checksum.
