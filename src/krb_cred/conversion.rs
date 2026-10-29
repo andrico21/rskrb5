@@ -237,8 +237,9 @@ fn optional_kerberos_time_to_u32(time: Option<&rasn_kerberos::KerberosTime>) -> 
 /// # Errors
 ///
 /// Returns [`Error::TimeOutOfRange`] when the time is before the Unix epoch or
-/// after 2106.
+/// after 2106, or contains a fractional second.
 fn kerberos_time_to_u32(time: &rasn_kerberos::KerberosTime) -> Result<u32, Error> {
+    (time.0.timestamp_subsec_nanos() == 0).ok_or(Error::TimeOutOfRange)?;
     u32::try_from(time.0.timestamp())
         .ok()
         .ok_or(Error::TimeOutOfRange)
