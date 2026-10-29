@@ -227,12 +227,12 @@ self_test() {
   git -C "$work" checkout --quiet -b side
   git -C "$work" -c user.name=t -c user.email=t@t commit --quiet --allow-empty -m side
   git -C "$work" tag 0.3.2
-  sed -i 's/0.3.0/0.3.2/' "$work/Cargo.toml"
+  printf '[package]\nname = "%s"\nversion = "0.3.2"\n' "$CRATE" >"$work/Cargo.toml"
   git -C "$work" push --quiet origin 0.3.2
   if "${run[@]}" check-ref refs/tags/0.3.2 "$(git -C "$work" rev-parse HEAD)" >/dev/null 2>&1; then
     st_fail "check-ref accepted a commit that is not on main"
   fi
-  sed -i 's/0.3.2/0.3.0/' "$work/Cargo.toml"
+  git -C "$work" checkout --quiet -- Cargo.toml
   git -C "$work" -c user.name=t -c user.email=t@t commit --quiet --allow-empty -m untagged
   local untagged
   untagged="$(git -C "$work" rev-parse HEAD)"

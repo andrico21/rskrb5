@@ -475,8 +475,9 @@ mod tests {
 
     /// A re-dispatch after an upload whose GitHub release failed verifies the
     /// published bytes and creates the missing release exactly once; different
-    /// published bytes are never certified (`scripts/release-publish.sh self-test`).
-    #[cfg(unix)]
+    /// published bytes are never certified (`scripts/release-publish.sh self-test`,
+    /// GNU tools on Linux, as on the `ubuntu-latest` release runners).
+    #[cfg(target_os = "linux")]
     #[test]
     fn release_recovery_verifies_the_published_crate_and_creates_one_release()
     -> Result<(), TestError> {
