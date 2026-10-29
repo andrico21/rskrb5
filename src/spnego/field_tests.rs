@@ -2,11 +2,39 @@
 
 use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
+/// Failed sealing preserves every field of an existing unsealed token.
+#[test]
+fn failed_sealing_preserves_token() -> Result<(), Error> {
+    use super::{GSSAPI_INITIATOR_SEAL_USAGE, WrapToken};
+    use crate::keytab::EncryptionKey;
+    for key in [
+        EncryptionKey::new(999, vec![0; 16]),
+        EncryptionKey::new(17, vec![0; 16]),
+    ] {
+        // Given an unsealed token with caller-supplied metadata and a checksum.
+        let mut token = WrapToken::new(1, 42)
+            .with_payload(vec![1, 2])
+            .with_ec(3)
+            .with_rrc(9)
+            .with_checksum(Some(vec![7; 12]));
+        let original = token.clone();
+        // When sealing fails on an unsupported enctype or invalid confounder.
+        assert!(matches!(
+            token.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[]),
+            Err(Error::UnsupportedEtype(999) | Error::Crypto(_))
+        ));
+        // Then the caller can retry without a partially committed sealed state.
+        assert_eq!(token, original);
+    }
+    Ok(())
+}
+
 /// AP-REQ construction failures retain their typed client cause.
 #[test]
 fn client_error_preserves_source() -> Result<(), Box<dyn core::error::Error>> {
-    use crate::error::Client;
     use core::error::Error as _;
+
+    use crate::error::Client;
     // Given a client-domain failure without a SPNEGO-specific equivalent.
     let error = super::client_error_to_spnego(Client::EmptyEtypes);
     // When traversing the source chain, then the original variant is available.

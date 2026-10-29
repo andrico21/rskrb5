@@ -709,33 +709,35 @@ impl WrapToken {
             return Err(Error::GssEncryptedBodyAlreadySet);
         }
 
-        self.flags |= GSS_TOKEN_FLAG_SEALED;
+        let flags = self.flags | GSS_TOKEN_FLAG_SEALED;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-        match etype {
+        let ec = match etype {
             KerberosEtype::Des3CbcSha1Kd(_) => {
                 // DES3's 8-byte confounder and the 16-byte header are already block-aligned.
                 let residue = payload.len().wrapping_add(usize::from(self.ec)) & 7;
                 let extra = u16::try_from(residue.wrapping_neg() & 7)
                     .map_err(|_error| Error::InvalidGssFiller)?;
-                self.ec = self.ec.checked_add(extra).ok_or(Error::InvalidGssFiller)?;
+                self.ec.checked_add(extra).ok_or(Error::InvalidGssFiller)?
             }
-            KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => {}
-        }
+            KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => self.ec,
+        };
         let mut plaintext = Vec::with_capacity(
             payload
                 .len()
-                .saturating_add(usize::from(self.ec))
+                .saturating_add(usize::from(ec))
                 .saturating_add(GSS_WRAP_HEADER_LEN),
         );
         plaintext.extend_from_slice(payload);
-        plaintext.extend(iter::repeat_n(0, usize::from(self.ec)));
-        plaintext.extend_from_slice(&self.header(0));
+        plaintext.extend(iter::repeat_n(0, usize::from(ec)));
+        plaintext.extend_from_slice(&wrap_header(flags, ec, 0, self.snd_seq_num));
 
         let encrypted =
             etype.encrypt_message_with_confounder(&key.value, &plaintext, key_usage, confounder)?;
         self.encrypted_body = Some(rotate_right(&encrypted, usize::from(self.rrc)));
+        self.flags = flags;
+        self.ec = ec;
         self.checksum = None;
         Ok(())
     }
