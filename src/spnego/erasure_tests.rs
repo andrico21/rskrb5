@@ -89,6 +89,47 @@ fn constructors_accept_zeroizing_payloads() -> Result<(), Error> {
     Ok(())
 }
 
+/// Failed crypto operations erase their staging without changing stored plaintext.
+#[test]
+fn failed_operations_erase_staging() -> Result<(), Error> {
+    let key = EncryptionKey::new(17, vec![0x42; 16]);
+    let mut wrap = WrapToken::new(0, 42).with_payload(vec![0x77; 5]);
+    EVENTS.with_borrow_mut(Vec::clear);
+    assert!(matches!(
+        wrap.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[]),
+        Err(Error::Crypto(_))
+    ));
+    assert_events(&[("wrap-seal", 21, true)]);
+    assert_eq!(
+        wrap.payload.as_ref().map(|bytes| bytes.as_slice()),
+        Some([0x77; 5].as_slice())
+    );
+    let unsupported = EncryptionKey::new(999, vec![0; 16]);
+    assert!(matches!(
+        wrap.set_checksum(&unsupported, GSSAPI_INITIATOR_SEAL_USAGE),
+        Err(Error::UnsupportedEtype(999_i32))
+    ));
+    assert_events(&[("wrap-checksum", 21, true)]);
+    let mic = MicToken::new(0, 0).with_payload(vec![0x77; 5]);
+    assert!(matches!(
+        mic.verify(&unsupported, GSSAPI_INITIATOR_SIGN_USAGE),
+        Err(Error::UnsupportedEtype(999_i32))
+    ));
+    assert_events(&[("mic-checksum", 21, true)]);
+    wrap.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[0; 16])?;
+    assert_events(&[("wrap-seal", 21, true)]);
+    wrap.ec = 100;
+    assert!(matches!(
+        wrap.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE),
+        Err(Error::GssDecryptedTokenTooShort {
+            minimum: _,
+            actual: _
+        })
+    ));
+    assert_events(&[("wrap-decrypt", 21, true)]);
+    Ok(())
+}
+
 /// Consume the complete event list, so an unrelated owner's erasure cannot mask a missing one.
 fn assert_events(expected: &[(&str, usize, bool)]) {
     EVENTS.with_borrow_mut(|events| {
