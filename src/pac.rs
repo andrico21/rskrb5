@@ -1775,10 +1775,9 @@ const fn filetime_tick_duration(ticks: u64) -> Duration {
     ))
 }
 
-/// Kerberos encryption type whose checksum is `signature_type`, if any.
-fn kerberos_etype_for_checksum_type(signature_type: u32) -> Option<KerberosEtype> {
-    KerberosEtype::from_checksum_type_id(signature_type.try_into().ok()?)
-}
+/// Mapping between PAC wire checksums and Kerberos enctypes.
+mod checksum_mapping;
+use checksum_mapping::kerberos_etype_for_checksum_type;
 
 /// Whether the numeric NTLM validity mask is set; reserved bits are ignored.
 const fn ntlm_supplemental_flag_set(flags: u32, flag: u32) -> bool {
