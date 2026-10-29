@@ -1503,7 +1503,8 @@ pub struct InitiatorContext {
 }
 
 impl fmt::Debug for InitiatorContext {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             ap_req: _,
             ap_req_der,
@@ -1519,8 +1520,7 @@ impl fmt::Debug for InitiatorContext {
             sequence_number,
             context_flags,
         } = self;
-        formatter
-            .debug_struct("InitiatorContext")
+        f.debug_struct("InitiatorContext")
             .field("ap_req_len", &ap_req_der.len())
             .field("header_len", &header.len())
             .field("client", client)

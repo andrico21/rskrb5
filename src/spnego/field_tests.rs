@@ -4,7 +4,7 @@ use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
 /// Failed sealing preserves every field of an existing unsealed token.
 #[test]
-fn failed_sealing_preserves_token() -> Result<(), Error> {
+fn failed_sealing_preserves_token() {
     use super::{GSSAPI_INITIATOR_SEAL_USAGE, WrapToken};
     use crate::keytab::EncryptionKey;
     for key in [
@@ -21,17 +21,16 @@ fn failed_sealing_preserves_token() -> Result<(), Error> {
         // When sealing fails on an unsupported enctype or invalid confounder.
         assert!(matches!(
             token.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[]),
-            Err(Error::UnsupportedEtype(999) | Error::Crypto(_))
+            Err(Error::UnsupportedEtype(999_i32) | Error::Crypto(_))
         ));
         // Then the caller can retry without a partially committed sealed state.
         assert_eq!(token, original);
     }
-    Ok(())
 }
 
 /// AP-REQ construction failures retain their typed client cause.
 #[test]
-fn client_error_preserves_source() -> Result<(), Box<dyn core::error::Error>> {
+fn client_error_preserves_source() {
     use core::error::Error as _;
 
     use crate::error::Client;
@@ -45,7 +44,6 @@ fn client_error_preserves_source() -> Result<(), Box<dyn core::error::Error>> {
             .map(AsRef::as_ref),
         Some(Client::EmptyEtypes)
     ));
-    Ok(())
 }
 
 /// Framed extensions preserve known fields; truncated extensions still fail.
