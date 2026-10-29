@@ -119,7 +119,7 @@ limits are recorded under FU-OPS-03.
 | FU-TST-04 | minor | Abort regression never observes cancellation or Drop cleanup | open | - | - | - |
 | FU-TST-05 | minor | Explicit MIT integration requests can pass with no live assertions | open | - | - | - |
 | FU-TST-06 | minor | AD password-reply interoperability is an open question | transferred | Plan-1 todo-4 contested-row ruling; commit `docs: transfer AD kpasswd interoperability to plan 2 (FU-TST-06)` | none; existing reply controls remain enforced | parity: Samba AD kpasswd reply interop; plan-2 todo 1 |
-| FU-TST-07 | minor | Live harness IPv6 authority helpers disagree with production parser | open | - | - | - |
+| FU-TST-07 | minor | Live harness IPv6 authority helpers disagree with production parser | fixed | `endpoints::tests::service_authorities_preserve_ipv6`; commit `test: preserve IPv6 literals in live service authorities (FU-TST-07)` | Live harness parses complete IPv6 before colon-port detection; all six services bracket bare IPv6 and use selected service port | Pure split 08c5fca before red; red ::1 != [::1]:1088, green child matrix covers ::1, 2001:db8::1:2, [::1]:2088, IPv4 and hostname with six distinct ports; task-4 evidence |
 | FU-TST-08 | minor | Transport ambient-read regression is a bypassable substring check | open | - | - | - |
 | FU-TST-09 | minor | Auto TCP-first test does not observe an unwanted UDP probe | open | - | - | - |
 | FU-TST-10 | minor | Environment-selected live TCP probe is unbounded | open | - | - | - |
