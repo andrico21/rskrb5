@@ -79,20 +79,6 @@ impl Config {
         }
     }
 
-    /// Create a config with no parsed sections, without reading any
-    /// environment variable.
-    ///
-    /// Compatibility alias for the environment-free [`Config::new`].
-    #[inline]
-    #[must_use]
-    pub fn new_without_env() -> Self {
-        Self {
-            libdefaults: LibDefaults::new_without_env(),
-            realms: Vec::new(),
-            domain_realm: BTreeMap::new(),
-        }
-    }
-
     /// Load and parse a `krb5.conf` file.
     ///
     /// The file's canonical path is on the open chain before its own directives
@@ -309,31 +295,7 @@ impl Config {
     /// errors above.
     #[inline]
     pub fn parse(input: &str) -> Result<Self, Error> {
-        Self::parse_with(input, Self::new)
-    }
-
-    /// Parse a `krb5.conf` string without reading any environment variable.
-    ///
-    /// Compatibility alias for the environment-free [`Config::parse`].
-    ///
-    /// # Errors
-    ///
-    /// Returns the same errors as [`Config::parse`]: an `include` or
-    /// `includedir` the text names that cannot be read, or that breaks a cycle,
-    /// depth, file-count or byte limit, and any line the parser refuses.
-    #[inline]
-    pub fn parse_without_env(input: &str) -> Result<Self, Error> {
-        Self::parse_with(input, Self::new_without_env)
-    }
-
-    /// The parser both entry points share: they differ in nothing but the
-    /// constructor that seeds the defaults.
-    ///
-    /// # Errors
-    ///
-    /// Returns the errors of [`Config::parse_with_roots_and_seed`].
-    fn parse_with(input: &str, seed: fn() -> Self) -> Result<Self, Error> {
-        Self::parse_with_roots_and_seed(input, [], seed)
+        Self::parse_with_roots(input, [])
     }
 
     /// The parser the string entry point and the two file loaders share: they
@@ -346,32 +308,17 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Config::parse_with_roots_and_seed`].
-    fn parse_with_roots<I>(input: &str, roots: I) -> Result<Self, Error>
-    where
-        I: IntoIterator<Item = PathBuf>,
-    {
-        Self::parse_with_roots_and_seed(input, roots, Self::new)
-    }
-
-    /// Both axes at once: the canonical paths that root the include chain, and
-    /// the constructor that seeds the defaults (the environment-free twins pass
-    /// [`Config::new_without_env`]). The string entry point and the two file
-    /// loaders share this; nothing else in the parser branches on either.
-    ///
-    /// # Errors
-    ///
     /// Returns the [`IncludeExpansion::expand`] error of an `include` or
     /// `includedir` the text names, and the error of any line or section the
     /// parser refuses.
-    fn parse_with_roots_and_seed<I>(text: &str, roots: I, seed: fn() -> Self) -> Result<Self, Error>
+    fn parse_with_roots<I>(text: &str, roots: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = PathBuf>,
     {
         let input = IncludeExpansion::default()
             .with_roots(roots)
             .expand(text, 0)?;
-        let mut config = seed();
+        let mut config = Self::new();
         let mut enctypes = EnctypeParseState::default();
         let mut realm_lines = Vec::new();
         let mut current = SectionKind::Unknown;
@@ -919,13 +866,6 @@ impl LibDefaults {
     #[must_use]
     pub fn from_env() -> Self {
         Self::with_home(env::var("HOME").ok())
-    }
-
-    /// Compatibility alias for the environment-free [`LibDefaults::new`].
-    #[inline]
-    #[must_use]
-    pub fn new_without_env() -> Self {
-        Self::new()
     }
 
     /// Create defaults from an optional, already-read home directory.
@@ -2555,9 +2495,9 @@ mod fork_tests {
         if env::var_os(PROBE_MARKER).is_none() {
             return Ok(());
         }
-        let config = Config::new_without_env();
-        let defaults = LibDefaults::new_without_env();
-        let parsed = Config::parse_without_env("[libdefaults]\n")?;
+        let config = Config::new();
+        let defaults = LibDefaults::new();
+        let parsed = Config::parse("[libdefaults]\n")?;
         let reading = LibDefaults::from_env();
         let mut stdout = io::stdout().lock();
         for (name, keytab, k5login) in [
@@ -2622,7 +2562,7 @@ mod fork_tests {
     }
 
     /// The control, asserted by every test below: the child's environment really
-    /// is hostile, so `LibDefaults::new` in that child follows it. Without this,
+    /// is hostile, so `LibDefaults::from_env` in that child follows it. Without this,
     /// an inert probe would make the env-free assertions pass for the wrong
     /// reason.
     fn assert_the_child_environment_is_hostile(
@@ -2637,7 +2577,7 @@ mod fork_tests {
         Ok(())
     }
 
-    /// `Config::new_without_env` reads neither `UID` nor `HOME`: hostile values
+    /// `Config::new` reads neither `UID` nor `HOME`: hostile values
     /// in the process environment leave both derived fields at their
     /// deterministic non-env values.
     #[test]
@@ -2648,7 +2588,7 @@ mod fork_tests {
         assert_eq!(
             probe_field(&lines, "config_client_keytab")?,
             ENV_FREE_CLIENT_KEYTAB,
-            "the env-free config's keytab default is the UID-fallback path"
+            "the config preserves its unexpanded process-identity template"
         );
         assert_eq!(probe_field(&lines, "config_k5login")?, "");
         Ok(())
@@ -2669,11 +2609,9 @@ mod fork_tests {
         Ok(())
     }
 
-    /// `Config::parse_without_env` must not reach `Config::parse` ->
-    /// `Config::new` -> `LibDefaults::new`: it shares the parser, not the
-    /// constructor.
+    /// Ordinary parsing preserves deterministic defaults under hostile ambient input.
     #[test]
-    fn parse_without_env_does_not_read_uid_or_home() -> Result<(), Box<dyn error::Error>> {
+    fn parse_does_not_read_uid_or_home() -> Result<(), Box<dyn error::Error>> {
         let lines = hostile_env_probe()?;
         assert_the_child_environment_is_hostile(&lines)?;
         assert_eq!(

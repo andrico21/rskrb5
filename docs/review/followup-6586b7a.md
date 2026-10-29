@@ -91,7 +91,7 @@ limits are recorded under FU-OPS-03.
 | FU-PAC-01 | major | Unsigned HMAC-MD5 checksum ID cannot map to RC4 | open | - | - | - |
 | FU-PAC-02 | minor | Supplemental-credential count ceiling lacks independent regression | open | - | - | - |
 | FU-CFG-01 | minor | Top-level configuration I/O error loses failing path | fixed | `load_paths_reports_failing_path_and_io_source`; commit `config: retain requested paths in file errors (FU-CFG-01)` | Top-level load/load_paths failures now return Config::File { path, source } rather than bare Config::Io | task-6-rskrb5-ng-zero-open-items.log: red path assertion; green causal NotFound assertion |
-| FU-CFG-02 | minor | Environment-free seed/twin machinery is redundant | open | - | - | - |
+| FU-CFG-02 | minor | Environment-free seed/twin machinery is redundant | fixed | obsolete API/seed negative search; 18 `config::fork_tests` including hostile child; commit `config: remove redundant environment-free twins (FU-CFG-02)` | Removed Config::new_without_env -> Config::new; Config::parse_without_env -> Config::parse; LibDefaults::new_without_env -> LibDefaults::new; all remaining APIs deterministic; probe assertions unchanged | task-6-rskrb5-ng-zero-open-items.log: red structural check lists twins/seed; green exact exit-1 search and 18 tests; todo 16 updates migration docs |
 | FU-CFG-03 | major | Last-wins scalar composition diverges from claimed MIT order | open | - | - | - |
 | FU-CFG-04 | major | Explicit disabled/unknown enctypes disappear before policy validation | open | - | - | - |
 | FU-CFG-05 | major | Negative enctype directives are silently ignored | open | - | - | - |
