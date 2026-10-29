@@ -2,6 +2,24 @@
 
 use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
+/// AP-REQ construction failures retain their typed client cause.
+#[test]
+fn client_error_preserves_source() -> Result<(), Box<dyn core::error::Error>> {
+    use crate::error::Client;
+    use core::error::Error as _;
+    // Given a client-domain failure without a SPNEGO-specific equivalent.
+    let error = super::client_error_to_spnego(Client::EmptyEtypes);
+    // When traversing the source chain, then the original variant is available.
+    assert!(matches!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<Box<Client>>())
+            .map(AsRef::as_ref),
+        Some(Client::EmptyEtypes)
+    ));
+    Ok(())
+}
+
 /// Framed extensions preserve known fields; truncated extensions still fail.
 #[test]
 fn sequences_accept_framed_extensions() -> Result<(), Error> {

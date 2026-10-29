@@ -2243,7 +2243,7 @@ pub enum Spnego {
     Service(#[from] Service),
     /// Client AP-REQ construction failed.
     #[error("client AP-REQ construction error: {0}")]
-    Client(String),
+    Client(#[source] Box<Client>),
 }
 #[cfg(feature = "messages")]
 /// Ticket helper error.

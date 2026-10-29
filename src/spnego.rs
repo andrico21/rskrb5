@@ -2071,7 +2071,7 @@ fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionK
 }
 
 /// Map an AP-REQ construction error onto the SPNEGO error type. Variants without a SPNEGO
-/// counterpart become [`Error::Client`] with their message.
+/// counterpart become [`Error::Client`] with their typed source.
 fn client_error_to_spnego(error: error::Client) -> Error {
     if let error::Client::Decode { target, message } = error {
         return Error::Decode { target, message };
@@ -2097,7 +2097,7 @@ fn client_error_to_spnego(error: error::Client) -> Error {
     if matches!(error, error::Client::TimeOverflow) {
         return Error::TimeOverflow;
     }
-    Error::Client(error.to_string())
+    Error::Client(Box::new(error))
 }
 
 /// The current time split into whole seconds and microseconds, as a Kerberos authenticator carries
