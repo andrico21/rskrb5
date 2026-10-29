@@ -19,6 +19,17 @@ use crate::{
 mod request;
 use request::{build_kpasswd_ap_req_with_confounder, kpasswd_krb_priv_options};
 
+/// Reflected password ciphertext regressions.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod reflection_tests;
+
 /// Options for constructing a kpasswd request from a service ticket.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -244,6 +255,13 @@ pub(super) fn validated_result(
     request: &BuiltKpasswdRequest,
     options: &RequestOptions,
 ) -> Result<kadmin::ChangePasswordResult, Error> {
+    if reply
+        .krb_priv
+        .as_ref()
+        .is_some_and(|part| part.enc_part.cipher == request.request.krb_priv.enc_part.cipher)
+    {
+        return Err(Error::KpasswdReplyControl("reflected ciphertext"));
+    }
     let Some(verified) = verify_kpasswd_ap_rep(reply, request)? else {
         return reply
             .decrypt_result(&request.reply_key)
