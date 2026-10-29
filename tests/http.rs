@@ -307,8 +307,9 @@ mod tests {
     #[cfg(feature = "tower")]
     #[test]
     fn negotiate_layer_integrates_with_axum_router() -> Result<(), TestError> {
-        use axum::{Router, body::Body, error_handling::HandleError, routing::get};
         use core::convert::Infallible;
+
+        use axum::{Router, body::Body, error_handling::HandleError, routing::get};
         let layer = krb_http::NegotiateLayer::from_keytab(keytab()?);
         let service = layer.layer(Router::new().route("/", get(async || "protected")));
         let mut router = Router::new().fallback_service(HandleError::new(

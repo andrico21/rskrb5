@@ -1675,17 +1675,19 @@ mod tests {
     #[cfg(feature = "tower")]
     #[test]
     fn poisoned_validator_retains_cause() -> Result<(), Box<dyn error::Error>> {
-        use crate::keytab::Keytab;
         use alloc::sync::Arc;
         use core::{
             convert::Infallible,
             future::{Ready, ready},
             task::{Context, Poll},
         };
-        use http_types::Request;
         use std::thread;
+
+        use http_types::Request;
         use tokio::runtime::Builder;
         use tower_service::Service;
+
+        use crate::keytab::Keytab;
         #[derive(Clone)]
         struct Inner;
         impl Service<Request<()>> for Inner {
