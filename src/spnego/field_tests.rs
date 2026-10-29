@@ -4,12 +4,13 @@ use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
 /// Diagnostic formatting never emits MIC or Wrap application plaintext.
 #[test]
-fn payload_debug_is_redacted() {
+fn payload_debug_is_redacted() -> Result<(), Error> {
     use super::{MicToken, WrapToken};
     let payload = b"sensitive-payload-marker".to_vec();
     let bytes = format!("{payload:?}");
     assert!(!format!("{:?}", MicToken::new(0, 1).with_payload(payload.clone())).contains(&bytes));
-    assert!(!format!("{:?}", WrapToken::new(0, 1).with_payload(payload)).contains(&bytes));
+    (!format!("{:?}", WrapToken::new(0, 1).with_payload(payload)).contains(&bytes))
+        .ok_or(Error::InvalidGssFiller)
 }
 
 /// Verification has one success state rather than an unreachable false result.
@@ -27,7 +28,7 @@ fn verification_returns_unit() -> Result<(), Error> {
 
 /// Failed sealing preserves every field of an existing unsealed token.
 #[test]
-fn failed_sealing_preserves_token() {
+fn failed_sealing_preserves_token() -> Result<(), Error> {
     use super::{GSSAPI_INITIATOR_SEAL_USAGE, WrapToken};
     use crate::keytab::EncryptionKey;
     for key in [
@@ -37,10 +38,11 @@ fn failed_sealing_preserves_token() {
         // Given an unsealed token with caller-supplied metadata and a checksum.
         let mut token = WrapToken::new(1, 42)
             .with_payload(vec![1, 2])
-            .with_ec(3)
+            .with_ec(12)
             .with_rrc(9)
             .with_checksum(Some(vec![7; 12]));
         let original = token.clone();
+        let original_wire = original.encode()?;
         // When sealing fails on an unsupported enctype or invalid confounder.
         assert!(matches!(
             token.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[]),
@@ -48,25 +50,28 @@ fn failed_sealing_preserves_token() {
         ));
         // Then the caller can retry without a partially committed sealed state.
         assert_eq!(token, original);
+        assert_eq!(token.encode()?, original_wire);
     }
+    Ok(())
 }
 
 /// AP-REQ construction failures retain their typed client cause.
 #[test]
-fn client_error_preserves_source() {
+fn client_error_preserves_source() -> Result<(), Error> {
     use core::error::Error as _;
 
     use crate::error::Client;
     // Given a client-domain failure without a SPNEGO-specific equivalent.
     let error = super::client_error_to_spnego(Client::EmptyEtypes);
     // When traversing the source chain, then the original variant is available.
-    assert!(matches!(
+    matches!(
         error
             .source()
             .and_then(|source| source.downcast_ref::<Box<Client>>())
             .map(AsRef::as_ref),
         Some(Client::EmptyEtypes)
-    ));
+    )
+    .ok_or(Error::MissingMechToken)
 }
 
 /// Framed extensions preserve known fields; truncated extensions still fail.

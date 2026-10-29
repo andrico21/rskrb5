@@ -206,9 +206,11 @@ mod tests {
     use super::*;
 
     /// Reply-generation failure never reaches the protected handler.
+    #[cfg(feature = "tower")]
     #[tokio::test]
     async fn reply_failure_does_not_call_handler() -> Result<(), Box<dyn Error>> {
         use core::sync::atomic::{AtomicUsize, Ordering};
+
         use tower_service::Service as _;
         let calls = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&calls);

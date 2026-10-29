@@ -7,7 +7,7 @@ use crate::spnego::{NegState, NegTokenResp};
 
 /// Long lengths must use the shortest representation, including nested token fields.
 #[test]
-fn der_lengths_reject_nonminimal_forms() {
+fn der_lengths_reject_nonminimal_forms() -> Result<(), Error> {
     for (length, size) in [(vec![0x81, 0x7f], 127), (vec![0x82, 0, 0x80], 128)] {
         // Given a complete TLV with a redundant length representation.
         let mut bytes = vec![4];
@@ -19,10 +19,11 @@ fn der_lengths_reject_nonminimal_forms() {
             Err(Error::NonminimalLength)
         ));
     }
-    assert!(matches!(
+    matches!(
         NegTokenResp::decode(&[0xa1, 8, 0x30, 6, 0xa0, 4, 0x0a, 0x81, 1, 0]),
         Err(Error::NonminimalLength)
-    ));
+    )
+    .ok_or(Error::NonminimalLength)
 }
 
 /// Minimal short and long length transitions preserve their complete contents.
