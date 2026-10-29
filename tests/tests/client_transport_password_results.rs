@@ -37,7 +37,8 @@ fn tokio_transport_rejects_unauthenticated_kpasswd_success_result() -> Result<()
         task.await??;
         assert!(matches!(
             error,
-            ClientError::Kadmin(KadminError::UnauthenticatedSuccess)
+            ClientError::KpasswdOutcomeUnknown(source)
+                if matches!(*source, ClientError::Kadmin(KadminError::UnauthenticatedSuccess))
         ));
         Ok::<_, TestError>(())
     })

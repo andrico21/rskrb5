@@ -11,7 +11,9 @@ pub(super) fn checked(
     reply: &kadmin::Reply,
     reply_key: &EncryptionKey,
 ) -> Result<kadmin::ChangePasswordResult, Error> {
-    let result = reply.decrypt_result(reply_key)?;
+    let result = reply
+        .decrypt_result(reply_key)
+        .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(Error::from(source))))?;
     result.ensure_success()?;
     Ok(result)
 }
