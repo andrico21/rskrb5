@@ -244,7 +244,12 @@ impl CCache {
     where
         P: AsRef<str>,
     {
-        self.save(Self::file_path_from_cache_name(name.as_ref())?)
+        let name = name.as_ref();
+        self.save(Self::file_path_from_cache_name(name)?)?;
+        if dir_collection_path(name).is_some() {
+            let _published = Self::file_path_from_cache_name(name)?;
+        }
+        Ok(())
     }
 
     /// Resolve a MIT-style cache name to a file path.
@@ -652,11 +657,15 @@ fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     let primary = match fs::read_to_string(&primary_path) {
         Ok(contents) => parse_dir_primary_name(&contents)?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let cache = collection.join(DIR_DEFAULT_PRIMARY_CACHE);
+            if !cache.try_exists()? {
+                return Ok(cache);
+            }
             file_name::create_primary(
                 &primary_path,
                 format!("{DIR_DEFAULT_PRIMARY_CACHE}\n").as_bytes(),
             )?;
-            DIR_DEFAULT_PRIMARY_CACHE.to_owned()
+            parse_dir_primary_name(&fs::read_to_string(&primary_path)?)?
         }
         Err(error) => return Err(Error::Io(error)),
     };
@@ -906,7 +915,7 @@ impl Principal {
     /// Returns [`Error::LengthOverflow`] when the component count or a string
     /// length does not fit an `i32`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
-        if version == 1 && self.name_type != 0 {
+        if version == 1 && self.name_type != 0_i32 {
             return Err(Error::LengthOverflow);
         }
         if version != 1 {

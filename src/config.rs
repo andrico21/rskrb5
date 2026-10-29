@@ -2498,7 +2498,7 @@ mod fork_tests {
     fn env_free_fields_probe_child() -> Result<(), Box<dyn error::Error>> {
         assert_eq!(
             super::parse_supported_enctype_ids(&["rc4-hmac".to_owned()], false),
-            [23]
+            [23_i32]
         );
         if env::var_os(PROBE_MARKER).is_none() {
             return Ok(());

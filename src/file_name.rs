@@ -68,6 +68,8 @@ mod tests {
     };
     use std::{
         env, fs, io,
+        sync::{Barrier, BarrierWaitResult},
+        thread,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -193,6 +195,39 @@ mod tests {
             result.err().map(|error| error.kind()),
             Some(io::ErrorKind::Interrupted)
         );
+        Ok(())
+    }
+
+    /// Concurrent initializers publish one complete primary without replacing it.
+    #[test]
+    fn concurrent_primary_initialization_agrees() -> Result<(), Box<dyn StdError>> {
+        // Given two initializers released together against one absent primary.
+        let directory = env::temp_dir().join(format!(
+            "primary-race-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let path = directory.join("primary");
+        let barrier = Barrier::new(2);
+        // When both try to publish a complete primary.
+        let results = thread::scope(|scope| {
+            let first = scope.spawn(|| {
+                let _: BarrierWaitResult = barrier.wait();
+                super::create_primary(&path, b"tkt\n")
+            });
+            let second = scope.spawn(|| {
+                let _: BarrierWaitResult = barrier.wait();
+                super::create_primary(&path, b"tkt\n")
+            });
+            (first.join(), second.join())
+        });
+        // Then neither fails because another initializer won, and contents are complete.
+        results.0.map_err(|_panic| "first initializer panicked")??;
+        results
+            .1
+            .map_err(|_panic| "second initializer panicked")??;
+        assert_eq!(fs::read(&path)?, b"tkt\n");
+        fs::remove_dir_all(directory)?;
         Ok(())
     }
 }
@@ -395,12 +430,35 @@ pub(crate) fn reject_symlink(path: &Path) -> io::Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an open or write error, including `AlreadyExists` for any existing
-/// entry (dangling symlinks included).
+/// Returns stage/write/sync or publication errors. An existing regular primary
+/// wins without replacement; existing symlinks are rejected.
 pub(crate) fn create_primary(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut random = [0_u8; 16];
+    getrandom::fill(&mut random).map_err(io::Error::other)?;
+    let temporary = parent.join(format!(
+        ".rskrb5-primary-{:032x}.tmp",
+        u128::from_be_bytes(random)
+    ));
     let mut options = OpenOptions::new();
     let _: &mut OpenOptions = options.write(true).create_new(true);
     #[cfg(unix)]
     let _: &mut OpenOptions = options.mode(0o600);
-    options.open(path)?.write_all(bytes)
+    let mut file = options.open(&temporary)?;
+    let result = (|| {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        match fs::hard_link(&temporary, path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => reject_symlink(path),
+            Err(error) => Err(error),
+        }
+    })();
+    let cleanup = fs::remove_file(&temporary);
+    result?;
+    cleanup?;
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
 }
