@@ -1,7 +1,7 @@
 //! HTTP Negotiate helper, client wrapper and Tower layer tests against the gokrb5 vectors.
 #![cfg(feature = "http")]
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", feature = "tower"))]
 extern crate alloc;
 #[path = "support/context.rs"]
 mod context;
@@ -20,6 +20,8 @@ mod env;
 mod tests {
     #[cfg(feature = "tokio")]
     use alloc::rc::Rc;
+    #[cfg(feature = "tower")]
+    use alloc::sync::Arc;
     #[cfg(feature = "tokio")]
     use core::cell::{Cell, RefCell};
     #[cfg(feature = "tokio")]
@@ -206,6 +208,25 @@ mod tests {
     #[cfg(feature = "tower")]
     #[derive(Clone)]
     struct PolicyService;
+
+    /// Replay-cache configuration faults are server failures, not credential rejection.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn internal_validation_failure_returns_500() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_max_clock_skew(Duration::from_secs(301))
+            .with_shared_replay_cache(SharedReplayCache::new())
+            .layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        let response = run_ready(service.call(request))??;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(response.extensions().get::<Arc<HttpError>>().is_some());
+        assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
+        Ok(())
+    }
 
     /// Clones share replay evidence from the same validator.
     #[cfg(feature = "tower")]

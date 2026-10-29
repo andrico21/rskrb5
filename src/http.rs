@@ -46,6 +46,8 @@ use crate::{
 pub type Result<T> = CoreResult<T, Error>;
 
 use crate::error::Http as Error;
+#[cfg(feature = "tower")]
+use crate::error::{Keytab as KeytabError, Service as ServiceError, Spnego as SpnegoError};
 
 /// Tower Negotiate middleware error.
 #[cfg(feature = "tower")]
@@ -1196,6 +1198,10 @@ impl<'layer, S> Layer<S> for NegotiateLayer<'layer> {
 }
 
 /// Tower service for service-side HTTP Negotiate validation.
+///
+/// Internal validation faults produce opaque 500 responses. Their typed cause is
+/// retained as `Arc<error::Http>` in response extensions for caller diagnostics;
+/// extensions are not serialized onto the wire.
 #[cfg(feature = "tower")]
 #[derive(Clone, Debug)]
 pub struct NegotiateService<'keytab, S> {
@@ -1427,7 +1433,30 @@ where
             Err(Error::MissingAuthorization | Error::InvalidHeader(_)) => {
                 return NegotiateFuture::ready(Ok(challenge_response()));
             }
-            Err(Error::Spnego(_)) => {
+            Err(Error::Spnego(source)) => {
+                if matches!(
+                    &source,
+                    SpnegoError::Service(
+                        ServiceError::ReplayCachePoisoned
+                            | ServiceError::ReplayCacheSkewExceeded {
+                                maximum: _,
+                                requested: _
+                            }
+                            | ServiceError::ReplayCacheClockRollback
+                            | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
+                            | ServiceError::Keytab(KeytabError::Io(_))
+                    )
+                ) {
+                    let mut response = Response::new(ResBody::default());
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    drop(
+                        response
+                            .extensions_mut()
+                            .insert(Arc::new(Error::Spnego(source))),
+                    );
+                    harden_response(&mut response);
+                    return NegotiateFuture::ready(Ok(response));
+                }
                 let response = if self.response.reject_invalid {
                     reject_response().unwrap_or_else(|_| challenge_response())
                 } else {
