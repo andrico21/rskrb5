@@ -96,7 +96,7 @@ limits are recorded under FU-OPS-03.
 | FU-CFG-04 | major | Explicit disabled/unknown enctypes disappear before policy validation | open | - | - | - |
 | FU-CFG-05 | major | Negative enctype directives are silently ignored | open | - | - | - |
 | FU-CFG-06 | minor | Standard final section/subsection markers are ignored | open | - | - | - |
-| FU-CFG-07 | minor | Plain zero duration rejects a supported zero value | open | - | - | - |
+| FU-CFG-07 | minor | Plain zero duration rejects a supported zero value | fixed | `zero_seconds_configure_renew_lifetime_and_clockskew`, `duration_formats_match_gokrb5`; commit `config: accept plain zero durations (FU-CFG-07)` | Plain `0` now equals `0s`, including renew_lifetime and clockskew; negatives still rejected | task-6-rskrb5-ng-zero-open-items.log: red exit 101 InvalidDuration("0"); green 46 config tests |
 | FU-CFG-08 | minor | Public supported-ID helper is mistaken for current enctype policy | open | - | - | - |
 | FU-CFG-09 | minor | Unbalanced ignored-section braces suppress include expansion | open | - | - | - |
 | FU-FIL-01 | minor | Legacy ccache versions silently lose admitted fields | open | - | - | - |

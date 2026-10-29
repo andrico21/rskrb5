@@ -886,6 +886,8 @@ mod tests {
     #[test]
     fn duration_formats_match_gokrb5() -> Result<(), TestError> {
         let cases = [
+            ("0", Duration::ZERO),
+            ("0s", Duration::ZERO),
             ("100", Duration::from_secs(100)),
             ("12:30", Duration::from_mins(750)),
             ("12:30:15", Duration::from_secs(45_015)),
@@ -897,6 +899,22 @@ mod tests {
 
         for (input, expected) in cases {
             assert_eq!(parse_duration(input).context("duration parses")?, expected);
+        }
+        Ok(())
+    }
+
+    /// Plain zero and unit zero configure the same supported duration values.
+    #[test]
+    fn zero_seconds_configure_renew_lifetime_and_clockskew() -> Result<(), TestError> {
+        // Given the two representations of zero seconds.
+        for value in ["0", "0s"] {
+            // When parsing explicit renewable lifetime and clock skew.
+            let config = Config::parse(&format!(
+                "[libdefaults]\n renew_lifetime = {value}\n clockskew = {value}\n"
+            ))?;
+            // Then both typed settings retain zero.
+            assert_eq!(config.libdefaults.renew_lifetime, Duration::ZERO);
+            assert_eq!(config.libdefaults.clockskew, Duration::ZERO);
         }
         Ok(())
     }

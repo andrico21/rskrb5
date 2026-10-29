@@ -1515,9 +1515,7 @@ pub fn parse_duration(value: &str) -> Result<Duration, Error> {
         return Ok(duration);
     }
 
-    if let Ok(seconds) = normalized.parse::<u64>()
-        && seconds > 0
-    {
+    if let Ok(seconds) = normalized.parse::<u64>() {
         return Ok(Duration::from_secs(seconds));
     }
 
