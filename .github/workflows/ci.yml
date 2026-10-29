@@ -288,6 +288,16 @@ jobs:
         run: cargo +stable doc --no-deps --all-features
       - name: Rustdoc (nightly-2026-10-03)
         run: cargo +nightly-2026-10-03 doc --no-deps --all-features
+      # What docs.rs builds: the default features plus the
+      # `[package.metadata.docs.rs]` features, with `--cfg docsrs`, in a fresh
+      # target directory so the checked pages come from this build.
+      - name: Rustdoc with the docs.rs feature set
+        shell: bash
+        run: |
+          set -euo pipefail
+          features="$(python3 scripts/lint-gates/docsrs_check.py --features)"
+          RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +nightly-2026-10-03 doc --no-deps --features "$features" --target-dir "$RUNNER_TEMP/docsrs"
+          python3 scripts/lint-gates/docsrs_check.py --verify "$RUNNER_TEMP/docsrs/doc"
 
   msrv:
     name: msrv

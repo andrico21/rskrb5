@@ -79,6 +79,11 @@ in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
 | `fuzz_coverage.py --enforce` | the parser inventory of [`review/fuzz.md`](review/fuzz.md) exists and is not empty, lists every function the parser search finds, names only functions still defined in their source file, and names only targets of `fuzz/Cargo.toml` (`--coverage DIR` proves the mappings from coverage exports) |
 | `gate_hygiene.py --enforce` | the gate scripts carry no dead work: every `argparse` option is read, and every module-level helper is used outside a `self_test` |
 
+`docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
+optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly
+that feature set and `--cfg docsrs`, as docs.rs does, and checks the
+`NegotiateLayer` and `send_with_negotiate` pages exist.
+
 `rg -n 'lint-migration' src tests examples fuzz` must print nothing.
 `semver_baseline.py` is not a lint gate: it drives `cargo semver-checks`
 against the highest published `rskrb5-ng` version at or below the candidate,

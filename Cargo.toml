@@ -27,6 +27,11 @@ exclude = [
   "tests/gokrb5_parity_manifest.rs",
 ]
 
+# docs.rs builds the default features plus these: the HTTP helpers and the
+# Tower middleware are optional but advertised (scripts/lint-gates/docsrs_check.py).
+[package.metadata.docs.rs]
+features = ["http", "tower"]
+
 [lib]
 name = "rskrb5_ng"
 
