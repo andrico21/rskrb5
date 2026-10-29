@@ -324,14 +324,21 @@ mod tests {
     fn release_coordinator_holds_no_secret_and_dispatches_publish_at_the_tag()
     -> Result<(), TestError> {
         let text = repository_file(".github/workflows/release.yml")?;
-        assert!(!text.contains("secrets."), "release.yml must not read a secret");
+        assert!(
+            !text.contains("secrets."),
+            "release.yml must not read a secret"
+        );
         assert!(
             !text.contains("environment:"),
             "release.yml must not wait for an environment"
         );
         let jobs = workflow("release.yml")?;
         let ids: Vec<&str> = jobs.iter().map(|(id, _)| id.as_str()).collect();
-        assert_eq!(ids, ["find-tag"], "the coordinator has the one job find-tag");
+        assert_eq!(
+            ids,
+            ["find-tag"],
+            "the coordinator has the one job find-tag"
+        );
         let find_tag = job(&jobs, "find-tag")?;
         for required in [
             "actions: write",
@@ -377,7 +384,10 @@ mod tests {
         }
         let jobs = workflow("publish.yml")?;
         let verify = job(&jobs, "verify")?;
-        assert!(!verify.contains("secrets."), "verify must not read a secret");
+        assert!(
+            !verify.contains("secrets."),
+            "verify must not read a secret"
+        );
         assert!(!verify.contains("environment:"), "verify must not wait");
         for required in [
             "release-publish.sh check-ref \"$REF\" \"$SHA\"",
@@ -484,7 +494,10 @@ mod tests {
         use std::process::Command;
 
         let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/release-publish.sh");
-        let output = Command::new("bash").arg(&script).arg("self-test").output()?;
+        let output = Command::new("bash")
+            .arg(&script)
+            .arg("self-test")
+            .output()?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
