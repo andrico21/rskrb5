@@ -501,6 +501,17 @@ jobs:
         run: python3 scripts/lint-gates/fuzz_coverage.py --enforce
       - name: No dead options or helpers in the gate scripts
         run: python3 scripts/lint-gates/gate_hygiene.py --enforce
+      - name: Gate wiring and action pins
+        run: python3 scripts/lint-gates/workflow_gate.py --enforce
+      # The offline regression suites of the helper scripts.
+      - name: AD dispatch helper self-test
+        run: python3 scripts/check-github-ad-gate.py --self-test
+      - name: AD environment preflight smoke tests
+        run: python3 scripts/check-ad-integration-env-smoke.py
+      - name: Fixture runner self-test
+        run: bash scripts/run-gated-integration.sh self-test
+      - name: Release script self-test
+        run: bash scripts/release-publish.sh self-test
       - name: No lint-migration attributes
         run: |
           grep -rn lint-migration src tests examples fuzz && exit 1
