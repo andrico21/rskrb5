@@ -166,7 +166,7 @@ limits are recorded under FU-OPS-03.
 | FU-DOC-19 | minor | Single-timeout comment omits deliberate password two-phase exception | open | - | - | - |
 | FU-DOC-20 | minor | Password transport comments contradict no-retry/discovery boundaries | open | - | - | - |
 | FU-DOC-21 | minor | Enctype policy docs describe old defaults/construction/validation phase | open | - | - | - |
-| FU-DOC-22 | minor | Ccache I/O display calls write failures read failures | open | - | - | - |
+| FU-DOC-22 | minor | Ccache I/O display calls write failures read failures | fixed | `io_display_covers_write_failures_and_retains_source`; commit `ccache: describe both read and write I/O failures (FU-DOC-22)` | Ccache::Io display says read or written; source unchanged | task-6-rskrb5-ng-zero-open-items.log: red display assertion; green display and PermissionDenied source |
 | FU-DOC-23 | nit | Bare kpasswd reply profile is omitted from parse contract | open | - | - | - |
 | FU-DOC-24 | minor | KRB-ERROR scalar validation docs describe obsolete u32-only checks | open | - | - | - |
 | FU-DOC-25 | nit | Stale helper prose and repeated test cfg attributes | open | - | - | - |

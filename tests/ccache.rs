@@ -72,6 +72,29 @@ mod tests {
         assert!(audited);
     }
 
+    /// Save failures have operation-neutral wording and preserve the I/O cause.
+    #[test]
+    fn io_display_covers_write_failures_and_retains_source() -> Result<(), TestError> {
+        // Given a representative failed rename or symlink rejection.
+        let failure = Error::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "save denied",
+        ));
+        // When formatting and traversing the public error.
+        let display = failure.to_string();
+        let source = error::Error::source(&failure).context("I/O cause retained")?;
+        // Then writes are not described as read-only failures.
+        assert!(display.contains("read or written"));
+        assert_eq!(
+            source
+                .downcast_ref::<std::io::Error>()
+                .context("I/O error")?
+                .kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        Ok(())
+    }
+
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
     trait Context<T> {
