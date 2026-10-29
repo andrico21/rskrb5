@@ -66,7 +66,12 @@ def foreign_sources(original: str, stripped: str) -> list[tuple[int, str]]:
         argument = original[match.end() : close if close is not None else len(original)]
         literal = re.fullmatch(r'\s*"([^"\\]*)"\s*,?\s*', argument)
         if literal is None or not SCANNED_PATH.fullmatch(literal[1]):
-            found.append((match.start(), f"include!({argument.strip()}) is not a scanned .rs file"))
+            found.append(
+                (
+                    match.start(),
+                    f"include!({argument.strip()}) is not a scanned .rs file",
+                )
+            )
     for start, end, _, _ in iter_attributes(stripped):
         for match in re.finditer(r"[\[(,]\s*(?:r#)?path\s*=", stripped[start:end]):
             at = start + match.end()
@@ -82,7 +87,6 @@ def unscannable(original: str, stripped: str) -> list[tuple[int, str]]:
     return sorted(opaque_constructs(stripped) + foreign_sources(original, stripped))
 
 
-
 def selected(path: str, patterns: list[str] | None) -> bool:
     return not patterns or any(fnmatch.fnmatch(path, p) for p in patterns)
 
@@ -92,7 +96,6 @@ def blank_ranges(text: str, ranges: list[tuple[int, int]]) -> str:
     for a, b in ranges:
         out[a:b] = [c if c in "\r\n" else " " for c in text[a:b]]
     return "".join(out)
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,13 +168,27 @@ def self_test() -> int:
     # Tokens may be spaced: the reason is still read from the right offset.
     spaced = attribute_calls('# ! [ expect ( dead_code , reason = "why" ) ]')
     assert len(spaced) == 1 and spaced[0].inner and spaced[0].reason == "why"
-    spaced = attribute_calls('#\n[cfg_attr(test, r#allow(x))]')
+    spaced = attribute_calls("#\n[cfg_attr(test, r#allow(x))]")
     assert [(c.form, c.lints, c.inner) for c in spaced] == [("allow", ("x",), False)]
-    for opaque in ("#[$m]", "# $t", '#[cfg_attr(test, $($t)*)]', "m!(expect(x));", "#[[x]]"):
+    hidden = attribute_calls('#[allow(a, clippy :: r#b, c::d(), reason = "r")]')
+    assert hidden[0].lints == ("a", "clippy::b", "<unparsed: c::d()>"), hidden
+    for opaque in (
+        "#[$m]",
+        "# $t",
+        "#[cfg_attr(test, $($t)*)]",
+        "m!(expect(x));",
+        "#[[x]]",
+    ):
         assert unscannable(opaque, strip_comments_and_strings(opaque)), opaque
-    for plain in ('#[path = "a/b.rs"] mod b;', 'include!("x.rs");', "a.expect(1); A::expect(b);"):
+    for plain in (
+        '#[path = "a/b.rs"] mod b;',
+        'include!("x.rs");',
+        "a.expect(1); A::expect(b);",
+    ):
         assert not unscannable(plain, strip_comments_and_strings(plain)), plain
-    print("common self-test: ok (cfg_attr siblings, lexemes, spacing, unscannable forms)")
+    print(
+        "common self-test: ok (cfg_attr siblings, lexemes, spacing, unscannable forms)"
+    )
     return 0
 
 

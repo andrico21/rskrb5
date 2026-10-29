@@ -138,9 +138,7 @@ def opaque_constructs(stripped: str) -> list[tuple[int, str]]:
                         visit(args[a:b])
 
         visit(body)
-    for match in re.finditer(
-        r"(?<![\w.:#$])(?:r#)?(allow|expect)\s*[(\[{]", stripped
-    ):
+    for match in re.finditer(r"(?<![\w.:#$])(?:r#)?(allow|expect)\s*[(\[{]", stripped):
         if any(a <= match.start() < b for a, b in spans):
             continue
         before = stripped[: match.start()].rstrip()
@@ -167,6 +165,21 @@ class AttributeCall:
     kw_start: int
     kw_end: int
     inner: bool
+
+
+LINT_PATH: Final = re.compile(r"(?:r#)?\w+(?:\s*::\s*(?:r#)?\w+)*")
+
+
+def lint_path(argument: str) -> str:
+    """The canonical lint name of one `allow`/`expect` argument.
+
+    `clippy :: r#unwrap_used` is `clippy::unwrap_used` to rustc. An argument
+    that is not a lint path is kept verbatim, marked unparsed, so no gate can
+    mistake it for a sanctioned lint or silently drop it.
+    """
+    if LINT_PATH.fullmatch(argument):
+        return re.sub(r"\s+|r#", "", argument)
+    return f"<unparsed: {' '.join(argument.split())}>"
 
 
 def attribute_calls(original: str, stripped: str | None = None) -> list[AttributeCall]:
@@ -200,7 +213,7 @@ def attribute_calls(original: str, stripped: str | None = None) -> list[Attribut
                 lints = []
                 for a, b in spans:
                     value = args[a:b].strip()
-                    if value.startswith("reason") and "=" in value:
+                    if re.match(r"reason\s*=", value):
                         raw = original[
                             offset + opening + 1 + a : offset + opening + 1 + b
                         ]
@@ -210,8 +223,8 @@ def attribute_calls(original: str, stripped: str | None = None) -> list[Attribut
                             reason = tomllib.loads("reason = " + literal)["reason"]
                         elif raw_match := re.fullmatch(r'r(#*)"(.*)"\1', literal, re.S):
                             reason = raw_match[2]
-                    elif re.fullmatch(r"\w+(?:::\w+)*", value):
-                        lints.append(value)
+                    elif value:
+                        lints.append(lint_path(value))
                 predicate = (
                     predicates[0]
                     if len(predicates) == 1
