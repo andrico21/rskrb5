@@ -1,10 +1,6 @@
 //! RFC 3244 password-change protocol helpers.
 
-use rasn::{
-    AsnType, Decode, Decoder as _, Encode, Encoder as _,
-    types::{Integer, OctetString},
-};
-use zeroize::Zeroizing;
+use rasn::{AsnType, Decode, Decoder as _, Encode, Encoder as _, types::Integer};
 
 use crate::{
     ap_req, crypto::KerberosEtype, keytab::EncryptionKey, krb_priv,
@@ -13,6 +9,7 @@ use crate::{
 
 /// Wire codecs and protocol error conversion.
 mod codec;
+pub mod password;
 /// Password payload ownership and encoding.
 mod payload;
 /// Reply parsing and result handling.
@@ -21,6 +18,8 @@ mod reply;
 mod request;
 /// Result code interpretation.
 mod result;
+/// Password-specific zeroizing DER writer.
+mod secret_der;
 
 use codec::{
     ap_req_error, encryption_key_to_rasn, kerberos_string, krb_priv_error, random_key_material,
@@ -56,7 +55,7 @@ const HEADER_LEN: usize = 6;
 pub struct ChangePasswdData {
     /// New password bytes.
     #[rasn(tag(explicit(0)))]
-    pub new_passwd: OctetString,
+    pub new_passwd: password::Bytes,
     /// Optional target principal name.
     #[rasn(tag(explicit(1)))]
     pub targ_name: Option<rasn_kerberos::PrincipalName>,
@@ -219,12 +218,8 @@ pub fn build_change_password_request_with_confounder(
     options: EncKrbPrivPartOptions,
     confounder: &[u8],
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let krb_priv = build_krb_priv_with_confounder(
-        Zeroizing::new(change_data.encode_der()?),
-        options,
-        &reply_key,
-        confounder,
-    )?;
+    let plaintext = secret_der::private_part(&secret_der::change_data(change_data)?, options)?;
+    let krb_priv = payload::encrypt(&plaintext, &reply_key, confounder)?;
     build_change_password_request_from_parts(ap_req, krb_priv, reply_key)
 }
 
@@ -380,12 +375,16 @@ pub fn build_change_password_request(
     reply_key: EncryptionKey,
     options: EncKrbPrivPartOptions,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let krb_priv = build_krb_priv(
-        Zeroizing::new(change_data.encode_der()?),
+    let etype = KerberosEtype::from_etype_id(reply_key.etype)
+        .ok_or(Error::UnsupportedEtype(reply_key.etype))?;
+    let confounder = random_key_material(etype.confounder_len())?;
+    build_change_password_request_with_confounder(
+        ap_req,
+        change_data,
+        reply_key,
         options,
-        &reply_key,
-    )?;
-    build_change_password_request_from_parts(ap_req, krb_priv, reply_key)
+        &confounder,
+    )
 }
 
 /// Parsed RFC 3244-style password-change reply frame.

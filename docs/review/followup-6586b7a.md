@@ -78,7 +78,7 @@ limits are recorded under FU-OPS-03.
 | FU-TRN-11 | major | Delivered decrypt/validation failure loses unknown-outcome wrapper | open | - | - | - |
 | FU-TRN-12 | minor | UDP kpasswd admin fallback queries nonexistent protocol variant | open | - | - | - |
 | FU-TRN-13 | minor | One unresolvable explicit-DNS SRV target aborts all failover | open | - | - | - |
-| FU-TRN-14 | info | Password-specific ASN.1 owner retains dependency plaintext | open | - | - | - |
+| FU-TRN-14 | info | Password-specific ASN.1 owner retains dependency plaintext | fixed | `password_storage_is_zeroizing`, `password_der_matches_rasn`, `private_der_matches_rasn`; 38 kadmin regressions; commit `kadmin: own password storage and DER staging (FU-TRN-14)` | ChangePasswdData::new_passwd is kadmin::password::Bytes, a redacted zeroizing owner; request builders encode payload and application-28 envelope directly into zeroizing buffers; encode_der returns caller-owned Vec with documented erasure duty | Red: OctetString failed Zeroize/ZeroizeOnDrop bounds; green: ownership and DER equivalence tests pass, including length boundaries, target metadata, time/usec, sequence and addresses. Generic rasn output/cipher-internal copies remain outside guarantee; constructor ownership change belongs to todo 10 |
 | FU-CRY-01 | major | Unauthenticated peer s2k count can weaken password derivation to one round | open | - | - | - |
 | FU-CRY-02 | minor | Hand-written MAC equality lacks audited constant-time primitive | open | - | - | - |
 | FU-CRY-03 | minor | Aggregate erasure counters do not pin each sensitive crypto owner | open | - | - | - |

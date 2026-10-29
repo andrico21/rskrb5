@@ -1,11 +1,15 @@
 //! Password payload ownership and encoding.
 
-use core::fmt;
+use core::{fmt, mem};
+
+use rasn::types::Integer;
 
 use super::{
     ChangePasswdData, Error,
-    codec::{decode, encode, kerberos_string, principal_name},
+    codec::{decode, kerberos_string, principal_name},
+    secret_der,
 };
+use crate::{crypto::KerberosEtype, keytab::EncryptionKey, krb_priv::KRB_PRIV_ENCPART_USAGE};
 
 impl fmt::Debug for ChangePasswdData {
     #[inline]
@@ -74,11 +78,76 @@ impl ChangePasswdData {
 
     /// Encode password-change data using DER.
     ///
+    /// The returned allocation belongs to the caller, who must erase it after use.
+    /// The request builders retain their encoding in zeroizing storage instead.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Encode`] when the DER encoder fails.
     #[inline]
     pub fn encode_der(&self) -> Result<Vec<u8>, Error> {
-        encode("ChangePasswdData", self)
+        let mut encoded = secret_der::change_data(self)?;
+        Ok(mem::take(&mut *encoded))
+    }
+}
+
+/// Encrypt an already encoded password envelope without copying its plaintext.
+///
+/// # Errors
+/// Returns an unsupported-enctype or encryption error.
+pub(super) fn encrypt(
+    plaintext: &[u8],
+    key: &EncryptionKey,
+    confounder: &[u8],
+) -> Result<rasn_kerberos::KrbPriv, Error> {
+    let etype =
+        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let cipher = etype
+        .encrypt_message_with_confounder(&key.value, plaintext, KRB_PRIV_ENCPART_USAGE, confounder)
+        .map_err(|source| Error::Crypto {
+            message: source.to_string(),
+        })?;
+    Ok(rasn_kerberos::KrbPriv {
+        pvno: Integer::from(5_i32),
+        msg_type: Integer::from(21_i32),
+        enc_part: rasn_kerberos::EncryptedData {
+            etype: key.etype,
+            kvno: None,
+            cipher: cipher.into(),
+        },
+    })
+}
+
+/// Password-storage erasure regression.
+#[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod tests {
+    use zeroize::{Zeroize, ZeroizeOnDrop};
+
+    use super::ChangePasswdData;
+
+    /// Compile-time proof that the password owner erases itself on drop.
+    fn erase<T>(value: &mut T)
+    where
+        T: Zeroize + ZeroizeOnDrop,
+    {
+        value.zeroize();
+    }
+
+    /// The password value supports explicit erasure and owns its drop erasure.
+    #[test]
+    fn password_storage_is_zeroizing() {
+        // Given a password owned by the protocol payload.
+        let mut payload = ChangePasswdData::new(b"erasure-canary");
+        // When the same erasure primitive used at drop is invoked.
+        erase(&mut payload.new_passwd);
+        // Then no password bytes remain accessible through the owner.
+        assert!(
+            payload.new_passwd.as_ref().is_empty(),
+            "password owner must be erased"
+        );
     }
 }
