@@ -30,7 +30,7 @@ pub(super) fn privileged_integration_enabled() -> Result<bool, Box<dyn Error>> {
         )?;
         return Ok(false);
     }
-    if !command_available("kinit") {
+    if !required_command_available("kinit")? {
         writeln!(
             io::stderr(),
             "skipping privileged Docker KDC integration test; set a PATH-accessible kinit binary to enable"
@@ -42,7 +42,8 @@ pub(super) fn privileged_integration_enabled() -> Result<bool, Box<dyn Error>> {
 
 /// Returns whether the Docker tests run: `INTEGRATION=1` and every fixture reachable.
 ///
-/// Reports a skip on stderr.
+/// Reports an optional skip on stderr. `INTEGRATION_REQUIRED=1` instead fails
+/// when an explicitly requested fixture is unavailable.
 pub(super) fn integration_enabled() -> Result<bool, Box<dyn Error>> {
     if env::var("INTEGRATION").as_deref() != Ok("1") {
         writeln!(
@@ -64,7 +65,7 @@ pub(super) fn integration_enabled() -> Result<bool, Box<dyn Error>> {
                 io::stderr(),
                 "skipping Docker KDC integration test; cannot reach {label} endpoint at {endpoint}"
             )?;
-            return Ok(false);
+            return unavailable(&format!("cannot reach {label} endpoint at {endpoint}"));
         }
     }
     if env::var("TEST_KPASSWD").as_deref() == Ok("1") && !tcp_reachable(&kpasswd_addr(), "kpasswd")?
@@ -74,11 +75,11 @@ pub(super) fn integration_enabled() -> Result<bool, Box<dyn Error>> {
             "skipping Docker KDC integration test; cannot reach kpasswd endpoint at {}",
             kpasswd_addr()
         )?;
-        return Ok(false);
+        return unavailable("cannot reach requested kpasswd endpoint");
     }
     #[cfg(feature = "spnego")]
     if !http_service_reachable()? {
-        return Ok(false);
+        return unavailable("cannot reach HTTP fixture");
     }
     Ok(true)
 }
@@ -88,7 +89,7 @@ pub(super) fn privileged_kvno_integration_enabled() -> Result<bool, Box<dyn Erro
     if !privileged_integration_enabled()? {
         return Ok(false);
     }
-    if !command_available("kvno") {
+    if !required_command_available("kvno")? {
         writeln!(
             io::stderr(),
             "skipping privileged Docker KDC kvno tests; set a PATH-accessible kvno binary to enable"
@@ -108,3 +109,34 @@ fn command_available(program: &str) -> bool {
         .status()
         .is_ok()
 }
+
+/// Report an unavailable requested prerequisite without hiding required runs.
+fn unavailable(reason: &str) -> Result<bool, Box<dyn Error>> {
+    if env::var("INTEGRATION_REQUIRED").as_deref() == Ok("1") {
+        Err(io::Error::other(format!(
+            "required integration fixture unavailable: {reason}"
+        ))
+        .into())
+    } else {
+        Ok(false)
+    }
+}
+
+/// Check a requested MIT executable, failing required runs when it is missing.
+fn required_command_available(program: &str) -> Result<bool, Box<dyn Error>> {
+    if command_available(program) {
+        Ok(true)
+    } else {
+        unavailable(&format!("missing executable {program}"))
+    }
+}
+
+/// Required-mode subprocess regressions.
+#[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "preflight_tests.rs"]
+mod tests;
