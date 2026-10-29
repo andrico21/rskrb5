@@ -24,7 +24,7 @@ use hmac::{Hmac, Mac};
 use md4::{Digest, Md4};
 use md5::Md5;
 use rc4::{Rc4, StreamCipher as _};
-use scratch::SecretScratch;
+use scratch::{Purpose, SecretScratch};
 use sha1::Sha1;
 use sha2::{Sha256, Sha384};
 use zeroize::{Zeroize as _, Zeroizing};
@@ -176,7 +176,10 @@ impl AesSha1Etype {
         s2kparams: &str,
     ) -> Result<Vec<u8>, Error> {
         let iterations = s2kparams_to_iterations(s2kparams)?;
-        let tkey = SecretScratch::new(self.string_to_pbkdf2(secret, salt, iterations));
+        let tkey = SecretScratch::for_purpose(
+            self.string_to_pbkdf2(secret, salt, iterations),
+            Purpose::Pbkdf2,
+        );
         self.derive_key(&tkey, KERBEROS_CONSTANT)
     }
 
@@ -352,7 +355,10 @@ impl AesSha1Etype {
         )?;
         let encryption_key =
             SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
-        let plain = SecretScratch::new(self.decrypt_data(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            self.decrypt_data(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
@@ -517,7 +523,10 @@ impl AesSha2Etype {
     ) -> Result<Vec<u8>, Error> {
         let iterations = s2kparams_to_iterations(s2kparams)?;
         let saltp = self.saltp(salt);
-        let tkey = SecretScratch::new(self.string_to_pbkdf2(secret, &saltp, iterations));
+        let tkey = SecretScratch::for_purpose(
+            self.string_to_pbkdf2(secret, &saltp, iterations),
+            Purpose::Pbkdf2,
+        );
         self.derive_key(&tkey, KERBEROS_CONSTANT)
     }
 
@@ -673,7 +682,10 @@ impl AesSha2Etype {
 
         let encryption_key =
             SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
-        let plain = SecretScratch::new(self.decrypt_data(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            self.decrypt_data(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
         Ok(message.to_vec())
@@ -1081,7 +1093,10 @@ impl Des3CbcSha1KdEtype {
             protocol_key,
             &usage_constant(usage, 0xaa),
         )?);
-        let plain = SecretScratch::new(Self::decrypt_data(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            Self::decrypt_data(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
@@ -1356,7 +1371,10 @@ impl Rc4HmacEtype {
             &rc4_hmac_usage_to_ms_msg_type(usage),
         ));
         let encryption_key = SecretScratch::new(hmac_md5(&usage_key, checksum));
-        let plain = SecretScratch::new(rc4_hmac_crypt(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            rc4_hmac_crypt(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
@@ -1860,11 +1878,10 @@ where
 
     let last_plain = SecretScratch::new(cbc_decrypt(cipher, &chain_iv, &*completed_last_cipher));
     plaintext.extend_from_slice(&last_plain);
-    let tail_plain = SecretScratch::new(cbc_decrypt(
-        cipher,
-        &completed_last_cipher,
-        penultimate_cipher,
-    ));
+    let tail_plain = SecretScratch::for_purpose(
+        cbc_decrypt(cipher, &completed_last_cipher, penultimate_cipher),
+        Purpose::CtsTail,
+    );
     plaintext.extend_from_slice(&tail_plain);
     if let Some(discarded) = plaintext.get_mut(ciphertext.len()..) {
         discarded.zeroize();
