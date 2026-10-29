@@ -33,9 +33,16 @@ builds, lints and tests clean, and so does Windows.
 ## The six sanctioned exceptions
 
 A lint that fires is fixed in code. The only `#[expect]`/`#![expect]`
-attributes allowed anywhere in `src`, `tests`, `examples`, `benches` and
-`fuzz/fuzz_targets`, including inside `cfg_attr`, are these, with exactly
-these reason texts and on these item kinds:
+attributes allowed anywhere in the Rust sources, including inside
+`cfg_attr`, are these, with exactly these reason texts and on these item
+kinds. The sources are `src`, `tests`, `examples`, `benches` and
+`fuzz/fuzz_targets` plus everything the checkout's Cargo manifests compile:
+build scripts and targets with a custom `path`
+([`source_set.py`](../scripts/lint-gates/source_set.py)); a target outside
+the checkout, an out-of-line `mod` in a file scanned on its own, or an empty
+source set fails every gate. A lint path is read the way rustc reads it, so
+`clippy :: r#unwrap_used` is `clippy::unwrap_used`, and an argument that is
+not a lint path is reported, never dropped:
 
 | # | Lints | Reason | Where |
 |---|---|---|---|
