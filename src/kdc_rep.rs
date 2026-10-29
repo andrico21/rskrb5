@@ -2,6 +2,10 @@
 
 use rasn::{der, types::Integer};
 
+/// Mapping of ticket validation errors into reply errors.
+mod ticket_error;
+use ticket_error::ticket_error;
+
 use crate::{
     crypto::KerberosEtype,
     der::{decode_complete, trim_zero_padded_der},
@@ -365,34 +369,6 @@ fn validate_integer(field: &'static str, actual: &Integer, expected: i32) -> Res
         });
     }
     Ok(())
-}
-
-/// Map a Ticket module error to the KDC reply error; a key mismatch becomes
-/// [`Error::TicketKeyEtypeMismatch`].
-fn ticket_error(error: TicketError) -> Error {
-    match error {
-        TicketError::Decode { target, message } => Error::Decode { target, message },
-        TicketError::Encode { target, message } => Error::Encode { target, message },
-        TicketError::InvalidMessage {
-            field,
-            expected,
-            actual,
-        } => Error::InvalidMessage {
-            field,
-            expected,
-            actual,
-        },
-        TicketError::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        TicketError::KeyEtypeMismatch {
-            key_etype,
-            encrypted_data_etype,
-        } => Error::TicketKeyEtypeMismatch {
-            key_etype,
-            encrypted_data_etype,
-        },
-        TicketError::Random(source) => Error::Random(source),
-        TicketError::Crypto(source) => Error::Crypto(source),
-    }
 }
 
 use crate::error::KdcRep as Error;
