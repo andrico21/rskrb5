@@ -49,6 +49,7 @@ impl Drop for SecretBytes {
         {
             assert!(self.0.iter().all(|byte| *byte == 0));
             tests::ERASED_BYTES.with(|count| count.set(count.get().saturating_add(self.0.len())));
+            tests::ERASED_LENGTHS.with(|lengths| lengths.borrow_mut().push(self.0.len()));
         }
     }
 }
@@ -61,7 +62,10 @@ impl Drop for SecretBytes {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::{cell::Cell, error::Error as StdError};
+    use core::{
+        cell::{Cell, RefCell},
+        error::Error as StdError,
+    };
     use std::{
         env, fs, io,
         time::{SystemTime, UNIX_EPOCH},
@@ -75,6 +79,7 @@ mod tests {
 
     std::thread_local! {
         pub(super) static ERASED_BYTES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static ERASED_LENGTHS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
     }
 
     /// File reads and save serialization erase internal credential allocations.
@@ -95,18 +100,25 @@ mod tests {
             1,
         ));
         let cache = CCache::new(CachePrincipal::new("REALM", 1, vec!["user".to_owned()]));
-        ERASED_BYTES.with(|count| count.set(0));
-
-        // When persisting and reading each real format.
-        keytab.save(directory.join("keytab"))?;
-        drop(Keytab::load(directory.join("keytab"))?);
-        cache.save(directory.join("cache"))?;
-        drop(CCache::load(directory.join("cache"))?);
-
-        // Then owned file/serialization copies passed through erasing owners.
-        let erased = ERASED_BYTES.with(Cell::get);
+        let keytab_len = keytab.to_bytes()?.len();
+        let cache_len = cache.to_bytes()?.len();
+        for operation in 0_u8..4 {
+            ERASED_LENGTHS.with(|lengths| lengths.borrow_mut().clear());
+            // When persisting or reading one real format in isolation.
+            match operation {
+                0 => keytab.save(directory.join("keytab"))?,
+                1 => drop(Keytab::load(directory.join("keytab"))?),
+                2 => cache.save(directory.join("cache"))?,
+                _ => drop(CCache::load(directory.join("cache"))?),
+            }
+            // Then that operation erases its complete file allocation.
+            let expected = if operation < 2 { keytab_len } else { cache_len };
+            assert!(
+                ERASED_LENGTHS.with(|lengths| lengths.borrow().contains(&expected)),
+                "operation {operation} did not erase its file buffer"
+            );
+        }
         fs::remove_dir_all(directory)?;
-        assert!(erased >= 32, "owned file buffers were not erased");
         Ok(())
     }
 
@@ -123,10 +135,12 @@ mod tests {
             1,
         );
         keytab.entries_mut().push(entry.clone());
+        let partial_len = keytab.to_bytes()?.len();
         let mut invalid = entry;
         invalid.key.etype = i32::MAX;
         keytab.entries_mut().push(invalid);
         ERASED_BYTES.with(|count| count.set(0));
+        ERASED_LENGTHS.with(|lengths| lengths.borrow_mut().clear());
 
         // When serialization fails after writing the first entry.
         let result = keytab.to_bytes();
@@ -134,7 +148,7 @@ mod tests {
         // Then the partial secret output is erased on the error path.
         assert!(matches!(result, Err(KeytabError::LengthOverflow)));
         assert!(
-            ERASED_BYTES.with(Cell::get) >= 16,
+            ERASED_LENGTHS.with(|lengths| lengths.borrow().contains(&partial_len)),
             "partial output was not erased"
         );
         Ok(())
