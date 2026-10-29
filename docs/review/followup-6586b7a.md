@@ -118,7 +118,7 @@ limits are recorded under FU-OPS-03.
 | FU-TST-03 | minor | INVALID “never renewed” half is not regression-pinned | open | - | - | - |
 | FU-TST-04 | minor | Abort regression never observes cancellation or Drop cleanup | open | - | - | - |
 | FU-TST-05 | minor | Explicit MIT integration requests can pass with no live assertions | open | - | - | - |
-| FU-TST-06 | minor | AD password-reply interoperability is an open question | open | - | - | - |
+| FU-TST-06 | minor | AD password-reply interoperability is an open question | transferred | Plan-1 todo-4 contested-row ruling; commit `docs: transfer AD kpasswd interoperability to plan 2 (FU-TST-06)` | none; existing reply controls remain enforced | parity: Samba AD kpasswd reply interop; plan-2 todo 1 |
 | FU-TST-07 | minor | Live harness IPv6 authority helpers disagree with production parser | open | - | - | - |
 | FU-TST-08 | minor | Transport ambient-read regression is a bypassable substring check | open | - | - | - |
 | FU-TST-09 | minor | Auto TCP-first test does not observe an unwanted UDP probe | open | - | - | - |
