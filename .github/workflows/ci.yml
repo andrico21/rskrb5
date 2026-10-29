@@ -384,7 +384,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
   audit:
     name: audit
@@ -445,7 +445,7 @@ jobs:
       - name: Verify vendored guideline checksums
         run: (cd docs/rust-guidelines && sha256sum -c SHA256SUMS)
       - name: Check Markdown links (offline)
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --offline --include-fragments --no-progress README.md PROVENANCE.md RUST_GUIDELINES.md CHANGELOG.md docs/*.md
           fail: true
