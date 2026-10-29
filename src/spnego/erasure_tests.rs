@@ -74,6 +74,21 @@ fn payload_storage_requires_zeroizing_owners() -> Result<(), Error> {
     Ok(())
 }
 
+/// Consuming constructors accept the caller's zeroizing allocation directly.
+#[test]
+fn constructors_accept_zeroizing_payloads() -> Result<(), Error> {
+    let key = EncryptionKey::new(17, vec![0x42; 16]);
+    let payload = Zeroizing::new(vec![0x77; 5]);
+    let mic = MicToken::new_initiator(payload.clone(), &key)?;
+    let wrap = WrapToken::new_initiator_sealed_with_confounder(payload, &key, &[0; 16])?;
+    assert_eq!(mic.payload.as_ref().map(|bytes| bytes.len()), Some(5));
+    assert_eq!(
+        wrap.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)?,
+        vec![0x77; 5]
+    );
+    Ok(())
+}
+
 /// Consume the complete event list, so an unrelated owner's erasure cannot mask a missing one.
 fn assert_events(expected: &[(&str, usize, bool)]) {
     EVENTS.with_borrow_mut(|events| {

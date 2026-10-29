@@ -244,6 +244,7 @@ impl MicToken {
 
     #[must_use]
     /// Set the authenticated payload bytes.
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original.
     #[inline]
     pub fn with_payload<P>(mut self, payload: P) -> Self
     where
@@ -296,12 +297,12 @@ impl MicToken {
     #[inline]
     pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
         let mut token = Self {
             flags: 0,
             snd_seq_num: 0,
-            payload: Some(Zeroizing::new(payload.into())),
+            payload: Some(payload.into()),
             checksum: None,
         };
         token.set_checksum(key, GSSAPI_INITIATOR_SIGN_USAGE)?;
@@ -580,6 +581,7 @@ impl WrapToken {
 
     #[must_use]
     /// Set wrapped payload bytes.
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original.
     #[inline]
     pub fn with_payload<P>(mut self, payload: P) -> Self
     where
@@ -657,8 +659,9 @@ impl WrapToken {
     #[inline]
     pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
+        let payload = payload.into();
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut token = Self {
@@ -671,7 +674,7 @@ impl WrapToken {
             })?,
             rrc: 0,
             snd_seq_num: 0,
-            payload: Some(Zeroizing::new(payload.into())),
+            payload: Some(payload),
             checksum: None,
             encrypted_body: None,
         };
@@ -688,8 +691,9 @@ impl WrapToken {
     #[inline]
     pub fn new_initiator_sealed<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
+        let payload = payload.into();
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];
@@ -710,14 +714,14 @@ impl WrapToken {
         confounder: &[u8],
     ) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
         let mut token = Self {
             flags: GSS_TOKEN_FLAG_SEALED,
             ec: 0,
             rrc: 0,
             snd_seq_num: 0,
-            payload: Some(Zeroizing::new(payload.into())),
+            payload: Some(payload.into()),
             checksum: None,
             encrypted_body: None,
         };
