@@ -795,14 +795,13 @@ fn classify_negotiate_challenge(
         }
     };
 
-    match response.neg_state {
-        Some(spnego::NegState::Reject) => return ClientNegotiateResponse::Rejected,
-        Some(spnego::NegState::AcceptIncomplete | spnego::NegState::RequestMic)
-            if response.response_token.is_none() =>
-        {
-            return ClientNegotiateResponse::Challenge;
-        }
-        _ => {}
+    if response.neg_state == Some(spnego::NegState::Reject) {
+        return ClientNegotiateResponse::Rejected;
+    }
+    if let Err(source) = context.validate_completion(&response) {
+        return ClientNegotiateResponse::InvalidToken {
+            message: source.to_string(),
+        };
     }
 
     let Some(response_token) = response.response_token else {

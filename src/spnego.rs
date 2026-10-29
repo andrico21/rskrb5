@@ -1535,6 +1535,33 @@ impl fmt::Debug for InitiatorContext {
 }
 
 impl InitiatorContext {
+    /// Validate completion metadata against the retained offer.
+    ///
+    /// # Errors
+    /// Returns a typed error for unfinished negotiation, unoffered mechanisms,
+    /// or a MIC exchange this one-shot initiator cannot complete.
+    pub(crate) fn validate_completion(&self, response: &NegTokenResp) -> Result<(), Error> {
+        match response.neg_state {
+            Some(NegState::AcceptCompleted) => {}
+            Some(NegState::AcceptIncomplete | NegState::RequestMic | NegState::Reject) | None => {
+                return Err(Error::NegotiationRequiresState);
+            }
+        }
+        if let Some(selected) = &response.supported_mech {
+            let offered = match &self.spnego_token {
+                Token::Init(init) => &init.mech_types,
+                Token::Resp(_) => return Err(Error::NegotiationRequiresState),
+            };
+            if !offered.contains(selected) {
+                return Err(Error::UnsupportedMechanism(selected.clone()));
+            }
+        }
+        if response.mech_list_mic.is_some() {
+            return Err(Error::MechListMicRequiresState);
+        }
+        Ok(())
+    }
+
     /// Verify an AP-REP wrapped in a SPNEGO `Negotiate` response header.
     ///
     /// # Errors
@@ -1555,6 +1582,7 @@ impl InitiatorContext {
                 });
             }
         };
+        self.validate_completion(&response)?;
         let response_token = response.response_token.ok_or(Error::MissingMechToken)?;
         let krb5 = Krb5MechToken::decode(&response_token)?;
         if krb5.token_id != Krb5TokenId::ApRep {

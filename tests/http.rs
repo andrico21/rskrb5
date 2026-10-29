@@ -116,6 +116,45 @@ mod tests {
         "8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07";
     const AP_REP_CONFOUNDER: &str = "000102030405060708090a0b0c0d0e0f";
 
+    /// A genuine AP-REP cannot authenticate unfinished or unbound SPNEGO metadata.
+    #[test]
+    fn completion_rejects_invalid_metadata() -> Result<(), TestError> {
+        // Given an AP-REP that genuinely matches the retained initiator.
+        let context = initiator_context()?;
+        let Token::Resp(response) =
+            spnego::parse_negotiate_header(&ap_rep_response_header(&context)?)?
+        else {
+            return Err("expected response".into());
+        };
+        let mut incomplete = response.clone();
+        incomplete.neg_state = Some(spnego::NegState::AcceptIncomplete);
+        let mut request_mic = response.clone();
+        request_mic.neg_state = Some(spnego::NegState::RequestMic);
+        let mut absent_state = response.clone();
+        absent_state.neg_state = None;
+        let mut wrong_mech = response.clone();
+        wrong_mech.supported_mech = Some(spnego::oid::ObjectIdentifier::from_arcs(vec![1, 2, 3])?);
+        let mut mic = response;
+        mic.mech_list_mic = Some(vec![0; 28]);
+        for altered in [incomplete, request_mic, absent_state, wrong_mech, mic] {
+            // When only unauthenticated negotiation metadata changes.
+            let header = spnego::negotiate_header(&Token::Resp(altered))?;
+            let mut http_response = Response::new(());
+            drop(
+                http_response
+                    .headers_mut()
+                    .insert(WWW_AUTHENTICATE, HeaderValue::from_str(&header)?),
+            );
+            // Then neither the direct verifier nor HTTP classification accepts it.
+            assert!(context.verify_ap_rep_response_header(&header).is_err());
+            assert!(matches!(
+                krb_http::classify_negotiate_response(&context, &http_response),
+                krb_http::ClientNegotiateResponse::InvalidToken { message: _ }
+            ));
+        }
+        Ok(())
+    }
+
     /// Generated and forwarded credentials are sensitive before request diagnostics run.
     #[test]
     fn credential_headers_are_sensitive() -> Result<(), TestError> {
