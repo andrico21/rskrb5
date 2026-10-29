@@ -72,10 +72,11 @@ in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
 | `profile_eq.py --clippy-toml` | `[lints]` equals the vendored core profile; `clippy.toml` equals the core sample apart from the two append-only keys |
 | `completeness_check.py` | the profile is complete for the current stable: the rustc and `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions |
 | `facade_gate.py --enforce` | no `pub use` (or `pub(..) use`) outside the crate-root scope of `src/lib.rs`, cfg-disabled code included |
-| `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run) |
+| `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run; `facade_gate.py --paths` works the same way, and an empty selection selects nothing) |
 | `feature_closures.py run` | every feature closure: `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |
 | `feature_closures.py check-ci .github/workflows/ci.yml` | the matrix of the job whose id is `closures` lists exactly the computed closures, each once; the job is defined once, no other `closures:` key exists (no decoy job or matrix), the matrix has no `include`/`exclude`, the job has no `if`/`continue-on-error`, and its steps run exactly the strict clippy and test commands |
-| `fuzz_lint.py --enforce` | the root profile on the nightly fuzz crate, in a disposable copy |
+| `fuzz_lint.py --enforce` | the root profile on the nightly fuzz crate, in a disposable copy (without `--enforce` it reports the clippy result and exits 0, like every gate) |
+| `gate_hygiene.py --enforce` | the gate scripts carry no dead work: every `argparse` option is read, and every module-level helper is used outside a `self_test` |
 
 `rg -n 'lint-migration' src tests examples fuzz` must print nothing.
 `semver_baseline.py` is not a lint gate: it drives `cargo semver-checks`

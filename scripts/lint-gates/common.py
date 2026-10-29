@@ -13,7 +13,6 @@ Offsets here are Python character offsets, never compiler UTF-8 byte offsets.
 
 from __future__ import annotations
 
-import fnmatch
 import re
 import sys
 from dataclasses import dataclass
@@ -87,10 +86,6 @@ def foreign_sources(original: str, stripped: str) -> list[tuple[int, str]]:
 def unscannable(original: str, stripped: str) -> list[tuple[int, str]]:
     """Every construct that could hide an `allow`/`expect` from the gates."""
     return sorted(opaque_constructs(stripped) + foreign_sources(original, stripped))
-
-
-def selected(path: str, patterns: list[str] | None) -> bool:
-    return not patterns or any(fnmatch.fnmatch(path, p) for p in patterns)
 
 
 def blank_ranges(text: str, ranges: list[tuple[int, int]]) -> str:

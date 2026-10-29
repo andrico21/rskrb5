@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from contextlib import redirect_stdout
+from io import StringIO
 from typing import Final
 
 import common
@@ -37,15 +39,12 @@ def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
     test_ranges = common.cfg_test_line_ranges(stripped)
     lines = source.splitlines()
     hits = []
-    touched = set(items)
     proptest_ranges = []
     for match in re.finditer(r"\bproptest!\s*\{", stripped):
         close = common.match_bracket(stripped, match.end() - 1)
         if close is not None:
             proptest_ranges.append((match.start(), close))
     for item in items:
-        if item not in touched:
-            continue
         line = common.line_of(source, item.keyword)
         prefix = source[item.start : item.keyword]
         attrs = [
@@ -100,9 +99,6 @@ def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
             ):
                 hits.append(("drop-audit", line, item.identity))
     for match in re.finditer(r"(?<!\w)(?:debug_)?assert!\s*\(", stripped):
-        item = common.owner(items, match.start())
-        if item not in touched:
-            continue
         opening = match.end() - 1
         close = common.match_bracket(stripped, opening)
         if close is None:
@@ -203,6 +199,9 @@ def self_test() -> int:
             moved.replace("v.is_empty()", "w.is_empty()")
         )
         assert report(root, ["tests/support/*.rs"])
+        with redirect_stdout(StringIO()):
+            assert main(["--root", str(root)]) == 0
+            assert main(["--enforce", "--root", str(root)]) == 1
     print("prose_gate self-test: ok (all six checks, whole-tree and explicit scopes)")
     return 0
 
@@ -214,7 +213,6 @@ def main(argv: list[str] | None = None) -> int:
         "--paths", nargs="+", help="path globs to scan (default: the whole tree)"
     )
     parser.add_argument("--only", action="append", choices=CHECKS)
-    parser.add_argument("--report", action="store_true")
     parser.add_argument("--enforce", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)

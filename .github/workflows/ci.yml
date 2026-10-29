@@ -482,6 +482,8 @@ jobs:
         run: python3 scripts/lint-gates/feature_closures.py check-ci .github/workflows/ci.yml
       - name: Fuzz lint profile
         run: python3 scripts/lint-gates/fuzz_lint.py --enforce
+      - name: No dead options or helpers in the gate scripts
+        run: python3 scripts/lint-gates/gate_hygiene.py --enforce
       - name: No lint-migration attributes
         run: |
           grep -rn lint-migration src tests examples fuzz && exit 1

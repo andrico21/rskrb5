@@ -406,7 +406,6 @@ def self_test() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=common.ROOT)
-    parser.add_argument("--report", action="store_true")
     parser.add_argument("--enforce", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)

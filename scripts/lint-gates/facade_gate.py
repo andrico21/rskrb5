@@ -14,14 +14,18 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from contextlib import redirect_stdout
+from io import StringIO
 
 import common
+import path_scope
 
 
 @dataclass(frozen=True, slots=True)
 class Violation:
     file: str
     line: int
+    statement: str
 
 
 def statements(source: str, file: str) -> list[tuple[str, int]]:
@@ -55,11 +59,12 @@ def statements(source: str, file: str) -> list[tuple[str, int]]:
 
 
 def report(root: Path, paths: list[str] | None = None) -> list[Violation]:
+    """Violations in the whole tree, or only in `paths` (an empty list selects nothing)."""
     return [
-        Violation(file, line)
+        Violation(file, line, statement)
         for path in common.iter_rust_files(root)
-        if common.selected(file := path.relative_to(root).as_posix(), paths)
-        for _, line in statements(path.read_text(), file)
+        if path_scope.selected(file := path.relative_to(root).as_posix(), paths)
+        for statement, line in statements(path.read_text(), file)
     ]
 
 
@@ -84,19 +89,25 @@ def self_test() -> int:
         module.write_text("pub struct Thing;\n")
         assert not report(root)
         module.write_text("pub use crate::Thing;\n")
-        assert len(report(root)) == 1
+        assert [hit.statement for hit in report(root)] == [
+            "crate::client\tpubusecrate::Thing;"
+        ]
+        assert report(root, []) == []
+        assert len(report(root, ["src/client.rs"])) == 1
+        with redirect_stdout(StringIO()):
+            assert main(["--root", str(root)]) == 0
+            assert main(["--enforce", "--root", str(root)]) == 1
     print("facade_gate self-test: ok")
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=common.ROOT)
     parser.add_argument("--paths", nargs="+")
     parser.add_argument("--enforce", action="store_true")
-    parser.add_argument("--report", action="store_true")
     parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
     try:
@@ -105,7 +116,11 @@ def main() -> int:
         print(f"facade_gate: {error}")
         return 1
     for hit in hits:
-        print(f"{hit.file}:{hit.line}: clippy::pub_use outside the crate-root facade")
+        owner, statement = hit.statement.split("\t", 1)
+        print(
+            f"{hit.file}:{hit.line}: clippy::pub_use outside the crate-root facade "
+            f"(in {owner}: {statement})"
+        )
     print(f"facade_gate: {len(hits)} violations")
     return int(args.enforce and bool(hits))
 

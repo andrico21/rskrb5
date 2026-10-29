@@ -94,7 +94,9 @@ def main() -> int:
         )
         env = dict(os.environ)
         env.setdefault("CARGO_TARGET_DIR", str(Path(directory) / "target"))
-        return subprocess.run(command, cwd=scratch, env=env).returncode
+        status = subprocess.run(command, cwd=scratch, env=env).returncode
+    print(f"fuzz_lint: clippy exited {status}")
+    return int(args.enforce and status != 0)
 
 
 if __name__ == "__main__":
