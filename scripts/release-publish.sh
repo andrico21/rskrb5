@@ -60,9 +60,12 @@ find_tag() {
   count="$(printf '%s\n' "$tags" | wc -l)"
   [[ "$count" -eq 1 ]] || die "more than one N.N.N tag points at $sha: $(tr '\n' ' ' <<<"$tags"); a release commit carries exactly one."
   output tag "$tags"
-  # The tag push runs CI on the tag ref; only that run dispatches, so a commit
-  # pushed to main together with its tag is dispatched once.
-  if [[ "$head_branch" == "$tags" ]]; then
+  # The tag push runs CI on the tag ref (`head_branch` is the tag name); only
+  # that run dispatches, so a commit pushed to main together with its tag is
+  # dispatched once. A run without a head branch dispatches too: a missed
+  # dispatch would block the release, a second one only asks for a second
+  # approval of an idempotent publish.
+  if [[ "$head_branch" == "$tags" || -z "$head_branch" ]]; then
     output dispatch true
     echo "Found tag $tags at $sha; dispatching publish.yml at refs/tags/$tags."
   else
@@ -246,6 +249,8 @@ self_test() {
     st_fail "find-tag on the tag ref did not dispatch 0.3.0: $(cat "$scratch/find-out")"
   GITHUB_OUTPUT="$scratch/find-main" "${run[@]}" find-tag "$sha" main >/dev/null
   grep -qx 'dispatch=false' "$scratch/find-main" || st_fail "the main-branch CI run would dispatch too"
+  GITHUB_OUTPUT="$scratch/find-none" "${run[@]}" find-tag "$sha" "" >/dev/null
+  grep -qx 'dispatch=true' "$scratch/find-none" || st_fail "a tagged run without a head branch did not dispatch"
 
   # Stubs: cargo packages the bytes in STUB_CRATE and uploads per STUB_UPLOAD;
   # curl answers STUB_STATUS and serves STUB_REMOTE; gh fails `release create`
