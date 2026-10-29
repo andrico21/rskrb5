@@ -1,16 +1,29 @@
 //! RFC 3244 password-change protocol helpers.
 
-use core::fmt;
-
 use rasn::{
-    AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
+    AsnType, Decode, Decoder as _, Encode, Encoder as _,
     types::{Integer, OctetString},
 };
 use zeroize::Zeroizing;
 
 use crate::{
-    ap_rep, ap_req, crypto::KerberosEtype, der::decode_complete, error, keytab::EncryptionKey,
-    krb_error, krb_priv, krb_priv::EncKrbPrivPartOptions, messages,
+    ap_req, crypto::KerberosEtype, keytab::EncryptionKey, krb_priv,
+    krb_priv::EncKrbPrivPartOptions, messages,
+};
+
+/// Wire codecs and protocol error conversion.
+mod codec;
+/// Password payload ownership and encoding.
+mod payload;
+/// Reply parsing and result handling.
+mod reply;
+/// Request frame and option implementations.
+mod request;
+/// Result code interpretation.
+mod result;
+
+use codec::{
+    ap_req_error, encryption_key_to_rasn, kerberos_string, krb_priv_error, random_key_material,
 };
 
 /// Password-change request protocol version (`0xff80`).
@@ -50,82 +63,6 @@ pub struct ChangePasswdData {
     /// Optional target realm.
     #[rasn(tag(explicit(2)))]
     pub targ_realm: Option<rasn_kerberos::Realm>,
-}
-
-impl fmt::Debug for ChangePasswdData {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self {
-            new_passwd: _,
-            targ_name,
-            targ_realm,
-        } = self;
-        f.debug_struct("ChangePasswdData")
-            .field("new_passwd", &"[REDACTED]")
-            .field("targ_name", targ_name)
-            .field("targ_realm", targ_realm)
-            .finish()
-    }
-}
-
-impl ChangePasswdData {
-    /// Create password-change data for the authenticated principal.
-    #[inline]
-    pub fn new<P>(new_passwd: P) -> Self
-    where
-        P: AsRef<[u8]>,
-    {
-        Self {
-            new_passwd: new_passwd.as_ref().to_vec().into(),
-            targ_name: None,
-            targ_realm: None,
-        }
-    }
-
-    /// Create password-change data for an explicit target principal.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidKerberosString`] when a name component or the
-    /// realm is not a valid Kerberos string.
-    #[inline]
-    pub fn for_target<I, S, P>(
-        new_passwd: P,
-        name_type: i32,
-        components: I,
-        realm: &str,
-    ) -> Result<Self, Error>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-        P: AsRef<[u8]>,
-    {
-        Ok(Self {
-            new_passwd: new_passwd.as_ref().to_vec().into(),
-            targ_name: Some(principal_name(name_type, components)?),
-            targ_realm: Some(kerberos_string(realm)?),
-        })
-    }
-
-    /// Decode DER-encoded password-change data.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Decode`] when `bytes` is not DER `ChangePasswdData`.
-    #[inline]
-    pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        decode("ChangePasswdData", bytes)
-    }
-
-    /// Encode password-change data using DER.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Encode`] when the DER encoder fails.
-    #[inline]
-    pub fn encode_der(&self) -> Result<Vec<u8>, Error> {
-        encode("ChangePasswdData", self)
-    }
 }
 
 /// Build an unencrypted KRB-PRIV part around application data.
@@ -256,34 +193,6 @@ pub struct ChangePasswdMessageOptions {
     pub recipient_address: Option<rasn_kerberos::HostAddress>,
 }
 
-impl ChangePasswdMessageOptions {
-    /// Construct options with the required authenticator timestamp, microseconds,
-    /// sequence number, and sender address.
-    #[inline]
-    pub const fn new(
-        timestamp: rasn_kerberos::KerberosTime,
-        cusec: u32,
-        sequence_number: u32,
-        sender_address: rasn_kerberos::HostAddress,
-    ) -> Self {
-        Self {
-            timestamp,
-            cusec,
-            sequence_number,
-            sender_address,
-            recipient_address: None,
-        }
-    }
-
-    #[must_use]
-    /// Set the optional recipient address.
-    #[inline]
-    pub fn with_recipient_address(mut self, recipient_address: rasn_kerberos::HostAddress) -> Self {
-        self.recipient_address = Some(recipient_address);
-        self
-    }
-}
-
 /// Password-change request frame containing AP-REQ and KRB-PRIV messages.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -292,80 +201,6 @@ pub struct Request {
     pub ap_req: rasn_kerberos::ApReq,
     /// KRB-PRIV carrying encrypted `ChangePasswdData`.
     pub krb_priv: rasn_kerberos::KrbPriv,
-}
-
-impl Request {
-    /// Parse a password-change request frame.
-    ///
-    /// # Errors
-    ///
-    /// Returns the frame header errors ([`Error::FrameTooShort`],
-    /// [`Error::InvalidMessageLength`], [`Error::TruncatedFrame`]),
-    /// [`Error::InvalidRequestVersion`] for a version other than
-    /// [`CHANGE_PASSWORD_REQUEST_VERSION`], [`Error::InvalidApReqLength`] when
-    /// the AP-REQ length leaves no room for the AP-REQ or the KRB-PRIV, and the
-    /// decode errors of either message.
-    #[inline]
-    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
-        let frame = parse_header(bytes)?;
-        if frame.version != CHANGE_PASSWORD_REQUEST_VERSION {
-            return Err(Error::InvalidRequestVersion(frame.version));
-        }
-
-        let ap_req_end = usize::from(frame.payload_length);
-        let invalid_length = Error::InvalidApReqLength {
-            ap_req_length: frame.payload_length,
-            body_length: frame.body.len(),
-        };
-        if ap_req_end == 0 || ap_req_end >= frame.body.len() {
-            return Err(invalid_length);
-        }
-        let (ap_req_bytes, krb_priv_bytes) = frame
-            .body
-            .split_at_checked(ap_req_end)
-            .ok_or(invalid_length)?;
-
-        let ap_req = ap_req::decode(ap_req_bytes).map_err(ap_req_error)?;
-        let krb_priv = decode_krb_priv(krb_priv_bytes)?;
-        Ok(Self { ap_req, krb_priv })
-    }
-
-    /// Encode a password-change request frame.
-    ///
-    /// # Errors
-    ///
-    /// Returns the encode errors of either message,
-    /// [`Error::ApReqTooLarge`] when the AP-REQ does not fit the 16-bit length
-    /// field, and [`Error::FrameTooLarge`] when the whole frame does not.
-    #[inline]
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        let ap_req = ap_req::encode(&self.ap_req).map_err(ap_req_error)?;
-        let krb_priv = encode_krb_priv(&self.krb_priv)?;
-        let Ok(ap_req_length) = u16::try_from(ap_req.len()) else {
-            return Err(Error::ApReqTooLarge {
-                actual: ap_req.len(),
-            });
-        };
-
-        // Saturating: a total past `usize::MAX` is past `u16::MAX` too, and is
-        // refused as too large just below.
-        let message_length = HEADER_LEN
-            .saturating_add(ap_req.len())
-            .saturating_add(krb_priv.len());
-        let Ok(wire_length) = u16::try_from(message_length) else {
-            return Err(Error::FrameTooLarge {
-                actual: message_length,
-            });
-        };
-
-        let mut frame = Vec::with_capacity(message_length);
-        frame.extend_from_slice(&wire_length.to_be_bytes());
-        frame.extend_from_slice(&CHANGE_PASSWORD_REQUEST_VERSION.to_be_bytes());
-        frame.extend_from_slice(&ap_req_length.to_be_bytes());
-        frame.extend_from_slice(&ap_req);
-        frame.extend_from_slice(&krb_priv);
-        Ok(frame)
-    }
 }
 
 /// Build a complete kpasswd request frame using a caller-supplied AP-REQ,
@@ -474,23 +309,6 @@ pub struct PasswordEncryption<'request> {
     pub krb_priv_confounder: &'request [u8],
 }
 
-impl<'request> PasswordEncryption<'request> {
-    /// Creates explicit password-change encryption inputs.
-    #[must_use]
-    #[inline]
-    pub const fn new(
-        reply_key: EncryptionKey,
-        ap_req_confounder: &'request [u8],
-        krb_priv_confounder: &'request [u8],
-    ) -> Self {
-        Self {
-            reply_key,
-            ap_req_confounder,
-            krb_priv_confounder,
-        }
-    }
-}
-
 /// Build a full kpasswd request message using generated subkey and confounders.
 ///
 /// # Errors
@@ -590,205 +408,6 @@ pub struct Reply {
     pub result: Option<ChangePasswordResult>,
 }
 
-impl Reply {
-    /// Parse a password-change reply frame.
-    ///
-    /// # Errors
-    ///
-    /// Returns the frame header errors ([`Error::FrameTooShort`],
-    /// [`Error::InvalidMessageLength`], [`Error::TruncatedFrame`]),
-    /// [`Error::InvalidReplyVersion`] for a version other than
-    /// [`CHANGE_PASSWORD_REPLY_VERSION`], [`Error::InvalidApRepLength`] when the
-    /// AP-REP length leaves no room for the KRB-PRIV, the decode errors of the
-    /// KRB-ERROR, AP-REP or KRB-PRIV, and the [`ChangePasswordResult::parse`]
-    /// error of KRB-ERROR e-data.
-    #[inline]
-    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
-        if bytes.first() == Some(&0x7e)
-            && let Ok(krb_error) = krb_error::decode(bytes)
-        {
-            let result = krb_error
-                .e_data
-                .as_ref()
-                .map(|data| ChangePasswordResult::parse(data.as_ref()))
-                .transpose()?;
-            return Ok(Self {
-                message_length: u16::try_from(bytes.len()).map_err(|_overflow| {
-                    Error::FrameTooLarge {
-                        actual: bytes.len(),
-                    }
-                })?,
-                version: CHANGE_PASSWORD_REQUEST_VERSION,
-                ap_rep_length: 0,
-                ap_rep: None,
-                krb_priv: None,
-                krb_error: Some(krb_error),
-                result,
-            });
-        }
-        let frame = parse_header(bytes)?;
-        if frame.version != CHANGE_PASSWORD_REPLY_VERSION {
-            return Err(Error::InvalidReplyVersion(frame.version));
-        }
-
-        if frame.payload_length == 0 {
-            let krb_error = krb_error::decode(frame.body).map_err(krb_error_error)?;
-            let result = krb_error
-                .e_data
-                .as_ref()
-                .map(|data| ChangePasswordResult::parse(data.as_ref()))
-                .transpose()?;
-            return Ok(Self {
-                message_length: frame.message_length,
-                version: frame.version,
-                ap_rep_length: frame.payload_length,
-                ap_rep: None,
-                krb_priv: None,
-                krb_error: Some(krb_error),
-                result,
-            });
-        }
-
-        let ap_rep_end = usize::from(frame.payload_length);
-        let invalid_length = Error::InvalidApRepLength {
-            ap_rep_length: frame.payload_length,
-            body_length: frame.body.len(),
-        };
-        if ap_rep_end >= frame.body.len() {
-            return Err(invalid_length);
-        }
-        let (ap_rep_bytes, krb_priv_bytes) = frame
-            .body
-            .split_at_checked(ap_rep_end)
-            .ok_or(invalid_length)?;
-
-        let ap_rep = ap_rep::decode(ap_rep_bytes).map_err(ap_rep_error)?;
-        let krb_priv = decode_krb_priv(krb_priv_bytes)?;
-
-        Ok(Self {
-            message_length: frame.message_length,
-            version: frame.version,
-            ap_rep_length: frame.payload_length,
-            ap_rep: Some(ap_rep),
-            krb_priv: Some(krb_priv),
-            krb_error: None,
-            result: None,
-        })
-    }
-
-    /// Whether the reply carried KRB-ERROR instead of AP-REP/KRB-PRIV.
-    #[inline]
-    pub const fn is_krb_error(&self) -> bool {
-        self.krb_error.is_some()
-    }
-
-    /// Return the password-change result, decrypting KRB-PRIV when needed.
-    ///
-    /// A result parsed from a KRB-ERROR reply is unauthenticated: a success
-    /// code there is rejected with [`Error::UnauthenticatedSuccess`].
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::UnauthenticatedSuccess`] as above,
-    /// [`Error::MissingReplyResult`] for a KRB-ERROR reply without result data,
-    /// [`Error::MissingKrbPriv`] for a reply without KRB-PRIV, the
-    /// [`decrypt_krb_priv_enc_part`] errors, and the
-    /// [`ChangePasswordResult::parse`] error of the decrypted data.
-    #[inline]
-    pub fn decrypt_result(&self, key: &EncryptionKey) -> Result<ChangePasswordResult, Error> {
-        if let Some(result) = &self.result {
-            // `result` is populated only from the unauthenticated KRB-ERROR
-            // e-data branch; a success code there is not proof that the
-            // password change happened.
-            if result.is_success() {
-                return Err(Error::UnauthenticatedSuccess);
-            }
-            return Ok(result.clone());
-        }
-        if self.krb_error.is_some() {
-            return Err(Error::MissingReplyResult);
-        }
-
-        let krb_priv = self.krb_priv.as_ref().ok_or(Error::MissingKrbPriv)?;
-        let enc_part = decrypt_krb_priv_enc_part(krb_priv, key)?;
-        ChangePasswordResult::parse(enc_part.user_data.as_ref())
-    }
-
-    /// Re-encode this reply into a framed kpasswd response.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidErrorReplyPayload`] for a KRB-ERROR reply that
-    /// also carries an AP-REP or KRB-PRIV, [`Error::MissingKrb`],
-    /// [`Error::MissingApRep`] or [`Error::MissingKrbPriv`] for a missing
-    /// message, the encode errors of each message, and [`Error::FrameTooLarge`]
-    /// when the AP-REP or the whole frame does not fit its 16-bit length field.
-    #[inline]
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        let (ap_rep_part, krb_priv_part, krb_error_part) = (
-            self.ap_rep.as_ref(),
-            self.krb_priv.as_ref(),
-            self.krb_error.as_ref(),
-        );
-
-        if self.is_krb_error() {
-            if ap_rep_part.is_some() || krb_priv_part.is_some() {
-                return Err(Error::InvalidErrorReplyPayload);
-            }
-            let body = krb_error_part
-                .map(|message| krb_error::encode(message).map_err(krb_error_error))
-                .ok_or(Error::MissingKrb)??;
-            if self.version == CHANGE_PASSWORD_REQUEST_VERSION {
-                return Ok(body);
-            }
-            // Saturating: a total past `usize::MAX` is past `u16::MAX` too, and
-            // is refused as too large just below.
-            let frame_length = HEADER_LEN.saturating_add(body.len());
-            let Ok(wire_length) = u16::try_from(frame_length) else {
-                return Err(Error::FrameTooLarge {
-                    actual: frame_length,
-                });
-            };
-
-            let mut frame = Vec::with_capacity(frame_length);
-            frame.extend_from_slice(&wire_length.to_be_bytes());
-            frame.extend_from_slice(&CHANGE_PASSWORD_REPLY_VERSION.to_be_bytes());
-            frame.extend_from_slice(&0_u16.to_be_bytes());
-            frame.extend_from_slice(&body);
-            return Ok(frame);
-        }
-
-        let ap_rep = ap_rep_part.ok_or(Error::MissingApRep)?;
-        let krb_priv = krb_priv_part.ok_or(Error::MissingKrbPriv)?;
-        let encoded_ap_rep = ap_rep::encode(ap_rep).map_err(ap_rep_error)?;
-        let Ok(ap_rep_length) = u16::try_from(encoded_ap_rep.len()) else {
-            return Err(Error::FrameTooLarge {
-                actual: encoded_ap_rep.len(),
-            });
-        };
-        let encoded_krb_priv = encode_krb_priv(krb_priv)?;
-
-        // Saturating: a total past `usize::MAX` is past `u16::MAX` too, and is
-        // refused as too large just below.
-        let frame_length = HEADER_LEN
-            .saturating_add(encoded_ap_rep.len())
-            .saturating_add(encoded_krb_priv.len());
-        let Ok(wire_length) = u16::try_from(frame_length) else {
-            return Err(Error::FrameTooLarge {
-                actual: frame_length,
-            });
-        };
-
-        let mut frame = Vec::with_capacity(frame_length);
-        frame.extend_from_slice(&wire_length.to_be_bytes());
-        frame.extend_from_slice(&CHANGE_PASSWORD_REPLY_VERSION.to_be_bytes());
-        frame.extend_from_slice(&ap_rep_length.to_be_bytes());
-        frame.extend_from_slice(&encoded_ap_rep);
-        frame.extend_from_slice(&encoded_krb_priv);
-        Ok(frame)
-    }
-}
-
 /// Cleartext password-change response code and text.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -799,55 +418,6 @@ pub struct ChangePasswordResult {
     pub text: String,
     /// Result text as received, before lossy UTF-8 conversion.
     pub text_raw: Vec<u8>,
-}
-
-impl ChangePasswordResult {
-    /// Parse a cleartext password-change response.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ResponseTooShort`] when `bytes` is shorter than the
-    /// two-byte result code.
-    #[inline]
-    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
-        let [code_high, code_low, text @ ..] = bytes else {
-            return Err(Error::ResponseTooShort {
-                actual: bytes.len(),
-            });
-        };
-        let text_raw = text.to_vec();
-        Ok(Self {
-            code: u16::from_be_bytes([*code_high, *code_low]),
-            text: String::from_utf8_lossy(&text_raw).into_owned(),
-            text_raw,
-        })
-    }
-
-    #[must_use]
-    /// Whether this result indicates a successful password change.
-    #[inline]
-    pub const fn is_success(&self) -> bool {
-        self.code == KPASSWD_SUCCESS
-    }
-
-    /// Return success or an error carrying the kpasswd failure code and text.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::PasswordChangeFailed`] carrying the code and text when
-    /// the code is not [`KPASSWD_SUCCESS`].
-    #[inline]
-    pub fn ensure_success(&self) -> Result<(), Error> {
-        if self.is_success() {
-            Ok(())
-        } else {
-            Err(Error::PasswordChangeFailed {
-                code: self.code,
-                text: self.text.clone(),
-                text_raw: self.text_raw.clone(),
-            })
-        }
-    }
 }
 
 use crate::error::Kadmin as Error;
@@ -862,244 +432,4 @@ struct Frame<'bytes> {
     payload_length: u16,
     /// The bytes after the header, up to the declared frame length.
     body: &'bytes [u8],
-}
-
-/// Decode one DER value, naming `target` in the error.
-///
-/// # Errors
-///
-/// Returns [`Error::Decode`] when `bytes` is not a DER `T`.
-fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
-where
-    T: Decode,
-{
-    decode_complete(bytes).map_err(|source| Error::Decode {
-        target,
-        message: source,
-    })
-}
-
-/// Encode one value as DER, naming `target` in the error.
-///
-/// # Errors
-///
-/// Returns [`Error::Encode`] when the DER encoder fails.
-fn encode<T>(target: &'static str, value: &T) -> Result<Vec<u8>, Error>
-where
-    T: Encode,
-{
-    der::encode(value).map_err(|source| Error::Encode {
-        target,
-        message: source.to_string(),
-    })
-}
-
-/// Map an AP-REQ error onto the kadmin [`Error`].
-fn ap_req_error(error: error::ApReq) -> Error {
-    match error {
-        error::ApReq::Decode { target, message } => Error::Decode { target, message },
-        error::ApReq::Encode { target, message } => Error::Encode { target, message },
-        error::ApReq::InvalidMessage {
-            field,
-            expected,
-            actual,
-        } => Error::InvalidKerberosMessage {
-            field,
-            expected,
-            actual,
-        },
-        other @ (error::ApReq::UnsupportedEtype(_)
-        | error::ApReq::KeyEtypeMismatch {
-            key_etype: _,
-            encrypted_data_etype: _,
-        }
-        | error::ApReq::Random(_)
-        | error::ApReq::Crypto(_)) => Error::Decode {
-            target: "AP-REQ",
-            message: other.to_string(),
-        },
-    }
-}
-
-/// Map an AP-REP error onto the kadmin [`Error`].
-fn ap_rep_error(error: error::ApRep) -> Error {
-    match error {
-        error::ApRep::Decode { target, message } => Error::Decode { target, message },
-        error::ApRep::Encode { target, message } => Error::Encode { target, message },
-        error::ApRep::InvalidMessage {
-            field,
-            expected,
-            actual,
-        } => Error::InvalidKerberosMessage {
-            field,
-            expected,
-            actual,
-        },
-        other @ (error::ApRep::UnsupportedEtype(_)
-        | error::ApRep::KeyEtypeMismatch {
-            key_etype: _,
-            encrypted_data_etype: _,
-        }
-        | error::ApRep::Random(_)
-        | error::ApRep::Crypto(_)) => Error::Decode {
-            target: "AP-REP",
-            message: other.to_string(),
-        },
-    }
-}
-
-/// Map a KRB-ERROR error onto the kadmin [`Error`].
-fn krb_error_error(error: error::KrbErrorCodec) -> Error {
-    match error {
-        error::KrbErrorCodec::Decode { target, message } => Error::Decode { target, message },
-        error::KrbErrorCodec::Encode { target, message } => Error::Encode { target, message },
-        error::KrbErrorCodec::InvalidMessage {
-            field,
-            expected,
-            actual,
-        } => Error::InvalidKerberosMessage {
-            field,
-            expected,
-            actual,
-        },
-        other @ (error::KrbErrorCodec::InvalidString(_)
-        | error::KrbErrorCodec::IntegerOutOfRange { field: _, value: _ }
-        | error::KrbErrorCodec::KvnoOutOfRange { target: _, kvno: _ }
-        | error::KrbErrorCodec::TimeOverflow) => Error::Decode {
-            target: "KRB-ERROR",
-            message: other.to_string(),
-        },
-    }
-}
-
-/// Map a KRB-PRIV error onto the kadmin [`Error`].
-fn krb_priv_error(error: error::KrbPriv) -> Error {
-    match error {
-        error::KrbPriv::Decode { target, message } => Error::Decode { target, message },
-        error::KrbPriv::Encode { target, message } => Error::Encode { target, message },
-        error::KrbPriv::InvalidMessage {
-            field,
-            expected,
-            actual,
-        } => Error::InvalidKerberosMessage {
-            field,
-            expected,
-            actual,
-        },
-        error::KrbPriv::UnsupportedEtype(etype) => Error::UnsupportedEtype(etype),
-        error::KrbPriv::KeyEtypeMismatch {
-            key_etype,
-            encrypted_data_etype,
-        } => Error::KeyEtypeMismatch {
-            key_etype,
-            encrypted_data_etype,
-        },
-        error::KrbPriv::Crypto(source) => Error::Crypto {
-            message: source.to_string(),
-        },
-        error::KrbPriv::Random(source) => Error::Crypto {
-            message: source.to_string(),
-        },
-    }
-}
-
-/// A principal name of `name_type` made of `components`.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidKerberosString`] for a component that is not a valid
-/// Kerberos string.
-fn principal_name<I, S>(
-    name_type: i32,
-    components: I,
-) -> Result<rasn_kerberos::PrincipalName, Error>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    Ok(rasn_kerberos::PrincipalName {
-        r#type: name_type,
-        string: components
-            .into_iter()
-            .map(|component| kerberos_string(component.as_ref()))
-            .collect::<Result<Vec<_>, _>>()?,
-    })
-}
-
-/// `value` as a Kerberos string.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidKerberosString`] when `value` is not a valid
-/// Kerberos string.
-fn kerberos_string(value: &str) -> Result<rasn_kerberos::KerberosString, Error> {
-    rasn_kerberos::KerberosString::from_bytes(value.as_bytes())
-        .map_err(|source| Error::InvalidKerberosString(source.to_string()))
-}
-
-/// Split a kpasswd frame into its header fields and body.
-///
-/// # Errors
-///
-/// Returns [`Error::FrameTooShort`] when `bytes` is shorter than the header,
-/// [`Error::InvalidMessageLength`] when the declared length is shorter than the
-/// header, and [`Error::TruncatedFrame`] when it is longer than `bytes`.
-fn parse_header(bytes: &[u8]) -> Result<Frame<'_>, Error> {
-    let [
-        length_high,
-        length_low,
-        version_high,
-        version_low,
-        payload_high,
-        payload_low,
-        ..,
-    ] = *bytes
-    else {
-        return Err(Error::FrameTooShort {
-            actual: bytes.len(),
-        });
-    };
-
-    let message_length = u16::from_be_bytes([length_high, length_low]);
-    let frame_len = usize::from(message_length);
-    if frame_len < HEADER_LEN {
-        return Err(Error::InvalidMessageLength(message_length));
-    }
-    if frame_len < bytes.len() {
-        return Err(Error::InvalidMessageLength(message_length));
-    }
-    let Some(body) = bytes.get(HEADER_LEN..frame_len) else {
-        return Err(Error::TruncatedFrame {
-            expected: frame_len,
-            actual: bytes.len(),
-        });
-    };
-
-    Ok(Frame {
-        message_length,
-        version: u16::from_be_bytes([version_high, version_low]),
-        payload_length: u16::from_be_bytes([payload_high, payload_low]),
-        body,
-    })
-}
-
-/// `size` bytes from the operating system's random source.
-///
-/// # Errors
-///
-/// Returns [`Error::Crypto`] when the random source fails.
-fn random_key_material(size: usize) -> Result<Vec<u8>, Error> {
-    let mut value = vec![0_u8; size];
-    getrandom::fill(&mut value).map_err(|source| Error::Crypto {
-        message: source.to_string(),
-    })?;
-    Ok(value)
-}
-
-/// `value` as the `rasn` Kerberos `EncryptionKey`.
-fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
-    rasn_kerberos::EncryptionKey {
-        r#type: value.etype,
-        value: value.value.clone().into(),
-    }
 }
