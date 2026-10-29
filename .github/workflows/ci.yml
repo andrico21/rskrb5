@@ -37,10 +37,10 @@ name: CI
 # `docs/gokrb5-parity.toml` keeps their upstream runs as attributed historical
 # evidence (gate status `historical-upstream`).
 #
-# Blocking: every job except the four advisory ones below. Advisory (never a
+# Blocking: every job except the advisory ones below. Advisory (never a
 # merge gate, per core Section 12 "Recommended"): `geiger`,
-# `rustdoc-nightly-canary`, and the scheduled/dispatch `fuzz` and `mutants`;
-# they are the only jobs allowed to fail.
+# `rustdoc-nightly-canary`, and the scheduled/dispatch `fuzz`, `mutants` and
+# `mutants-report`; they are the only jobs allowed to fail.
 
 on:
   push:
@@ -554,7 +554,7 @@ jobs:
         run: cargo package --locked
 
   # ---------------------------------------------------------------------------
-  # Advisory jobs (informational, core Section 12 "Recommended"). These four
+  # Advisory jobs (informational, core Section 12 "Recommended"). These five
   # are the only jobs allowed to fail without failing the workflow.
   # ---------------------------------------------------------------------------
 
@@ -609,22 +609,24 @@ jobs:
 
   mutants:
     name: mutants
-    # The whole crate, split deterministically into 8 shards (cargo-mutants
-    # shards are zero-indexed: `--shard k/8` takes k = 0..7). `--all-features`
-    # because cargo-mutants ignores `cfg`: without it every mutant in
-    # feature-gated code (`src/http.rs`, the tokio transport) is a false
-    # MISSED. No fixed `--timeout`: cargo-mutants derives the per-run cap from
-    # the measured baseline test time of each shard.
+    # The whole crate, split deterministically into 16 shards (cargo-mutants
+    # shards are zero-indexed: `--shard k/16` takes k = 0..15; the 8-shard
+    # campaign 7953988 needed 201-336 mutant-minutes per 413-mutant shard and
+    # two shards never finished). `--all-features` because cargo-mutants
+    # ignores `cfg`: without it every mutant in feature-gated code
+    # (`src/http.rs`, the tokio transport) is a false MISSED. No fixed
+    # `--timeout`: cargo-mutants derives the per-run cap from the measured
+    # baseline test time of each shard. `mutants-report` aggregates the shards.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
-    # Above the 170m wall of the run step, so the shard ends through
-    # `timeout` (and still uploads `mutants.out`) instead of being killed.
-    timeout-minutes: 180
+    # The run step ends by 175m (170m wall, then SIGKILL 5m later), leaving
+    # about 25m of this budget for setup, the summary and the upload.
+    timeout-minutes: 200
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     # Mutation runs only need the build to compile. The deny-level profile
     # would make most mutants unviable (a mutant often leaves an unused
     # binding), so lints are capped and warnings let through for this job.
@@ -636,14 +638,15 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-mutants
         run: cargo install cargo-mutants --locked
-      - name: Run cargo mutants (shard ${{ matrix.shard }}/8, wall-capped at 170m)
-        # `timeout` reports 124 (or 137 after SIGKILL) when the wall expires:
-        # the untested tail is then absent from outcomes.json, which the
-        # summary below reports as truncated. cargo-mutants' own statuses
-        # (2 = missed mutants, 3 = timeouts) are advisory findings.
+      - name: Run cargo mutants (shard ${{ matrix.shard }}/16, wall-capped at 170m)
+        # `timeout` sends TERM at 170m and KILL 5m later if the run ignores
+        # TERM, reporting 124 or 137: the untested tail is then absent from
+        # outcomes.json, which the summary and `mutants-report` report as
+        # unfinished. cargo-mutants' own statuses (2 = missed mutants,
+        # 3 = timeouts) are advisory findings.
         run: |
           set +e
-          timeout 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/8 -j 2
+          timeout -k 5m 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/16 -j 2
           status=$?
           set -e
           echo "MUTANTS_STATUS=$status" >> "$GITHUB_ENV"
@@ -653,7 +656,7 @@ jobs:
             echo "TRUNCATED=0" >> "$GITHUB_ENV"
           fi
           exit "$status"
-      - name: Summarize mutation results (shard ${{ matrix.shard }}/8)
+      - name: Summarize mutation results (shard ${{ matrix.shard }}/16)
         if: always()
         shell: bash
         run: |
@@ -661,7 +664,7 @@ jobs:
           generated=$(jq 'length' "$out/mutants.json" 2>/dev/null || echo 0)
           total=$(jq '[.outcomes[]? | select(.scenario != "Baseline")] | length' "$out/outcomes.json" 2>/dev/null || echo 0)
           summary=$(jq -r '"caught=\(.caught) missed=\(.missed) unviable=\(.unviable) timeout=\(.timeout) success=\(.success)"' "$out/outcomes.json" 2>/dev/null || echo "no outcomes.json")
-          line="shard ${{ matrix.shard }}/8: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
+          line="shard ${{ matrix.shard }}/16: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
           echo "$line"
           echo "$line" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload mutants.out
@@ -671,6 +674,33 @@ jobs:
           name: mutants-out-shard-${{ matrix.shard }}
           path: mutants.out
           retention-days: 14
+
+  mutants-report:
+    name: mutants-report
+    # Aggregates every shard: a missing or unfinished shard makes the
+    # campaign incomplete, and with docs/review/mutants.md every missed or
+    # timed-out mutant of this SHA needs a final status there.
+    needs: mutants
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download every shard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mutants-out-shard-*
+          path: mutants-artifacts
+      - name: Campaign completeness and triage
+        shell: bash
+        run: |
+          set -o pipefail
+          args=(--artifacts mutants-artifacts --expect-shards 16 --campaign "$GITHUB_SHA" --enforce)
+          if [ -f docs/review/mutants.md ]; then
+            args+=(--register docs/review/mutants.md --allow-open)
+          fi
+          python3 scripts/lint-gates/mutants_report.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   fuzz:
     name: fuzz

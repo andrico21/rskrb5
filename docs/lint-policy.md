@@ -85,6 +85,18 @@ optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly
 that feature set and `--cfg docsrs`, as docs.rs does, and checks the
 `NegotiateLayer` and `send_with_negotiate` pages exist.
 
+Two reports serve advisory jobs and are self-tested with the gates:
+`geiger_report.py` classifies the `geiger` job's JSON scan (complete unless a
+Rust source went unscanned outside build-script output) and prints the unsafe
+totals of the crate and of its dependencies; `mutants_report.py --artifacts
+DIR --expect-shards 16 [--register docs/review/mutants.md] [--allow-open]
+--enforce` fails a mutation campaign with a missing or unfinished shard, or
+(with the register) with a missed or timed-out mutant that has no final
+status (`killed`, `equivalent`, or `hang` for a timeout only). Register rows
+are `| campaign | mutant (full name) | file | function | operator | outcome |
+status | proof or reason |`, keyed by the campaign SHA and the full
+cargo-mutants name with its location; write a `|` inside a cell as `\|`.
+
 `rg -n 'lint-migration' src tests examples fuzz` must print nothing.
 `semver_baseline.py` is not a lint gate: it drives `cargo semver-checks`
 against the highest published `rskrb5-ng` version at or below the candidate,
