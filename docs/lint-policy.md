@@ -18,6 +18,9 @@ builds, lints and tests clean, and so does Windows.
   may differ, and only by appending.
 - [`.cargo/config.toml`](../.cargo/config.toml) sets
   `build.warnings = "deny"`. CI keeps `-D warnings` on clippy and rustdoc.
+  For local work in progress, `CARGO_BUILD_WARNINGS=allow` lets one cargo
+  invocation build with warnings; CI sets it only where the profile is not
+  the gate (`msrv`, `fuzz-build`, `fuzz`, `mutants`).
 - [`rustfmt.toml`](../rustfmt.toml) is run with `nightly-2026-10-03`.
 - The fuzz crate (`fuzz/Cargo.toml`) is a separate workspace without lint
   tables; `fuzz_lint.py` applies the root profile to it as command-line flags.
