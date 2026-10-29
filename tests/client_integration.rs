@@ -7,6 +7,10 @@
 //! privileged groups.
 #![cfg(feature = "tokio")]
 
+/// Service endpoint selection for live fixtures.
+#[path = "client_integration/endpoints.rs"]
+mod endpoints;
+
 use core::{error::Error, iter, net::Ipv4Addr, time::Duration};
 use std::{
     fs,
@@ -243,7 +247,12 @@ mod tests {
     };
     use tokio::runtime::{Builder, Runtime};
 
-    use super::*;
+    use super::{
+        endpoints::{
+            kdc_addr, kpasswd_addr, latest_kdc_addr, old_kdc_addr, resdom_kdc_addr, short_kdc_addr,
+        },
+        *,
+    };
 
     /// Names a KDC transport protocol in progress messages.
     const fn protocol_label(protocol: KdcProtocol) -> &'static str {
@@ -2615,71 +2624,9 @@ mod tests {
         )))
     }
 
-    /// Returns the primary KDC endpoint from `TEST_KDC_ADDR`/`TEST_KDC_PORT`.
-    fn kdc_addr() -> String {
-        let host = env::var("TEST_KDC_ADDR").unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_KDC_PORT").unwrap_or_else(|_| "88".to_owned());
-        format!("{host}:{port}")
-    }
-
     /// Returns an endpoint no KDC listens on, from `TEST_BAD_KDC_ADDR`.
     fn closed_tcp_kdc_addr() -> String {
         env::var("TEST_BAD_KDC_ADDR").unwrap_or_else(|_| "127.0.0.1:9".to_owned())
-    }
-
-    /// Returns the short-ticket KDC endpoint.
-    fn short_kdc_addr() -> String {
-        let host = env::var("TEST_SHORT_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_SHORT_KDC_PORT").unwrap_or_else(|_| "58".to_owned());
-        format!("{host}:{port}")
-    }
-
-    /// Returns the legacy KDC endpoint.
-    fn old_kdc_addr() -> String {
-        let host = env::var("TEST_OLD_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_OLD_KDC_PORT").unwrap_or_else(|_| "78".to_owned());
-        format!("{host}:{port}")
-    }
-
-    /// Returns the latest (AES-SHA2) KDC endpoint.
-    fn latest_kdc_addr() -> String {
-        let host = env::var("TEST_LATEST_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_LATEST_KDC_PORT").unwrap_or_else(|_| "98".to_owned());
-        format!("{host}:{port}")
     }
 
     /// Builds a configuration with the primary KDC and the resource-realm KDC.
@@ -2755,36 +2702,6 @@ mod tests {
             kdc_addr(),
             kpasswd_addr()
         ))?)
-    }
-
-    /// Returns the resource-realm KDC endpoint.
-    fn resdom_kdc_addr() -> String {
-        let host = env::var("TEST_RESDOM_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_RESDOM_KDC_PORT").unwrap_or_else(|_| "188".to_owned());
-        format!("{host}:{port}")
-    }
-
-    /// Returns the kpasswd endpoint from `TEST_KPASSWD_ADDR`/`TEST_KPASSWD_PORT`.
-    fn kpasswd_addr() -> String {
-        let host = env::var("TEST_KPASSWD_ADDR").unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_KPASSWD_PORT").unwrap_or_else(|_| "464".to_owned());
-        format!("{host}:{port}")
     }
 
     /// Builds a configuration that discovers the KDCs through DNS SRV records.
