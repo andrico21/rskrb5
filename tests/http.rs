@@ -206,6 +206,25 @@ mod tests {
     #[cfg(feature = "tower")]
     struct PolicyService;
 
+    /// A Send inner future remains movable onto an executor worker thread.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn tower_future_is_send() -> Result<(), TestError> {
+        fn require_send<T>(value: T) -> T
+        where
+            T: Send,
+        {
+            value
+        }
+        // Given a service whose future and response body are Send.
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab).layer(PolicyService);
+        // When wrapped, then the returned future still satisfies Send.
+        let response = run_ready(require_send(service.call(Request::new(()))))??;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        Ok(())
+    }
+
     #[cfg(feature = "tower")]
     impl Service<Request<()>> for PolicyService {
         type Response = Response<()>;

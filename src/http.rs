@@ -1385,7 +1385,7 @@ where
 {
     type Response = Response<ResBody>;
     type Error = TowerError<S::Error>;
-    type Future = Pin<Box<dyn Future<Output = CoreResult<Self::Response, Self::Error>>>>;
+    type Future = NegotiateFuture<S::Future, ResBody, S::Error>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<CoreResult<(), Self::Error>> {
@@ -1397,7 +1397,7 @@ where
         let accepted = match accept_request(&mut self.validator, &mut req) {
             Ok(accepted) => accepted,
             Err(Error::MissingAuthorization | Error::InvalidHeader(_)) => {
-                return Box::pin(async { Ok(challenge_response()) });
+                return NegotiateFuture::ready(Ok(challenge_response()));
             }
             Err(Error::Spnego(_)) => {
                 let response = if self.response.reject_invalid {
@@ -1405,10 +1405,10 @@ where
                 } else {
                     challenge_response()
                 };
-                return Box::pin(async move { Ok(response) });
+                return NegotiateFuture::ready(Ok(response));
             }
             Err(error) => {
-                return Box::pin(async move { Err(TowerError::Http(error)) });
+                return NegotiateFuture::ready(Err(TowerError::Http(error)));
             }
         };
 
@@ -1416,29 +1416,80 @@ where
             match accepted.ap_rep_response_header(&self.response.ap_rep_options.clone()) {
                 Ok(header) => Some(header),
                 Err(error) => {
-                    return Box::pin(async { Err(TowerError::Http(Error::Spnego(error))) });
+                    return NegotiateFuture::ready(Err(TowerError::Http(Error::Spnego(error))));
                 }
             }
         } else {
             None
         };
 
-        let future = self.inner.call(req);
-        let harden_inner = self.response.harden_inner;
-        Box::pin(async move {
-            let mut response = future.await.map_err(TowerError::Inner)?;
-            if let Some(header) = ap_rep_header {
-                let mut value = HeaderValue::from_str(&header)
-                    .map_err(Error::InvalidHeaderValue)
-                    .map_err(TowerError::Http)?;
-                value.set_sensitive(true);
-                drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
-            }
-            if harden_inner {
-                harden_response(&mut response);
-            }
-            Ok(response)
-        })
+        NegotiateFuture {
+            inner: Some(Box::pin(self.inner.call(req))),
+            ready: None,
+            header: ap_rep_header,
+            harden: self.response.harden_inner,
+        }
+    }
+}
+
+/// Negotiate response future, preserving the inner future's Send capability.
+#[cfg(feature = "tower")]
+#[derive(Debug)]
+pub struct NegotiateFuture<F, B, E> {
+    /// Pinned inner operation, absent for immediate authentication responses.
+    inner: Option<Pin<Box<F>>>,
+    /// Immediate outcome, boxed so moving the adapter never moves its body.
+    ready: Option<Box<CoreResult<Response<B>, TowerError<E>>>>,
+    /// Credential header to attach after inner completion.
+    header: Option<String>,
+    /// Whether the inner response receives secure defaults.
+    harden: bool,
+}
+
+#[cfg(feature = "tower")]
+impl<F, B, E> NegotiateFuture<F, B, E> {
+    /// Construct an immediate response without polling an inner service.
+    fn ready(result: CoreResult<Response<B>, TowerError<E>>) -> Self {
+        Self {
+            inner: None,
+            ready: Some(Box::new(result)),
+            header: None,
+            harden: false,
+        }
+    }
+}
+
+#[cfg(feature = "tower")]
+impl<F, B, E> Future for NegotiateFuture<F, B, E>
+where
+    F: Future<Output = CoreResult<Response<B>, E>>,
+{
+    type Output = CoreResult<Response<B>, TowerError<E>>;
+    #[inline]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let state = self.get_mut();
+        if let Some(result) = state.ready.take() {
+            return Poll::Ready(*result);
+        }
+        let Some(inner) = state.inner.as_mut() else {
+            return Poll::Pending;
+        };
+        let mut response = match inner.as_mut().poll(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(TowerError::Inner(error))),
+            Poll::Ready(Ok(response)) => response,
+        };
+        if let Some(header) = state.header.take() {
+            let mut value = HeaderValue::from_str(&header)
+                .map_err(Error::InvalidHeaderValue)
+                .map_err(TowerError::Http)?;
+            value.set_sensitive(true);
+            drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
+        }
+        if state.harden {
+            harden_response(&mut response);
+        }
+        Poll::Ready(Ok(response))
     }
 }
 
