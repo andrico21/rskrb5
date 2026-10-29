@@ -39,6 +39,16 @@ pub mod oid;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod header_tests;
 
+/// SPNEGO sequence structure regressions.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod field_tests;
+
 use self::{
     der::{
         DerReader, TAG_APPLICATION_0, TAG_BIT_STRING, TAG_CONTEXT_0, TAG_CONTEXT_1, TAG_CONTEXT_2,
@@ -2168,12 +2178,17 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
     let sequence = read_single_tlv(bytes, TAG_SEQUENCE)?;
     let mut fields = DerReader::new(sequence.value());
     let mut offered_mechs = None;
+    let mut previous_tag = None;
     let mut req_flags = None;
     let mut mech_token = None;
     let mut mech_list_mic = None;
 
     while !fields.remaining().is_empty() {
         let field = fields.read_tlv()?;
+        if previous_tag.is_some_and(|previous| previous >= field.tag()) {
+            return Err(Error::InvalidFieldOrder);
+        }
+        previous_tag = Some(field.tag());
         match field.tag() {
             TAG_CONTEXT_0 => {
                 let mech_list = read_single_tlv(field.value(), TAG_SEQUENCE)?;
@@ -2238,12 +2253,17 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
     let sequence = read_single_tlv(bytes, TAG_SEQUENCE)?;
     let mut fields = DerReader::new(sequence.value());
     let mut neg_state = None;
+    let mut previous_tag = None;
     let mut supported_mech = None;
     let mut response_token = None;
     let mut mech_list_mic = None;
 
     while !fields.remaining().is_empty() {
         let field = fields.read_tlv()?;
+        if previous_tag.is_some_and(|previous| previous >= field.tag()) {
+            return Err(Error::InvalidFieldOrder);
+        }
+        previous_tag = Some(field.tag());
         match field.tag() {
             TAG_CONTEXT_0 => {
                 let enumerated = read_single_tlv(field.value(), TAG_ENUMERATED)?;

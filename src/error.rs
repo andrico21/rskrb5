@@ -1990,6 +1990,9 @@ pub enum Spnego {
     /// DER length uses redundant octets instead of its shortest representation.
     #[error("nonminimal DER length")]
     NonminimalLength,
+    /// Known SPNEGO fields were repeated or appeared out of sequence.
+    #[error("duplicate or reordered SPNEGO field")]
+    InvalidFieldOrder,
     /// DER length exceeds the remaining input.
     #[error("DER length exceeds remaining input")]
     LengthExceedsInput,
