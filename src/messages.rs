@@ -85,7 +85,7 @@ impl PaForUser {
     /// Returns [`Error::Decode`] when `bytes` is not a DER `PA-FOR-USER`.
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        decode_der("PA-FOR-USER", bytes)
+        decode_named("PA-FOR-USER", bytes)
     }
 
     /// Encode the value as DER.
@@ -129,7 +129,7 @@ impl PaPacOptions {
     /// Returns [`Error::Decode`] when `bytes` is not a DER `PA-PAC-OPTIONS`.
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        decode_der("PA-PAC-OPTIONS", bytes)
+        decode_named("PA-PAC-OPTIONS", bytes)
     }
 
     /// Encode the value as DER.
@@ -179,7 +179,7 @@ impl PaReqEncPaRep {
     /// Returns [`Error::Decode`] when `bytes` is not a DER `PA-REQ-ENC-PA-REP`.
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        decode_der("PA-REQ-ENC-PA-REP", bytes)
+        decode_named("PA-REQ-ENC-PA-REP", bytes)
     }
 
     /// Encode the value as DER.
@@ -247,7 +247,7 @@ impl KrbErrorInfo {
     /// errors of [`Self::from_rasn`].
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        Self::from_rasn(&decode_der("KRB-ERROR", bytes)?)
+        Self::from_rasn(&decode_named("KRB-ERROR", bytes)?)
     }
 
     /// Build a diagnostic summary from a decoded KRB-ERROR.
@@ -293,7 +293,10 @@ impl KrbErrorInfo {
     }
 }
 
-/// Decode a DER value with a typed error.
+/// Decode the first DER value with a typed error, leaving any suffix unchecked.
+///
+/// This raw prefix codec is for fixture and framing work. Named message decoders
+/// require the entire input to contain exactly one value instead.
 ///
 /// # Errors
 ///
@@ -327,6 +330,17 @@ where
 }
 
 use crate::error::Messages as Error;
+
+/// Decode one complete value at a named message boundary.
+///
+/// # Errors
+/// Returns [`Error::Decode`] when decoding fails or trailing bytes remain.
+fn decode_named<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
+where
+    T: Decode,
+{
+    crate::der::decode_complete(bytes).map_err(|message| Error::Decode { target, message })
+}
 
 /// Check that a decoded protocol integer such as `pvno` equals `expected`.
 ///

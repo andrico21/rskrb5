@@ -87,7 +87,7 @@ limits are recorded under FU-OPS-03.
 | FU-MSG-02 | major | Strict AP-REP/KRB-CRED decode rejects valid DES3 padding | open | - | - | - |
 | FU-MSG-03 | minor | KRB-CRED semantic import truncates fractional times | open | - | - | - |
 | FU-MSG-04 | minor | General KRB-PRIV builder emits invalid time scalars | open | - | - | - |
-| FU-MSG-05 | minor | Typed message decoders retain accidental prefix acceptance | open | - | - | - |
+| FU-MSG-05 | minor | Typed message decoders retain accidental prefix acceptance | fixed | `named_decoders_reject_trailing_value`, `raw_codec_retains_prefix_contract`; commit `messages: reject trailing values at named decoding boundaries (FU-MSG-05)` | Named KRB-ERROR and PA-* decoders reject suffixes; generic raw prefix codec unchanged | Task-5 evidence: red exit 101 (all four accepted), green 14/14 |
 | FU-PAC-01 | major | Unsigned HMAC-MD5 checksum ID cannot map to RC4 | open | - | - | - |
 | FU-PAC-02 | minor | Supplemental-credential count ceiling lacks independent regression | open | - | - | - |
 | FU-CFG-01 | minor | Top-level configuration I/O error loses failing path | open | - | - | - |
