@@ -113,7 +113,7 @@ limits are recorded under FU-OPS-03.
 | FU-API-06 | minor | Shared KerberosTime conversions and AP-REQ metadata diverge | open | - | - | - |
 | FU-AMB-01 | minor | Forwarding ambient entry points are absent from structural docs inventory | open | - | - | - |
 | FU-AMB-02 | major | Ambient guard misses reader APIs and leaks cfg exemptions/owner identity | open | - | - | - |
-| FU-TST-01 | minor | Example security-header tests are never selected by gates | open | - | - | - |
+| FU-TST-01 | minor | Example security-header tests are never selected by gates | fixed | `hardening_covers_all_response_statuses`; commit `test: select example security harness (FU-TST-01)` | `cargo test` now selects the example harness through `test = true`; no CI change needed. | Task 3 evidence: metadata previously test=false; removing nosniff makes ordinary cargo test fail (101); restored example passes (1), all-target Clippy passes. |
 | FU-TST-02 | minor | Cookie regressions do not exclude unrelated METHOD-DATA | open | - | - | - |
 | FU-TST-03 | minor | INVALID “never renewed” half is not regression-pinned | open | - | - | - |
 | FU-TST-04 | minor | Abort regression never observes cancellation or Drop cleanup | open | - | - | - |

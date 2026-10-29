@@ -32,7 +32,16 @@ struct AppState {
     validator: Arc<Mutex<Validator<'static>>>,
 }
 
-// cancel-safe: the server future owns every resource; dropping it stops the server.
+/// Runs the example server.
+///
+/// # Errors
+/// Returns keytab loading, listener binding and serving errors.
+///
+/// # Panics
+/// The Tokio entry-point macro panics if its runtime cannot be initialized.
+///
+/// # Cancel safety
+/// The server future owns every resource; dropping it stops the server.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let keytab = Box::leak(Box::new(load_keytab()?));
@@ -168,6 +177,7 @@ async fn security_response(response: Response) -> Response {
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]

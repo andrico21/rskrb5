@@ -237,6 +237,7 @@ required-features = ["http"]
 [[example]]
 name = "axum-negotiate"
 path = "examples/axum-negotiate.rs"
+test = true
 required-features = ["http"]
 
 [lints.rust]
