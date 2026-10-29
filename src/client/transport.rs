@@ -6,6 +6,9 @@ use core::{
 };
 use std::io;
 
+/// Password result consumption after a transport exchange.
+mod password_result;
+
 use hickory_resolver::{
     TokioResolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
@@ -1010,9 +1013,7 @@ impl Tokio {
         let reply = self
             .exchange_kpasswd_request(protocol, addr, request)
             .await?;
-        let result = reply.decrypt_result(reply_key)?;
-        result.ensure_success()?;
-        Ok(result)
+        password_result::checked(&reply, reply_key)
     }
 
     /// Send a framed kpasswd request to a configured server and return a checked result.
@@ -1041,9 +1042,7 @@ impl Tokio {
         let reply = self
             .exchange_kpasswd_request_with_config(config, protocol, realm, request)
             .await?;
-        let result = reply.decrypt_result(reply_key)?;
-        result.ensure_success()?;
-        Ok(result)
+        password_result::checked(&reply, reply_key)
     }
 
     /// Send an AS-REQ through Tokio transport and process the returned AS-REP.
