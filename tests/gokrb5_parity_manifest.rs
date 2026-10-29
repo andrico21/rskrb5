@@ -317,9 +317,10 @@ mod tests {
         Ok(body.to_owned())
     }
 
-    /// The release coordinator holds no secret and waits for no environment, so
-    /// every green CI run reports its tag state without an approval prompt; it
-    /// accepts only `N.N.N` tags and dispatches `publish.yml` at the tag it found.
+    /// The release coordinator holds no secret and dispatches `publish.yml` at the tag.
+    ///
+    /// It waits for no environment, so every green CI run reports its tag state
+    /// without an approval prompt, and it accepts only `N.N.N` tags.
     #[test]
     fn release_coordinator_holds_no_secret_and_dispatches_publish_at_the_tag()
     -> Result<(), TestError> {
@@ -362,10 +363,11 @@ mod tests {
         Ok(())
     }
 
-    /// `publish.yml` runs only on `workflow_dispatch`. Its token-free `verify` job
-    /// re-checks the tag ref, the ancestry on `main` and the CI result before it
-    /// packages; `publish` waits in the reviewed `release` environment and checks
-    /// the tag again.
+    /// `publish.yml` runs only on `workflow_dispatch`, verifying before it publishes.
+    ///
+    /// Its token-free `verify` job re-checks the tag ref, the ancestry on `main`
+    /// and the CI result before it packages; `publish` waits in the reviewed
+    /// `release` environment and checks the tag again.
     #[test]
     fn publish_runs_at_a_tag_after_a_token_free_verify_job() -> Result<(), TestError> {
         let text = repository_file(".github/workflows/publish.yml")?;
@@ -424,9 +426,11 @@ mod tests {
         Ok(())
     }
 
-    /// The registry token reaches only the reviewed publish job, and that job runs
-    /// no dependency build code: no build, test, dry run or verifying package; it
-    /// re-packages with `--no-verify` and must match the verified sha256.
+    /// The registry token reaches only a publish job that builds nothing.
+    ///
+    /// That job runs no dependency build code (no build, test, dry run or
+    /// verifying package); it re-packages with `--no-verify` and must match the
+    /// verified sha256.
     #[test]
     fn registry_token_reaches_only_a_publish_job_that_builds_nothing() -> Result<(), TestError> {
         let mut holders = Vec::new();
@@ -483,10 +487,12 @@ mod tests {
         Ok(())
     }
 
-    /// A re-dispatch after an upload whose GitHub release failed verifies the
-    /// published bytes and creates the missing release exactly once; different
-    /// published bytes are never certified (`scripts/release-publish.sh self-test`,
-    /// GNU tools on Linux, as on the `ubuntu-latest` release runners).
+    /// Release recovery creates the missing GitHub release once, from verified bytes.
+    ///
+    /// After an upload whose GitHub release failed, a re-dispatch verifies the
+    /// published bytes and creates the release exactly once; different published
+    /// bytes are never certified (`scripts/release-publish.sh self-test`, GNU tools
+    /// on Linux, as on the `ubuntu-latest` release runners).
     #[cfg(target_os = "linux")]
     #[test]
     fn release_recovery_verifies_the_published_crate_and_creates_one_release()
