@@ -303,7 +303,10 @@ mod tests {
         let acceptor = WrapToken::decode(&decode_hex(RC4_WRAP_FROM_ACCEPTOR)?, true)
             .context("RC4 wrap decodes")?;
         assert_eq!(acceptor.ec, 16);
-        assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        assert_eq!(
+            acceptor.payload.as_ref().map(|value| value.as_slice()),
+            Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
+        );
         acceptor
             .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
             .context("RC4 acceptor wrap verifies")?;
@@ -332,7 +335,10 @@ mod tests {
         let acceptor = WrapToken::decode(&decode_hex(DES3_WRAP_FROM_ACCEPTOR)?, true)
             .context("DES3 wrap decodes")?;
         assert_eq!(acceptor.ec, 20);
-        assert_eq!(acceptor.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        assert_eq!(
+            acceptor.payload.as_ref().map(|value| value.as_slice()),
+            Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
+        );
         acceptor
             .verify(&key, GSSAPI_ACCEPTOR_SEAL_USAGE)
             .context("DES3 acceptor wrap verifies")?;
@@ -444,7 +450,10 @@ mod tests {
         assert_eq!(token.ec, 0);
         assert_eq!(token.rrc, 0);
         assert_eq!(token.snd_seq_num, 0);
-        assert_eq!(token.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        assert_eq!(
+            token.payload.as_ref().map(|value| value.as_slice()),
+            Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
+        );
         assert!(token.checksum.is_none());
         assert!(token.encrypted_body.is_some());
 
@@ -469,7 +478,10 @@ mod tests {
                 .context("sealed wrap decrypts into token")?,
             decode_hex(WRAP_PAYLOAD)?.as_slice()
         );
-        assert_eq!(decoded.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+        assert_eq!(
+            decoded.payload.as_ref().map(|value| value.as_slice()),
+            Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
+        );
         Ok(())
     }
 
@@ -564,7 +576,10 @@ mod tests {
             body.rotate_right(shift);
             let decoded = WrapToken::decode(&wire, false)?;
             decoded.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?;
-            assert_eq!(decoded.payload, Some(decode_hex(WRAP_PAYLOAD)?));
+            assert_eq!(
+                decoded.payload.as_ref().map(|value| value.as_slice()),
+                Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
+            );
             assert_eq!(
                 WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key)?
                     .with_rrc(rrc)

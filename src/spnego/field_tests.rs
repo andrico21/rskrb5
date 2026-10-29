@@ -2,6 +2,16 @@
 
 use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
+/// Diagnostic formatting never emits MIC or Wrap application plaintext.
+#[test]
+fn payload_debug_is_redacted() {
+    use super::{MicToken, WrapToken};
+    let payload = b"sensitive-payload-marker".to_vec();
+    let bytes = format!("{payload:?}");
+    assert!(!format!("{:?}", MicToken::new(0, 1).with_payload(payload.clone())).contains(&bytes));
+    assert!(!format!("{:?}", WrapToken::new(0, 1).with_payload(payload)).contains(&bytes));
+}
+
 /// Verification has one success state rather than an unreachable false result.
 #[test]
 fn verification_returns_unit() -> Result<(), Error> {

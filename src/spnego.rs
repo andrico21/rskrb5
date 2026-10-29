@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose};
 use rasn::types::Integer;
+use zeroize::Zeroizing;
 
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
@@ -124,7 +125,7 @@ pub const GSSAPI_INITIATOR_SIGN_USAGE: u32 = 25;
 ///
 /// The payload is authenticated but not transmitted in the token bytes, matching
 /// gokrb5's MIC token model.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct MicToken {
     /// RFC4121 token flags.
@@ -132,7 +133,7 @@ pub struct MicToken {
     /// Sender sequence number.
     pub snd_seq_num: u64,
     /// Payload bytes authenticated by this MIC token. Not encoded on the wire.
-    pub payload: Option<Vec<u8>>,
+    pub payload: Option<Zeroizing<Vec<u8>>>,
     /// Token checksum.
     pub checksum: Option<Vec<u8>>,
 }
@@ -238,7 +239,7 @@ impl MicToken {
     where
         P: Into<Vec<u8>>,
     {
-        self.payload = Some(payload.into());
+        self.payload = Some(Zeroizing::new(payload.into()));
         self
     }
 
@@ -290,7 +291,7 @@ impl MicToken {
         let mut token = Self {
             flags: 0,
             snd_seq_num: 0,
-            payload: Some(payload.into()),
+            payload: Some(Zeroizing::new(payload.into())),
             checksum: None,
         };
         token.set_checksum(key, GSSAPI_INITIATOR_SIGN_USAGE)?;
@@ -305,7 +306,9 @@ impl MicToken {
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN));
+        let mut data = Zeroizing::new(Vec::with_capacity(
+            payload.len().saturating_add(GSS_MIC_HEADER_LEN),
+        ));
         data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
 
@@ -327,8 +330,26 @@ impl MicToken {
     }
 }
 
+impl fmt::Debug for MicToken {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            flags,
+            snd_seq_num,
+            payload,
+            checksum,
+        } = self;
+        f.debug_struct("MicToken")
+            .field("flags", flags)
+            .field("snd_seq_num", snd_seq_num)
+            .field("payload_len", &payload.as_ref().map(|value| value.len()))
+            .field("checksum_len", &checksum.as_ref().map(Vec::len))
+            .finish()
+    }
+}
+
 /// RFC4121 GSS-API Wrap token.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct WrapToken {
     /// RFC4121 token flags.
@@ -341,7 +362,7 @@ pub struct WrapToken {
     /// Sender sequence number.
     pub snd_seq_num: u64,
     /// Wrapped payload bytes.
-    pub payload: Option<Vec<u8>>,
+    pub payload: Option<Zeroizing<Vec<u8>>>,
     /// Token checksum for unsealed tokens.
     pub checksum: Option<Vec<u8>>,
     /// Encrypted token body for sealed tokens, stored exactly as transmitted
@@ -473,7 +494,7 @@ impl WrapToken {
             });
         }
 
-        let unrotated = rotate_left(body, usize::from(rrc));
+        let unrotated = Zeroizing::new(rotate_left(body, usize::from(rrc)));
         let checksum_len = usize::from(ec);
         let Some((payload, checksum)) = unrotated
             .len()
@@ -491,13 +512,14 @@ impl WrapToken {
             ec,
             rrc,
             snd_seq_num,
-            payload: Some(payload.to_vec()),
+            payload: Some(Zeroizing::new(payload.to_vec())),
             checksum: Some(checksum.to_vec()),
             encrypted_body: None,
         })
     }
 
     /// Encode this wrap token.
+    /// The returned unsealed wire bytes contain plaintext; the caller must erase them.
     ///
     /// # Errors
     ///
@@ -526,11 +548,11 @@ impl WrapToken {
             });
         }
 
-        let mut bytes = Vec::with_capacity(
+        let mut bytes = Zeroizing::new(Vec::with_capacity(
             GSS_WRAP_HEADER_LEN
                 .saturating_add(payload.len())
                 .saturating_add(checksum.len()),
-        );
+        ));
         bytes.extend_from_slice(&self.header(self.rrc));
         bytes.extend_from_slice(payload);
         bytes.extend_from_slice(checksum);
@@ -539,7 +561,7 @@ impl WrapToken {
         {
             body.rotate_right(shift);
         }
-        Ok(bytes)
+        Ok(bytes.to_vec())
     }
 
     #[must_use]
@@ -549,7 +571,7 @@ impl WrapToken {
     where
         P: Into<Vec<u8>>,
     {
-        self.payload = Some(payload.into());
+        self.payload = Some(Zeroizing::new(payload.into()));
         self
     }
 
@@ -596,7 +618,7 @@ impl WrapToken {
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         if self.is_sealed() {
-            drop(self.decrypt_payload(key, key_usage)?);
+            drop(Zeroizing::new(self.decrypt_payload(key, key_usage)?));
             return Ok(());
         }
 
@@ -632,7 +654,7 @@ impl WrapToken {
             })?,
             rrc: 0,
             snd_seq_num: 0,
-            payload: Some(payload.into()),
+            payload: Some(Zeroizing::new(payload.into())),
             checksum: None,
             encrypted_body: None,
         };
@@ -678,7 +700,7 @@ impl WrapToken {
             ec: 0,
             rrc: 0,
             snd_seq_num: 0,
-            payload: Some(payload.into()),
+            payload: Some(Zeroizing::new(payload.into())),
             checksum: None,
             encrypted_body: None,
         };
@@ -721,12 +743,12 @@ impl WrapToken {
             }
             KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => self.ec,
         };
-        let mut plaintext = Vec::with_capacity(
+        let mut plaintext = Zeroizing::new(Vec::with_capacity(
             payload
                 .len()
                 .saturating_add(usize::from(ec))
                 .saturating_add(GSS_WRAP_HEADER_LEN),
-        );
+        ));
         plaintext.extend_from_slice(payload);
         plaintext.extend(iter::repeat_n(0, usize::from(ec)));
         plaintext.extend_from_slice(&wrap_header(flags, ec, 0, self.snd_seq_num));
@@ -741,6 +763,7 @@ impl WrapToken {
     }
 
     /// Decrypt and return the payload of a sealed Wrap token.
+    /// The caller owns the returned plaintext and must erase it after use.
     ///
     /// # Errors
     ///
@@ -763,7 +786,8 @@ impl WrapToken {
         let encrypted = rotate_left(encrypted_body, usize::from(self.rrc));
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-        let mut plaintext = etype.decrypt_message(&key.value, &encrypted, key_usage)?;
+        let mut plaintext =
+            Zeroizing::new(etype.decrypt_message(&key.value, &encrypted, key_usage)?);
 
         let trailer_len = GSS_WRAP_HEADER_LEN.saturating_add(usize::from(self.ec));
         let too_short = || Error::GssDecryptedTokenTooShort {
@@ -782,7 +806,7 @@ impl WrapToken {
         }
 
         plaintext.truncate(payload_len);
-        Ok(plaintext)
+        Ok(plaintext.to_vec())
     }
 
     /// Decrypt a sealed token and store its payload on this value.
@@ -796,7 +820,7 @@ impl WrapToken {
         key: &EncryptionKey,
         key_usage: u32,
     ) -> Result<&[u8], Error> {
-        let payload = self.decrypt_payload(key, key_usage)?;
+        let payload = Zeroizing::new(self.decrypt_payload(key, key_usage)?);
         Ok(self.payload.insert(payload).as_slice())
     }
 
@@ -816,7 +840,9 @@ impl WrapToken {
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN));
+        let mut data = Zeroizing::new(Vec::with_capacity(
+            payload.len().saturating_add(GSS_WRAP_HEADER_LEN),
+        ));
         data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
 
@@ -831,6 +857,30 @@ impl WrapToken {
     /// the given right rotation count.
     fn header(&self, rrc: u16) -> Vec<u8> {
         wrap_header(self.flags, self.ec, rrc, self.snd_seq_num)
+    }
+}
+
+impl fmt::Debug for WrapToken {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            flags,
+            ec,
+            rrc,
+            snd_seq_num,
+            payload,
+            checksum,
+            encrypted_body,
+        } = self;
+        f.debug_struct("WrapToken")
+            .field("flags", flags)
+            .field("ec", ec)
+            .field("rrc", rrc)
+            .field("snd_seq_num", snd_seq_num)
+            .field("payload_len", &payload.as_ref().map(|value| value.len()))
+            .field("checksum_len", &checksum.as_ref().map(Vec::len))
+            .field("encrypted_len", &encrypted_body.as_ref().map(Vec::len))
+            .finish()
     }
 }
 
