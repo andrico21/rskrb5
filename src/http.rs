@@ -6,13 +6,13 @@
 
 #[cfg(feature = "tower")]
 use alloc::{borrow::Cow, sync::Arc};
-#[cfg(feature = "tower")]
-use core::pin::Pin;
 use core::result::Result as CoreResult;
 #[cfg(feature = "tower")]
 use core::task::{Context, Poll};
 #[cfg(feature = "tower")]
 use core::time::Duration;
+#[cfg(feature = "tower")]
+use core::{mem, pin::Pin};
 #[cfg(feature = "tower")]
 use std::{sync::Mutex, time::SystemTime};
 
@@ -1217,6 +1217,21 @@ pub struct NegotiateService<'keytab, S> {
 
 #[cfg(feature = "tower")]
 impl<'keytab, S> NegotiateService<'keytab, S> {
+    /// Apply a consuming validator builder without discarding admitted replay records.
+    /// A poisoned validator stays poisoned and refuses subsequent requests.
+    fn configure_validator<F>(&self, configure: F)
+    where
+        F: FnOnce(Validator<'keytab>) -> Validator<'keytab>,
+    {
+        if let Ok(mut guard) = self.validator.lock() {
+            let previous = mem::replace(
+                &mut *guard,
+                self.settings.validator.build(self.settings.keytab.clone()),
+            );
+            *guard = configure(previous);
+        }
+    }
+
     /// Wrap an inner service with default Negotiate validation.
     #[inline]
     pub fn new(inner: S, keytab: &'keytab Keytab) -> Self {
@@ -1240,9 +1255,7 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[inline]
     pub fn with_now(mut self, now: SystemTime) -> Self {
         self.settings = self.settings.with_now(now);
-        self.validator = Arc::new(Mutex::new(
-            self.settings.validator.build(self.settings.keytab.clone()),
-        ));
+        self.configure_validator(|validator| validator.with_now(now));
         self
     }
 
@@ -1251,9 +1264,7 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[inline]
     pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
         self.settings = self.settings.with_max_clock_skew(max_clock_skew);
-        self.validator = Arc::new(Mutex::new(
-            self.settings.validator.build(self.settings.keytab.clone()),
-        ));
+        self.configure_validator(|validator| validator.with_max_clock_skew(max_clock_skew));
         self
     }
 
@@ -1266,9 +1277,13 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
         T: Into<String>,
     {
         self.settings = self.settings.with_keytab_principal(components);
-        self.validator = Arc::new(Mutex::new(
-            self.settings.validator.build(self.settings.keytab.clone()),
-        ));
+        let principal = self
+            .settings
+            .validator
+            .keytab_principal
+            .clone()
+            .unwrap_or_default();
+        self.configure_validator(|validator| validator.with_keytab_principal(principal));
         self
     }
 
@@ -1276,10 +1291,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn with_client_address(mut self, client_address: HostAddress) -> Self {
-        self.settings = self.settings.with_client_address(client_address);
-        self.validator = Arc::new(Mutex::new(
-            self.settings.validator.build(self.settings.keytab.clone()),
-        ));
+        self.settings = self.settings.with_client_address(client_address.clone());
+        self.configure_validator(|validator| validator.with_client_address(client_address));
         self
     }
 
@@ -1288,9 +1301,9 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[inline]
     pub fn require_client_address(mut self, require_client_address: bool) -> Self {
         self.settings = self.settings.require_client_address(require_client_address);
-        self.validator = Arc::new(Mutex::new(
-            self.settings.validator.build(self.settings.keytab.clone()),
-        ));
+        self.configure_validator(|validator| {
+            validator.require_client_address(require_client_address)
+        });
         self
     }
 
@@ -1298,10 +1311,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Self {
-        self.settings = self.settings.with_shared_replay_cache(replay_cache);
-        self.validator = Arc::new(Mutex::new(
-            self.settings.validator.build(self.settings.keytab.clone()),
-        ));
+        self.settings = self.settings.with_shared_replay_cache(replay_cache.clone());
+        self.configure_validator(|validator| validator.with_shared_replay_cache(replay_cache));
         self
     }
 
@@ -1310,9 +1321,7 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[inline]
     pub fn without_shared_replay_cache(mut self) -> Self {
         self.settings = self.settings.without_shared_replay_cache();
-        self.validator = Arc::new(Mutex::new(
-            self.settings.validator.build(self.settings.keytab.clone()),
-        ));
+        self.configure_validator(Validator::without_shared_replay_cache);
         self
     }
 

@@ -250,6 +250,30 @@ mod tests {
         Ok(())
     }
 
+    /// Changing the clock after admission preserves the validator's local replay evidence.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn service_clock_builder_preserves_local_replays() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let now = timestamp(1_893_553_447)?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .without_shared_replay_cache()
+            .with_now(now)
+            .layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        assert_eq!(
+            run_ready(service.call(request.clone()))??.status(),
+            StatusCode::OK
+        );
+        let mut configured = service.with_now(now);
+        assert_eq!(
+            run_ready(configured.call(request))??.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        Ok(())
+    }
+
     /// A Send inner future remains movable onto an executor worker thread.
     #[cfg(feature = "tower")]
     #[test]
