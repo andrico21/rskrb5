@@ -1779,7 +1779,11 @@ pub fn accept_sec_context_header(
     let init = match token {
         Token::Init(init) => init,
         Token::Resp(response) => {
-            let _ap_req = Token::Resp(response).krb5_ap_req()?;
+            if let Some(mech) = response.supported_mech
+                && !mech.is_kerberos_mechanism()
+            {
+                return Err(Error::UnsupportedMechanism(mech));
+            }
             return Err(Error::NegotiationRequiresState);
         }
     };
