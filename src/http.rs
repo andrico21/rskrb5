@@ -726,6 +726,7 @@ where
         WWW_AUTHENTICATE,
         HeaderValue::from_static(spnego::HTTP_NEGOTIATE),
     ));
+    harden_response(&mut response);
     response
 }
 
@@ -914,7 +915,48 @@ where
     let mut value = HeaderValue::from_str(header)?;
     value.set_sensitive(true);
     drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
+    harden_response(&mut response);
     Ok(response)
+}
+
+/// Apply secure defaults without overriding the application's explicit policy.
+fn harden_response<B>(response: &mut Response<B>) {
+    let headers = response.headers_mut();
+    for name in [
+        "server",
+        "x-powered-by",
+        "x-aspnet-version",
+        "x-aspnetmvc-version",
+    ] {
+        drop(headers.remove(name));
+    }
+    for (name, value) in [
+        (
+            "strict-transport-security",
+            "max-age=63072000; includeSubDomains",
+        ),
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "deny"),
+        (
+            "content-security-policy",
+            "default-src 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests",
+        ),
+        ("referrer-policy", "no-referrer"),
+        (
+            "permissions-policy",
+            "accelerometer=(), camera=(), geolocation=(), microphone=()",
+        ),
+        ("cross-origin-embedder-policy", "require-corp"),
+        ("cross-origin-opener-policy", "same-origin"),
+        ("cross-origin-resource-policy", "same-origin"),
+        ("cache-control", "no-store, max-age=0"),
+        ("x-dns-prefetch-control", "off"),
+        ("x-permitted-cross-domain-policies", "none"),
+    ] {
+        if !headers.contains_key(name) {
+            drop(headers.insert(name, HeaderValue::from_static(value)));
+        }
+    }
 }
 
 /// Tower layer for service-side HTTP Negotiate validation.
@@ -944,6 +986,14 @@ pub struct NegotiateLayer<'keytab> {
 
 #[cfg(feature = "tower")]
 impl<'keytab> NegotiateLayer<'keytab> {
+    /// Apply missing security headers and strip fingerprints on inner responses (default: on).
+    /// Library-generated challenge and rejection responses are always hardened.
+    #[must_use]
+    #[inline]
+    pub const fn with_response_hardening(mut self, enabled: bool) -> Self {
+        self.response.harden_inner = enabled;
+        self
+    }
     /// Create a Negotiate layer backed by a service keytab.
     #[must_use]
     #[inline]
@@ -1374,6 +1424,7 @@ where
         };
 
         let future = self.inner.call(req);
+        let harden_inner = self.response.harden_inner;
         Box::pin(async move {
             let mut response = future.await.map_err(TowerError::Inner)?;
             if let Some(header) = ap_rep_header {
@@ -1382,6 +1433,9 @@ where
                     .map_err(TowerError::Http)?;
                 value.set_sensitive(true);
                 drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
+            }
+            if harden_inner {
+                harden_response(&mut response);
             }
             Ok(response)
         })
@@ -1454,6 +1508,8 @@ impl ValidatorOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// How a Negotiate service answers requests.
 struct NegotiateResponseOptions {
+    /// Whether inner service responses receive missing secure defaults.
+    harden_inner: bool,
     /// Whether an accepted request's response carries an AP-REP token.
     emit_ap_rep: bool,
     /// Options of the emitted AP-REP.
@@ -1467,6 +1523,7 @@ struct NegotiateResponseOptions {
 impl Default for NegotiateResponseOptions {
     fn default() -> Self {
         Self {
+            harden_inner: true,
             emit_ap_rep: true,
             ap_rep_options: ApRepOptions::default(),
             reject_invalid: true,
