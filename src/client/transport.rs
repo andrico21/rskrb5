@@ -6,9 +6,13 @@ use core::{
 };
 use std::io;
 
+/// Service-specific TCP record length validation.
+mod framing;
 /// Password result consumption after a transport exchange.
 mod password_result;
-
+use framing::tcp_request_length;
+#[cfg(test)]
+use framing::validate_tcp_length;
 use hickory_resolver::{
     TokioResolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
@@ -425,17 +429,8 @@ impl Tokio {
 
         let mut header = [0; TCP_RECORD_MARK_LEN];
         let _: usize = stream.read_exact(&mut header).await?;
-        let response_len = u32::from_be_bytes(header);
-        validate_tcp_length(response_len, framing)?;
-        let Some(response_len_usize) = usize::try_from(response_len)
-            .ok()
-            .filter(|len| *len <= self.tcp_response_limit)
-        else {
-            return Err(Error::TcpResponseTooLarge {
-                actual: response_len,
-                limit: self.tcp_response_limit,
-            });
-        };
+        let response_len_usize =
+            framing::response_length(header, framing, self.tcp_response_limit)?;
 
         let mut response = vec![0; response_len_usize];
         let _: usize = stream.read_exact(&mut response).await?;
@@ -2265,29 +2260,6 @@ impl Tokio {
             Err(_elapsed) => Err(Error::TransportTimeout(self.timeout)),
         }
     }
-}
-
-/// Validate the reserved bit only for RFC 4120 KDC records.
-///
-/// # Errors
-/// Returns the named reserved-bit error for KDC frames.
-const fn validate_tcp_length(length: u32, framing: TcpFraming) -> Result<(), Error> {
-    match framing {
-        TcpFraming::Kdc if length & 0x8000_0000 != 0 => Err(Error::TcpReservedBitSet),
-        TcpFraming::Kdc | TcpFraming::Kpasswd => Ok(()),
-    }
-}
-
-/// Convert an outgoing length according to the service's framing rules.
-///
-/// # Errors
-/// Returns a request-size error if the service's record mark cannot represent it.
-fn tcp_request_length(length: usize, framing: TcpFraming) -> Result<u32, Error> {
-    let value =
-        u32::try_from(length).map_err(|_overflow| Error::TcpRequestTooLarge { actual: length })?;
-    validate_tcp_length(value, framing)
-        .map_err(|_reserved| Error::TcpRequestTooLarge { actual: length })?;
-    Ok(value)
 }
 
 /// Select without replacement within ascending priorities using RFC 2782 draws.
