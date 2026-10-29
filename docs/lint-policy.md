@@ -88,8 +88,10 @@ against the last published release (the `semver-checks` job).
 `prose_gate.py` ports rmcp-server-kit's prose gates and adds one Kerberos
 overlay rule. Each check has an `--only` selector:
 
-- `cancel-safety`: a production `async fn` documents `# Cancel safety` (or
-  carries a `cancel-safe:` note just above it);
+- `cancel-safety`: a production `async fn` documents `# Cancel safety` with
+  text under the heading, or carries a non-empty `cancel-safe:` note in the
+  comment, doc and attribute lines attached directly above it (a blank line or
+  another item in between detaches it);
 - `credential-mutating`: an async `change_password*`, `set_password*` or
   `exchange_kpasswd*` has a `# Cancel safety` section containing
   `NOT cancel-safe`;
@@ -97,6 +99,14 @@ overlay rule. Each check has an `--only` selector:
 - `test-result`: a test with a propagation site returns `Result`;
 - `drop-audit`: a production `impl Drop` has a `Drop audit` note;
 - `emptiness-message`: `assert!(x.is_empty())` carries a message.
+
+Production means every file outside `tests/` and `benches/` (so `src`,
+`examples`, fuzz targets and build scripts), minus `cfg(test)` code. Items a
+macro generates are checked as well: every `macro_rules!` definition or macro
+invocation whose tokens can produce an `async fn`, a test or a `Drop` impl is
+scanned like source, metavariables read as identifiers
+([`prose_scope.py`](../scripts/lint-gates/prose_scope.py)); `proptest!` cases
+are exempt only from `test-docs` and `test-result`.
 
 `test-result` requires `Result` only when the test body has a propagation site
 ([`prose_infallible.py`](../scripts/lint-gates/prose_infallible.py)).
