@@ -102,7 +102,7 @@ limits are recorded under FU-OPS-03.
 | FU-FIL-01 | minor | Legacy ccache versions silently lose admitted fields | open | - | - | - |
 | FU-FIL-02 | minor | Global file erasure counters mask missing individual owners | open | - | - | - |
 | FU-FIL-03 | minor | DIR primary is published before initialization completes | open | - | - | - |
-| FU-FIL-04 | minor | Partial next-entry keytab size is accepted as EOF | open | - | - | - |
+| FU-FIL-04 | minor | Partial next-entry keytab size is accepted as EOF | fixed | `rejects_partial_next_entry_sizes`; commit `keytab: reject interrupted record sizes (FU-FIL-04)` | Nonempty 1-3 byte next-size fragments now return Truncated rather than successful EOF; zero-size termination unchanged | task-6-rskrb5-ng-zero-open-items.log: red assertion on pre-fix parser; green 25 keytab tests |
 | FU-FIL-05 | minor | Keytab parser/writer disagree on negative enctype domain | open | - | - | - |
 | FU-FIL-06 | minor | Zero extended KVNO changes identity after reload | open | - | - | - |
 | FU-API-01 | minor | Public non-exhaustive inputs lack usable construction paths | open | - | - | - |

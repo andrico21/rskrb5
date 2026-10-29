@@ -654,6 +654,27 @@ mod tests {
         }
     }
 
+    /// An interrupted next-entry size is not a clean end of file.
+    #[test]
+    fn rejects_partial_next_entry_sizes() -> Result<(), TestError> {
+        // Given empty and populated keytabs with incomplete next-record sizes.
+        let mut populated = Keytab::new();
+        populated
+            .entries_mut()
+            .push(synthetic_entry("user", 7, 18, 100));
+        for prefix in [vec![5, 2], populated.to_bytes()?] {
+            for fragment in [&[1_u8][..], &[0, 1][..], &[0, 0, 1][..]] {
+                let mut bytes = prefix.clone();
+                bytes.extend_from_slice(fragment);
+                // When parsing the interrupted file.
+                let result = Keytab::parse(&bytes);
+                // Then truncation is reported rather than silently discarding data.
+                assert!(matches!(result, Err(Error::Truncated { .. })));
+            }
+        }
+        Ok(())
+    }
+
     /// Pins that empty, misversioned and truncated keytabs are rejected.
     #[test]
     fn rejects_invalid_keytab_inputs() {

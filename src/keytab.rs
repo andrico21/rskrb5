@@ -180,7 +180,7 @@ impl Keytab {
         let mut offset = 2_usize;
         let mut entries = Vec::new();
 
-        while bytes.len().saturating_sub(offset) >= 4 {
+        while offset < bytes.len() {
             let entry_len = read_i32(bytes, &mut offset, endian)?;
             if entry_len == 0_i32 {
                 break;
