@@ -317,6 +317,9 @@ impl Keytab {
         let endian = Endian::for_version(self.version);
         let mut out = file_name::SecretBytes::new(vec![KEYTAB_FIRST_BYTE, self.version]);
         for entry in &self.entries {
+            if entry.kvno == 0 && entry.kvno8 != 0 {
+                return Err(Error::LengthOverflow);
+            }
             let mut body = file_name::SecretBytes::new(Vec::new());
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
@@ -551,7 +554,7 @@ impl Entry {
     /// Creates a `Entry` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         principal: Principal,
         timestamp: u32,
         kvno8: u8,
@@ -563,7 +566,7 @@ impl Entry {
             timestamp,
             kvno8,
             key,
-            kvno,
+            kvno: if kvno == 0 { u32::from(kvno8) } else { kvno },
         }
     }
 

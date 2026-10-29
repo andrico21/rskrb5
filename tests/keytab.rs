@@ -631,6 +631,17 @@ mod tests {
         Ok(())
     }
 
+    /// Construction makes the extended-zero fallback explicit before lookup or save.
+    #[test]
+    fn zero_extended_kvno_is_canonical_at_construction() {
+        // Given a fixed KVNO of seven and the zero extended sentinel.
+        let principal = Principal::new("EXAMPLE.COM", 1, ["user"]);
+        // When constructing the entry.
+        let entry = Entry::new(principal, 100, 7, EncryptionKey::new(18, vec![7; 16]), 0);
+        // Then the effective lookup identity already matches the file interpretation.
+        assert_eq!(entry.kvno, 7);
+    }
+
     proptest! {
         /// Every admitted synthetic keytab survives serialization and parsing.
         #[test]
@@ -640,10 +651,10 @@ mod tests {
             key in collection::vec(any::<u8>(), 0..128),
             etype in i32::from(i16::MIN)..=i32::from(i16::MAX),
             timestamp in any::<u32>(),
-            kvno in 1_u32..=u32::MAX,
+            kvno in any::<u32>(),
+            kvno8 in any::<u8>(),
             name_type in any::<i32>(),
         ) {
-            let [.., kvno8] = kvno.to_be_bytes();
             let mut keytab = Keytab::new();
             keytab.entries_mut().push(Entry::new(
                 Principal::new(realm, name_type, components),
