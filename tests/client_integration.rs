@@ -11,6 +11,15 @@
 #[path = "client_integration/endpoints.rs"]
 mod endpoints;
 
+/// Availability gates for explicitly requested live fixtures.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "client_integration/preflight.rs"]
+mod preflight;
+
 use core::{error::Error, iter, net::Ipv4Addr, time::Duration};
 use std::{
     fs,
@@ -250,6 +259,10 @@ mod tests {
     use super::{
         endpoints::{
             kdc_addr, kpasswd_addr, latest_kdc_addr, old_kdc_addr, resdom_kdc_addr, short_kdc_addr,
+        },
+        preflight::{
+            integration_enabled, privileged_integration_enabled,
+            privileged_kvno_integration_enabled,
         },
         *,
     };
@@ -2445,82 +2458,10 @@ mod tests {
         }
     }
 
-    /// Returns whether the privileged tests run: integration on, `TESTPRIVILEGED=1` and `kinit` found.
-    ///
-    /// Reports a skip on stderr.
-    fn privileged_integration_enabled() -> Result<bool, Box<dyn Error>> {
-        if !integration_enabled()? {
-            return Ok(false);
-        }
-        if env::var("TESTPRIVILEGED").as_deref() != Ok("1") {
-            writeln!(
-                io::stderr(),
-                "skipping privileged Docker KDC integration test; set TESTPRIVILEGED=1 to enable"
-            )?;
-            return Ok(false);
-        }
-        if !command_available("kinit") {
-            writeln!(
-                io::stderr(),
-                "skipping privileged Docker KDC integration test; set a PATH-accessible kinit binary to enable"
-            )?;
-            return Ok(false);
-        }
-        Ok(true)
-    }
-
-    /// Returns whether the Docker tests run: `INTEGRATION=1` and every fixture reachable.
-    ///
-    /// Reports a skip on stderr.
-    fn integration_enabled() -> Result<bool, Box<dyn Error>> {
-        if env::var("INTEGRATION").as_deref() != Ok("1") {
-            writeln!(
-                io::stderr(),
-                "skipping Docker KDC integration test; set INTEGRATION=1 to enable"
-            )?;
-            return Ok(false);
-        }
-
-        let endpoints = [
-            (kdc_addr(), "primary KDC"),
-            (old_kdc_addr(), "legacy KDC"),
-            (latest_kdc_addr(), "AES-SHA2 KDC"),
-            (resdom_kdc_addr(), "resource KDC"),
-            (short_kdc_addr(), "short-ticket KDC"),
-        ];
-        for (endpoint, label) in endpoints {
-            if !tcp_reachable(&endpoint, label)? {
-                writeln!(
-                    io::stderr(),
-                    "skipping Docker KDC integration test; cannot reach {label} endpoint at {endpoint}"
-                )?;
-                return Ok(false);
-            }
-        }
-
-        if env::var("TEST_KPASSWD").as_deref() == Ok("1")
-            && !tcp_reachable(&kpasswd_addr(), "kpasswd")?
-        {
-            writeln!(
-                io::stderr(),
-                "skipping Docker KDC integration test; cannot reach kpasswd endpoint at {}",
-                kpasswd_addr()
-            )?;
-            return Ok(false);
-        }
-
-        #[cfg(feature = "spnego")]
-        if !http_service_reachable()? {
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
     /// Returns whether any resolved address of `endpoint` accepts a TCP connection within a second.
     ///
     /// A resolution failure is reported on stderr and counts as unreachable.
-    fn tcp_reachable(endpoint: &str, label: &str) -> Result<bool, Box<dyn Error>> {
+    pub(super) fn tcp_reachable(endpoint: &str, label: &str) -> Result<bool, Box<dyn Error>> {
         let mut addrs = match endpoint.to_socket_addrs() {
             Ok(addrs) => addrs,
             Err(error) => {
@@ -2537,7 +2478,7 @@ mod tests {
 
     /// Returns whether the Docker HTTP fixture accepts connections; reports a skip on stderr.
     #[cfg(feature = "spnego")]
-    fn http_service_reachable() -> Result<bool, Box<dyn Error>> {
+    pub(super) fn http_service_reachable() -> Result<bool, Box<dyn Error>> {
         let target = match http_target("/modgssapi/index.html") {
             Ok(target) => target.addr,
             Err(error) => {
@@ -2558,32 +2499,6 @@ mod tests {
             "skipping Docker KDC integration test; cannot reach Docker HTTP fixture at {target}"
         )?;
         Ok(false)
-    }
-
-    /// Returns whether the `kvno` tests run: the privileged tests run and `kvno` is found.
-    fn privileged_kvno_integration_enabled() -> Result<bool, Box<dyn Error>> {
-        if !privileged_integration_enabled()? {
-            return Ok(false);
-        }
-        if !command_available("kvno") {
-            writeln!(
-                io::stderr(),
-                "skipping privileged Docker KDC kvno tests; set a PATH-accessible kvno binary to enable"
-            )?;
-            return Ok(false);
-        }
-        Ok(true)
-    }
-
-    /// Returns whether `program --version` can be started from `PATH`.
-    fn command_available(program: &str) -> bool {
-        Command::new(program)
-            .arg("--version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok()
     }
 
     /// Renders the `krb5.conf` handed to the MIT tools.
