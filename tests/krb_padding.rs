@@ -25,6 +25,7 @@ mod tests {
             let key = EncryptionKey::new(id, vec![0x42; etype.key_len()]);
             let confounder = vec![0x24; etype.confounder_len()];
             let mut residues = [false; 8];
+            let mut cred_residues = [false; 8];
             for length in 1..=8 {
                 let part = rasn_kerberos::EncApRepPart {
                     ctime: rasn_kerberos::KerberosTime(utc.with_timezone(&offset)),
@@ -59,6 +60,10 @@ mod tests {
                     sender_address: None,
                     recipient_address: None,
                 };
+                let cred_der = der::encode(&cred_part)?;
+                *cred_residues
+                    .get_mut(cred_der.len().rem_euclid(8))
+                    .ok_or("credential residue")? = true;
                 // When encrypted parts are built and passed through real decrypt decoders.
                 let reply = ap_rep::build_ap_rep_with_confounder(&part, &key, None, &confounder)?;
                 assert_eq!(ap_rep::decrypt_ap_rep_enc_part(&reply, &key)?, part);
@@ -83,6 +88,7 @@ mod tests {
                 assert_eq!(krb_cred::decrypt_krb_cred_enc_part(&cred, &key)?, cred_part);
             }
             assert_eq!(residues, [true; 8]);
+            assert_eq!(cred_residues, [true; 8]);
         }
         Ok(())
     }
