@@ -81,7 +81,11 @@ in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
 
 `rg -n 'lint-migration' src tests examples fuzz` must print nothing.
 `semver_baseline.py` is not a lint gate: it drives `cargo semver-checks`
-against the last published release (the `semver-checks` job).
+against the highest published `rskrb5-ng` version at or below the candidate,
+taken from crates.io (the `semver-checks` job). A published version equal to
+the candidate must be this exact package (same `.crate` sha256), otherwise it
+fails with "version already published; bump the version"; release tags whose
+manifest names `rskrb5-ng` must carry their own version.
 
 ### Prose gate
 
