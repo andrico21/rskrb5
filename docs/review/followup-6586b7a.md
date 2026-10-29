@@ -168,7 +168,7 @@ limits are recorded under FU-OPS-03.
 | FU-DOC-21 | minor | Enctype policy docs describe old defaults/construction/validation phase | open | - | - | - |
 | FU-DOC-22 | minor | Ccache I/O display calls write failures read failures | open | - | - | - |
 | FU-DOC-23 | nit | Bare kpasswd reply profile is omitted from parse contract | open | - | - | - |
-| FU-DOC-24 | minor | KRB-ERROR scalar validation docs describe obsolete u32-only checks | open | - | - | - |
+| FU-DOC-24 | minor | KRB-ERROR scalar validation docs describe obsolete u32-only checks | fixed | Attached Errors docs checked red/green in task-5 evidence; existing `protocol_time_*` tests pass; commit `messages: correct scalar validation error documentation (FU-DOC-24)` | none | `validate`, `info`, `from_rasn` and time conversion docs describe 0..=999999 and fractional-time rejection |
 | FU-DOC-25 | nit | Stale helper prose and repeated test cfg attributes | open | - | - | - |
 | FU-DOC-26 | nit | NDR rejection test comment describes unrelated PAC discovery | open | - | - | - |
 | FU-OPS-01 | minor | Release token owner migration is outstanding despite fixed status | fixed | Verified 2026-10-29 via `gh api`: the repository secret list lacks `CARGO_REGISTRY_TOKEN`; the `release` environment has it (updated 2026-10-29T09:33:33Z); `can_admins_bypass=false`; the environment deployment policy is only `[0-9]*.[0-9]*.[0-9]*` (type tag); ruleset 25943056 includes `refs/tags/[0-9]*.[0-9]*.[0-9]*` | none | - |

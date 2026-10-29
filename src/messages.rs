@@ -255,8 +255,9 @@ impl KrbErrorInfo {
     /// # Errors
     ///
     /// Returns [`Error::InvalidMessage`] when the protocol version or message type
-    /// is wrong, [`Error::IntegerOutOfRange`] when `cusec` or `susec` does not fit
-    /// a `u32`, [`Error::InvalidString`] when a name, realm or `e-text` is not
+    /// is wrong or a Kerberos time is fractional, [`Error::IntegerOutOfRange`]
+    /// when `cusec` or `susec` is outside `0..=999_999`, [`Error::InvalidString`]
+    /// when a name, realm or `e-text` is not
     /// UTF-8, and [`Error::TimeOverflow`] when `ctime` or `stime` does not fit a
     /// `SystemTime`.
     #[inline]
@@ -409,7 +410,7 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 /// # Errors
 ///
 /// Returns [`Error::TimeOverflow`] when the time is outside the `SystemTime`
-/// range.
+/// range, or [`Error::InvalidMessage`] when the time is fractional.
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
     whole_seconds(time)?;
     let seconds = time.0.timestamp();

@@ -28,8 +28,9 @@ pub fn decode(bytes: &[u8]) -> Result<rasn_kerberos::KrbError, Error> {
 /// # Errors
 ///
 /// Returns [`Error::InvalidMessage`] when the protocol version or message type
-/// is wrong, [`Error::IntegerOutOfRange`] when `cusec` or `susec` does not fit a
-/// `u32`, [`Error::InvalidString`] when a name, realm or `e-text` is not UTF-8,
+/// is wrong or a Kerberos time is fractional, [`Error::IntegerOutOfRange`] when
+/// `cusec` or `susec` is outside `0..=999_999`, and [`Error::InvalidString`]
+/// when a name, realm or `e-text` is not UTF-8,
 /// and [`Error::TimeOverflow`] when `ctime` or `stime` does not fit a
 /// `SystemTime`.
 #[inline]
@@ -63,8 +64,9 @@ pub fn decode_krb_error_info(bytes: &[u8]) -> Result<KrbErrorInfo, Error> {
 /// # Errors
 ///
 /// Returns [`Error::InvalidMessage`] when the protocol version or message type
-/// is wrong, [`Error::IntegerOutOfRange`] when `cusec` or `susec` does not fit a
-/// `u32`, [`Error::InvalidString`] when a name, realm or `e-text` is not UTF-8,
+/// is wrong or a Kerberos time is fractional, [`Error::IntegerOutOfRange`] when
+/// `cusec` or `susec` is outside `0..=999_999`, and [`Error::InvalidString`]
+/// when a name, realm or `e-text` is not UTF-8,
 /// and [`Error::TimeOverflow`] when `ctime` or `stime` does not fit a
 /// `SystemTime`.
 #[inline]
