@@ -882,6 +882,31 @@ mod tests {
         Ok(())
     }
 
+    /// Top-level path-list failures identify the requested file and retain their cause.
+    #[test]
+    fn load_paths_reports_failing_path_and_io_source() -> Result<(), TestError> {
+        // Given a readable first path and a missing second path.
+        let first = temp_file("path-error-first")?;
+        let missing = temp_file("path-error-missing")?;
+        fs::write(&first, "[libdefaults]\n default_realm = EXAMPLE.COM\n")?;
+        // When loading the explicit path list.
+        let failure = Config::load_paths([&first, &missing])
+            .err()
+            .context("missing path fails")?;
+        fs::remove_file(first)?;
+        // Then the requested path and original I/O error are available.
+        assert!(failure.to_string().contains(&missing.display().to_string()));
+        let cause = error::Error::source(&failure).context("I/O source retained")?;
+        assert_eq!(
+            cause
+                .downcast_ref::<std::io::Error>()
+                .context("I/O cause")?
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        Ok(())
+    }
+
     /// Pins the gokrb5 duration formats: seconds, `h:m`, `h:m:s` and `d`/`h`/`m`/`s` units.
     #[test]
     fn duration_formats_match_gokrb5() -> Result<(), TestError> {

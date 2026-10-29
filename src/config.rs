@@ -102,7 +102,7 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] when the file cannot be resolved or read, and the
+    /// Returns [`Error::File`] when the file cannot be resolved or read, and the
     /// [`Config::parse`] errors for its contents.
     #[inline]
     pub fn load<P>(path: P) -> Result<Self, Error>
@@ -112,8 +112,14 @@ impl Config {
         use std::fs;
 
         let file = path.as_ref();
-        let canonical = fs::canonicalize(file)?;
-        let input = fs::read_to_string(file)?;
+        let canonical = fs::canonicalize(file).map_err(|source| Error::File {
+            path: file.to_path_buf(),
+            source,
+        })?;
+        let input = fs::read_to_string(file).map_err(|source| Error::File {
+            path: file.to_path_buf(),
+            source,
+        })?;
         Self::parse_with_roots(&input, [canonical])
     }
 
@@ -194,7 +200,7 @@ impl Config {
     /// # Errors
     ///
     /// Returns [`Error::EmptyConfigPathList`] when the list names no non-empty
-    /// path, [`Error::Io`] when a named file cannot be resolved or read, and
+    /// path, [`Error::File`] when a named file cannot be resolved or read, and
     /// the [`Config::parse`] errors for the concatenated text.
     #[inline]
     pub fn load_paths<I, P>(paths: I) -> Result<Self, Error>
@@ -216,8 +222,14 @@ impl Config {
             if !roots.is_empty() {
                 input.push('\n');
             }
-            let canonical = canonicalize(path)?;
-            input.push_str(&read_to_string(path)?);
+            let canonical = canonicalize(path).map_err(|source| Error::File {
+                path: path.to_path_buf(),
+                source,
+            })?;
+            input.push_str(&read_to_string(path).map_err(|source| Error::File {
+                path: path.to_path_buf(),
+                source,
+            })?);
             input.push('\n');
             roots.push(canonical);
         }
