@@ -661,7 +661,7 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
-        let payload = payload.into();
+        let owned_payload = payload.into();
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut token = Self {
@@ -674,7 +674,7 @@ impl WrapToken {
             })?,
             rrc: 0,
             snd_seq_num: 0,
-            payload: Some(payload),
+            payload: Some(owned_payload),
             checksum: None,
             encrypted_body: None,
         };
@@ -693,12 +693,12 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
-        let payload = payload.into();
+        let owned_payload = payload.into();
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];
         getrandom::fill(&mut confounder)?;
-        Self::new_initiator_sealed_with_confounder(payload, key, &confounder)
+        Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
     }
 
     /// Build an initiator sealed wrap token with an explicit confounder.
@@ -1575,6 +1575,8 @@ pub struct InitiatorContext {
     pub sequence_number: Option<u32>,
     /// GSS-API context flags requested when this context was built.
     pub context_flags: Vec<u32>,
+    /// Initiator subkey retained for acceptor mechanism-list MIC verification.
+    pub initiator_subkey: Option<EncryptionKey>,
 }
 
 impl fmt::Debug for InitiatorContext {
@@ -1594,6 +1596,7 @@ impl fmt::Debug for InitiatorContext {
             authenticator_time,
             sequence_number,
             context_flags,
+            initiator_subkey: _,
         } = self;
         f.debug_struct("InitiatorContext")
             .field("ap_req_len", &ap_req_der.len())
@@ -1630,9 +1633,36 @@ impl InitiatorContext {
             if !offered.contains(selected) {
                 return Err(Error::UnsupportedMechanism(selected.clone()));
             }
+        } else {
+            return Err(Error::NegotiationRequiresState);
         }
-        if response.mech_list_mic.is_some() {
-            return Err(Error::MechListMicRequiresState);
+        if let Some(bytes) = &response.mech_list_mic {
+            let token = Krb5MechToken::decode(
+                response
+                    .response_token
+                    .as_deref()
+                    .ok_or(Error::MissingApRep)?,
+            )?;
+            if token.token_id != Krb5TokenId::ApRep {
+                return Err(Error::MissingApRep);
+            }
+            let verified = self.verify_ap_rep(&token.message)?;
+            let mic = MicToken::decode(bytes, true).map_err(|_source| Error::InvalidMechListMic)?;
+            if mic.flags & GSS_TOKEN_FLAG_SEALED != 0
+                || mic.snd_seq_num != u64::from(verified.sequence_number.unwrap_or(0))
+            {
+                return Err(Error::InvalidMechListMic);
+            }
+            let key = if mic.flags & GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY != 0 {
+                verified.subkey.as_ref().ok_or(Error::InvalidMechListMic)?
+            } else {
+                self.initiator_subkey.as_ref().unwrap_or(&self.session_key)
+            };
+            let encoded = self.spnego_token.encode()?;
+            let list = negotiation::received_mech_types(&encoded)?;
+            mic.with_payload(list)
+                .verify(key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+                .map_err(|_source| Error::InvalidMechListMic)?;
         }
         Ok(())
     }
@@ -1921,6 +1951,7 @@ pub fn init_sec_context_with_confounder(
         authenticator_time: built_ap_req.authenticator_time,
         sequence_number: built_ap_req.sequence_number,
         context_flags: options.context_flags,
+        initiator_subkey: options.subkey,
     })
 }
 

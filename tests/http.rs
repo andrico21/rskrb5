@@ -332,11 +332,20 @@ mod tests {
         request_mic.neg_state = Some(spnego::NegState::RequestMic);
         let mut absent_state = response.clone();
         absent_state.neg_state = None;
+        let mut absent_mechanism = response.clone();
+        absent_mechanism.supported_mech = None;
         let mut wrong_mech = response.clone();
         wrong_mech.supported_mech = Some(spnego::oid::ObjectIdentifier::from_arcs(vec![1, 2, 3])?);
         let mut mic = response;
         mic.mech_list_mic = Some(vec![0; 28]);
-        for altered in [incomplete, request_mic, absent_state, wrong_mech, mic] {
+        for altered in [
+            incomplete,
+            request_mic,
+            absent_state,
+            absent_mechanism,
+            wrong_mech,
+            mic,
+        ] {
             // When only unauthenticated negotiation metadata changes.
             let header = spnego::negotiate_header(&Token::Resp(altered))?;
             let mut http_response = Response::new(());
@@ -350,12 +359,63 @@ mod tests {
                 context.verify_ap_rep_response_header(&header),
                 Err(SpnegoError::NegotiationRequiresState
                     | SpnegoError::UnsupportedMechanism(_)
-                    | SpnegoError::MechListMicRequiresState)
+                    | SpnegoError::MechListMicRequiresState
+                    | SpnegoError::InvalidMechListMic)
             ));
             assert!(matches!(
                 krb_http::classify_negotiate_response(&context, &http_response),
                 krb_http::ClientNegotiateResponse::InvalidToken { message: _ }
             ));
+        }
+        Ok(())
+    }
+
+    /// A valid acceptor MIC binds completion to the initiator's actual mechanism offer.
+    #[test]
+    fn completion_verifies_acceptor_mic() -> Result<(), TestError> {
+        for initiator_subkey in [None, Some(EncryptionKey::new(18, vec![0x34; 32]))] {
+            for acceptor_subkey in [None, Some(EncryptionKey::new(18, vec![0x56; 32]))] {
+                let context = initiator_context_with_options(
+                    InitiatorContextOptions::new()
+                        .with_sequence_number(Some(42))
+                        .with_subkey(initiator_subkey.clone()),
+                )?;
+                let keytab = keytab()?;
+                let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+                let mut accepted =
+                    spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                accepted.mech_types_der = Some(hex::decode("300b06092a864886f712010202")?);
+                let header = accepted.ap_rep_response_header_with_confounder(
+                    &decode_hex(AP_REP_CONFOUNDER)?,
+                    &ApRepOptions::default()
+                        .with_sequence_number(Some(77))
+                        .with_subkey(acceptor_subkey),
+                )?;
+                let verified = context.verify_ap_rep_response_header(&header)?;
+                assert_eq!(verified.sequence_number, Some(77));
+                assert!(matches!(
+                    krb_http::classify_negotiate_response(
+                        &context,
+                        &response_with_www_authenticate(&header)?
+                    ),
+                    krb_http::ClientNegotiateResponse::Accepted { ap_rep: Some(_) }
+                ));
+                let Token::Resp(mut altered) = spnego::parse_negotiate_header(&header)? else {
+                    return Err("response expected".into());
+                };
+                *altered
+                    .mech_list_mic
+                    .as_mut()
+                    .context("MIC")?
+                    .last_mut()
+                    .context("MIC checksum")? ^= 1;
+                assert!(matches!(
+                    context.verify_ap_rep_response_header(&spnego::negotiate_header(
+                        &Token::Resp(altered)
+                    )?),
+                    Err(SpnegoError::InvalidMechListMic)
+                ));
+            }
         }
         Ok(())
     }
