@@ -33,15 +33,13 @@ impl Deref for SecretDer {
 // Drop audit: erasure is synchronous and allocation-free in production.
 impl Drop for SecretDer {
     fn drop(&mut self) {
-        let _: &'static str = self.purpose;
-        self.bytes.as_mut_slice().zeroize();
+        let Self { bytes, purpose } = self;
+        let _: &mut &'static str = purpose;
+        bytes.as_mut_slice().zeroize();
         #[cfg(test)]
         {
-            assert!(
-                self.bytes.iter().all(|byte| *byte == 0),
-                "DER erasure failed"
-            );
-            tests::ERASED.with_borrow_mut(|events| events.push((self.purpose, self.bytes.len())));
+            assert!(bytes.iter().all(|byte| *byte == 0), "DER erasure failed");
+            tests::ERASED.with_borrow_mut(|events| events.push((*purpose, bytes.len())));
         }
     }
 }
@@ -85,6 +83,13 @@ mod tests {
             // Then exactly the encoder owner was erased regardless of the result.
             assert_eq!(result.is_ok(), confounder.len() == 16);
             ERASED.with_borrow(|events| assert_eq!(events.as_slice(), [("ap-rep encode", length)]));
+            if let Ok(message) = result {
+                ERASED.with_borrow_mut(Vec::clear);
+                assert_eq!(ap_rep::decrypt_ap_rep_enc_part(&message, &key)?, part);
+                ERASED.with_borrow(|events| {
+                    assert_eq!(events.as_slice(), [("ap-rep decrypt", length)]);
+                });
+            }
         }
         Ok(())
     }
@@ -192,6 +197,16 @@ mod tests {
             // Then exactly the encoder owner is erased on either outcome.
             assert_eq!(result.is_ok(), confounder.len() == 16);
             ERASED.with_borrow(|events| assert_eq!(events.as_slice(), [("ap-req encode", length)]));
+            if let Ok(message) = result {
+                ERASED.with_borrow_mut(Vec::clear);
+                assert_eq!(
+                    ap_req::decrypt_ap_req_authenticator(&message, &key, 11)?,
+                    part
+                );
+                ERASED.with_borrow(|events| {
+                    assert_eq!(events.as_slice(), [("ap-req decrypt", length)]);
+                });
+            }
         }
         Ok(())
     }

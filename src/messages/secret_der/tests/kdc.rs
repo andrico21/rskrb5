@@ -31,6 +31,33 @@ fn kdc_encode_owners_erased_on_each_exit() -> Result<(), Box<dyn Error>> {
             // Then exactly that tag's staging owner was erased.
             assert_eq!(result.is_ok(), confounder.len() == 16);
             ERASED.with_borrow(|events| assert_eq!(events.as_slice(), [(purpose, 181)]));
+            if let Ok(encrypted) = result {
+                let ticket = rasn_kerberos::Ticket {
+                    tkt_vno: 5_i32.into(),
+                    realm: part.0.srealm.clone(),
+                    sname: part.0.sname.clone(),
+                    enc_part: encrypted.clone(),
+                };
+                let reply = rasn_kerberos::KdcRep {
+                    pvno: 5_i32.into(),
+                    msg_type: 11_i32.into(),
+                    padata: None,
+                    crealm: ticket.realm.clone(),
+                    cname: ticket.sname.clone(),
+                    ticket,
+                    enc_part: encrypted,
+                };
+                ERASED.with_borrow_mut(Vec::clear);
+                let decoded = if as_reply {
+                    kdc_rep::decrypt_as_rep_enc_part(&rasn_kerberos::AsRep(reply), &key)?
+                } else {
+                    kdc_rep::decrypt_tgs_rep_enc_part(&rasn_kerberos::TgsRep(reply), &key)?
+                };
+                assert_eq!(decoded, part.0);
+                ERASED.with_borrow(|events| {
+                    assert_eq!(events.as_slice(), [("kdc-rep decrypt", 181)]);
+                });
+            }
         }
     }
     Ok(())
