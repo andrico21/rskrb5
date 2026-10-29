@@ -1434,6 +1434,13 @@ where
         let Ok(mut validator) = self.validator.lock() else {
             let mut response = Response::new(ResBody::default());
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            drop(
+                response
+                    .extensions_mut()
+                    .insert(Arc::new(Error::Spnego(SpnegoError::Service(
+                        ServiceError::ReplayCachePoisoned,
+                    )))),
+            );
             harden_response(&mut response);
             return NegotiateFuture::ready(Ok(response));
         };
@@ -1663,6 +1670,49 @@ mod tests {
     use http_types::{Response, StatusCode};
 
     use super::{NegotiateHttpError, unchallenged_result};
+
+    /// A poisoned validator retains a typed cause without exposing it on the wire.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn poisoned_validator_retains_cause() -> Result<(), Box<dyn error::Error>> {
+        use crate::keytab::Keytab;
+        use alloc::sync::Arc;
+        use core::{
+            convert::Infallible,
+            future::{Ready, ready},
+            task::{Context, Poll},
+        };
+        use http_types::Request;
+        use std::thread;
+        use tokio::runtime::Builder;
+        use tower_service::Service;
+        #[derive(Clone)]
+        struct Inner;
+        impl Service<Request<()>> for Inner {
+            type Response = Response<()>;
+            type Error = Infallible;
+            type Future = Ready<Result<Response<()>, Infallible>>;
+            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+                Poll::Ready(Ok(()))
+            }
+            fn call(&mut self, _req: Request<()>) -> Self::Future {
+                ready(Ok(Response::new(())))
+            }
+        }
+        let mut service = super::NegotiateService::from_keytab(Inner, Keytab::new());
+        let validator = Arc::clone(&service.validator);
+        let poisoned = thread::spawn(move || {
+            let _guard = validator.lock();
+            assert!(validator.is_poisoned(), "injected validator poison");
+        })
+        .join();
+        assert!(poisoned.is_err());
+        let runtime = Builder::new_current_thread().build()?;
+        let response = runtime.block_on(service.call(Request::new(())))?;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(response.extensions().get::<Arc<super::Error>>().is_some());
+        Ok(())
+    }
 
     /// A first response without a Negotiate challenge fails closed when
     /// mutual authentication was requested, keeping the response for
