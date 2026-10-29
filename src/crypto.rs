@@ -2186,18 +2186,9 @@ fn hmac_sha384(key: &[u8], data: &[u8]) -> Vec<u8> {
     hmac_any_key::<Hmac<Sha384>, Sha384>(key, data)
 }
 
-/// Compare two byte strings without stopping at the first difference.
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-
-    let mut diff = 0;
-    for (left_byte, right_byte) in left.iter().zip(right) {
-        diff |= left_byte ^ right_byte;
-    }
-    diff == 0
-}
+/// MAC verification boundary.
+mod verification;
+use verification::constant_time_eq;
 
 /// Rotate `bytes`, read as one big-endian bit string, right by `steps` bits.
 fn rotate_right(bytes: &[u8], steps: usize) -> Vec<u8> {
