@@ -86,7 +86,7 @@ limits are recorded under FU-OPS-03.
 | FU-MSG-01 | major | Secret-bearing message DER staging is not zeroized | open | - | - | - |
 | FU-MSG-02 | major | Strict AP-REP/KRB-CRED decode rejects valid DES3 padding | open | - | - | - |
 | FU-MSG-03 | minor | KRB-CRED semantic import truncates fractional times | open | - | - | - |
-| FU-MSG-04 | minor | General KRB-PRIV builder emits invalid time scalars | open | - | - | - |
+| FU-MSG-04 | minor | General KRB-PRIV builder emits invalid time scalars | fixed | `krb_priv_scalars::tests::builder_rejects_invalid_scalars` red exit 101; green 2 scalar + 5 existing tests; commit `messages: validate complete KRB-PRIV construction scalars (FU-MSG-04)` | Complete builders reject fractional times and microseconds outside 0..=999999, including directly mutated options; raw part builder unchanged | Task-5 evidence |
 | FU-MSG-05 | minor | Typed message decoders retain accidental prefix acceptance | fixed | `named_decoders_reject_trailing_value`, `raw_codec_retains_prefix_contract`; commit `messages: reject trailing values at named decoding boundaries (FU-MSG-05)` | Named KRB-ERROR and PA-* decoders reject suffixes; generic raw prefix codec unchanged | Task-5 evidence: red exit 101 (all four accepted), green 14/14 |
 | FU-PAC-01 | major | Unsigned HMAC-MD5 checksum ID cannot map to RC4 | open | - | - | - |
 | FU-PAC-02 | minor | Supplemental-credential count ceiling lacks independent regression | open | - | - | - |
