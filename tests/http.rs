@@ -274,6 +274,52 @@ mod tests {
         Ok(())
     }
 
+    /// Opting out affects inner responses, never library-generated challenges.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn hardening_opt_out_preserves_application_response() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_response_hardening(false)
+            .with_now(timestamp(1_893_553_447)?)
+            .layer(PolicyService);
+        let challenge = run_ready(service.call(Request::new(())))??;
+        assert!(
+            challenge
+                .headers()
+                .contains_key("strict-transport-security")
+        );
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        let response = run_ready(service.call(request))??;
+        assert_eq!(
+            response
+                .headers()
+                .get("server")
+                .context("application fingerprint")?,
+            "secret-host"
+        );
+        assert!(!response.headers().contains_key("strict-transport-security"));
+        Ok(())
+    }
+
+    /// The real Axum Router accepts the layer's Clone service and Send future.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn negotiate_layer_integrates_with_axum_router() -> Result<(), TestError> {
+        use axum::{Router, body::Body, error_handling::HandleError, routing::get};
+        use core::convert::Infallible;
+        let layer = krb_http::NegotiateLayer::from_keytab(keytab()?);
+        let service = layer.layer(Router::new().route("/", get(async || "protected")));
+        let mut router = Router::new().fallback_service(HandleError::new(
+            service,
+            async |_error: krb_http::TowerError<Infallible>| StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+        let response = run_ready(router.call(Request::new(Body::empty())))??;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        Ok(())
+    }
+
     /// A Send inner future remains movable onto an executor worker thread.
     #[cfg(feature = "tower")]
     #[test]

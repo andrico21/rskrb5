@@ -212,26 +212,33 @@ mod tests {
         use core::sync::atomic::{AtomicUsize, Ordering};
 
         use tower_service::Service as _;
-        let calls = Arc::new(AtomicUsize::new(0));
-        let observed = Arc::clone(&calls);
-        let mut app = Router::new()
-            .route(
-                "/",
-                get(move || {
-                    let counter = Arc::clone(&observed);
-                    async move {
-                        let _: usize = counter.fetch_add(1, Ordering::SeqCst);
-                        "protected"
-                    }
-                }),
-            )
-            .layer(middleware::from_fn(async |request, next| {
-                complete_response(Err(SpnegoError::MissingApRep), request, next).await
-            }));
-        let response = app.call(Request::new(Body::empty())).await?;
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
-        assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
+        for malformed_header in [false, true] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let observed = Arc::clone(&calls);
+            let mut app = Router::new()
+                .route(
+                    "/",
+                    get(move || {
+                        let counter = Arc::clone(&observed);
+                        async move {
+                            let _: usize = counter.fetch_add(1, Ordering::SeqCst);
+                            "protected"
+                        }
+                    }),
+                )
+                .layer(middleware::from_fn(move |request, next| {
+                    let reply = if malformed_header {
+                        Ok("Negotiate invalid\r\nheader".to_owned())
+                    } else {
+                        Err(SpnegoError::MissingApRep)
+                    };
+                    complete_response(reply, request, next)
+                }));
+            let response = app.call(Request::new(Body::empty())).await?;
+            assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
+        }
         Ok(())
     }
 
