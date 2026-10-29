@@ -256,8 +256,13 @@ impl AesSha1Etype {
         checksum: &[u8],
         usage: u32,
     ) -> bool {
-        self.checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Sha1(self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with RFC3962 AES-CTS and a zero initial IV.
@@ -569,8 +574,13 @@ impl AesSha2Etype {
         checksum: &[u8],
         usage: u32,
     ) -> bool {
-        self.checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Sha2(self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with RFC8009 AES-CTS and a zero initial IV.
@@ -967,8 +977,13 @@ impl Des3CbcSha1KdEtype {
     /// Verify a keyed checksum.
     #[inline]
     pub fn verify_checksum(protocol_key: &[u8], data: &[u8], checksum: &[u8], usage: u32) -> bool {
-        Self::checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Des3CbcSha1Kd(Self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with DES3-CBC and a zero initial IV.
@@ -1243,8 +1258,13 @@ impl Rc4HmacEtype {
     /// Verify an RFC4757 keyed checksum.
     #[inline]
     pub fn verify_checksum(protocol_key: &[u8], data: &[u8], checksum: &[u8], usage: u32) -> bool {
-        Self::checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Rc4Hmac(Self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with RC4.
