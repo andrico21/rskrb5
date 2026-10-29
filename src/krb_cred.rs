@@ -4,8 +4,6 @@
 mod conversion;
 
 use conversion::{ccache_credential_to_krb_cred_info, krb_cred_info_to_ccache_credential};
-
-use crate::messages::secret_der::SecretDer;
 use rasn::{der, types::Integer};
 
 use crate::{
@@ -14,6 +12,7 @@ use crate::{
     der::{decode_complete, trim_zero_padded_der},
     error::Ticket as TicketError,
     keytab::EncryptionKey,
+    messages::secret_der::SecretDer,
     ticket::{decode as decode_ticket, encode as encode_ticket},
 };
 

@@ -57,6 +57,7 @@ mod tests {
     /// KDC reply encoder ownership regressions.
     mod kdc;
     use core::{cell::RefCell, error::Error};
+
     use rasn::der;
 
     use crate::{
@@ -146,7 +147,7 @@ mod tests {
                 ERASED.with_borrow_mut(Vec::clear);
                 assert_eq!(ticket::decrypt_ticket_enc_part(&message, &key)?, part);
                 ERASED.with_borrow(|events| {
-                    assert_eq!(events.as_slice(), [("ticket decrypt", length)])
+                    assert_eq!(events.as_slice(), [("ticket decrypt", length)]);
                 });
             }
         }

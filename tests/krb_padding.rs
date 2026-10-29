@@ -10,8 +10,8 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
-    use rasn::der;
 
+    use rasn::der;
     use rskrb5_ng::{ap_rep, crypto::KerberosEtype, keytab::EncryptionKey, krb_cred};
 
     /// Every supported enctype handles all eight plaintext-length residues.

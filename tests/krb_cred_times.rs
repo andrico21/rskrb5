@@ -10,8 +10,8 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
-    use rasn::der;
 
+    use rasn::der;
     use rskrb5_ng::{ccache, krb_cred};
 
     /// Each imported credential time rejects a fractional Kerberos timestamp.

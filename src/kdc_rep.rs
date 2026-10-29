@@ -1,7 +1,8 @@
 //! AS-REP/TGS-REP decoding and encrypted-part helpers.
 
-use crate::messages::secret_der::SecretDer;
 use rasn::{der, types::Integer};
+
+use crate::messages::secret_der::SecretDer;
 
 /// Mapping of ticket validation errors into reply errors.
 mod ticket_error;

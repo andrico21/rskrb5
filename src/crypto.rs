@@ -16,8 +16,6 @@ use core::mem;
 
 /// Internal zeroizing scratch ownership.
 mod scratch;
-use scratch::SecretScratch;
-
 use aes::cipher::{
     BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength, Key, KeyInit, consts::U16,
 };
@@ -26,6 +24,7 @@ use hmac::{Hmac, Mac};
 use md4::{Digest, Md4};
 use md5::Md5;
 use rc4::{Rc4, StreamCipher as _};
+use scratch::SecretScratch;
 use sha1::Sha1;
 use sha2::{Sha256, Sha384};
 use zeroize::{Zeroize as _, Zeroizing};

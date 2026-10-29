@@ -1,12 +1,12 @@
 //! AP-REQ decoding and authenticator helpers.
 
-use crate::messages::secret_der::SecretDer;
 use rasn::{der, types::Integer};
 
 use crate::{
     crypto::KerberosEtype,
     der::{decode_complete, trim_zero_padded_der},
     keytab::EncryptionKey,
+    messages::secret_der::SecretDer,
 };
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
