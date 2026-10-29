@@ -103,7 +103,7 @@ limits are recorded under FU-OPS-03.
 | FU-FIL-02 | minor | Global file erasure counters mask missing individual owners | open | - | - | - |
 | FU-FIL-03 | minor | DIR primary is published before initialization completes | open | - | - | - |
 | FU-FIL-04 | minor | Partial next-entry keytab size is accepted as EOF | fixed | `rejects_partial_next_entry_sizes`; commit `keytab: reject interrupted record sizes (FU-FIL-04)` | Nonempty 1-3 byte next-size fragments now return Truncated rather than successful EOF; zero-size termination unchanged | task-6-rskrb5-ng-zero-open-items.log: red assertion on pre-fix parser; green 25 keytab tests |
-| FU-FIL-05 | minor | Keytab parser/writer disagree on negative enctype domain | open | - | - | - |
+| FU-FIL-05 | minor | Keytab parser/writer disagree on negative enctype domain | fixed | `serialized_keytab_roundtrips` over full signed i16; commit `keytab: preserve signed encryption type IDs (FU-FIL-05)` | Opaque negative i16 enctype IDs now serialize without changing bits; lengths retain their nonnegative bound | task-6-rskrb5-ng-zero-open-items.log: red minimal etype=-1; green 25 tests |
 | FU-FIL-06 | minor | Zero extended KVNO changes identity after reload | open | - | - | - |
 | FU-API-01 | minor | Public non-exhaustive inputs lack usable construction paths | open | - | - | - |
 | FU-API-02 | minor | Secret Debug implementations lack exhaustive field audit | open | - | - | - |

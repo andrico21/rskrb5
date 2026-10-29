@@ -638,7 +638,7 @@ mod tests {
             realm in "[a-zA-Z.]{0,40}",
             components in collection::vec("[a-zA-Z/]{0,40}", 0..8),
             key in collection::vec(any::<u8>(), 0..128),
-            etype in 0_i32..=i32::from(i16::MAX),
+            etype in i32::from(i16::MIN)..=i32::from(i16::MAX),
             timestamp in any::<u32>(),
             kvno in 1_u32..=u32::MAX,
             name_type in any::<i32>(),

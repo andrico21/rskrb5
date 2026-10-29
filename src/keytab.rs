@@ -310,8 +310,8 @@ impl Keytab {
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a component count, string or key
-    /// length, or encryption type exceeds `i16::MAX`, or an entry does not
-    /// fit an `i32` length.
+    /// length exceeds `i16::MAX`, an encryption type does not fit an `i16`,
+    /// or an entry does not fit an `i32` length.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let endian = Endian::for_version(self.version);
@@ -321,7 +321,11 @@ impl Keytab {
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
             body.push(entry.kvno8);
-            write_u16_checked(&mut body, entry.key.etype, endian)?;
+            let etype = i16::try_from(entry.key.etype).map_err(|_range| Error::LengthOverflow)?;
+            body.extend_from_slice(&match endian {
+                Endian::Big => etype.to_be_bytes(),
+                Endian::Little => etype.to_le_bytes(),
+            });
             write_u16_checked(&mut body, entry.key.value.len(), endian)?;
             body.extend_from_slice(&entry.key.value);
             write_u32(&mut body, entry.kvno, endian);
