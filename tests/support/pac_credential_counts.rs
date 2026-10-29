@@ -38,6 +38,33 @@ mod tests {
         Ok(())
     }
 
+    /// The count ceiling rejects even a fully supplied fixed descriptor extent.
+    #[test]
+    fn credentials_rejects_count_above_ceiling_with_extent() -> Result<(), TestError> {
+        // Given matching counts and sufficient zeroed descriptors above the ceiling.
+        let count = 1_000_001_u32;
+        let descriptor_bytes = usize::try_from(count)?.checked_mul(16).context("extent")?;
+        let object_len = descriptor_bytes.checked_add(16).context("object extent")?;
+        let mut bytes = count_only(count);
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.resize(object_len.checked_add(16).context("wrapper extent")?, 0);
+        bytes
+            .get_mut(8..12)
+            .context("object length")?
+            .copy_from_slice(&u32::try_from(object_len)?.to_le_bytes());
+        // When the public parser admits the complete descriptor extent.
+        let result = CredentialData::parse(&bytes);
+        // Then the independent policy ceiling rejects before descriptor allocation.
+        assert!(matches!(
+            result,
+            Err(PacError::UnreasonableNdrCount {
+                count: 1_000_001,
+                target: "SECPKGSupplementalCred"
+            })
+        ));
+        Ok(())
+    }
+
     /// Pins empty credential data as a valid zero-allocation boundary.
     #[test]
     fn credentials_accepts_empty_count() -> Result<(), TestError> {
