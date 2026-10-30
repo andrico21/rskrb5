@@ -42,6 +42,11 @@ use crate::{
 /// In-memory credential-cache replacement.
 #[cfg(feature = "tokio")]
 mod cache_update;
+/// TGT refresh scheduling.
+#[cfg(feature = "tokio")]
+mod refresh_schedule;
+#[cfg(feature = "tokio")]
+use refresh_schedule::{session_refresh_delay_at, session_refresh_due_at};
 /// Password-change request construction and verification.
 pub mod kpasswd;
 /// High-level SPNEGO/HTTP Negotiate client wrappers.
@@ -82,9 +87,6 @@ const KRB5CCNAME_ENV: &str = "KRB5CCNAME";
 /// Environment variable naming the default client keytab.
 #[cfg(feature = "tokio")]
 const KRB5_CLIENT_KTNAME_ENV: &str = "KRB5_CLIENT_KTNAME";
-/// A session is due for refresh once less than 1/6 of its lifetime remains.
-#[cfg(feature = "tokio")]
-const SESSION_REFRESH_DIVISOR: u32 = 6;
 /// PA-ENC-TIMESTAMP preauthentication type.
 pub const PA_ENC_TIMESTAMP: i32 = 2;
 /// PA-TGS-REQ preauthentication type.
@@ -4861,49 +4863,6 @@ fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
 #[cfg(feature = "tokio")]
 fn session_usable_at(session: &AsRepSession, now: SystemTime) -> bool {
     session_valid_at(session, now) || session_renewable_at(session, now)
-}
-
-/// Whether a session is expired or inside its refresh window at `now`.
-#[cfg(feature = "tokio")]
-fn session_refresh_due_at(session: &AsRepSession, now: SystemTime) -> bool {
-    if now >= session.end_time {
-        return true;
-    }
-    // RFC 4120 keeps auth_time fixed across renewals while a renewal advances
-    // start_time, so the current ticket life is end_time - start_time.
-    let Ok(lifetime) = session.end_time.duration_since(session.start_time) else {
-        return true;
-    };
-    if lifetime.is_zero() {
-        return true;
-    }
-    let remaining = session
-        .end_time
-        .duration_since(now)
-        .unwrap_or(Duration::ZERO);
-    // The divisor is a non-zero constant, so `checked_div` always succeeds.
-    lifetime
-        .checked_div(SESSION_REFRESH_DIVISOR)
-        .is_none_or(|band| remaining <= band)
-}
-
-/// How long until a session enters its refresh window; zero when it is due.
-#[cfg(feature = "tokio")]
-fn session_refresh_delay_at(session: &AsRepSession, now: SystemTime) -> Duration {
-    if session_refresh_due_at(session, now) {
-        return Duration::ZERO;
-    }
-    let Ok(lifetime) = session.end_time.duration_since(session.start_time) else {
-        return Duration::ZERO;
-    };
-    // The divisor is a non-zero constant, so `checked_div` always succeeds.
-    let Some(refresh_at) = lifetime
-        .checked_div(SESSION_REFRESH_DIVISOR)
-        .and_then(|band| session.end_time.checked_sub(band))
-    else {
-        return Duration::ZERO;
-    };
-    refresh_at.duration_since(now).unwrap_or(Duration::ZERO)
 }
 
 /// Whether a session can still be renewed at `now`.
