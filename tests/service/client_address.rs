@@ -8,7 +8,9 @@ use super::{
 };
 
 /// Reissue the fixture with an explicit address list, preserving its authenticator.
-fn request_with_addresses(addresses: &[(i32, [u8; 4])]) -> Result<Vec<u8>, TestError> {
+fn request_with_addresses<const N: usize>(
+    addresses: &[(i32, [u8; N])],
+) -> Result<Vec<u8>, TestError> {
     let keytab = http_keytab()?;
     let (key, _) = keytab.find_key(&["HTTP", "host.test.gokrb5"], "TEST.GOKRB5", 1, 18)?;
     let mut request = valid_ap_req_struct()?;
@@ -30,6 +32,40 @@ fn request_with_addresses(addresses: &[(i32, [u8; 4])]) -> Result<Vec<u8>, TestE
     )?
     .into();
     Ok(der::encode(&request)?)
+}
+
+/// A general constructor preserves non-IP address types and opaque bytes.
+#[test]
+fn client_address_general_constructor_accepts_opaque_peer() -> Result<(), TestError> {
+    // Given a ticket restricted to a caller-defined address namespace.
+    let keytab = http_keytab()?;
+    let bytes = [3_u8, 1, 4, 1, 5];
+    let request = request_with_addresses(&[(-42_i32, bytes)])?;
+    let mut validator = Validator::new(&keytab)
+        .with_now(timestamp(1_893_553_447)?)
+        .with_client_address(HostAddress::new(-42, bytes.to_vec()));
+    // When the caller supplies the same opaque address through the public constructor.
+    let accepted = validator.validate_ap_req(&request)?;
+    // Then validation matches both the original type and bytes.
+    assert_eq!(accepted.client.name(), "testuser1");
+    Ok(())
+}
+
+/// IPv6 construction supplies the wire type and all sixteen octets for address matching.
+#[test]
+fn client_address_ipv6_constructor_accepts_matching_peer() -> Result<(), TestError> {
+    // Given a ticket restricted to the documentation IPv6 address 2001:db8::1.
+    let keytab = http_keytab()?;
+    let bytes = [0x20_u8, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+    let request = request_with_addresses(&[(24_i32, bytes)])?;
+    let mut validator = Validator::new(&keytab)
+        .with_now(timestamp(1_893_553_447)?)
+        .with_client_address(HostAddress::ipv6(bytes));
+    // When the public IPv6 constructor supplies the observed peer.
+    let accepted = validator.validate_ap_req(&request)?;
+    // Then the real acceptor recognizes the address.
+    assert_eq!(accepted.client.name(), "testuser1");
+    Ok(())
 }
 
 /// Any matching list entry permits the observed peer, not just the first one.
