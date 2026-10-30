@@ -20,7 +20,7 @@ use rasn::{der, types::Integer};
 
 use crate::{
     ccache,
-    crypto::KerberosEtype,
+    crypto::selection,
     der::{decode_complete, trim_zero_padded_der},
     error::Ticket as TicketError,
     keytab::EncryptionKey,
@@ -90,8 +90,7 @@ fn decrypt_part(
             encrypted_data_etype: krb_cred.enc_part.etype,
         });
     }
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let plaintext = SecretDer::new(
         etype.decrypt_message(
             &key.value,
@@ -195,8 +194,7 @@ pub fn encrypt_ccache_credentials(
     credentials: &[ccache::Credential],
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::KrbCred, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     encrypt_ccache_credentials_to_krb_cred_with_confounder(credentials, key, &confounder)
@@ -216,10 +214,9 @@ pub fn encrypt_ccache_credentials_to_krb_cred_with_confounder(
     key: &EncryptionKey,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbCred, Error> {
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let (tickets, enc_part) = ccache_credentials_to_krb_cred_parts(credentials)?;
     let plaintext = SecretDer::new(encode_der("EncKrbCredPart", &enc_part)?, "krb-cred encode");
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(
         &key.value,
         &plaintext,

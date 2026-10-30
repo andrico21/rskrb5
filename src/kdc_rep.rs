@@ -9,7 +9,7 @@ mod ticket_error;
 use ticket_error::ticket_error;
 
 use crate::{
-    crypto::KerberosEtype,
+    crypto::selection,
     der::{decode_complete, trim_zero_padded_der},
     error::Ticket as TicketError,
     keytab::EncryptionKey,
@@ -193,8 +193,7 @@ pub fn encrypt_as_rep_enc_part(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     encrypt_as_rep_enc_part_with_confounder(enc_part, key, kvno, &confounder)
@@ -214,6 +213,7 @@ pub fn encrypt_as_rep_enc_part_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
+    selection::reject_enctype(key.etype)?;
     encrypt_kdc_rep_enc_part(
         &SecretDer::new(encode_enc_as_rep_part(enc_part)?, "as-rep encode"),
         key,
@@ -236,8 +236,7 @@ pub fn encrypt_tgs_rep_enc_part(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     encrypt_tgs_rep_enc_part_with_confounder(enc_part, key, kvno, &confounder)
@@ -257,6 +256,7 @@ pub fn encrypt_tgs_rep_enc_part_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
+    selection::reject_enctype(key.etype)?;
     encrypt_kdc_rep_enc_part(
         &SecretDer::new(encode_enc_tgs_rep_part(enc_part)?, "tgs-rep encode"),
         key,
@@ -297,8 +297,7 @@ fn decrypt_kdc_rep_enc_part(
             encrypted_data_etype: encrypted_data.etype,
         });
     }
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let plaintext = SecretDer::new(
         etype.decrypt_message(&key.value, encrypted_data.cipher.as_ref(), usage)?,
         "kdc-rep decrypt",
@@ -319,8 +318,7 @@ fn encrypt_kdc_rep_enc_part(
     usage: u32,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(&key.value, plaintext, usage, confounder)?;
     Ok(rasn_kerberos::EncryptedData {
         etype: key.etype,
