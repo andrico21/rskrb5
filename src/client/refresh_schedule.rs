@@ -3,14 +3,14 @@
 use core::time::Duration;
 use std::time::SystemTime;
 
-use super::AsRepSession;
+use super::{AsRepSession, session_valid_at};
 
 /// A session is due for refresh once less than 1/6 of its lifetime remains.
 const SESSION_REFRESH_DIVISOR: u32 = 6;
 
-/// Whether a session is expired or inside its refresh window at `now`.
+/// Whether a session is unusable or inside its refresh window at `now`.
 pub(super) fn session_refresh_due_at(session: &AsRepSession, now: SystemTime) -> bool {
-    if now >= session.end_time {
+    if !session_valid_at(session, now) {
         return true;
     }
     // RFC 4120 keeps auth_time fixed across renewals while a renewal advances

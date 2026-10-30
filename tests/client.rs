@@ -115,6 +115,9 @@ mod review_salt;
 #[cfg(feature = "tokio")]
 #[path = "client/review_validity.rs"]
 mod review_validity;
+#[cfg(feature = "tokio")]
+#[path = "client/review_refresh.rs"]
+mod review_refresh;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;
