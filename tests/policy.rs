@@ -155,3 +155,14 @@ mod acceptor;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod acceptor_http;
+
+/// Trusted per-family string-to-key policy API.
+#[cfg(test)]
+#[path = "policy/s2k.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod s2k;

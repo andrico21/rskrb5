@@ -47,8 +47,19 @@ mod cache_insert;
 mod cache_update;
 /// Shared runtime policy validation before client effects.
 mod crypto_policy;
+
 /// Owning password input and erasure.
 pub mod password;
+/// Peer string-to-key policy regression tests.
+#[cfg(test)]
+#[path = "client/s2k_tests.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod s2k_tests;
 /// Owning password input, erased on drop; see its explicit constructors.
 pub type Password = password::Secret;
 /// Password credential rotation eligibility.
@@ -4028,31 +4039,26 @@ pub fn default_password_salt(client: &Principal) -> String {
 }
 
 /// Derive a reply key from password credentials and a preauthentication hint.
+///
+/// Applies RFC-default minimum work factors to peer parameters. Application
+/// overrides on `LibDefaults` are carried by the high-level request/login APIs.
+/// Raw `KerberosEtype::string_to_key` remains policy-free for trusted RFC vectors.
 /// # Errors
 ///
 /// Returns [`Error::UnsupportedEtype`] for an unknown enctype and
-/// [`Error::Crypto`] when key derivation fails.
+/// [`Error::Crypto`] for below-minimum, above-ceiling or malformed work factors,
+/// or when key derivation fails.
 #[inline]
 pub fn derive_password_reply_key(
     client: &Principal,
     password: &[u8],
     key_info: &PreauthKeyInfo,
 ) -> Result<EncryptionKey, Error> {
-    let etype = KerberosEtype::from_etype_id(key_info.etype)
-        .ok_or(Error::UnsupportedEtype(key_info.etype))?;
-    let salt = key_info
-        .salt
-        .clone()
-        .unwrap_or_else(|| default_password_salt(client));
-    let s2kparams = key_info.s2kparams.as_ref().map_or_else(
-        || etype.default_s2kparams().to_owned(),
-        |bytes| encode_hex_lower(bytes),
-    );
-    Ok(EncryptionKey {
-        etype: key_info.etype,
-        value: etype.string_to_key(password, salt.as_bytes(), &s2kparams)?,
-    })
+    password_derivation::derive(&CryptoPolicy::default(), client, password, key_info)
 }
+
+/// Shared password derivation after trusted peer-parameter checks.
+mod password_derivation;
 
 /// Select a reply key from a keytab using a preauthentication hint.
 /// # Errors
@@ -4268,7 +4274,7 @@ fn password_initial_as_req(
     if options.assume_preauthentication {
         let key_info = assumed_preauth_key_info(&options.etypes)?;
         policy.check_use(key_info.etype, Use::ReplyKey)?;
-        let reply_key = derive_password_reply_key(&client, password, &key_info)?;
+        let reply_key = password_derivation::derive(&policy, &client, password, &key_info)?;
         build_preauthenticated_as_req(client, service, options, &reply_key, None)
     } else {
         build_as_req(client, service, options)
@@ -4310,7 +4316,8 @@ fn password_initial_as_rep_session(
     request
         .crypto_policy
         .check_use(key_info.etype, Use::ReplyKey)?;
-    let reply_key = derive_password_reply_key(client, password, &key_info)?;
+    let reply_key =
+        password_derivation::derive(&request.crypto_policy, client, password, &key_info)?;
     process_as_rep(request, response, &reply_key).map(Some)
 }
 

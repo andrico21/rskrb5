@@ -6,6 +6,22 @@ use crate::crypto::Use;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Policy {
+    /// A peer requested cheaper password derivation than the trusted minimum.
+    #[error("s2k iterations {actual} below minimum {minimum} for enctype {etype}")]
+    S2kIterationsTooLow {
+        /// Selected wire encryption type.
+        etype: i32,
+        /// Application-trusted minimum.
+        minimum: u32,
+        /// Peer-supplied count.
+        actual: u32,
+    },
+    /// A trusted override must lie between one and the resource ceiling.
+    #[error("invalid s2k minimum: {minimum}")]
+    InvalidS2kMinimum {
+        /// Rejected override.
+        minimum: u32,
+    },
     /// Programmatically supplied configuration cannot define a usable policy.
     #[error("invalid cryptographic policy configuration")]
     InvalidConfiguration,

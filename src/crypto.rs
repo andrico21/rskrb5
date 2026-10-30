@@ -30,6 +30,14 @@ pub type Use = policy::Use;
 /// Policy-authorized low-level cryptographic operations.
 #[path = "crypto/checked.rs"]
 pub mod checked;
+/// Trusted per-family string-to-key work-factor policy.
+#[path = "crypto/s2k.rs"]
+pub mod s2k;
+
+/// Test-only observation of actual PBKDF2 entry, isolated per test thread.
+#[cfg(test)]
+#[path = "crypto/pbkdf2_observation.rs"]
+pub(crate) mod pbkdf2_observation;
 
 /// Internal zeroizing scratch ownership.
 #[path = "crypto/scratch.rs"]
@@ -170,6 +178,8 @@ impl AesSha1Etype {
     /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
+        #[cfg(test)]
+        pbkdf2_observation::record();
         let mut out = SecretScratch::new(vec![0; self.key_len()]);
         pbkdf2::pbkdf2_hmac::<Sha1>(secret, salt, iterations, &mut out);
         out.into_vec()
@@ -514,6 +524,8 @@ impl AesSha2Etype {
     /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
+        #[cfg(test)]
+        pbkdf2_observation::record();
         let mut out = SecretScratch::new(vec![0; self.key_len()]);
         match self {
             Self::Aes128 => pbkdf2::pbkdf2_hmac::<Sha256>(secret, salt, iterations, &mut out),

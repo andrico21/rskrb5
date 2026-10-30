@@ -54,6 +54,8 @@ impl fmt::Display for Use {
 /// consumers must explicitly check the intended use before cryptographic work.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Policy {
+    /// Application-trusted per-family derivation floors.
+    minima: super::s2k::Minima,
     /// Ordered permitted encryption types.
     permitted: Vec<KerberosEtype>,
     /// Explicit RC4 runtime opt-in.
@@ -65,6 +67,29 @@ pub struct Policy {
 }
 
 impl Policy {
+    /// Minimum peer PBKDF2 iterations for an enctype; non-PBKDF2 profiles return None.
+    #[inline]
+    #[must_use]
+    pub const fn min_s2k_iterations(&self, etype: i32) -> Option<u32> {
+        self.minima.for_etype(etype)
+    }
+
+    /// Validate peer string-to-key parameters before any password derivation.
+    /// # Errors
+    /// Returns malformed/zero/above-maximum parameter errors, or a typed minimum rejection.
+    /// The upper bound remains 2^24 even with a trusted minimum override.
+    #[inline]
+    pub fn check_s2k_params(&self, etype: i32, params: &str) -> Result<(), error::Crypto> {
+        if let Some(minimum) = self.min_s2k_iterations(etype) {
+            let actual = super::s2kparams_to_iterations(params)?;
+            (actual >= minimum).ok_or(error::Policy::S2kIterationsTooLow {
+                etype,
+                minimum,
+                actual,
+            })?;
+        }
+        Ok(())
+    }
     /// Build a validated snapshot; public field mutation is never trusted.
     ///
     /// # Errors
@@ -73,6 +98,7 @@ impl Policy {
     pub fn from_libdefaults(defaults: &LibDefaults) -> Result<Self, error::Config> {
         let resolved = defaults.resolve_names(&defaults.permitted_enctypes)?;
         Ok(Self {
+            minima: defaults.min_s2k_iterations,
             permitted: resolved.enctypes().to_vec(),
             allow_rc4: defaults.allow_rc4,
             allow_des3: defaults.allow_des3,
@@ -141,6 +167,7 @@ impl Default for Policy {
     #[inline]
     fn default() -> Self {
         Self {
+            minima: super::s2k::Minima::new(),
             permitted: vec![
                 KerberosEtype::Sha2(AesSha2Etype::Aes256),
                 KerberosEtype::Sha2(AesSha2Etype::Aes128),

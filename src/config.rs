@@ -15,6 +15,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::crypto::s2k::{Family, Minima};
+
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
 /// The configuration files tried, in order, when `KRB5_CONFIG` is unset.
@@ -500,6 +502,9 @@ include!("config/enctype_expr.rs");
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct LibDefaults {
+    /// API-only trusted minima; serde always restores secure RFC defaults.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub min_s2k_iterations: Minima,
     /// Permit explicitly configured RC4-HMAC (23); export RC4 (24) is forbidden.
     #[cfg_attr(feature = "serde", serde(default))]
     pub allow_rc4: Toggle,
@@ -591,6 +596,18 @@ pub struct LibDefaults {
 }
 
 impl LibDefaults {
+    /// Override a family's minimum through trusted application code only.
+    /// # Security
+    /// Lower values weaken resistance to offline password guessing. Never copy
+    /// a KDC-provided value into this override. No krb5.conf relation or serde
+    /// field can set it; deserialization restores RFC defaults.
+    /// # Errors
+    /// Rejects zero and minima above the existing 2^24 work ceiling.
+    #[inline]
+    pub fn with_min_s2k_iterations(mut self, family: Family, minimum: u32) -> Result<Self, Policy> {
+        self.min_s2k_iterations = self.min_s2k_iterations.with_minimum(family, minimum)?;
+        Ok(self)
+    }
     /// Diagnostics for secure unsupported selections encountered while parsing.
     #[inline]
     #[must_use]
@@ -874,6 +891,7 @@ impl LibDefaults {
             .collect::<Vec<_>>();
         Self {
             allow_rc4: Toggle::Disabled,
+            min_s2k_iterations: Minima::new(),
             allow_des3: Toggle::Disabled,
             allow_weak_crypto: Toggle::Disabled,
             canonicalize: Toggle::Disabled,
