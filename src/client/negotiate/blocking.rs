@@ -79,6 +79,10 @@ impl BlockingClient {
 
     /// Create a cache-only blocking Negotiate client from the default credential cache.
     ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME` before the configured fallback; invalid Unicode is an
+    /// error. Use [`Self::from_ccache_name`] for an explicit cache name.
+    ///
     /// # Errors
     ///
     /// Returns an error when `KRB5CCNAME` is set but not valid Unicode, when no
@@ -91,6 +95,10 @@ impl BlockingClient {
     }
 
     /// Create a cache-only blocking Negotiate client by loading the cache named by `KRB5CCNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`; unset or non-Unicode values are errors. Use
+    /// [`Self::from_ccache_name`] for an explicit cache name.
     ///
     /// # Errors
     ///

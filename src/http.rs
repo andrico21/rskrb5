@@ -1174,6 +1174,10 @@ impl NegotiateLayer<'static> {
 
     /// Create a Negotiate layer from the default keytab.
     ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME` before the configured fallback; invalid Unicode is an
+    /// error. Use [`Self::from_keytab_name`] for an explicit keytab name.
+    ///
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_keytab_name`. The configured
     /// `[libdefaults] clockskew` becomes the acceptance window.
@@ -1191,6 +1195,10 @@ impl NegotiateLayer<'static> {
     }
 
     /// Create a Negotiate layer by loading the file keytab named by `KRB5_KTNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME`; unset or non-Unicode values are errors. Use
+    /// [`Self::from_keytab_name`] for an explicit keytab name.
     ///
     /// # Errors
     ///
@@ -1426,6 +1434,10 @@ impl<S> NegotiateService<'static, S> {
 
     /// Wrap an inner service with the default keytab.
     ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME` before the configured fallback; invalid Unicode is an
+    /// error. Use [`Self::from_keytab_name`] for an explicit keytab name.
+    ///
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_keytab_name`.
     ///
@@ -1439,6 +1451,10 @@ impl<S> NegotiateService<'static, S> {
     }
 
     /// Wrap an inner service by loading the file keytab named by `KRB5_KTNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME`; unset or non-Unicode values are errors. Use
+    /// [`Self::from_keytab_name`] for an explicit keytab name.
     ///
     /// # Errors
     ///

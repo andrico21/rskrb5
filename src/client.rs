@@ -1083,6 +1083,11 @@ impl Tokio {
     }
     /// Save current TGT and service-ticket state to the default credential cache.
     ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`, which overrides the configured name when set; invalid
+    /// Unicode is an error. Use [`Self::save_ccache_name`] for an explicit name
+    /// or [`Self::save_default_ccache_name`] to use only configuration.
+    ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
     /// # Errors
@@ -1146,6 +1151,11 @@ impl Tokio {
         self.update_ccache_name(configured_default_ccache_name(&self.config)?)
     }
     /// Update the default credential cache.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`, which overrides the configured name when set; invalid
+    /// Unicode is an error. Use [`Self::update_ccache_name`] for an explicit name
+    /// or [`Self::update_default_ccache_name`] to use only configuration.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
