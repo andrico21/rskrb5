@@ -3,7 +3,8 @@
 This is the release-ready record for `rskrb5-ng` 0.3.0, the first release
 under this name. Nothing is published yet: on 2026-10-27,
 `https://crates.io/api/v1/crates/rskrb5-ng` answered 404 and no `v0.3*` tag
-existed. Publishing needs the owner steps below, then one tag.
+existed. The repository settings below are in place (2026-10-29), so
+publishing needs only one tag.
 
 ## How a release runs
 
@@ -59,51 +60,40 @@ matrix first, including `cargo package --locked`, `cargo publish --dry-run
 publication, a commit that keeps a published version fails `semver-checks`
 with "version already published; bump the version").
 
-## Repository settings already in place
+## Repository settings in place
 
-Applied by todo 38 of the rskrb5-ng plan and recorded in
-[`review/release-ci.md`](review/release-ci.md); checked again on 2026-10-27
-with `gh api`:
+Recorded in [`review/release-ci.md`](review/release-ci.md). The token location
+and the deployment policy were set by the owner on 2026-10-29 (follow-up
+register row FU-OPS-01) and checked with `gh api` on 2026-10-29 and again on
+2026-10-30:
 
-- environment `release`, protection rule `required_reviewers` with the single
-  reviewer `andrico21` (`prevent_self_review: false`, because the owner is the
-  only reviewer and also cuts the tag);
-- tag ruleset "release tags" (id 25943056): active, target `refs/tags/v*`,
-  rules `creation`, `update` and `deletion`, bypass for repository admins
-  only.
+- environment `release`:
+  - protection rule `required_reviewers` with the single reviewer `andrico21`
+    (`prevent_self_review: false`, because the owner is the only reviewer and
+    also cuts the tag);
+  - deployment branches and tags "Selected": the only deployment policy is the
+    tag pattern `[0-9]*.[0-9]*.[0-9]*` (type `tag`), so a job in this
+    environment runs only at an `N.N.N` tag ref; `can_admins_bypass: false`;
+  - secret `CARGO_REGISTRY_TOKEN` (set 2026-10-29T09:33:33Z), the owner's
+    crates.io API token. This environment is its only location: the repository
+    secret list doesn't contain the name, so only a job that runs in
+    `release`, after the reviewer's approval and at an `N.N.N` tag, can read
+    it;
+- tag ruleset "release tags" (id 25943056): active, target
+  `refs/tags/[0-9]*.[0-9]*.[0-9]*`, rules `creation`, `update` and
+  `deletion`, bypass for repository admins only.
 
-## Owner steps before the first publish
-
-1. **Create a crates.io API token** for the owner's crates.io account, with
-   the scopes `publish-new` and `publish-update` and the crate scope
-   `rskrb5-ng`. `publish-new` is needed because the crate doesn't exist yet.
-2. **Store it as a secret of the `release` environment**, not as a
-   repository secret:
-
-   ```sh
-   gh secret set CARGO_REGISTRY_TOKEN --env release -R andrico21/rskrb5-ng
-   ```
-
-3. **Delete the repository secret.** `CARGO_REGISTRY_TOKEN` is still a
-   repository secret today (set on 2026-10-06 for `rskrb5-patched`; `gh secret
-   list --env release` is empty). A repository secret is readable by any
-   workflow a writer pushes to a branch, so the environment's reviewer gate
-   protects the token only once it is an environment secret:
-
-   ```sh
-   gh secret delete CARGO_REGISTRY_TOKEN -R andrico21/rskrb5-ng
-   ```
-
-   The `publish` job reads `secrets.CARGO_REGISTRY_TOKEN` inside the `release`
-   environment, so it picks up the environment secret without a workflow
-   change.
+The `publish` job reads `secrets.CARGO_REGISTRY_TOKEN` inside the `release`
+environment. To replace the token, store the new value with
+`gh secret set CARGO_REGISTRY_TOKEN --env release -R andrico21/rskrb5-ng`;
+never store it as a repository secret.
 
 crates.io Trusted Publishing can't replace the token for this first release:
 a trusted publisher can only be configured for a crate that has already been
 published manually ([RFC 3691](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html),
 "A Trusted Publisher Configuration can only be created after an initial
 manual publishing of a crate"). After 0.3.0 is on crates.io, the owner may
-configure Trusted Publishing for this repository's `release.yml` and the
+configure Trusted Publishing for this repository's `publish.yml` and the
 `release` environment, switch the upload step to the OIDC token exchange,
 and revoke the API token.
 

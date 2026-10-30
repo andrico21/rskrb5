@@ -132,7 +132,7 @@ The inputs are not committed to this repository:
 | RSK-DF3180A2 / lead `credential-file/save/inherited-permissions` | fixed | [`files.md`](files.md) | 37 |
 | RSK-58A6D5DD / lead `credential-file/path-write/followed-symlink` | fixed | [`files.md`](files.md) | 37 |
 | RSK-361F35CC | fixed | [`files.md`](files.md) | 37 |
-| run-2 lead `release.publish.crates-io-token.unprotected-tag-authorization` | fixed | [`release-ci.md`](release-ci.md) | 38 |
+| run-2 lead `release.publish.crates-io-token.unprotected-tag-authorization` | fixed (the registry token is a `release` environment secret only since the owner's move on 2026-10-29, follow-up row FU-OPS-01) | [`release-ci.md`](release-ci.md) | 38 |
 | RSK-E0AFE152 | fixed | [`release-ci.md`](release-ci.md) | 38 |
 | RSK-A8D595D8 | fixed | [`release-ci.md`](release-ci.md) | 38 |
 
