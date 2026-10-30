@@ -5134,6 +5134,7 @@ mod tests {
     /// no confounder profile, before drawing any random bytes for it.
     #[test]
     fn generated_subkey_needs_a_supported_session_key_enctype() -> Result<(), Error> {
+        use crate::error::{Policy, RejectedFeature};
         let tgt = session_with_key(EncryptionKey {
             etype: 1,
             value: vec![0x11; 8],
@@ -5145,8 +5146,16 @@ mod tests {
             TgsReq::new(SystemTime::now(), 1),
         );
         assert!(
-            matches!(result, Err(Error::UnsupportedEtype(1_i32))),
-            "an unsupported session key enctype must be reported as such"
+            matches!(
+                result,
+                Err(Error::Crypto(error::Crypto::Policy(
+                    Policy::RejectedFeature {
+                        feature: RejectedFeature::SingleDes,
+                        reason: _
+                    }
+                )))
+            ),
+            "single DES is rejected by policy before random generation"
         );
         Ok(())
     }
