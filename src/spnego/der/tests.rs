@@ -2,8 +2,48 @@
 
 use proptest::{arbitrary::any, collection, prop_assert_eq, proptest};
 
-use super::{Error, ObjectIdentifier, decode_oid_value, decode_u32, encode_u32};
+use super::{DerReader, Error, ObjectIdentifier, decode_oid_value, decode_u32, encode_u32};
 use crate::spnego::{NegState, NegTokenResp};
+
+/// Long lengths must use the shortest representation, including nested token fields.
+#[test]
+fn der_lengths_reject_nonminimal_forms() -> Result<(), Error> {
+    for (length, size) in [(vec![0x81, 0x7f], 127), (vec![0x82, 0, 0x80], 128)] {
+        // Given a complete TLV with a redundant length representation.
+        let mut bytes = vec![4];
+        bytes.extend(length);
+        bytes.resize(bytes.len().saturating_add(size), 0);
+        // When the DER boundary reads it, then it rejects the encoding.
+        assert!(matches!(
+            DerReader::new(&bytes).read_tlv(),
+            Err(Error::NonminimalLength)
+        ));
+    }
+    matches!(
+        NegTokenResp::decode(&[0xa1, 8, 0x30, 6, 0xa0, 4, 0x0a, 0x81, 1, 0]),
+        Err(Error::NonminimalLength)
+    )
+    .ok_or(Error::NonminimalLength)
+}
+
+/// Minimal short and long length transitions preserve their complete contents.
+#[test]
+fn der_lengths_accept_minimal_boundaries() -> Result<(), Error> {
+    for (length, size) in [
+        (vec![127], 127),
+        (vec![0x81, 128], 128),
+        (vec![0x81, 255], 255),
+        (vec![0x82, 1, 0], 256),
+    ] {
+        // Given independently encoded length boundary values.
+        let mut bytes = vec![4];
+        bytes.extend(length);
+        bytes.resize(bytes.len().saturating_add(size), 0x42);
+        // When decoded, then the exact payload extent remains available.
+        assert_eq!(DerReader::new(&bytes).read_tlv()?.value().len(), size);
+    }
+    Ok(())
+}
 
 /// A state above `u32::MAX` must not alias accept-completed through the public decoder.
 #[test]

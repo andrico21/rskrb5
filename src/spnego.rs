@@ -5,11 +5,12 @@
 //! NegTokenInit/NegTokenResp negotiation tokens, and HTTP `Negotiate` header
 //! encoding/decoding.
 
-use core::{iter, time::Duration};
+use core::{fmt, iter, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose};
 use rasn::types::Integer;
+use zeroize::Zeroizing;
 
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
@@ -24,10 +25,20 @@ use crate::{
 mod authenticator;
 /// Minimal DER reader and writer for the GSS-API and SPNEGO token layer.
 mod der;
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod erasure_tests;
 /// One-shot SPNEGO mechanism-list integrity processing.
 mod negotiation;
 /// GSS-API object identifiers.
 pub mod oid;
+/// Plaintext staging owners.
+mod scratch;
 
 /// HTTP Negotiate header size boundary regressions.
 #[cfg(test)]
@@ -38,6 +49,16 @@ pub mod oid;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod header_tests;
+
+/// SPNEGO sequence structure regressions.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod field_tests;
 
 use self::{
     der::{
@@ -114,7 +135,7 @@ pub const GSSAPI_INITIATOR_SIGN_USAGE: u32 = 25;
 ///
 /// The payload is authenticated but not transmitted in the token bytes, matching
 /// gokrb5's MIC token model.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct MicToken {
     /// RFC4121 token flags.
@@ -122,7 +143,7 @@ pub struct MicToken {
     /// Sender sequence number.
     pub snd_seq_num: u64,
     /// Payload bytes authenticated by this MIC token. Not encoded on the wire.
-    pub payload: Option<Vec<u8>>,
+    pub payload: Option<Zeroizing<Vec<u8>>>,
     /// Token checksum.
     pub checksum: Option<Vec<u8>>,
 }
@@ -223,12 +244,13 @@ impl MicToken {
 
     #[must_use]
     /// Set the authenticated payload bytes.
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original.
     #[inline]
     pub fn with_payload<P>(mut self, payload: P) -> Self
     where
         P: Into<Vec<u8>>,
     {
-        self.payload = Some(payload.into());
+        self.payload = Some(Zeroizing::new(payload.into()));
         self
     }
 
@@ -255,16 +277,15 @@ impl MicToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, [`Error::Crypto`] when the checksum computation fails,
     /// [`Error::MissingGssChecksum`] when the token carries no checksum, and
-    /// [`Error::GssChecksumMismatch`] when the checksum does not match. It never returns
-    /// `Ok(false)`.
+    /// [`Error::GssChecksumMismatch`] when the checksum does not match.
     #[inline]
-    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<bool, Error> {
+    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         let expected = self.compute_checksum(key, key_usage)?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
         if !constant_time_eq(&expected, actual) {
             return Err(Error::GssChecksumMismatch);
         }
-        Ok(true)
+        Ok(())
     }
 
     /// Build an initiator MIC token and compute its checksum.
@@ -276,7 +297,7 @@ impl MicToken {
     #[inline]
     pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
         let mut token = Self {
             flags: 0,
@@ -296,7 +317,10 @@ impl MicToken {
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN));
+        let mut data = scratch::Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
+            "mic-checksum",
+        );
         data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
 
@@ -318,8 +342,26 @@ impl MicToken {
     }
 }
 
+impl fmt::Debug for MicToken {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            flags,
+            snd_seq_num,
+            payload,
+            checksum,
+        } = self;
+        f.debug_struct("MicToken")
+            .field("flags", flags)
+            .field("snd_seq_num", snd_seq_num)
+            .field("payload_len", &payload.as_ref().map(|value| value.len()))
+            .field("checksum_len", &checksum.as_ref().map(Vec::len))
+            .finish()
+    }
+}
+
 /// RFC4121 GSS-API Wrap token.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct WrapToken {
     /// RFC4121 token flags.
@@ -332,7 +374,7 @@ pub struct WrapToken {
     /// Sender sequence number.
     pub snd_seq_num: u64,
     /// Wrapped payload bytes.
-    pub payload: Option<Vec<u8>>,
+    pub payload: Option<Zeroizing<Vec<u8>>>,
     /// Token checksum for unsealed tokens.
     pub checksum: Option<Vec<u8>>,
     /// Encrypted token body for sealed tokens, stored exactly as transmitted
@@ -464,7 +506,7 @@ impl WrapToken {
             });
         }
 
-        let unrotated = rotate_left(body, usize::from(rrc));
+        let unrotated = scratch::Scratch::new(rotate_left(body, usize::from(rrc)), "wrap-decode");
         let checksum_len = usize::from(ec);
         let Some((payload, checksum)) = unrotated
             .len()
@@ -482,13 +524,14 @@ impl WrapToken {
             ec,
             rrc,
             snd_seq_num,
-            payload: Some(payload.to_vec()),
+            payload: Some(Zeroizing::new(payload.to_vec())),
             checksum: Some(checksum.to_vec()),
             encrypted_body: None,
         })
     }
 
     /// Encode this wrap token.
+    /// The returned unsealed wire bytes contain plaintext; the caller must erase them.
     ///
     /// # Errors
     ///
@@ -517,10 +560,13 @@ impl WrapToken {
             });
         }
 
-        let mut bytes = Vec::with_capacity(
-            GSS_WRAP_HEADER_LEN
-                .saturating_add(payload.len())
-                .saturating_add(checksum.len()),
+        let mut bytes = scratch::Scratch::new(
+            Vec::with_capacity(
+                GSS_WRAP_HEADER_LEN
+                    .saturating_add(payload.len())
+                    .saturating_add(checksum.len()),
+            ),
+            "wrap-encode",
         );
         bytes.extend_from_slice(&self.header(self.rrc));
         bytes.extend_from_slice(payload);
@@ -530,17 +576,18 @@ impl WrapToken {
         {
             body.rotate_right(shift);
         }
-        Ok(bytes)
+        Ok(bytes.to_vec())
     }
 
     #[must_use]
     /// Set wrapped payload bytes.
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original.
     #[inline]
     pub fn with_payload<P>(mut self, payload: P) -> Self
     where
         P: Into<Vec<u8>>,
     {
-        self.payload = Some(payload.into());
+        self.payload = Some(Zeroizing::new(payload.into()));
         self
     }
 
@@ -583,13 +630,15 @@ impl WrapToken {
     /// returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, [`Error::Crypto`] when the checksum computation fails,
     /// [`Error::MissingGssChecksum`] when the token carries no checksum, and
-    /// [`Error::GssChecksumMismatch`] when the checksum does not match. It never returns
-    /// `Ok(false)`.
+    /// [`Error::GssChecksumMismatch`] when the checksum does not match.
     #[inline]
-    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<bool, Error> {
+    pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         if self.is_sealed() {
-            drop(self.decrypt_payload(key, key_usage)?);
-            return Ok(true);
+            drop(scratch::Scratch::new(
+                self.decrypt_payload(key, key_usage)?,
+                "wrap-verify",
+            ));
+            return Ok(());
         }
 
         let expected = self.compute_checksum(key, key_usage)?;
@@ -597,7 +646,7 @@ impl WrapToken {
         if !constant_time_eq(&expected, actual) {
             return Err(Error::GssChecksumMismatch);
         }
-        Ok(true)
+        Ok(())
     }
 
     /// Build an initiator wrap token and compute its checksum.
@@ -610,8 +659,9 @@ impl WrapToken {
     #[inline]
     pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
+        let owned_payload = payload.into();
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut token = Self {
@@ -624,7 +674,7 @@ impl WrapToken {
             })?,
             rrc: 0,
             snd_seq_num: 0,
-            payload: Some(payload.into()),
+            payload: Some(owned_payload),
             checksum: None,
             encrypted_body: None,
         };
@@ -641,13 +691,14 @@ impl WrapToken {
     #[inline]
     pub fn new_initiator_sealed<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
+        let owned_payload = payload.into();
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];
         getrandom::fill(&mut confounder)?;
-        Self::new_initiator_sealed_with_confounder(payload, key, &confounder)
+        Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
     }
 
     /// Build an initiator sealed wrap token with an explicit confounder.
@@ -663,7 +714,7 @@ impl WrapToken {
         confounder: &[u8],
     ) -> Result<Self, Error>
     where
-        P: Into<Vec<u8>>,
+        P: Into<Zeroizing<Vec<u8>>>,
     {
         let mut token = Self {
             flags: GSS_TOKEN_FLAG_SEALED,
@@ -699,38 +750,44 @@ impl WrapToken {
             return Err(Error::GssEncryptedBodyAlreadySet);
         }
 
-        self.flags |= GSS_TOKEN_FLAG_SEALED;
+        let flags = self.flags | GSS_TOKEN_FLAG_SEALED;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-        match etype {
+        let ec = match etype {
             KerberosEtype::Des3CbcSha1Kd(_) => {
                 // DES3's 8-byte confounder and the 16-byte header are already block-aligned.
                 let residue = payload.len().wrapping_add(usize::from(self.ec)) & 7;
                 let extra = u16::try_from(residue.wrapping_neg() & 7)
                     .map_err(|_error| Error::InvalidGssFiller)?;
-                self.ec = self.ec.checked_add(extra).ok_or(Error::InvalidGssFiller)?;
+                self.ec.checked_add(extra).ok_or(Error::InvalidGssFiller)?
             }
-            KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => {}
-        }
-        let mut plaintext = Vec::with_capacity(
-            payload
-                .len()
-                .saturating_add(usize::from(self.ec))
-                .saturating_add(GSS_WRAP_HEADER_LEN),
+            KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => self.ec,
+        };
+        let mut plaintext = scratch::Scratch::new(
+            Vec::with_capacity(
+                payload
+                    .len()
+                    .saturating_add(usize::from(ec))
+                    .saturating_add(GSS_WRAP_HEADER_LEN),
+            ),
+            "wrap-seal",
         );
         plaintext.extend_from_slice(payload);
-        plaintext.extend(iter::repeat_n(0, usize::from(self.ec)));
-        plaintext.extend_from_slice(&self.header(0));
+        plaintext.extend(iter::repeat_n(0, usize::from(ec)));
+        plaintext.extend_from_slice(&wrap_header(flags, ec, 0, self.snd_seq_num));
 
         let encrypted =
             etype.encrypt_message_with_confounder(&key.value, &plaintext, key_usage, confounder)?;
         self.encrypted_body = Some(rotate_right(&encrypted, usize::from(self.rrc)));
+        self.flags = flags;
+        self.ec = ec;
         self.checksum = None;
         Ok(())
     }
 
     /// Decrypt and return the payload of a sealed Wrap token.
+    /// The caller owns the returned plaintext and must erase it after use.
     ///
     /// # Errors
     ///
@@ -753,7 +810,10 @@ impl WrapToken {
         let encrypted = rotate_left(encrypted_body, usize::from(self.rrc));
         let etype =
             KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-        let mut plaintext = etype.decrypt_message(&key.value, &encrypted, key_usage)?;
+        let mut plaintext = scratch::Scratch::new(
+            etype.decrypt_message(&key.value, &encrypted, key_usage)?,
+            "wrap-decrypt",
+        );
 
         let trailer_len = GSS_WRAP_HEADER_LEN.saturating_add(usize::from(self.ec));
         let too_short = || Error::GssDecryptedTokenTooShort {
@@ -772,7 +832,7 @@ impl WrapToken {
         }
 
         plaintext.truncate(payload_len);
-        Ok(plaintext)
+        Ok(plaintext.to_vec())
     }
 
     /// Decrypt a sealed token and store its payload on this value.
@@ -786,7 +846,7 @@ impl WrapToken {
         key: &EncryptionKey,
         key_usage: u32,
     ) -> Result<&[u8], Error> {
-        let payload = self.decrypt_payload(key, key_usage)?;
+        let payload = Zeroizing::new(self.decrypt_payload(key, key_usage)?);
         Ok(self.payload.insert(payload).as_slice())
     }
 
@@ -806,7 +866,10 @@ impl WrapToken {
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN));
+        let mut data = scratch::Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
+            "wrap-checksum",
+        );
         data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
 
@@ -821,6 +884,30 @@ impl WrapToken {
     /// the given right rotation count.
     fn header(&self, rrc: u16) -> Vec<u8> {
         wrap_header(self.flags, self.ec, rrc, self.snd_seq_num)
+    }
+}
+
+impl fmt::Debug for WrapToken {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            flags,
+            ec,
+            rrc,
+            snd_seq_num,
+            payload,
+            checksum,
+            encrypted_body,
+        } = self;
+        f.debug_struct("WrapToken")
+            .field("flags", flags)
+            .field("ec", ec)
+            .field("rrc", rrc)
+            .field("snd_seq_num", snd_seq_num)
+            .field("payload_len", &payload.as_ref().map(|value| value.len()))
+            .field("checksum_len", &checksum.as_ref().map(Vec::len))
+            .field("encrypted_len", &encrypted_body.as_ref().map(Vec::len))
+            .finish()
     }
 }
 
@@ -1459,7 +1546,7 @@ impl Default for InitiatorContextOptions {
 }
 
 /// Built client SPNEGO initiator context.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InitiatorContext {
     /// ASN.1 AP-REQ message.
@@ -1488,9 +1575,98 @@ pub struct InitiatorContext {
     pub sequence_number: Option<u32>,
     /// GSS-API context flags requested when this context was built.
     pub context_flags: Vec<u32>,
+    /// Initiator subkey retained for acceptor mechanism-list MIC verification.
+    pub initiator_subkey: Option<EncryptionKey>,
+}
+
+impl fmt::Debug for InitiatorContext {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            ap_req: _,
+            ap_req_der,
+            krb5_token: _,
+            spnego_token: _,
+            header,
+            client,
+            service,
+            session_key: _,
+            authenticator_ctime,
+            authenticator_cusec,
+            authenticator_time,
+            sequence_number,
+            context_flags,
+            initiator_subkey: _,
+        } = self;
+        f.debug_struct("InitiatorContext")
+            .field("ap_req_len", &ap_req_der.len())
+            .field("header_len", &header.len())
+            .field("client", client)
+            .field("service", service)
+            .field("authenticator_ctime", authenticator_ctime)
+            .field("authenticator_cusec", authenticator_cusec)
+            .field("authenticator_time", authenticator_time)
+            .field("sequence_number", sequence_number)
+            .field("context_flags", context_flags)
+            .finish()
+    }
 }
 
 impl InitiatorContext {
+    /// Validate completion metadata against the retained offer.
+    ///
+    /// # Errors
+    /// Returns a typed error for unfinished negotiation, unoffered mechanisms,
+    /// or a MIC exchange this one-shot initiator cannot complete.
+    pub(crate) fn validate_completion(&self, response: &NegTokenResp) -> Result<(), Error> {
+        match response.neg_state {
+            Some(NegState::AcceptCompleted) => {}
+            Some(NegState::AcceptIncomplete | NegState::RequestMic | NegState::Reject) | None => {
+                return Err(Error::NegotiationRequiresState);
+            }
+        }
+        if let Some(selected) = &response.supported_mech {
+            let offered = match &self.spnego_token {
+                Token::Init(init) => &init.mech_types,
+                Token::Resp(_) => return Err(Error::NegotiationRequiresState),
+            };
+            if !offered.contains(selected) {
+                return Err(Error::UnsupportedMechanism(selected.clone()));
+            }
+        } else {
+            return Err(Error::NegotiationRequiresState);
+        }
+        if let Some(bytes) = &response.mech_list_mic {
+            let token = Krb5MechToken::decode(
+                response
+                    .response_token
+                    .as_deref()
+                    .ok_or(Error::MissingApRep)?,
+            )?;
+            if token.token_id != Krb5TokenId::ApRep {
+                return Err(Error::MissingApRep);
+            }
+            let verified = self.verify_ap_rep(&token.message)?;
+            let mic = MicToken::decode(bytes, true).map_err(|_source| Error::InvalidMechListMic)?;
+            if mic.flags & GSS_TOKEN_FLAG_SEALED != 0
+                || mic.snd_seq_num != u64::from(verified.sequence_number.unwrap_or(0))
+            {
+                return Err(Error::InvalidMechListMic);
+            }
+            let key = if mic.flags & GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY != 0 {
+                verified.subkey.as_ref().ok_or(Error::InvalidMechListMic)?
+            } else {
+                self.initiator_subkey.as_ref().unwrap_or(&self.session_key)
+            };
+            let encoded = self.spnego_token.encode()?;
+            let list = negotiation::received_mech_types(&encoded)?;
+            mic.with_payload(list)
+                .verify(key, GSSAPI_ACCEPTOR_SIGN_USAGE)
+                .map_err(|_source| Error::InvalidMechListMic)?;
+        }
+        Ok(())
+    }
+
     /// Verify an AP-REP wrapped in a SPNEGO `Negotiate` response header.
     ///
     /// # Errors
@@ -1511,6 +1687,7 @@ impl InitiatorContext {
                 });
             }
         };
+        self.validate_completion(&response)?;
         let response_token = response.response_token.ok_or(Error::MissingMechToken)?;
         let krb5 = Krb5MechToken::decode(&response_token)?;
         if krb5.token_id != Krb5TokenId::ApRep {
@@ -1659,7 +1836,11 @@ pub fn accept_sec_context_header(
     let init = match token {
         Token::Init(init) => init,
         Token::Resp(response) => {
-            let _ap_req = Token::Resp(response).krb5_ap_req()?;
+            if let Some(mech) = response.supported_mech
+                && !mech.is_kerberos_mechanism()
+            {
+                return Err(Error::UnsupportedMechanism(mech));
+            }
             return Err(Error::NegotiationRequiresState);
         }
     };
@@ -1770,6 +1951,7 @@ pub fn init_sec_context_with_confounder(
         authenticator_time: built_ap_req.authenticator_time,
         sequence_number: built_ap_req.sequence_number,
         context_flags: options.context_flags,
+        initiator_subkey: options.subkey,
     })
 }
 
@@ -2061,7 +2243,7 @@ fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionK
 }
 
 /// Map an AP-REQ construction error onto the SPNEGO error type. Variants without a SPNEGO
-/// counterpart become [`Error::Client`] with their message.
+/// counterpart become [`Error::Client`] with their typed source.
 fn client_error_to_spnego(error: error::Client) -> Error {
     if let error::Client::Decode { target, message } = error {
         return Error::Decode { target, message };
@@ -2087,7 +2269,7 @@ fn client_error_to_spnego(error: error::Client) -> Error {
     if matches!(error, error::Client::TimeOverflow) {
         return Error::TimeOverflow;
     }
-    Error::Client(error.to_string())
+    Error::Client(Box::new(error))
 }
 
 /// The current time split into whole seconds and microseconds, as a Kerberos authenticator carries
@@ -2168,12 +2350,17 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
     let sequence = read_single_tlv(bytes, TAG_SEQUENCE)?;
     let mut fields = DerReader::new(sequence.value());
     let mut offered_mechs = None;
+    let mut previous_tag = None;
     let mut req_flags = None;
     let mut mech_token = None;
     let mut mech_list_mic = None;
 
     while !fields.remaining().is_empty() {
         let field = fields.read_tlv()?;
+        if previous_tag.is_some_and(|previous| previous >= field.tag()) {
+            return Err(Error::InvalidFieldOrder);
+        }
+        previous_tag = Some(field.tag());
         match field.tag() {
             TAG_CONTEXT_0 => {
                 let mech_list = read_single_tlv(field.value(), TAG_SEQUENCE)?;
@@ -2205,6 +2392,7 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
                         .to_vec(),
                 );
             }
+            0xa4..=0xbe => {}
             actual => {
                 return Err(Error::UnexpectedTag {
                     expected: TAG_CONTEXT_0,
@@ -2238,12 +2426,17 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
     let sequence = read_single_tlv(bytes, TAG_SEQUENCE)?;
     let mut fields = DerReader::new(sequence.value());
     let mut neg_state = None;
+    let mut previous_tag = None;
     let mut supported_mech = None;
     let mut response_token = None;
     let mut mech_list_mic = None;
 
     while !fields.remaining().is_empty() {
         let field = fields.read_tlv()?;
+        if previous_tag.is_some_and(|previous| previous >= field.tag()) {
+            return Err(Error::InvalidFieldOrder);
+        }
+        previous_tag = Some(field.tag());
         match field.tag() {
             TAG_CONTEXT_0 => {
                 let enumerated = read_single_tlv(field.value(), TAG_ENUMERATED)?;
@@ -2269,6 +2462,7 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
                         .to_vec(),
                 );
             }
+            0xa4..=0xbe => {}
             actual => {
                 return Err(Error::UnexpectedTag {
                     expected: TAG_CONTEXT_0,

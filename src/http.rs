@@ -6,15 +6,15 @@
 
 #[cfg(feature = "tower")]
 use alloc::{borrow::Cow, sync::Arc};
-#[cfg(feature = "tower")]
-use core::pin::Pin;
 use core::result::Result as CoreResult;
 #[cfg(feature = "tower")]
 use core::task::{Context, Poll};
 #[cfg(feature = "tower")]
 use core::time::Duration;
 #[cfg(feature = "tower")]
-use std::time::SystemTime;
+use core::{mem, pin::Pin};
+#[cfg(feature = "tower")]
+use std::{sync::Mutex, time::SystemTime};
 
 use http_types::{
     Request, Response, StatusCode,
@@ -46,6 +46,8 @@ use crate::{
 pub type Result<T> = CoreResult<T, Error>;
 
 use crate::error::Http as Error;
+#[cfg(feature = "tower")]
+use crate::error::{Keytab as KeytabError, Service as ServiceError, Spnego as SpnegoError};
 
 /// Tower Negotiate middleware error.
 #[cfg(feature = "tower")]
@@ -200,11 +202,9 @@ pub fn authorization_header<B>(request: &Request<B>) -> Result<&str> {
 /// value.
 #[inline]
 pub fn set_authorization_header<B>(request: &mut Request<B>, value: &str) -> Result<()> {
-    drop(
-        request
-            .headers_mut()
-            .insert(AUTHORIZATION, HeaderValue::from_str(value)?),
-    );
+    let mut header = HeaderValue::from_str(value)?;
+    header.set_sensitive(true);
+    drop(request.headers_mut().insert(AUTHORIZATION, header));
     Ok(())
 }
 
@@ -533,6 +533,9 @@ where
 
 /// Validate the request's Negotiate header and attach the accepted context to extensions.
 ///
+/// Incoming Authorization values are retained for forwarding, but marked sensitive
+/// before validation so downstream Debug output and HTTP compression respect them.
+///
 /// # Errors
 ///
 /// Returns the errors of [`authorization_header`], and [`Error::Spnego`] when
@@ -542,6 +545,11 @@ pub fn accept_request<B>(
     validator: &mut Validator<'_>,
     request: &mut Request<B>,
 ) -> Result<AcceptedContext> {
+    for (name, header) in request.headers_mut() {
+        if name == AUTHORIZATION {
+            header.set_sensitive(true);
+        }
+    }
     let accepted = spnego::accept_sec_context_header(validator, authorization_header(request)?)?;
     drop(request.extensions_mut().insert(accepted.clone()));
     Ok(accepted)
@@ -643,7 +651,14 @@ fn should_retry_with_negotiate<B>(response: &Response<B>) -> Result<bool> {
 #[cfg(feature = "tokio")]
 fn mutual_requested_by(options: &spnego::InitiatorContextOptions) -> bool {
     options.ap_option_bits & AP_OPTION_MUTUAL_REQUIRED != 0
-        || options.context_flags.contains(&spnego::CONTEXT_FLAG_MUTUAL)
+        || mutual_requested(&options.context_flags)
+}
+
+/// Test every flag mask, matching the authenticator's bitwise encoding.
+fn mutual_requested(flags: &[u32]) -> bool {
+    flags
+        .iter()
+        .any(|mask| mask & spnego::CONTEXT_FLAG_MUTUAL != 0)
 }
 
 /// The outcome when the first response carried no Negotiate challenge, so no
@@ -713,6 +728,7 @@ where
         WWW_AUTHENTICATE,
         HeaderValue::from_static(spnego::HTTP_NEGOTIATE),
     ));
+    harden_response(&mut response);
     response
 }
 
@@ -751,7 +767,7 @@ const AP_OPTION_MUTUAL_REQUIRED: u32 = 0x2000_0000;
 /// Whether the initiator asked for mutual authentication in any supported form.
 fn mutual_authentication_requested(context: &spnego::InitiatorContext) -> bool {
     ap_options_to_bits(&context.ap_req.ap_options) & AP_OPTION_MUTUAL_REQUIRED != 0
-        || context.context_flags.contains(&spnego::CONTEXT_FLAG_MUTUAL)
+        || mutual_requested(&context.context_flags)
 }
 
 /// Classify one Negotiate challenge of a client-side exchange, verifying an
@@ -782,14 +798,13 @@ fn classify_negotiate_challenge(
         }
     };
 
-    match response.neg_state {
-        Some(spnego::NegState::Reject) => return ClientNegotiateResponse::Rejected,
-        Some(spnego::NegState::AcceptIncomplete | spnego::NegState::RequestMic)
-            if response.response_token.is_none() =>
-        {
-            return ClientNegotiateResponse::Challenge;
-        }
-        _ => {}
+    if response.neg_state == Some(spnego::NegState::Reject) {
+        return ClientNegotiateResponse::Rejected;
+    }
+    if let Err(source) = context.validate_completion(&response) {
+        return ClientNegotiateResponse::InvalidToken {
+            message: source.to_string(),
+        };
     }
 
     let Some(response_token) = response.response_token else {
@@ -899,12 +914,51 @@ where
 {
     let mut response = Response::new(B::default());
     *response.status_mut() = status;
-    drop(
-        response
-            .headers_mut()
-            .insert(WWW_AUTHENTICATE, HeaderValue::from_str(header)?),
-    );
+    let mut value = HeaderValue::from_str(header)?;
+    value.set_sensitive(true);
+    drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
+    harden_response(&mut response);
     Ok(response)
+}
+
+/// Apply secure defaults without overriding the application's explicit policy.
+fn harden_response<B>(response: &mut Response<B>) {
+    let headers = response.headers_mut();
+    for name in [
+        "server",
+        "x-powered-by",
+        "x-aspnet-version",
+        "x-aspnetmvc-version",
+    ] {
+        drop(headers.remove(name));
+    }
+    for (name, value) in [
+        (
+            "strict-transport-security",
+            "max-age=63072000; includeSubDomains",
+        ),
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "deny"),
+        (
+            "content-security-policy",
+            "default-src 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests",
+        ),
+        ("referrer-policy", "no-referrer"),
+        (
+            "permissions-policy",
+            "accelerometer=(), camera=(), geolocation=(), microphone=()",
+        ),
+        ("cross-origin-embedder-policy", "require-corp"),
+        ("cross-origin-opener-policy", "same-origin"),
+        ("cross-origin-resource-policy", "same-origin"),
+        ("cache-control", "no-store, max-age=0"),
+        ("x-dns-prefetch-control", "off"),
+        ("x-permitted-cross-domain-policies", "none"),
+    ] {
+        if !headers.contains_key(name) {
+            drop(headers.insert(name, HeaderValue::from_static(value)));
+        }
+    }
 }
 
 /// Tower layer for service-side HTTP Negotiate validation.
@@ -934,6 +988,14 @@ pub struct NegotiateLayer<'keytab> {
 
 #[cfg(feature = "tower")]
 impl<'keytab> NegotiateLayer<'keytab> {
+    /// Apply missing security headers and strip fingerprints on inner responses (default: on).
+    /// Library-generated challenge and rejection responses are always hardened.
+    #[must_use]
+    #[inline]
+    pub const fn with_response_hardening(mut self, enabled: bool) -> Self {
+        self.response.harden_inner = enabled;
+        self
+    }
     /// Create a Negotiate layer backed by a service keytab.
     #[must_use]
     #[inline]
@@ -1128,26 +1190,48 @@ impl<'layer, S> Layer<S> for NegotiateLayer<'layer> {
     fn layer(&self, inner: S) -> Self::Service {
         NegotiateService {
             inner,
-            validator: self.validator.build(self.keytab.clone()),
+            validator: Arc::new(Mutex::new(self.validator.build(self.keytab.clone()))),
+            settings: self.clone(),
             response: self.response.clone(),
         }
     }
 }
 
 /// Tower service for service-side HTTP Negotiate validation.
+///
+/// Internal validation faults produce opaque 500 responses. Their typed cause is
+/// retained as `Arc<error::Http>` in response extensions for caller diagnostics;
+/// extensions are not serialized onto the wire.
 #[cfg(feature = "tower")]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NegotiateService<'keytab, S> {
     /// The wrapped service.
     inner: S,
     /// The validator of this service's requests.
-    validator: Validator<'keytab>,
+    validator: Arc<Mutex<Validator<'keytab>>>,
+    /// Construction settings retained for consuming configuration builders.
+    settings: NegotiateLayer<'keytab>,
     /// How accepted and rejected requests are answered.
     response: NegotiateResponseOptions,
 }
 
 #[cfg(feature = "tower")]
 impl<'keytab, S> NegotiateService<'keytab, S> {
+    /// Apply a consuming validator builder without discarding admitted replay records.
+    /// A poisoned validator stays poisoned and refuses subsequent requests.
+    fn configure_validator<F>(&self, configure: F)
+    where
+        F: FnOnce(Validator<'keytab>) -> Validator<'keytab>,
+    {
+        if let Ok(mut guard) = self.validator.lock() {
+            let previous = mem::replace(
+                &mut *guard,
+                self.settings.validator.build(self.settings.keytab.clone()),
+            );
+            *guard = configure(previous);
+        }
+    }
+
     /// Wrap an inner service with default Negotiate validation.
     #[inline]
     pub fn new(inner: S, keytab: &'keytab Keytab) -> Self {
@@ -1170,7 +1254,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn with_now(mut self, now: SystemTime) -> Self {
-        self.validator = self.validator.with_now(now);
+        self.settings = self.settings.with_now(now);
+        self.configure_validator(|validator| validator.with_now(now));
         self
     }
 
@@ -1178,7 +1263,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
-        self.validator = self.validator.with_max_clock_skew(max_clock_skew);
+        self.settings = self.settings.with_max_clock_skew(max_clock_skew);
+        self.configure_validator(|validator| validator.with_max_clock_skew(max_clock_skew));
         self
     }
 
@@ -1190,7 +1276,14 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
         I: IntoIterator<Item = T>,
         T: Into<String>,
     {
-        self.validator = self.validator.with_keytab_principal(components);
+        self.settings = self.settings.with_keytab_principal(components);
+        let principal = self
+            .settings
+            .validator
+            .keytab_principal
+            .clone()
+            .unwrap_or_default();
+        self.configure_validator(|validator| validator.with_keytab_principal(principal));
         self
     }
 
@@ -1198,7 +1291,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn with_client_address(mut self, client_address: HostAddress) -> Self {
-        self.validator = self.validator.with_client_address(client_address);
+        self.settings = self.settings.with_client_address(client_address.clone());
+        self.configure_validator(|validator| validator.with_client_address(client_address));
         self
     }
 
@@ -1206,9 +1300,10 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn require_client_address(mut self, require_client_address: bool) -> Self {
-        self.validator = self
-            .validator
-            .require_client_address(require_client_address);
+        self.settings = self.settings.require_client_address(require_client_address);
+        self.configure_validator(|validator| {
+            validator.require_client_address(require_client_address)
+        });
         self
     }
 
@@ -1216,7 +1311,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Self {
-        self.validator = self.validator.with_shared_replay_cache(replay_cache);
+        self.settings = self.settings.with_shared_replay_cache(replay_cache.clone());
+        self.configure_validator(|validator| validator.with_shared_replay_cache(replay_cache));
         self
     }
 
@@ -1224,7 +1320,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[must_use]
     #[inline]
     pub fn without_shared_replay_cache(mut self) -> Self {
-        self.validator = self.validator.without_shared_replay_cache();
+        self.settings = self.settings.without_shared_replay_cache();
+        self.configure_validator(Validator::without_shared_replay_cache);
         self
     }
 
@@ -1325,7 +1422,7 @@ where
 {
     type Response = Response<ResBody>;
     type Error = TowerError<S::Error>;
-    type Future = Pin<Box<dyn Future<Output = CoreResult<Self::Response, Self::Error>>>>;
+    type Future = NegotiateFuture<S::Future, ResBody, S::Error>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<CoreResult<(), Self::Error>> {
@@ -1334,46 +1431,139 @@ where
 
     #[inline]
     fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
-        let accepted = match accept_request(&mut self.validator, &mut req) {
+        let Ok(mut validator) = self.validator.lock() else {
+            let mut response = Response::new(ResBody::default());
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            drop(
+                response
+                    .extensions_mut()
+                    .insert(Arc::new(Error::Spnego(SpnegoError::Service(
+                        ServiceError::ReplayCachePoisoned,
+                    )))),
+            );
+            harden_response(&mut response);
+            return NegotiateFuture::ready(Ok(response));
+        };
+        let accepted = match accept_request(&mut validator, &mut req) {
             Ok(accepted) => accepted,
             Err(Error::MissingAuthorization | Error::InvalidHeader(_)) => {
-                return Box::pin(async { Ok(challenge_response()) });
+                return NegotiateFuture::ready(Ok(challenge_response()));
             }
-            Err(Error::Spnego(_)) => {
+            Err(Error::Spnego(source)) => {
+                if matches!(
+                    &source,
+                    SpnegoError::Service(
+                        ServiceError::ReplayCachePoisoned
+                            | ServiceError::ReplayCacheSkewExceeded {
+                                maximum: _,
+                                requested: _
+                            }
+                            | ServiceError::ReplayCacheClockRollback
+                            | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
+                            | ServiceError::Keytab(KeytabError::Io(_))
+                    )
+                ) {
+                    let mut response = Response::new(ResBody::default());
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    drop(
+                        response
+                            .extensions_mut()
+                            .insert(Arc::new(Error::Spnego(source))),
+                    );
+                    harden_response(&mut response);
+                    return NegotiateFuture::ready(Ok(response));
+                }
                 let response = if self.response.reject_invalid {
                     reject_response().unwrap_or_else(|_| challenge_response())
                 } else {
                     challenge_response()
                 };
-                return Box::pin(async move { Ok(response) });
+                return NegotiateFuture::ready(Ok(response));
             }
             Err(error) => {
-                return Box::pin(async move { Err(TowerError::Http(error)) });
+                return NegotiateFuture::ready(Err(TowerError::Http(error)));
             }
         };
 
+        drop(validator);
         let ap_rep_header = if self.response.emit_ap_rep {
             match accepted.ap_rep_response_header(&self.response.ap_rep_options.clone()) {
                 Ok(header) => Some(header),
                 Err(error) => {
-                    return Box::pin(async { Err(TowerError::Http(Error::Spnego(error))) });
+                    return NegotiateFuture::ready(Err(TowerError::Http(Error::Spnego(error))));
                 }
             }
         } else {
             None
         };
 
-        let future = self.inner.call(req);
-        Box::pin(async move {
-            let mut response = future.await.map_err(TowerError::Inner)?;
-            if let Some(header) = ap_rep_header {
-                let value = HeaderValue::from_str(&header)
-                    .map_err(Error::InvalidHeaderValue)
-                    .map_err(TowerError::Http)?;
-                drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
-            }
-            Ok(response)
-        })
+        NegotiateFuture {
+            inner: Some(Box::pin(self.inner.call(req))),
+            ready: None,
+            header: ap_rep_header,
+            harden: self.response.harden_inner,
+        }
+    }
+}
+
+/// Negotiate response future, preserving the inner future's Send capability.
+#[cfg(feature = "tower")]
+#[derive(Debug)]
+pub struct NegotiateFuture<F, B, E> {
+    /// Pinned inner operation, absent for immediate authentication responses.
+    inner: Option<Pin<Box<F>>>,
+    /// Immediate outcome, boxed so moving the adapter never moves its body.
+    ready: Option<Box<CoreResult<Response<B>, TowerError<E>>>>,
+    /// Credential header to attach after inner completion.
+    header: Option<String>,
+    /// Whether the inner response receives secure defaults.
+    harden: bool,
+}
+
+#[cfg(feature = "tower")]
+impl<F, B, E> NegotiateFuture<F, B, E> {
+    /// Construct an immediate response without polling an inner service.
+    fn ready(result: CoreResult<Response<B>, TowerError<E>>) -> Self {
+        Self {
+            inner: None,
+            ready: Some(Box::new(result)),
+            header: None,
+            harden: false,
+        }
+    }
+}
+
+#[cfg(feature = "tower")]
+impl<F, B, E> Future for NegotiateFuture<F, B, E>
+where
+    F: Future<Output = CoreResult<Response<B>, E>>,
+{
+    type Output = CoreResult<Response<B>, TowerError<E>>;
+    #[inline]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let state = self.get_mut();
+        if let Some(result) = state.ready.take() {
+            return Poll::Ready(*result);
+        }
+        let Some(inner) = state.inner.as_mut() else {
+            return Poll::Pending;
+        };
+        let mut response = match inner.as_mut().poll(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(TowerError::Inner(error))),
+            Poll::Ready(Ok(response)) => response,
+        };
+        if let Some(header) = state.header.take() {
+            let mut value = HeaderValue::from_str(&header)
+                .map_err(Error::InvalidHeaderValue)
+                .map_err(TowerError::Http)?;
+            value.set_sensitive(true);
+            drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
+        }
+        if state.harden {
+            harden_response(&mut response);
+        }
+        Poll::Ready(Ok(response))
     }
 }
 
@@ -1443,6 +1633,8 @@ impl ValidatorOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// How a Negotiate service answers requests.
 struct NegotiateResponseOptions {
+    /// Whether inner service responses receive missing secure defaults.
+    harden_inner: bool,
     /// Whether an accepted request's response carries an AP-REP token.
     emit_ap_rep: bool,
     /// Options of the emitted AP-REP.
@@ -1456,6 +1648,7 @@ struct NegotiateResponseOptions {
 impl Default for NegotiateResponseOptions {
     fn default() -> Self {
         Self {
+            harden_inner: true,
             emit_ap_rep: true,
             ap_rep_options: ApRepOptions::default(),
             reject_invalid: true,
@@ -1477,6 +1670,51 @@ mod tests {
     use http_types::{Response, StatusCode};
 
     use super::{NegotiateHttpError, unchallenged_result};
+
+    /// A poisoned validator retains a typed cause without exposing it on the wire.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn poisoned_validator_retains_cause() -> Result<(), Box<dyn error::Error>> {
+        use alloc::sync::Arc;
+        use core::{
+            convert::Infallible,
+            future::{Ready, ready},
+            task::{Context, Poll},
+        };
+        use std::thread;
+
+        use http_types::Request;
+        use tokio::runtime::Builder;
+        use tower_service::Service;
+
+        use crate::keytab::Keytab;
+        #[derive(Clone)]
+        struct Inner;
+        impl Service<Request<()>> for Inner {
+            type Response = Response<()>;
+            type Error = Infallible;
+            type Future = Ready<Result<Response<()>, Infallible>>;
+            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+                Poll::Ready(Ok(()))
+            }
+            fn call(&mut self, _req: Request<()>) -> Self::Future {
+                ready(Ok(Response::new(())))
+            }
+        }
+        let mut service = super::NegotiateService::from_keytab(Inner, Keytab::new());
+        let validator = Arc::clone(&service.validator);
+        let poisoned = thread::spawn(move || {
+            let _guard = validator.lock();
+            assert!(validator.is_poisoned(), "injected validator poison");
+        })
+        .join();
+        assert!(poisoned.is_err());
+        let runtime = Builder::new_current_thread().build()?;
+        let response = runtime.block_on(service.call(Request::new(())))?;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(response.extensions().get::<Arc<super::Error>>().is_some());
+        Ok(())
+    }
 
     /// A first response without a Negotiate challenge fails closed when
     /// mutual authentication was requested, keeping the response for

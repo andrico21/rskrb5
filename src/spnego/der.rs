@@ -146,6 +146,10 @@ impl<'buffer> DerReader<'buffer> {
             .split_at_checked(count)
             .ok_or(Error::LengthExceedsInput)?;
 
+        if length_bytes.first() == Some(&0) || (count == 1 && length_bytes < [128].as_slice()) {
+            return Err(Error::NonminimalLength);
+        }
+
         let mut length = 0_usize;
         for byte in length_bytes {
             length = (length << 8_u32) | usize::from(*byte);

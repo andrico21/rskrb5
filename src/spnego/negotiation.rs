@@ -77,8 +77,7 @@ pub(super) fn verify_mic(
         return Err(Error::InvalidMechListMic);
     }
     let subkey = authenticator.subkey.as_ref().map(encryption_key_from_rasn);
-    let _verified = mic
-        .with_payload(list)
+    mic.with_payload(list)
         .verify(
             subkey.as_ref().unwrap_or(session_key),
             GSSAPI_INITIATOR_SIGN_USAGE,

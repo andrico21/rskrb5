@@ -1987,6 +1987,12 @@ pub enum Spnego {
     /// DER used an unsupported indefinite length.
     #[error("indefinite DER length is not supported")]
     IndefiniteLength,
+    /// DER length uses redundant octets instead of its shortest representation.
+    #[error("nonminimal DER length")]
+    NonminimalLength,
+    /// Known SPNEGO fields were repeated or appeared out of sequence.
+    #[error("duplicate or reordered SPNEGO field")]
+    InvalidFieldOrder,
     /// DER length exceeds the remaining input.
     #[error("DER length exceeds remaining input")]
     LengthExceedsInput,
@@ -2237,7 +2243,7 @@ pub enum Spnego {
     Service(#[from] Service),
     /// Client AP-REQ construction failed.
     #[error("client AP-REQ construction error: {0}")]
-    Client(String),
+    Client(#[source] Box<Client>),
 }
 #[cfg(feature = "messages")]
 /// Ticket helper error.
