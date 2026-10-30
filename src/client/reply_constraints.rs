@@ -4,16 +4,14 @@ use core::time::Duration;
 use std::time::SystemTime;
 
 use super::{
-    Error, KDC_OPTION_RENEW, KDC_OPTION_RENEWABLE, system_time_from_kerberos_time,
-    ticket_flags_to_bytes,
+    Error, KDC_OPTION_RENEW, KDC_OPTION_RENEWABLE, TICKET_FLAG_INVALID,
+    system_time_from_kerberos_time, ticket_flags_to_bytes,
 };
 
 /// Capabilities granted only on request; informational KDC flags are not included.
 const REQUESTED_CAPABILITIES: u32 = 0x5400_0000;
 /// Postdated ticket and request bit.
 const POSTDATED: u32 = 0x0200_0000;
-/// Invalid tickets are only expected for requested postdating.
-const INVALID: u32 = 0x0100_0000;
 /// Permit renewable tickets in lieu of the requested full lifetime.
 const RENEWABLE_OK: u32 = 0x0000_0010;
 /// Ticket validation preserves inherited capabilities like renewal does.
@@ -64,7 +62,7 @@ pub(super) fn validate(
         .ok_or(Error::ReplyTimeConstraint)?;
     if options & (KDC_OPTION_RENEW | VALIDATE) == 0 {
         (flags & REQUESTED_CAPABILITIES & !options == 0).ok_or(Error::ReplyFlagConstraint)?;
-        (flags & (POSTDATED | INVALID) == 0 || options & POSTDATED != 0)
+        (flags & (POSTDATED | TICKET_FLAG_INVALID) == 0 || options & POSTDATED != 0)
             .ok_or(Error::ReplyFlagConstraint)?;
         (flags & KDC_OPTION_RENEWABLE == 0 || options & (KDC_OPTION_RENEWABLE | RENEWABLE_OK) != 0)
             .ok_or(Error::ReplyFlagConstraint)?;

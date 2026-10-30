@@ -100,6 +100,8 @@ const KRB5CCNAME_ENV: &str = "KRB5CCNAME";
 const KRB5_CLIENT_KTNAME_ENV: &str = "KRB5_CLIENT_KTNAME";
 /// PA-ENC-TIMESTAMP preauthentication type.
 pub const PA_ENC_TIMESTAMP: i32 = 2;
+/// PA-PW-SALT password salt hint (RFC 4120).
+const PA_PW_SALT: i32 = 3;
 /// PA-TGS-REQ preauthentication type.
 pub const PA_TGS_REQ: i32 = 1;
 /// PA-ETYPE-INFO preauthentication hint type.
@@ -150,6 +152,8 @@ pub const PAC_OPTION_FORWARD_TO_FULL_DC: u32 = 0x2000_0000;
 pub const PAC_OPTION_RESOURCE_BASED_CONSTRAINED_DELEGATION: u32 = 0x1000_0000;
 /// Ticket flag bit indicating the AS-REP carries encrypted padata.
 pub const TICKET_FLAG_ENC_PA_REP: u32 = 0x0001_0000;
+/// INVALID ticket flag in RFC 4120 bit-string order.
+const TICKET_FLAG_INVALID: u32 = 0x0100_0000;
 /// Raw KDC option mask for `renewable` in RFC 4120 bit-string order.
 pub const KDC_OPTION_RENEWABLE: u32 = 0x0080_0000;
 /// Raw KDC option mask for `canonicalize` in RFC 4120 bit-string order.
@@ -4203,7 +4207,7 @@ fn password_initial_as_rep_session(
             etype,
             salt: padata
                 .iter()
-                .find(|pa| pa.r#type == 3_i32)
+                .find(|pa| pa.r#type == PA_PW_SALT)
                 .map(|pa| str::from_utf8(pa.value.as_ref()).map(str::to_owned))
                 .transpose()?,
             s2kparams: None,
@@ -4829,7 +4833,7 @@ fn service_cache_key(service: &Principal) -> (String, Vec<String>) {
 /// Whether a session is inside its start and end time at `now`.
 #[cfg(feature = "tokio")]
 fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
-    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
+    u32::from_be_bytes(session.ticket_flags) & TICKET_FLAG_INVALID == 0
         && session.start_time <= now
         && now < session.end_time
 }
@@ -4843,7 +4847,7 @@ fn session_usable_at(session: &AsRepSession, now: SystemTime) -> bool {
 /// Whether a session can still be renewed at `now`.
 #[cfg(feature = "tokio")]
 fn session_renewable_at(session: &AsRepSession, now: SystemTime) -> bool {
-    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
+    u32::from_be_bytes(session.ticket_flags) & TICKET_FLAG_INVALID == 0
         && session
             .renew_till
             .is_some_and(|renew_till| now < renew_till)
