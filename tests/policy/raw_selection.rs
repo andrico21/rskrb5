@@ -1,3 +1,4 @@
+#[cfg(feature = "spnego")]
 extern crate alloc;
 
 use core::error::Error;

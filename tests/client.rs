@@ -587,6 +587,7 @@ mod harness {
     }
 
     /// Encode cache-test marker bytes inside a real Ticket encrypted-data field.
+    #[cfg(feature = "tokio")]
     pub(crate) fn marked_ticket(marker: &[u8]) -> Result<Vec<u8>, TestError> {
         use rskrb5_ng::ticket;
         let session = sample_tgt_session()?;
