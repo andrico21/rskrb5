@@ -24,7 +24,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `kdc_tcp_frame` | four-byte KDC TCP record mark, tested against zero, small and large caps | `client::transport::kdc_tcp_record_length`; production shares the reserved-bit, zero-length and pre-allocation cap checks |
 | `krb_messages` | Kerberos messages | AP-REQ, Authenticator, AP-REP, `EncAPRepPart`, KRB-CRED, `EncKrbCredPart`, KRB-PRIV, `EncKrbPrivPart`, KRB-SAFE, Ticket, `EncTicketPart`, KRB-ERROR, `KDC-REQ-BODY`, AS-REQ, TGS-REQ, the PA-DATA messages and the kpasswd `ChangePasswdData` and KRB-PRIV codecs; the decrypt functions under a fixed key; and a sealed mode that encrypts the fuzzed plaintext into a message template so the decoders behind decryption see it |
 | `der_oid` | DER and OID bytes | the crate's SPNEGO DER reader and OID decoder (decode, re-encode, decode again must give the same value), `ObjectIdentifier::from_arcs`, and a decrypted Authenticator whose fuzzed plaintext reaches the zero-padding trimmer and the complete-message decoder |
-| `krb5_conf` | `krb5.conf` text (UTF-8-lossy) | `Config::parse_without_env` and `Config::parse`, includes, then `parse_supported_enctype_ids` on the parsed enctype lists |
+| `krb5_conf` | `krb5.conf` text (UTF-8-lossy) | `Config::parse` and includes, then the enctype-list accessors `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and `permitted_enctype_ids` on an accepted configuration |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -154,7 +154,6 @@ does.
 
 | Function | Source | Fuzz target | Reason |
 | --- | --- | --- | --- |
-| `rskrb5_ng::client::transport::kdc_tcp_record_length` | `src/client/transport.rs` | `kdc_tcp_frame` | Pure outer record-mark validation; separate from inner DER decoding |
 | `rskrb5_ng::ap_rep::decode` | `src/ap_rep.rs` | `krb_messages` |  |
 | `rskrb5_ng::ap_rep::decode_der` | `src/ap_rep.rs` | `krb_messages` |  |
 | `rskrb5_ng::ap_rep::decode_enc_ap_rep_part` | `src/ap_rep.rs` | `krb_messages` |  |
@@ -213,6 +212,7 @@ does.
 | `rskrb5_ng::client::transport::KdcEndpoint::configured_with_default_port` | `src/client/transport.rs` | `name_parse` |  |
 | `rskrb5_ng::client::transport::Tokio::discover_srv_endpoints` | `src/client/transport.rs` | - | DNS answers are decoded by hickory-resolver (a dependency); this keeps typed SRV records only |
 | `rskrb5_ng::client::transport::Tokio::exchange_tcp_framed` | `src/client/transport.rs` | - | the TCP record-mark reader is not a separable function: it reads the 4-byte mark from a `TcpStream` inside the async exchange. The mark is checked by `validate_tcp_length` and bounded by the response limit before allocation; the record body goes to the reply decoders `kdc_reply` fuzzes; unit tests `tcp_lengths_are_service_specific` (src) and `kdc_tcp_rejects_reserved_bit_before_body_read`, `tokio_transport_uses_tcp_length_prefix` (tests/client_transport.rs) |
+| `rskrb5_ng::client::transport::kdc_tcp_record_length` | `src/client/transport.rs` | `kdc_tcp_frame` |  |
 | `rskrb5_ng::client::transport::Tokio::send_udp` | `src/client/transport.rs` | - | socket I/O: receives at most `udp_response_limit + 1` bytes and rejects a larger datagram before any decode; the datagram goes to the reply decoders `kdc_reply` fuzzes; covered by `udp_transport_rejects_truncated_datagram` (tests/client_transport.rs) |
 | `rskrb5_ng::client::transport::Tokio::with_dns_server` | `src/client/transport.rs` | `name_parse` |  |
 | `rskrb5_ng::client::transport::kdc_error_code` | `src/client/transport.rs` | - | private wrapper of `krb_error::decode` (fuzzed by `kdc_reply` and `krb_messages`) on a received reply |
@@ -224,17 +224,14 @@ does.
 | `rskrb5_ng::client::transport::resolve_dns_endpoint_host` | `src/client/transport.rs` | - | IP-literal check and resolver lookup on an SRV target name; the DNS reply is decoded by hickory-resolver |
 | `rskrb5_ng::client::transport::tests::parses_dns_server_override_ip_and_default_port` | `src/client/transport.rs` | - | unit test, not a parser |
 | `rskrb5_ng::client::transport::tests::parses_dns_server_override_ip_and_explicit_port` | `src/client/transport.rs` | - | unit test, not a parser |
-| `rskrb5_ng::client::transport::validate_tcp_length` | `src/client/transport.rs` | - | private `const fn` on the 4-byte record mark of `exchange_tcp_framed`; unit tests `tcp_lengths_are_service_specific` (src) and `kdc_tcp_rejects_reserved_bit_before_body_read`, `tokio_transport_uses_tcp_length_prefix` (tests/client_transport.rs) |
+| `rskrb5_ng::client::transport::framing::validate_tcp_length` | `src/client/transport/framing.rs` | - | private `const fn` on the 4-byte record mark of `exchange_tcp_framed`; unit tests `tcp_lengths_are_service_specific` (src) and `kdc_tcp_rejects_reserved_bit_before_body_read`, `tokio_transport_uses_tcp_length_prefix` (tests/client_transport.rs) |
 | `rskrb5_ng::config::Config::load` | `src/config.rs` | - | reads the file, then `parse_with_roots` (the parser `krb5_conf` reaches) |
 | `rskrb5_ng::config::Config::load_default` | `src/config.rs` | - | reads the platform default path, then `load_paths` |
 | `rskrb5_ng::config::Config::load_default_or_parse` | `src/config.rs` | - | the default file, else `Config::parse` on embedded text (`krb5_conf`) |
 | `rskrb5_ng::config::Config::load_from_env` | `src/config.rs` | - | reads `KRB5_CONFIG`, then `load_paths` |
 | `rskrb5_ng::config::Config::load_paths` | `src/config.rs` | - | reads each file, then `parse_with_roots` |
 | `rskrb5_ng::config::Config::parse` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::Config::parse_with` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::Config::parse_with_roots` | `src/config.rs` | - | file loader step: reads nothing itself and hands the file text to `parse_with_roots_and_seed`, which `krb5_conf` reaches |
-| `rskrb5_ng::config::Config::parse_with_roots_and_seed` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::Config::parse_without_env` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::Config::parse_with_roots` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::IncludeDirective::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::IncludeExpansion::expand` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::IncludeExpansion::include_dir` | `src/config.rs` | `krb5_conf` |  |
@@ -247,7 +244,7 @@ does.
 | `rskrb5_ng::config::Realm::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::SectionKind::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::brace_delta` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::fork_tests::parse_without_env_does_not_read_uid_or_home` | `src/config.rs` | - | unit test, not a parser |
+| `rskrb5_ng::config::fork_tests::parse_does_not_read_uid_or_home` | `src/config.rs` | - | unit test, not a parser |
 | `rskrb5_ng::config::parse_assignment` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_boolean` | `src/config.rs` | `name_parse` |  |
 | `rskrb5_ng::config::parse_colon_duration` | `src/config.rs` | `krb5_conf` |  |
@@ -286,6 +283,7 @@ does.
 | `rskrb5_ng::file_name::is_windows_drive_path` | `src/file_name.rs` | `name_parse` |  |
 | `<rskrb5_ng::http::WwwAuthenticateSegments as core::iter::traits::iterator::Iterator>::next` | `src/http.rs` | `http_negotiate` |  |
 | `rskrb5_ng::http::WwwAuthenticateSegments::new` | `src/http.rs` | `http_negotiate` |  |
+| `rskrb5_ng::http::NegotiateFuture::ready` | `src/http.rs` | - | constructs an already-completed Tower future from a response the layer built; matches the search only through the `read` prefix of `ready` and parses nothing |
 | `rskrb5_ng::http::accept_request` | `src/http.rs` | `http_negotiate` |  |
 | `rskrb5_ng::http::authorization_header` | `src/http.rs` | `http_negotiate` |  |
 | `rskrb5_ng::http::classify_negotiate_challenge` | `src/http.rs` | `http_negotiate` |  |
@@ -294,15 +292,16 @@ does.
 | `rskrb5_ng::http::negotiate_challenge_is_bare` | `src/http.rs` | `http_negotiate` |  |
 | `rskrb5_ng::http::verify_ap_rep_response` | `src/http.rs` | `http_negotiate` |  |
 | `rskrb5_ng::http::www_authenticate_negotiate_header` | `src/http.rs` | `http_negotiate` |  |
-| `rskrb5_ng::kadmin::ChangePasswdData::decode_der` | `src/kadmin.rs` | `krb_messages` |  |
-| `rskrb5_ng::kadmin::ChangePasswordResult::parse` | `src/kadmin.rs` | `kpasswd_reply` |  |
-| `rskrb5_ng::kadmin::Reply::decrypt_result` | `src/kadmin.rs` | `kpasswd_reply` |  |
-| `rskrb5_ng::kadmin::Reply::parse` | `src/kadmin.rs` | `kpasswd_reply` |  |
-| `rskrb5_ng::kadmin::Request::parse` | `src/kadmin.rs` | `kpasswd_reply` |  |
-| `rskrb5_ng::kadmin::decode` | `src/kadmin.rs` | `krb_messages` |  |
+| `rskrb5_ng::kadmin::payload::ChangePasswdData::decode_der` | `src/kadmin/payload.rs` | `krb_messages` |  |
+| `<rskrb5_ng::kadmin::password::Bytes as rasn::de::Decode>::decode_with_tag_and_constraints` | `src/kadmin/password.rs` | `krb_messages` |  |
+| `rskrb5_ng::kadmin::result::ChangePasswordResult::parse` | `src/kadmin/result.rs` | `kpasswd_reply` |  |
+| `rskrb5_ng::kadmin::reply::Reply::decrypt_result` | `src/kadmin/reply.rs` | `kpasswd_reply` |  |
+| `rskrb5_ng::kadmin::reply::Reply::parse` | `src/kadmin/reply.rs` | `kpasswd_reply` |  |
+| `rskrb5_ng::kadmin::request::Request::parse` | `src/kadmin/request.rs` | `kpasswd_reply` |  |
+| `rskrb5_ng::kadmin::codec::decode` | `src/kadmin/codec.rs` | `krb_messages` |  |
 | `rskrb5_ng::kadmin::decode_enc_krb_priv_part` | `src/kadmin.rs` | `krb_messages` |  |
 | `rskrb5_ng::kadmin::decode_krb_priv` | `src/kadmin.rs` | `kpasswd_reply` |  |
-| `rskrb5_ng::kadmin::parse_header` | `src/kadmin.rs` | `kpasswd_reply` |  |
+| `rskrb5_ng::kadmin::codec::parse_header` | `src/kadmin/codec.rs` | `kpasswd_reply` |  |
 | `rskrb5_ng::kdc_rep::decode` | `src/kdc_rep.rs` | `kdc_reply` |  |
 | `rskrb5_ng::kdc_rep::decode_as_rep` | `src/kdc_rep.rs` | `kdc_reply` |  |
 | `rskrb5_ng::kdc_rep::decode_enc_kdc_rep_part` | `src/kdc_rep.rs` | `kdc_reply` |  |
@@ -356,6 +355,7 @@ does.
 | `rskrb5_ng::messages::PaPacOptions::decode_der` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::PaReqEncPaRep::decode_der` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::decode_der` | `src/messages.rs` | `krb_messages` |  |
+| `rskrb5_ng::messages::decode_named` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::kerberos_string_to_string` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::microseconds` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::principal_from_parts` | `src/messages.rs` | `krb_messages` |  |
@@ -480,6 +480,7 @@ does.
 | `rskrb5_ng::spnego::der::read_single_tlv` | `src/spnego/der.rs` | `der_oid` |  |
 | `rskrb5_ng::spnego::oid::ObjectIdentifier::from_arcs` | `src/spnego/oid.rs` | `der_oid` |  |
 | `rskrb5_ng::spnego::oid::validate_arcs` | `src/spnego/oid.rs` | `der_oid` |  |
+| `rskrb5_ng::spnego::field_tests::decode_fields` | `src/spnego/field_tests.rs` | - | unit-test helper, not a parser |
 | `rskrb5_ng::ticket::decode` | `src/ticket.rs` | `krb_messages` |  |
 | `rskrb5_ng::ticket::decode_der` | `src/ticket.rs` | `krb_messages` |  |
 | `rskrb5_ng::ticket::decode_enc_ticket_part` | `src/ticket.rs` | `krb_messages` |  |

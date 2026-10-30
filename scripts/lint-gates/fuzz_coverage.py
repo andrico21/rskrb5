@@ -171,7 +171,11 @@ def scopes(stripped: str) -> list[tuple[int, int, str, str]]:
 
 
 def qualified_functions(relative: str, original: str) -> list[tuple[str, int]]:
-    """Fully qualified names of the step-4 search hits in one file."""
+    """Fully qualified names of the step-4 search hits in one file.
+
+    A hit in a trait impl is `<path::Type as Trait>::name`, with only the
+    trait's last path segment, as `defined_functions` names it.
+    """
     stripped = strip_comments_and_strings(original)
     blocks = scopes(stripped)
     hits = []
@@ -182,15 +186,23 @@ def qualified_functions(relative: str, original: str) -> list[tuple[str, int]]:
             key=lambda b: b[0],
         )
         path = ["rskrb5_ng", *module_path(relative)]
+        trait = None
         for _, _, kind, name in enclosing:
             if kind == "trait-impl":
-                raise ValueError(
-                    f"{relative}: search hit {match[1]} in a trait impl ({name})"
-                )
-            path.append(name)
-        path.append(match[1])
-        hits.append(("::".join(path), stripped.count("\n", 0, position) + 1))
+                trait_path, _, self_type = name.partition(" for ")
+                trait = trait_path.strip().rsplit("::", 1)[-1]
+                path.append(self_type.strip())
+            else:
+                path.append(name)
+        qualified = "::".join(path)
+        name = f"<{qualified} as {trait}>::{match[1]}" if trait else f"{qualified}::{match[1]}"
+        hits.append((name, stripped.count("\n", 0, position) + 1))
     return hits
+
+
+def short_trait(function: str) -> str:
+    """A row name with its trait reduced to the last path segment."""
+    return re.sub(r" as (?:\w+::)*(\w+)>", r" as \1>", function)
 
 
 def defined_functions(relative: str, original: str) -> set[str]:
@@ -228,8 +240,7 @@ def check_live(rows: list[Row], read: Callable[[str], str | None]) -> list[str]:
         if row.source not in defined:
             text = read(row.source)
             defined[row.source] = set() if text is None else defined_functions(row.source, text)
-        name = re.sub(r" as (?:\w+::)*(\w+)>", r" as \1>", row.function)
-        if name not in defined[row.source]:
+        if short_trait(row.function) not in defined[row.source]:
             errors.append(f"stale inventory row: {row.function} is not defined in {row.source}")
     return errors
 
@@ -253,7 +264,7 @@ def check_rows(
     if not rows:
         return [EMPTY]
     errors = []
-    present = {(row.function, row.source) for row in rows}
+    present = {(short_trait(row.function), row.source) for row in rows}
     for name, relative in sorted(set(keys) - present):
         errors.append(f"missing inventory row: {name} ({relative})")
     seen = set()
@@ -516,6 +527,28 @@ def self_test() -> int:
         "rskrb5_ng::pac::reader::decode",
         "rskrb5_ng::pac::reader::tests::parse_x",
     ], names
+    # A search hit in a trait impl is a key named with the trait's last
+    # segment; a row naming the full trait path satisfies it, no row is missing.
+    impl_source = (
+        "impl Decode for Bytes {\n    fn decode_with_tag(d: &mut D) {}\n}\n"
+    )
+    impl_keys = {
+        (name, "src/kadmin/password.rs")
+        for name, _ in qualified_functions("src/kadmin/password.rs", impl_source)
+    }
+    assert impl_keys == {
+        ("<rskrb5_ng::kadmin::password::Bytes as Decode>::decode_with_tag", "src/kadmin/password.rs")
+    }, impl_keys
+    impl_row = Row(
+        "<rskrb5_ng::kadmin::password::Bytes as rasn::de::Decode>::decode_with_tag",
+        "src/kadmin/password.rs",
+        "krb_messages",
+        "",
+    )
+    assert check_rows([impl_row], impl_keys, {"krb_messages"}) == []
+    assert check_rows(rows, impl_keys, {"pac_parse", "kdc_reply"}) == [
+        "missing inventory row: <rskrb5_ng::kadmin::password::Bytes as Decode>::decode_with_tag (src/kadmin/password.rs)"
+    ]
     keys = {(row.function, row.source) for row in rows}
     assert check_rows(rows, keys, {"pac_parse", "kdc_reply"}) == []
     missing = check_rows(rows[1:], keys, {"pac_parse", "kdc_reply"})
