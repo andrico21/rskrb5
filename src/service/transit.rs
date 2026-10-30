@@ -7,15 +7,16 @@ impl Validator<'_> {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::TransitPolicyRejected`] for unchecked cross-realm paths
-    /// without explicit approval, or [`Error::InvalidString`] for invalid realms.
+    /// Returns [`Error::TransitPolicyRejected`] for unchecked cross-realm or
+    /// nonempty paths without explicit approval, or [`Error::InvalidString`]
+    /// for invalid realms.
     pub(super) fn validate_transit(
         &self,
         service: &Principal,
         ticket: &rasn_kerberos::EncTicketPart,
     ) -> Result<(), Error> {
         let client_realm = kerberos_string_to_string(&ticket.crealm)?;
-        if client_realm != service.realm
+        if (client_realm != service.realm || !ticket.transited.contents.is_empty())
             && !ticket.flags.0.get(12).is_some_and(|bit| *bit)
             && !self.transit_policy.as_ref().is_some_and(|policy| {
                 policy.accepts(&client_realm, &service.realm, &ticket.transited)
