@@ -6,6 +6,9 @@ use crate::crypto::Use;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Policy {
+    /// Programmatically supplied configuration cannot define a usable policy.
+    #[error("invalid cryptographic policy configuration")]
+    InvalidConfiguration,
     /// A known or unknown wire enctype is outside runtime permission.
     #[error("enctype {etype} is not permitted for {usage}")]
     EnctypeNotPermitted {

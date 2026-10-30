@@ -1,4 +1,10 @@
 //! KRB-CRED decoding and encrypted-part helpers.
+//!
+//! The codec/conversion functions here are raw RFC-vector operations. Use
+//! [`import`] for policy-checked semantic import before admitting credentials.
+
+/// Policy-checked semantic credential import.
+pub mod import;
 
 /// Conversion of credential fields between ccache and ASN.1.
 mod conversion;

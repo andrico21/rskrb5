@@ -129,7 +129,7 @@ mod tests {
         let service_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
             let now = SystemTime::now();
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
-            service_ticket.ticket = ticket.to_vec();
+            service_ticket.ticket = marked_ticket(ticket)?;
             service_ticket.auth_time = now
                 .checked_sub(Duration::from_mins(5))
                 .context("auth time")?;
@@ -153,7 +153,7 @@ mod tests {
                 .context("longer service ticket remains")?
                 .ticket
                 .as_slice(),
-            b"service-long"
+            marked_ticket(b"service-long")?.as_slice()
         );
 
         client.cache_service_ticket(service_session(180, b"service-longer")?)?;
@@ -163,7 +163,7 @@ mod tests {
                 .context("longer service ticket is selected")?
                 .ticket
                 .as_slice(),
-            b"service-longer"
+            marked_ticket(b"service-longer")?.as_slice()
         );
         assert_eq!(client.cached_service_ticket_count(), 1);
         Ok(())
@@ -432,9 +432,9 @@ mod tests {
         let mut fresh_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut older_service_ticket = fresh_service_ticket.clone();
         fresh_service_ticket.session_key.value = vec![0xf1];
-        fresh_service_ticket.ticket = b"fresh-service-ticket".to_vec();
+        fresh_service_ticket.ticket = marked_ticket(b"fresh-service-ticket")?;
         older_service_ticket.session_key.value = vec![0x0d];
-        older_service_ticket.ticket = b"older-service-ticket".to_vec();
+        older_service_ticket.ticket = marked_ticket(b"older-service-ticket")?;
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -797,9 +797,9 @@ mod tests {
         let mut current_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut future_service_ticket = current_service_ticket.clone();
         current_service_ticket.session_key.value = vec![0xc2];
-        current_service_ticket.ticket = b"current-service-ticket".to_vec();
+        current_service_ticket.ticket = marked_ticket(b"current-service-ticket")?;
         future_service_ticket.session_key.value = vec![0xf2];
-        future_service_ticket.ticket = b"future-service-ticket".to_vec();
+        future_service_ticket.ticket = marked_ticket(b"future-service-ticket")?;
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -1875,7 +1875,7 @@ mod tests {
     fn tokio_client_prefers_freshest_cached_tgt_session() -> Result<(), TestError> {
         let primary_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
             let mut tgt = current_tgt_session(5, remaining_minutes)?;
-            tgt.ticket = ticket.to_vec();
+            tgt.ticket = marked_ticket(ticket)?;
             Ok(tgt)
         };
         let referral_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
@@ -1900,7 +1900,7 @@ mod tests {
                 .context("primary TGT remains")?
                 .ticket
                 .as_slice(),
-            b"primary-long"
+            marked_ticket(b"primary-long")?.as_slice()
         );
         assert_eq!(
             client
@@ -1908,7 +1908,7 @@ mod tests {
                 .context("realm-keyed primary remains")?
                 .ticket
                 .as_slice(),
-            b"primary-long"
+            marked_ticket(b"primary-long")?.as_slice()
         );
 
         client
@@ -1920,7 +1920,7 @@ mod tests {
                 .context("primary TGT is replaced")?
                 .ticket
                 .as_slice(),
-            b"primary-longer"
+            marked_ticket(b"primary-longer")?.as_slice()
         );
 
         client
@@ -1936,7 +1936,7 @@ mod tests {
                 .context("longer referral TGT remains")?
                 .ticket
                 .as_slice(),
-            b"referral-long"
+            marked_ticket(b"referral-long")?.as_slice()
         );
 
         client
@@ -1948,7 +1948,7 @@ mod tests {
                 .context("longer referral TGT is selected")?
                 .ticket
                 .as_slice(),
-            b"referral-longer"
+            marked_ticket(b"referral-longer")?.as_slice()
         );
         Ok(())
     }

@@ -6,12 +6,15 @@ use super::{
     AsRepSession, Error, TgsRepSession, Tokio, preferred_session_at, principal_matches,
     service_cache_key, tgt_realm,
 };
+use crate::crypto::Use;
 
 /// Insert or replace a service ticket in the cache.
 ///
 /// # Errors
 /// Returns [`Error::CacheClientMismatch`] for another client identity.
 pub(super) fn service_ticket(client: &mut Tokio, ticket: TgsRepSession) -> Result<(), Error> {
+    let policy = super::crypto_policy::configured(&client.config.libdefaults)?;
+    super::crypto_policy::session(&policy, &ticket, Use::ImportedCredential)?;
     principal_matches(&ticket.client, &client.client).ok_or(Error::CacheClientMismatch)?;
     let key = service_cache_key(&ticket.service);
     let selected = preferred_session_at(
@@ -33,6 +36,8 @@ pub(super) fn tgt_session_at(
     tgt: AsRepSession,
     now: SystemTime,
 ) -> Result<(), Error> {
+    let policy = super::crypto_policy::configured(&client.config.libdefaults)?;
+    super::crypto_policy::session(&policy, &tgt, Use::ImportedCredential)?;
     principal_matches(&tgt.client, &client.client).ok_or(Error::CacheClientMismatch)?;
     let realm = tgt_realm(&tgt).ok_or_else(|| Error::InvalidTgtSession {
         service: tgt.service.name(),

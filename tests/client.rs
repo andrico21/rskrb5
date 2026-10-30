@@ -582,8 +582,17 @@ mod harness {
         let mut tgt = sample_tgt_session()?;
         tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
         tgt.session_key.value = vec![0x9a; 32];
-        tgt.ticket = format!("referral-ticket-{realm}").into_bytes();
+        tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?;
         Ok(tgt)
+    }
+
+    /// Encode cache-test marker bytes inside a real Ticket encrypted-data field.
+    pub(crate) fn marked_ticket(marker: &[u8]) -> Result<Vec<u8>, TestError> {
+        use rskrb5_ng::ticket;
+        let session = sample_tgt_session()?;
+        let mut ticket = ticket::decode(&session.ticket)?;
+        ticket.enc_part.cipher = marker.to_vec().into();
+        Ok(ticket::encode(&ticket)?)
     }
 
     /// A referral TGT for `realm` obtained through a validated TGS exchange with `tgt`.

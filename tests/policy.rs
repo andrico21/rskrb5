@@ -52,6 +52,46 @@ mod repeated;
 /// Checked cryptographic dispatch enforces policy before primitive validation.
 #[cfg(test)]
 #[path = "policy/checked.rs"]
-#[expect(clippy::missing_errors_doc, clippy::missing_panics_doc, reason = "test code is not rendered API documentation")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod checked;
+
+/// Policy checks at semantic credential-import boundaries.
+#[cfg(test)]
+#[cfg(feature = "messages")]
+#[path = "policy/imports.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod imports;
+
+/// Client request and cache policy boundaries.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/client.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod client;
+
+/// Cache-use and preauthentication early-effect regression tests.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/client_effects.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod client_effects;
