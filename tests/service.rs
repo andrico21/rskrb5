@@ -20,6 +20,7 @@ mod pac_ad_win2k;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "service"]
 mod tests {
+    mod client_address;
     mod configured_skew;
     mod mandatory_pac;
     mod pac_binding;
