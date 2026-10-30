@@ -1190,7 +1190,7 @@ mod tests {
 
         runtime()?.block_on(async {
             let connect_start = Instant::now();
-            let mut stream = TcpStream::connect((host.as_str(), port)).await?;
+            let mut stream = timeout(probe::PROBE_TIMEOUT, TcpStream::connect((host.as_str(), port))).await??;
             stream.set_nodelay(true)?;
             writeln!(
                 io::stdout(),
