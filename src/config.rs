@@ -4,6 +4,10 @@
 //! mappings, domain-realm lookup, durations and KDC discovery. Enctype ID
 //! accessors apply the configured family opt-ins and permitted list.
 
+/// Explicit-context expansion of credential-name profile parameters.
+#[path = "config/expansion.rs"]
+pub mod parameters;
+
 use alloc::{borrow::Cow, collections::BTreeMap};
 use core::{
     net::{IpAddr, SocketAddr},

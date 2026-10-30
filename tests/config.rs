@@ -9,6 +9,9 @@ mod profile;
 #[path = "config/profile_limits.rs"]
 mod profile_limits;
 
+#[path = "config/expansion.rs"]
+mod expansion;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(
@@ -1546,7 +1549,9 @@ mod tests {
 ",
         );
         let failure = result.err().ok_or("first conflicting list was replaced")?;
-        assert!(matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96"));
+        assert!(
+            matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96")
+        );
         Ok(())
     }
     /// Pins that an explicit request list from an included file is validated.
@@ -1609,8 +1614,12 @@ mod tests {
 
         let loaded = Config::load(&main_path);
         fs::remove_dir_all(&dir)?;
-        let failure = loaded.err().ok_or("first included request list was replaced")?;
-        assert!(matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96"));
+        let failure = loaded
+            .err()
+            .ok_or("first included request list was replaced")?;
+        assert!(
+            matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96")
+        );
         Ok(())
     }
     /// Pins that a bare tag does not match a host that merely ends with its text.
