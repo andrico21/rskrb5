@@ -117,6 +117,9 @@ mod review_integrity;
 #[path = "client/review_password_rotation.rs"]
 mod review_password_rotation;
 #[cfg(feature = "tokio")]
+#[path = "client/review_unsigned_rejection.rs"]
+mod review_unsigned_rejection;
+#[cfg(feature = "tokio")]
 #[path = "client/review_refresh.rs"]
 mod review_refresh;
 #[cfg(feature = "tokio")]
