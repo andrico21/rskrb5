@@ -22,6 +22,7 @@ mod pac_ad_win2k;
 mod tests {
     mod configured_skew;
     mod mandatory_pac;
+    mod transit;
 
     use alloc::sync::Arc;
     use core::{iter, time::Duration};
@@ -1451,21 +1452,6 @@ mod tests {
                 .context("unchecked transit rejected")?;
             assert!(matches!(error, Error::TransitPolicyRejected));
             assert_eq!(validator.replay_cache_mut().len(), 0);
-        }
-        Ok(())
-    }
-
-    /// Same-realm tickets and KDC-checked cross-realm paths retain their existing acceptance.
-    #[test]
-    fn transit_preserves_same_realm_and_kdc_checked_paths() -> Result<(), TestError> {
-        for (client_realm, checked) in [("TEST.GOKRB5", false), ("FOREIGN.DUMMY", true)] {
-            let keytab = http_keytab()?;
-            let bytes = transit_ap_req(client_realm, 1, b"UNTRUSTED", checked)?;
-            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
-            assert_eq!(
-                validator.validate_ap_req(&bytes)?.client.realm,
-                client_realm
-            );
         }
         Ok(())
     }

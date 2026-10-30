@@ -286,6 +286,7 @@ struct DigestRecord {
 
 mod replay;
 mod replay_quota;
+mod transit;
 
 /// Shareable in-memory AP-REQ replay cache.
 ///
@@ -891,29 +892,6 @@ impl<'keytab> Validator<'keytab> {
         };
         self.record_replay(replay_key, authenticator_digest, now)?;
         Ok(validated)
-    }
-
-    /// Enforce RFC 4120 section 2.7 before replay admission.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::TransitPolicyRejected`] for unchecked cross-realm paths
-    /// without explicit approval, or [`Error::InvalidString`] for invalid realms.
-    fn validate_transit(
-        &self,
-        service: &Principal,
-        ticket: &rasn_kerberos::EncTicketPart,
-    ) -> Result<(), Error> {
-        let client_realm = kerberos_string_to_string(&ticket.crealm)?;
-        if client_realm != service.realm
-            && !ticket.flags.0.get(12).is_some_and(|bit| *bit)
-            && !self.transit_policy.as_ref().is_some_and(|policy| {
-                policy.accepts(&client_realm, &service.realm, &ticket.transited)
-            })
-        {
-            return Err(Error::TransitPolicyRejected);
-        }
-        Ok(())
     }
 
     /// The validation time: the fixed time when one is set, otherwise the
