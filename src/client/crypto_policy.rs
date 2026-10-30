@@ -7,11 +7,21 @@ use super::{AsRepSession, Error, ticket_error};
 #[cfg(feature = "tokio")]
 use crate::config::LibDefaults;
 use crate::{
-    crypto::{CryptoPolicy, Use},
+    crypto::{CryptoPolicy, Use, selection},
     error::Policy,
     keytab::EncryptionKey,
     ticket,
 };
+
+/// Check explicit PA selections before preparing cryptographic request data.
+/// # Errors
+/// Returns permanent draft-9 rejection for outgoing PA types 14 or 15.
+pub(super) fn padata(data: &[rasn_kerberos::PaData]) -> Result<(), Error> {
+    for entry in data {
+        selection::preauth(entry.r#type)?;
+    }
+    Ok(())
+}
 
 /// Resolve public defaults without allowing invalid input to become unrestricted.
 /// # Errors

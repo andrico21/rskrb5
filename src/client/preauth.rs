@@ -127,6 +127,7 @@ pub(super) fn password_preauth_request(
     requested: AsReq,
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
+    super::crypto_policy::padata(&requested.padata)?;
     let policy = super::crypto_policy::request(&requested.crypto_policy, &requested.etypes)?;
     let error = challenge(kdc_error_bytes, &requested)?;
     let key_info = select_preauth_key_info(&error, &requested.etypes)?;
@@ -151,6 +152,7 @@ pub(super) fn keytab_preauth_request(
     requested: AsReq,
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
+    super::crypto_policy::padata(&requested.padata)?;
     let policy = super::crypto_policy::request(&requested.crypto_policy, &requested.etypes)?;
     let error = challenge(kdc_error_bytes, &requested)?;
     let (reply_key, kvno) = challenge_key(keytab, &client, &error, &requested.etypes)?;
