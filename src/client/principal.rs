@@ -1,6 +1,9 @@
 use super::{Error, KRB_NT_PRINCIPAL, KRB_NT_SRV_INST};
 
 /// Kerberos principal identity used by client exchanges.
+///
+/// Derived equality and hashing compare all fields, including `name_type`.
+/// Protocol identity matching compares realm and ordered components only.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub struct Principal {

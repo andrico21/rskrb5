@@ -106,8 +106,17 @@ mod review_cache_update;
 mod review_canonical;
 #[path = "client/review_cookie.rs"]
 mod review_cookie;
+#[cfg(feature = "tokio")]
+#[path = "client/review_diagnostics.rs"]
+mod review_diagnostics;
 #[path = "client/review_integrity.rs"]
 mod review_integrity;
+#[cfg(feature = "tokio")]
+#[path = "client/review_password_rotation.rs"]
+mod review_password_rotation;
+#[cfg(feature = "tokio")]
+#[path = "client/review_refresh.rs"]
+mod review_refresh;
 #[path = "client/review_s4u.rs"]
 mod review_s4u;
 #[path = "client/review_salt.rs"]
@@ -115,12 +124,6 @@ mod review_salt;
 #[cfg(feature = "tokio")]
 #[path = "client/review_validity.rs"]
 mod review_validity;
-#[cfg(feature = "tokio")]
-#[path = "client/review_refresh.rs"]
-mod review_refresh;
-#[cfg(feature = "tokio")]
-#[path = "client/review_diagnostics.rs"]
-mod review_diagnostics;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;
