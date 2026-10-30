@@ -39,6 +39,9 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
 };
+/// In-memory credential-cache replacement.
+#[cfg(feature = "tokio")]
+mod cache_update;
 /// Password-change request construction and verification.
 pub mod kpasswd;
 /// High-level SPNEGO/HTTP Negotiate client wrappers.
@@ -51,9 +54,6 @@ pub mod principal;
 #[cfg(feature = "tokio")]
 /// KDC endpoint discovery and asynchronous transport.
 pub mod transport;
-/// In-memory credential-cache replacement.
-#[cfg(feature = "tokio")]
-mod cache_update;
 #[cfg(feature = "tokio")]
 use self::kpasswd::{RequestOptions, build_kpasswd_request, validated_result};
 #[cfg(feature = "tokio")]
@@ -980,6 +980,18 @@ impl Tokio {
             drop(cache.upsert_credential(credential));
         }
         Ok(cache)
+    }
+    /// Replace this client's non-configuration entries in an existing ccache.
+    ///
+    /// X-CACHECONF metadata and entries for other clients are preserved. The
+    /// ccache default principal is set to this client's principal.
+    /// # Errors
+    ///
+    /// Returns [`Error::TimeOverflow`] when a session time does not fit the ccache
+    /// time format.
+    #[inline]
+    pub fn update_ccache(&self, cache: &mut ccache::CCache) -> Result<(), Error> {
+        cache_update::update(self, cache)
     }
     /// Save current TGT and service-ticket state to a fresh ccache file.
     /// # Errors
