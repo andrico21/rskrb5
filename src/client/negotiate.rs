@@ -103,6 +103,10 @@ impl Client {
 
     /// Create a cache-only Negotiate client from the default credential cache.
     ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME` before the configured fallback; invalid Unicode is an
+    /// error. Use [`Self::from_ccache_name`] for an explicit cache name.
+    ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
     ///
@@ -120,6 +124,10 @@ impl Client {
     }
 
     /// Create a cache-only Negotiate client by loading the cache named by `KRB5CCNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5CCNAME`; unset or non-Unicode values are errors. Use
+    /// [`Self::from_ccache_name`] for an explicit cache name.
     ///
     /// # Errors
     ///
