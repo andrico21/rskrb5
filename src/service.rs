@@ -72,17 +72,7 @@ pub struct HostAddress {
     pub address: Vec<u8>,
 }
 
-impl HostAddress {
-    #[must_use]
-    /// Construct an IPv4 host address.
-    #[inline]
-    pub fn ipv4(address: [u8; 4]) -> Self {
-        Self {
-            addr_type: 2,
-            address: address.to_vec(),
-        }
-    }
-}
+mod host_address;
 
 /// Successful AP-REQ validation result.
 #[derive(Clone, Debug, Eq, PartialEq)]
