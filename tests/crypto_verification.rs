@@ -9,15 +9,19 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
+    use std::fs;
 
     use rskrb5_ng::crypto::KerberosEtype;
 
     /// The assurance boundary uses the HMAC crate rather than raw tag comparison.
     #[test]
-    fn verification_requires_audited_hmac_api() {
+    fn verification_requires_audited_hmac_api() -> Result<(), Box<dyn Error>> {
         // Given production source at the extracted verification boundary.
-        let boundary = include_str!("../src/crypto/verification.rs");
-        let dispatch = include_str!("../src/crypto.rs");
+        let boundary = fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/crypto/verification.rs"
+        ))?;
+        let dispatch = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/crypto.rs"))?;
         // When auditing the verification API and its callers.
         // Then raw equality cannot replace the audited MAC verifier.
         assert!(
@@ -32,6 +36,7 @@ mod tests {
             !dispatch.contains("constant_time_eq"),
             "handwritten equality remains reachable"
         );
+        Ok(())
     }
 
     /// All families reject partial, extended and independently corrupted tags.
