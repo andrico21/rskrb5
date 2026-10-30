@@ -862,6 +862,7 @@ impl LibDefaults {
     /// # Ambient input
     /// Reads `HOME` for `k5login_directory`; unset/non-Unicode means empty.
     /// The keytab identity template never reads `UID`.
+    /// Use [`Self::new`] and set `k5login_directory` explicitly to avoid discovery.
     #[inline]
     #[must_use]
     pub fn from_env() -> Self {
