@@ -46,7 +46,7 @@ limits are recorded under FU-OPS-03.
 | FU-SVC-08 | nit | Built-in TransitPolicy represents one endpoint pair | open | - | - | - |
 | FU-SVC-09 | major | Larger configured skew conflicts with internally owned default cache | open | - | - | - |
 | FU-SVC-10 | major | Equal-realm tickets bypass nonempty transit-path policy | open | - | - | - |
-| FU-SVC-11 | major | Mandatory-wrapper PAC is recognized but not discovered/verified | open | - | - | - |
+| FU-SVC-11 | major | Mandatory-wrapper PAC is recognized but not discovered/verified | fixed | `mandatory_wrapper_returns_verified_pac`, `mandatory_wrapper_rejects_invalid_pac`, `mandatory_wrapper_exposes_bad_signature`; commit `pac: discover PACs inside mandatory wrappers (FU-SVC-11)` | PAC discovery now traverses type 8 with the existing depth and byte budgets, matching service authorization policy | task-9-rskrb5-ng-zero-open-items.log: pre-fix 0 passed / 3 failed (exit 101), post-fix 3 passed; service suite 70 passed versus 67 baseline, scoped strict clippy exit 0. No existing assertions changed. |
 | FU-SVC-12 | nit | Replay tests use out-of-line module instead of inline convention | open | - | - | - |
 | FU-CLI-01 | minor | Auto-renewal cancellation handle is not must_use | open | - | - | - |
 | FU-CLI-02 | major | Cached credentials bypass configured enctype policy | open | - | - | - |

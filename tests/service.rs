@@ -18,7 +18,10 @@ mod pac_ad_win2k;
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "service"]
 mod tests {
+    mod mandatory_pac;
+
     use alloc::sync::Arc;
     use core::{iter, time::Duration};
     use std::{

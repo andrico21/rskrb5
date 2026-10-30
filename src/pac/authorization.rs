@@ -21,7 +21,7 @@ pub(super) fn find(
             .ok_or(Error::AuthorizationDataByteLimit)?;
         match entry.r#type {
             AD_WIN2K_PAC => return Ok(Some(Pac::parse_and_process(entry.data.as_ref())?)),
-            AD_IF_RELEVANT => {
+            AD_IF_RELEVANT | 8_i32 => {
                 (depth < 8).ok_or(Error::AuthorizationDataDepthLimit)?;
                 let nested = der::decode::<AuthorizationData>(entry.data.as_ref())
                     .map_err(|error| Error::DerDecode(error.to_string()))?;
