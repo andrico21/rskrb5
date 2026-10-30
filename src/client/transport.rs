@@ -35,6 +35,8 @@ mod password_discovery;
 mod password_dns;
 /// Password result consumption after a transport exchange.
 mod password_result;
+/// Configured realm protocol preference.
+mod realm_auto;
 /// Ordered SRV target address resolution.
 mod srv_targets;
 /// Bounded UDP socket primitives.
@@ -2065,30 +2067,7 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let udp_first = auto_uses_udp_first(config, request.len());
-        let (first, second) = if udp_first {
-            (KdcProtocol::Udp, KdcProtocol::Tcp)
-        } else {
-            (KdcProtocol::Tcp, KdcProtocol::Udp)
-        };
-
-        match self
-            .send_to_realm_explicit(config, first, realm, request)
-            .await
-        {
-            Ok(response)
-                if first == KdcProtocol::Udp
-                    && kdc_error_code(&response) == Some(KRB_ERR_RESPONSE_TOO_BIG) =>
-            {
-                self.send_to_realm_explicit(config, second, realm, request)
-                    .await
-            }
-            Ok(response) => Ok(response),
-            Err(_) => {
-                self.send_to_realm_explicit(config, second, realm, request)
-                    .await
-            }
-        }
+        realm_auto::send(self, config, realm, request).await
     }
 
     /// Send to a realm's kpasswd servers over the protocol
