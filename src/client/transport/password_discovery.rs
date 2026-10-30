@@ -1,6 +1,7 @@
 //! Configured password endpoint selection.
 
 use super::{Config, Error, KdcEndpoint, KdcProtocol, Tokio};
+use crate::error::Config as ConfigError;
 
 /// Prefer configured password servers, using DNS only when enabled.
 ///
@@ -31,9 +32,49 @@ pub(super) async fn discover(
             .await;
     }
 
-    config
-        .configured_kpasswd_servers(realm)?
-        .iter()
-        .map(|value| KdcEndpoint::configured_with_default_port(protocol, value, 464))
-        .collect()
+    match config.realm(realm) {
+        Some(_) => Err(ConfigError::NoKpasswdServer(realm.to_owned()).into()),
+        None => Err(ConfigError::NoRealm(realm.to_owned()).into()),
+    }
+}
+
+/// Configuration-only discovery boundaries.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use super::{Config, Error, KdcProtocol, Tokio};
+    use crate::error::Config as ConfigError;
+    use core::error::Error as StdError;
+
+    /// Missing realms and emptied lists preserve exact configuration errors.
+    #[tokio::test]
+    async fn configured_password_errors_are_precise() -> Result<(), Box<dyn StdError>> {
+        // Given DNS-disabled configuration with no realm.
+        let mut config = Config::parse("[libdefaults]\ndns_lookup_kdc = false\n")?;
+        let transport = Tokio::new();
+        // When discovery runs, then absence is not silently replaced by a fallback.
+        assert!(
+            matches!(transport.discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp).await,
+            Err(Error::Config(ConfigError::NoRealm(realm))) if realm == "TEST.GOKRB5")
+        );
+        config = Config::parse(
+            "[libdefaults]\ndns_lookup_kdc = false\n[realms]\nTEST.GOKRB5 = {\nkpasswd_server = 127.0.0.1:1464\n}\n",
+        )?;
+        config
+            .realms
+            .first_mut()
+            .ok_or("fixture realm")?
+            .kpasswd_server
+            .clear();
+        assert!(
+            matches!(transport.discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp).await,
+            Err(Error::Config(ConfigError::NoKpasswdServer(realm))) if realm == "TEST.GOKRB5")
+        );
+        Ok(())
+    }
 }
