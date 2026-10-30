@@ -7,27 +7,20 @@ use std::{
     process::{Command, Stdio},
 };
 
-#[cfg(feature = "spnego")]
-use super::tests::http_service_reachable;
-use super::{
-    endpoints::{
-        kdc_addr, kpasswd_addr, latest_kdc_addr, old_kdc_addr, resdom_kdc_addr, short_kdc_addr,
-    },
-    tests::tcp_reachable,
-};
+use super::{endpoints::kdc_addr, tests::tcp_reachable};
 
 /// Returns whether the privileged tests run: integration on, `TESTPRIVILEGED=1` and `kinit` found.
 ///
 /// Reports a skip on stderr.
 pub(super) fn privileged_integration_enabled() -> Result<bool, Box<dyn Error>> {
-    if !integration_enabled()? {
-        return Ok(false);
-    }
     if env::var("TESTPRIVILEGED").as_deref() != Ok("1") {
         writeln!(
             io::stderr(),
             "skipping privileged Docker KDC integration test; set TESTPRIVILEGED=1 to enable"
         )?;
+        return Ok(false);
+    }
+    if !integration_enabled()? {
         return Ok(false);
     }
     if !required_command_available("kinit")? {
@@ -40,11 +33,18 @@ pub(super) fn privileged_integration_enabled() -> Result<bool, Box<dyn Error>> {
     Ok(true)
 }
 
-/// Returns whether the Docker tests run: `INTEGRATION=1` and every fixture reachable.
+/// Check the primary KDC for tests that need only that fixture.
+pub(super) fn integration_enabled() -> Result<bool, Box<dyn Error>> {
+    integration_enabled_for(&[(kdc_addr(), "primary KDC")])
+}
+
+/// Check only the fixtures used by the selected test.
 ///
 /// Reports an optional skip on stderr. `INTEGRATION_REQUIRED=1` instead fails
 /// when an explicitly requested fixture is unavailable.
-pub(super) fn integration_enabled() -> Result<bool, Box<dyn Error>> {
+pub(super) fn integration_enabled_for(
+    endpoints: &[(String, &str)],
+) -> Result<bool, Box<dyn Error>> {
     if env::var("INTEGRATION").as_deref() != Ok("1") {
         writeln!(
             io::stderr(),
@@ -52,34 +52,14 @@ pub(super) fn integration_enabled() -> Result<bool, Box<dyn Error>> {
         )?;
         return Ok(false);
     }
-    let endpoints = [
-        (kdc_addr(), "primary KDC"),
-        (old_kdc_addr(), "legacy KDC"),
-        (latest_kdc_addr(), "AES-SHA2 KDC"),
-        (resdom_kdc_addr(), "resource KDC"),
-        (short_kdc_addr(), "short-ticket KDC"),
-    ];
     for (endpoint, label) in endpoints {
-        if !tcp_reachable(&endpoint, label)? {
+        if !tcp_reachable(endpoint, label)? {
             writeln!(
                 io::stderr(),
                 "skipping Docker KDC integration test; cannot reach {label} endpoint at {endpoint}"
             )?;
             return unavailable(&format!("cannot reach {label} endpoint at {endpoint}"));
         }
-    }
-    if env::var("TEST_KPASSWD").as_deref() == Ok("1") && !tcp_reachable(&kpasswd_addr(), "kpasswd")?
-    {
-        writeln!(
-            io::stderr(),
-            "skipping Docker KDC integration test; cannot reach kpasswd endpoint at {}",
-            kpasswd_addr()
-        )?;
-        return unavailable("cannot reach requested kpasswd endpoint");
-    }
-    #[cfg(feature = "spnego")]
-    if !http_service_reachable()? {
-        return unavailable("cannot reach HTTP fixture");
     }
     Ok(true)
 }
@@ -111,7 +91,7 @@ fn command_available(program: &str) -> bool {
 }
 
 /// Report an unavailable requested prerequisite without hiding required runs.
-fn unavailable(reason: &str) -> Result<bool, Box<dyn Error>> {
+pub(super) fn unavailable(reason: &str) -> Result<bool, Box<dyn Error>> {
     if env::var("INTEGRATION_REQUIRED").as_deref() == Ok("1") {
         Err(io::Error::other(format!(
             "required integration fixture unavailable: {reason}"

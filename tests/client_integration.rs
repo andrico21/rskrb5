@@ -261,7 +261,7 @@ mod tests {
             kdc_addr, kpasswd_addr, latest_kdc_addr, old_kdc_addr, resdom_kdc_addr, short_kdc_addr,
         },
         preflight::{
-            integration_enabled, privileged_integration_enabled,
+            integration_enabled, integration_enabled_for, privileged_integration_enabled,
             privileged_kvno_integration_enabled,
         },
         *,
@@ -634,7 +634,7 @@ mod tests {
     /// Pins that a TCP login fails when the only configured KDC is unreachable.
     #[test]
     fn docker_mit_kdc_tcp_login_fails_for_unreachable_kdc() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -780,14 +780,14 @@ mod tests {
     /// Pins that the Tokio client changes the password through kpasswd and back (`TEST_KPASSWD=1`).
     #[test]
     fn docker_mit_kdc_tokio_client_change_password() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
-            return Ok(());
-        }
         if env::var("TEST_KPASSWD").as_deref() != Ok("1") {
             writeln!(
                 io::stderr(),
                 "skipping Docker KDC kpasswd test; set TEST_KPASSWD=1 to enable"
             )?;
+            return Ok(());
+        }
+        if !integration_enabled_for(&[(kdc_addr(), "primary KDC"), (kpasswd_addr(), "kpasswd")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1173,7 +1173,7 @@ mod tests {
     #[test]
     fn docker_mit_old_kdc_password_and_keytab_as_tgs_through_tcp_and_udp()
     -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(old_kdc_addr(), "legacy KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1191,7 +1191,7 @@ mod tests {
     /// Pins that the latest KDC serves password AS/TGS exchanges with both AES-SHA2 enctypes.
     #[test]
     fn docker_mit_latest_kdc_aes_sha2_as_tgs_through_tcp_and_udp() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(latest_kdc_addr(), "AES-SHA2 KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1280,7 +1280,7 @@ mod tests {
     #[test]
     fn docker_mit_latest_kdc_keytab_aes_sha2_as_tgs_through_tcp_and_udp()
     -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(latest_kdc_addr(), "AES-SHA2 KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1409,7 +1409,7 @@ mod tests {
     /// Pins that a renewable TGT renews over UDP and TCP and keeps its renew-till.
     #[test]
     fn docker_mit_kdc_tgt_renewal_through_tcp_and_udp() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(short_kdc_addr(), "short-ticket KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1456,7 +1456,7 @@ mod tests {
     /// Pins that the Tokio client renews its TGT and keeps the renew-till.
     #[test]
     fn docker_mit_kdc_tokio_client_tgt_renewal() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(short_kdc_addr(), "short-ticket KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1498,7 +1498,10 @@ mod tests {
     /// Pins that a TGS request for a resource-domain service follows the cross-realm referral.
     #[test]
     fn docker_mit_kdc_tgs_referral_to_resource_domain() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[
+            (kdc_addr(), "primary KDC"),
+            (resdom_kdc_addr(), "resource KDC"),
+        ])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1556,7 +1559,10 @@ mod tests {
     /// Pins that the Tokio client caches the referral TGT and the resource-domain service ticket.
     #[test]
     fn docker_mit_kdc_tokio_client_caches_referral_tgt() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[
+            (kdc_addr(), "primary KDC"),
+            (resdom_kdc_addr(), "resource KDC"),
+        ])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1738,6 +1744,9 @@ mod tests {
         if !integration_enabled()? {
             return Ok(());
         }
+        if !http_service_reachable()? {
+            return Ok(());
+        }
         let _guard = INTEGRATION_LOCK
             .lock()
             .map_err(|cause| format!("integration test lock: {cause}"))?;
@@ -1769,6 +1778,9 @@ mod tests {
     #[test]
     fn docker_mit_kdc_raw_krb5_header_authenticates_to_docker_http() -> Result<(), Box<dyn Error>> {
         if !integration_enabled()? {
+            return Ok(());
+        }
+        if !http_service_reachable()? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -2486,7 +2498,7 @@ mod tests {
                     io::stderr(),
                     "skipping Docker KDC integration test; invalid TEST_HTTP_URL/TEST_HTTP_ADDR: {error}"
                 )?;
-                return Ok(false);
+                return preflight::unavailable("invalid HTTP fixture endpoint");
             }
         };
 
@@ -2498,7 +2510,7 @@ mod tests {
             io::stderr(),
             "skipping Docker KDC integration test; cannot reach Docker HTTP fixture at {target}"
         )?;
-        Ok(false)
+        preflight::unavailable("HTTP fixture unreachable")
     }
 
     /// Renders the `krb5.conf` handed to the MIT tools.

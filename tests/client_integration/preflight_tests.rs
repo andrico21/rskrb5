@@ -84,3 +84,41 @@ fn required_missing_executable_fails() -> Result<(), Box<dyn Error>> {
     );
     Ok(())
 }
+
+/// Primary-only runs do not require unrelated KDC or HTTP fixtures.
+#[test]
+fn primary_fixture_does_not_require_unrelated_services() -> Result<(), Box<dyn Error>> {
+    // Given an open primary KDC and closed unrelated fixture endpoints.
+    if env::var_os("RSKRB5_T4_SCOPE_CHILD").is_some() {
+        assert!(integration_enabled()?, "primary fixture must be sufficient");
+        return Ok(());
+    }
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let output = Command::new(env::current_exe()?)
+        .args([
+            "preflight::tests::primary_fixture_does_not_require_unrelated_services",
+            "--exact",
+            "--nocapture",
+        ])
+        .env("RSKRB5_T4_SCOPE_CHILD", "1")
+        .env("INTEGRATION", "1")
+        .env("INTEGRATION_REQUIRED", "1")
+        .env("TEST_KDC_ADDR", listener.local_addr()?.to_string())
+        .env("TEST_OLD_KDC_ADDR", "127.0.0.1:9")
+        .env("TEST_LATEST_KDC_ADDR", "127.0.0.1:9")
+        .env("TEST_RESDOM_KDC_ADDR", "127.0.0.1:9")
+        .env("TEST_SHORT_KDC_ADDR", "127.0.0.1:9")
+        .env("TEST_HTTP_ADDR", "127.0.0.1:9")
+        .output()?;
+    // When primary-only preflight runs, then unrelated outages do not suppress it.
+    assert!(
+        output.status.success(),
+        "scoped child failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+        "child must execute"
+    );
+    Ok(())
+}
