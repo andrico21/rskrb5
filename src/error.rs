@@ -18,6 +18,7 @@ use crate::client::transport::KdcProtocol;
 #[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 include!("error/any.rs");
+include!("error/policy.rs");
 #[cfg(feature = "messages")]
 /// AP-REP helper error.
 #[derive(Debug, thiserror::Error)]
@@ -124,6 +125,9 @@ pub enum ApReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Ccache {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// UID tokens require Linux procfs process identities.
     #[error("credential path process identity is unavailable (UID tokens require Linux procfs)")]
     IdentityUnavailable,
@@ -558,6 +562,9 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// A named top-level configuration file could not be resolved or read.
     #[error("configuration file {path} could not be read: {source}")]
     File {
@@ -702,6 +709,9 @@ pub enum Config {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Crypto {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// AES key material length did not match the selected encryption type.
     #[error("invalid key length: expected {expected} bytes, got {actual}")]
     InvalidKeyLength {
@@ -834,6 +844,9 @@ pub enum Http {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Kadmin {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// The frame is too short to contain the kpasswd header.
     #[error("kadmin reply frame is too short: {actual} bytes")]
     FrameTooShort {
@@ -1262,6 +1275,9 @@ pub enum KrbCred {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum KrbErrorCodec {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]
     Decode {
@@ -1419,6 +1435,9 @@ pub enum KrbSafe {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Messages {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]
     Decode {

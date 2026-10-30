@@ -2,6 +2,9 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Any {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// Hex fixture data failed to decode.
     #[cfg(feature = "evaluation")]
     #[error("fixture hex decode failed: {0}")]

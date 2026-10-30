@@ -154,6 +154,7 @@ where
 /// Map a shared message-layer error to the KRB-ERROR module error.
 fn message_error(error: MessagesError) -> Error {
     match error {
+        MessagesError::Policy(policy) => policy.into(),
         MessagesError::Decode { target, message } => Error::Decode { target, message },
         MessagesError::Encode { target, message } => Error::Encode { target, message },
         MessagesError::InvalidString(source) => Error::InvalidString(source.to_string()),
