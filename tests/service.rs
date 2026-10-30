@@ -18,8 +18,7 @@ mod pac_ad_win2k;
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-#[path = "service"]
-mod tests {
+mod service {
     mod client_address;
     mod configured_skew;
     mod mandatory_pac;
@@ -27,8 +26,6 @@ mod tests {
     mod pac_fixture;
     mod service_identity;
     mod transit;
-
-    use pac_fixture::{ap_req_with_pac, ap_req_with_pac_bytes};
 
     use alloc::sync::Arc;
     use core::{iter, time::Duration};
@@ -44,6 +41,7 @@ mod tests {
 
     use chrono::{DateTime, FixedOffset, Utc};
     use hex::FromHexError;
+    use pac_fixture::{ap_req_with_pac, ap_req_with_pac_bytes};
     use pretty_assertions::assert_eq;
     use rasn::der;
     use rskrb5_ng::{
@@ -212,7 +210,7 @@ mod tests {
     /// Pins that `Validator::from_keytab_env` validates with the `KRB5_KTNAME` keytab.
     #[test]
     fn validates_ap_req_from_keytab_env() -> Result<(), TestError> {
-        const TEST_PATH: &str = "tests::validates_ap_req_from_keytab_env";
+        const TEST_PATH: &str = "service::validates_ap_req_from_keytab_env";
         if !env::in_child(TEST_PATH) {
             let path = temp_service_keytab_file("validate-env")?;
             let name = format!("FILE:{}", path.display());
@@ -270,7 +268,7 @@ mod tests {
     /// Pins that the validator falls back to the config default keytab without `KRB5_KTNAME`.
     #[test]
     fn validates_ap_req_from_default_keytab_when_env_is_absent() -> Result<(), TestError> {
-        const TEST_PATH: &str = "tests::validates_ap_req_from_default_keytab_when_env_is_absent";
+        const TEST_PATH: &str = "service::validates_ap_req_from_default_keytab_when_env_is_absent";
         if !env::in_child(TEST_PATH) {
             env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
             return Ok(());
@@ -300,7 +298,7 @@ mod tests {
     /// Pins that the validator prefers `KRB5_KTNAME` over the config default keytab.
     #[test]
     fn validates_ap_req_prefers_env_keytab_over_config_default() -> Result<(), TestError> {
-        const TEST_PATH: &str = "tests::validates_ap_req_prefers_env_keytab_over_config_default";
+        const TEST_PATH: &str = "service::validates_ap_req_prefers_env_keytab_over_config_default";
         if !env::in_child(TEST_PATH) {
             let path = temp_service_keytab_file("validate-env-precedence")?;
             let env_name = format!("FILE:{}", path.display());
@@ -1097,7 +1095,7 @@ mod tests {
     /// Pins that the config `clockskew` bounds authenticator freshness for both default-keytab constructors.
     #[test]
     fn config_clockskew_bounds_authenticator_freshness() -> Result<(), TestError> {
-        const TEST_PATH: &str = "tests::config_clockskew_bounds_authenticator_freshness";
+        const TEST_PATH: &str = "service::config_clockskew_bounds_authenticator_freshness";
         if !env::in_child(TEST_PATH) {
             env::run_in_child(TEST_PATH, &[("KRB5_KTNAME", None)]);
             return Ok(());
