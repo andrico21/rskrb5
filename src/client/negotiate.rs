@@ -1,8 +1,13 @@
 use alloc::fmt;
 
-use tokio::runtime::{Builder, Runtime};
+/// Synchronous constructors and operations for the blocking wrapper.
+mod blocking;
+/// Guarded execution and nonblocking destruction of the owned runtime.
+mod runtime;
 
-use super::{Error, KdcProtocol, Principal, RequestOptions, Tokio};
+use runtime::BlockingRuntime;
+
+use super::{Error, KdcProtocol, Password, Principal, RequestOptions, Tokio};
 use crate::{
     config::Config,
     kadmin::ChangePasswordResult,
@@ -290,14 +295,11 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password<P>(
+    pub async fn change_password(
         &mut self,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password(new_password, sender_address)
             .await
@@ -321,15 +323,12 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for<P>(
+    pub async fn change_password_for(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_for(target, new_password, sender_address)
             .await
@@ -351,14 +350,11 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_with_options<P>(
+    pub async fn change_password_with_options(
         &mut self,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_with_options(new_password, options)
             .await
@@ -381,15 +377,12 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for_with_options<P>(
+    pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_for_with_options(target, new_password, options)
             .await
@@ -401,9 +394,19 @@ impl Client {
 /// Async applications should use [`Client`] directly. This type owns a
 /// small current-thread Tokio runtime so callers can generate headers without
 /// managing a runtime.
+///
+/// Runtime construction and blocking operations return
+/// [`Error::BlockingRuntimeUnavailable`] whenever a Tokio runtime is entered
+/// on the calling thread, including `spawn_blocking` and an explicit enter guard.
+/// Use [`Client`] in async applications. Borrowing the wrapped client is unrestricted.
+///
+/// Dropping this wrapper is safe inside Tokio: it shuts down its runtime without
+/// waiting for blocking jobs. Pending async tasks are cancelled; already-running
+/// blocking jobs (including system DNS lookups) retain their resources until they
+/// return. The owned runtime is private and is never handed out to callers.
 pub struct BlockingClient {
     /// Current-thread runtime that drives the async client.
-    runtime: Runtime,
+    runtime: BlockingRuntime,
     /// Async client whose futures `runtime` blocks on.
     client: Client,
 }
@@ -411,312 +414,9 @@ pub struct BlockingClient {
 impl fmt::Debug for BlockingClient {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { runtime: _, client } = self;
         f.debug_struct("BlockingNegotiateClient")
-            .field("client", &self.client)
+            .field("client", client)
             .finish_non_exhaustive()
     }
-}
-
-impl BlockingClient {
-    /// Wrap an existing Negotiate client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an I/O error when the blocking runtime cannot be created.
-    #[inline]
-    pub fn new(client: Client) -> Result<Self, Error> {
-        Ok(Self {
-            runtime: blocking_runtime()?,
-            client,
-        })
-    }
-
-    /// Create a password-backed blocking Negotiate client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an I/O error when the blocking runtime cannot be created.
-    #[inline]
-    pub fn with_password<P>(config: Config, client: Principal, password: P) -> Result<Self, Error>
-    where
-        P: Into<Vec<u8>>,
-    {
-        Self::new(Client::with_password(config, client, password))
-    }
-
-    /// Create a keytab-backed blocking Negotiate client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an I/O error when the blocking runtime cannot be created.
-    #[inline]
-    pub fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Result<Self, Error> {
-        Self::new(Client::with_keytab(config, client, keytab))
-    }
-
-    /// Create a keytab-backed blocking Negotiate client by loading a file-backed keytab name.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the keytab name selects an unsupported keytab store
-    /// or the keytab file cannot be read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
-    #[inline]
-    pub fn with_keytab_name<P>(
-        config: Config,
-        client: Principal,
-        keytab_name: P,
-    ) -> Result<Self, Error>
-    where
-        P: AsRef<str>,
-    {
-        Self::new(Client::with_keytab_name(config, client, keytab_name)?)
-    }
-
-    /// Create a cache-only blocking Negotiate client by loading a ccache name.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the cache name selects an unsupported credential
-    /// cache store or the cache cannot be read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
-    #[inline]
-    pub fn from_ccache_name<P>(config: Config, cache_name: P) -> Result<Self, Error>
-    where
-        P: AsRef<str>,
-    {
-        Self::new(Client::from_ccache_name(config, cache_name)?)
-    }
-
-    /// Create a cache-only blocking Negotiate client from the default credential cache.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when `KRB5CCNAME` is set but not valid Unicode, when no
-    /// default cache name is configured, or when the selected cache cannot be
-    /// read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
-    #[inline]
-    pub fn from_default_ccache(config: Config) -> Result<Self, Error> {
-        Self::new(Client::from_default_ccache(config)?)
-    }
-
-    /// Create a cache-only blocking Negotiate client by loading the cache named by `KRB5CCNAME`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when `KRB5CCNAME` is unset or not valid Unicode, or when
-    /// the cache it names cannot be read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
-    #[inline]
-    pub fn from_ccache_env(config: Config) -> Result<Self, Error> {
-        Self::new(Client::from_ccache_env(config)?)
-    }
-
-    /// Borrow the wrapped async client.
-    #[inline]
-    pub const fn client(&self) -> &Client {
-        &self.client
-    }
-
-    /// Mutably borrow the wrapped async client.
-    #[inline]
-    pub const fn client_mut(&mut self) -> &mut Client {
-        &mut self.client
-    }
-
-    /// Build an HTTP `Authorization` header for a Kerberos service principal.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when a TGT or service ticket for `service` cannot be
-    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
-    /// cannot be built.
-    #[inline]
-    pub fn authorization_header(&mut self, service: Principal) -> Result<String, Error> {
-        Ok(self.authorization_context(service)?.header)
-    }
-
-    /// Build an HTTP `Authorization` header for a host-based service.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
-    /// empty, and otherwise the errors of obtaining a service ticket for the
-    /// host-based principal or building its token.
-    #[inline]
-    pub fn authorization_header_for_host<P, Q>(
-        &mut self,
-        service: P,
-        host: Q,
-    ) -> Result<String, Error>
-    where
-        P: AsRef<str>,
-        Q: AsRef<str>,
-    {
-        Ok(self.authorization_context_for_host(service, host)?.header)
-    }
-
-    /// Build a SPNEGO initiator context for a Kerberos service principal.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when a TGT or service ticket for `service` cannot be
-    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
-    /// cannot be built.
-    #[inline]
-    pub fn authorization_context(&mut self, service: Principal) -> Result<InitiatorContext, Error> {
-        self.runtime
-            .block_on(self.client.authorization_context(service))
-    }
-
-    /// Build a SPNEGO initiator context with explicit initiator options.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when a TGT or service ticket for `service` cannot be
-    /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
-    /// cannot be built.
-    #[inline]
-    pub fn authorization_context_with_options(
-        &mut self,
-        service: Principal,
-        options: InitiatorContextOptions,
-    ) -> Result<InitiatorContext, Error> {
-        self.runtime.block_on(
-            self.client
-                .authorization_context_with_options(service, options),
-        )
-    }
-
-    /// Build a SPNEGO initiator context for a host-based service.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
-    /// empty, and otherwise the errors of obtaining a service ticket for the
-    /// host-based principal or building its token.
-    #[inline]
-    pub fn authorization_context_for_host<P, Q>(
-        &mut self,
-        service: P,
-        host: Q,
-    ) -> Result<InitiatorContext, Error>
-    where
-        P: AsRef<str>,
-        Q: AsRef<str>,
-    {
-        self.runtime
-            .block_on(self.client.authorization_context_for_host(service, host))
-    }
-
-    /// Change this client's password using generated timestamp and sequence metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when reading the clock or the random source fails, when
-    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
-    /// cannot be built or exchanged with a kpasswd server, when the reply fails
-    /// verification or decryption, or when the server reports a non-success
-    /// result code.
-    #[inline]
-    pub fn change_password<P>(
-        &mut self,
-        new_password: P,
-        sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
-        self.runtime
-            .block_on(self.client.change_password(new_password, sender_address))
-    }
-
-    /// Change the given target principal's password using generated timestamp and
-    /// sequence metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when reading the clock or the random source fails, when
-    /// the `kadmin/changepw` service ticket cannot be obtained, when the request
-    /// cannot be built or exchanged with a kpasswd server, when the reply fails
-    /// verification or decryption, or when the server reports a non-success
-    /// result code.
-    #[inline]
-    pub fn change_password_for<P>(
-        &mut self,
-        target: Principal,
-        new_password: P,
-        sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
-        self.runtime.block_on(
-            self.client
-                .change_password_for(target, new_password, sender_address),
-        )
-    }
-
-    /// Change this client's password using explicit kpasswd request metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the `kadmin/changepw` service ticket cannot be
-    /// obtained, when the request cannot be built or exchanged with a kpasswd
-    /// server, when the reply fails verification or decryption, or when the
-    /// server reports a non-success result code.
-    #[inline]
-    pub fn change_password_with_options<P>(
-        &mut self,
-        new_password: P,
-        options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
-        self.runtime.block_on(
-            self.client
-                .change_password_with_options(new_password, options),
-        )
-    }
-
-    /// Change the given target principal's password using explicit kpasswd
-    /// request metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the `kadmin/changepw` service ticket cannot be
-    /// obtained, when the request cannot be built or exchanged with a kpasswd
-    /// server, when the reply fails verification or decryption, or when the
-    /// server reports a non-success result code.
-    #[inline]
-    pub fn change_password_for_with_options<P>(
-        &mut self,
-        target: Principal,
-        new_password: P,
-        options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
-        self.runtime
-            .block_on(
-                self.client
-                    .change_password_for_with_options(target, new_password, options),
-            )
-    }
-}
-
-/// Build the current-thread runtime that drives a [`BlockingClient`].
-///
-/// # Errors
-///
-/// Returns an I/O error when the runtime's I/O or timer driver cannot be
-/// created.
-fn blocking_runtime() -> Result<Runtime, Error> {
-    Ok(Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()?)
 }

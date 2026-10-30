@@ -7,7 +7,7 @@ use rasn::types::Integer;
 use rskrb5_ng::{
     ap_rep,
     client::{
-        TgsRepSession,
+        Password, TgsRepSession,
         kpasswd::{BuiltKpasswdRequest, RequestOptions, build_kpasswd_request_with_confounders},
         principal::Principal,
     },
@@ -53,7 +53,7 @@ pub(super) fn request() -> Result<(BuiltKpasswdRequest, RequestOptions), TestErr
         .with_recipient_address(ipv4_host_address([127, 0, 0, 2]));
     let built = build_kpasswd_request_with_confounders(
         &session,
-        &ChangePasswdData::new(b"reflection-password-canary"),
+        &ChangePasswdData::new(Password::copy_from_str("reflection-password-canary")),
         EncryptionKey::new(18, vec![0x22; 32]),
         &options,
         &[0x33; 16],

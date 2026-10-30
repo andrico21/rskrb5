@@ -24,7 +24,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::{der, types::Integer};
 #[cfg(feature = "tokio")]
-use tokio::{sync::Mutex, task::JoinHandle, time::sleep};
+use tokio::{sync::Mutex, time::sleep};
 #[cfg(feature = "tokio")]
 use zeroize::Zeroizing;
 
@@ -39,6 +39,39 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
 };
+/// Identity-bound cache insertion.
+#[cfg(feature = "tokio")]
+mod cache_insert;
+/// In-memory credential-cache replacement.
+#[cfg(feature = "tokio")]
+mod cache_update;
+/// Owning password input and erasure.
+pub mod password;
+/// Owning password input, erased on drop; see its explicit constructors.
+pub type Password = password::Secret;
+/// Password credential rotation eligibility.
+#[cfg(feature = "tokio")]
+mod password_rotation;
+/// TGT refresh scheduling.
+#[cfg(feature = "tokio")]
+mod refresh_schedule;
+/// Cached-session renewal eligibility.
+#[cfg(feature = "tokio")]
+mod renewal_eligibility;
+#[cfg(feature = "tokio")]
+use renewal_eligibility::session_renewable_at;
+/// Preauthentication challenge request construction.
+mod preauth;
+/// Authenticated KDC reply time and flag constraints.
+mod reply_constraints;
+use preauth::{keytab_preauth_request, password_preauth_request};
+/// TGT session metadata serialization.
+#[cfg(all(feature = "tokio", feature = "serde"))]
+mod session_json;
+/// Shared Kerberos whole-second conversion boundary.
+pub(crate) mod time;
+#[cfg(feature = "tokio")]
+use refresh_schedule::{session_refresh_delay_at, session_refresh_due_at};
 /// Password-change request construction and verification.
 pub mod kpasswd;
 /// High-level SPNEGO/HTTP Negotiate client wrappers.
@@ -79,11 +112,10 @@ const KRB5CCNAME_ENV: &str = "KRB5CCNAME";
 /// Environment variable naming the default client keytab.
 #[cfg(feature = "tokio")]
 const KRB5_CLIENT_KTNAME_ENV: &str = "KRB5_CLIENT_KTNAME";
-/// A session is due for refresh once less than 1/6 of its lifetime remains.
-#[cfg(feature = "tokio")]
-const SESSION_REFRESH_DIVISOR: u32 = 6;
 /// PA-ENC-TIMESTAMP preauthentication type.
 pub const PA_ENC_TIMESTAMP: i32 = 2;
+/// PA-PW-SALT password salt hint (RFC 4120).
+const PA_PW_SALT: i32 = 3;
 /// PA-TGS-REQ preauthentication type.
 pub const PA_TGS_REQ: i32 = 1;
 /// PA-ETYPE-INFO preauthentication hint type.
@@ -134,6 +166,8 @@ pub const PAC_OPTION_FORWARD_TO_FULL_DC: u32 = 0x2000_0000;
 pub const PAC_OPTION_RESOURCE_BASED_CONSTRAINED_DELEGATION: u32 = 0x1000_0000;
 /// Ticket flag bit indicating the AS-REP carries encrypted padata.
 pub const TICKET_FLAG_ENC_PA_REP: u32 = 0x0001_0000;
+/// INVALID ticket flag in RFC 4120 bit-string order.
+const TICKET_FLAG_INVALID: u32 = 0x0100_0000;
 /// Raw KDC option mask for `renewable` in RFC 4120 bit-string order.
 pub const KDC_OPTION_RENEWABLE: u32 = 0x0080_0000;
 /// Raw KDC option mask for `canonicalize` in RFC 4120 bit-string order.
@@ -146,6 +180,8 @@ pub const KDC_OPTION_RENEW: u32 = 0x0000_0002;
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltAsReq {
+    /// Request clock snapshot and acceptable reply start-time skew.
+    pub reply_clock: (SystemTime, Duration),
     /// ASN.1 AS-REQ message.
     pub message: rasn_kerberos::AsReq,
     /// DER-encoded AS-REQ bytes suitable for KDC transport.
@@ -161,7 +197,7 @@ impl BuiltAsReq {
     /// Creates a `BuiltAsReq` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         message: rasn_kerberos::AsReq,
         der: Vec<u8>,
         client: Principal,
@@ -169,6 +205,7 @@ impl BuiltAsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
             der,
             client,
@@ -181,6 +218,8 @@ impl BuiltAsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
+    /// Request clock snapshot and acceptable reply start-time skew.
+    pub reply_clock: (SystemTime, Duration),
     /// Frontend keys for validating S4U tickets; never encoded on the wire.
     pub delegation_keytab: Option<Keytab>,
     /// ASN.1 TGS-REQ message.
@@ -203,7 +242,7 @@ impl BuiltTgsReq {
     /// Creates a `BuiltTgsReq` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         message: rasn_kerberos::TgsReq,
         der: Vec<u8>,
         client: Principal,
@@ -212,6 +251,7 @@ impl BuiltTgsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
             der,
             client,
@@ -244,13 +284,15 @@ pub struct TgsFastRequestParts {
 impl fmt::Debug for TgsFastRequestParts {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            request,
+            ap_req_der,
+            authenticator_subkey,
+        } = self;
         f.debug_struct("TgsFastRequestParts")
-            .field("request", &self.request)
-            .field("ap_req_der_len", &self.ap_req_der.len())
-            .field(
-                "authenticator_subkey_etype",
-                &self.authenticator_subkey.etype,
-            )
+            .field("request", request)
+            .field("ap_req_der_len", &ap_req_der.len())
+            .field("authenticator_subkey_etype", &authenticator_subkey.etype)
             .finish_non_exhaustive()
     }
 }
@@ -656,36 +698,12 @@ impl PrunedSessions {
         !self.primary_tgt && self.tgt_sessions == 0 && self.service_tickets == 0
     }
 }
+#[cfg(feature = "tokio")]
+/// Background renewal task ownership.
+pub mod auto_renewal;
 /// Handle for a background Tokio TGT auto-renewal task.
 #[cfg(feature = "tokio")]
-#[derive(Debug)]
-pub struct TokioClientAutoRenewal {
-    /// The spawned renewal task.
-    handle: JoinHandle<()>,
-}
-#[cfg(feature = "tokio")]
-impl TokioClientAutoRenewal {
-    /// Request cancellation of the background renewal task.
-    #[inline]
-    pub fn abort(&self) {
-        self.handle.abort();
-    }
-    #[must_use]
-    /// Whether the background task has finished.
-    #[inline]
-    pub fn is_finished(&self) -> bool {
-        self.handle.is_finished()
-    }
-}
-// Drop audit: `JoinHandle::abort` only signals the task, never blocks or panics;
-// the task stops at its next await point and owns only an `Arc` of the client.
-#[cfg(feature = "tokio")]
-impl Drop for TokioClientAutoRenewal {
-    #[inline]
-    fn drop(&mut self) {
-        self.handle.abort();
-    }
-}
+pub type TokioClientAutoRenewal = auto_renewal::Handle;
 /// High-level Tokio Kerberos client with TGT and service-ticket caching.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Eq, PartialEq)]
@@ -715,17 +733,29 @@ pub struct Tokio {
 impl fmt::Debug for Tokio {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            config,
+            protocol,
+            transport,
+            client,
+            credentials,
+            tgt,
+            tgt_sessions,
+            service_tickets,
+            assume_preauthentication,
+            fast_negotiation,
+        } = self;
         f.debug_struct("TokioClient")
-            .field("config", &self.config)
-            .field("protocol", &self.protocol)
-            .field("transport", &self.transport)
-            .field("client", &self.client)
-            .field("credentials", &self.credentials)
-            .field("has_tgt", &self.tgt.is_some())
-            .field("tgt_sessions", &self.tgt_sessions.len())
-            .field("cached_service_tickets", &self.service_tickets.len())
-            .field("assume_preauthentication", &self.assume_preauthentication)
-            .field("fast_negotiation", &self.fast_negotiation)
+            .field("config", config)
+            .field("protocol", protocol)
+            .field("transport", transport)
+            .field("client", client)
+            .field("credentials", credentials)
+            .field("has_tgt", &tgt.is_some())
+            .field("tgt_sessions", &tgt_sessions.len())
+            .field("cached_service_tickets", &service_tickets.len())
+            .field("assume_preauthentication", assume_preauthentication)
+            .field("fast_negotiation", fast_negotiation)
             .finish()
     }
 }
@@ -905,14 +935,15 @@ impl Tokio {
                 continue;
             }
             let session = ccache_credential_session(credential);
-            if is_tgt_principal(&session.service) {
+            let insertion = if is_tgt_principal(&session.service) {
                 // A TGT whose service names no realm cannot be cached; it is
                 // skipped like the other unusable entries.
-                if let Err(skipped) = kerberos.cache_tgt_session_at(session, now) {
-                    drop(skipped);
-                }
+                kerberos.cache_tgt_session_at(session, now)
             } else {
-                kerberos.cache_service_ticket(session);
+                kerberos.cache_service_ticket(session)
+            };
+            if let Err(skipped) = insertion {
+                drop(skipped);
             }
         }
         kerberos
@@ -1012,13 +1043,7 @@ impl Tokio {
     /// time format.
     #[inline]
     pub fn update_ccache(&self, cache: &mut ccache::CCache) -> Result<(), Error> {
-        let client = ccache_principal(&self.client);
-        *cache.default_principal_mut() = client.clone();
-        drop(cache.remove_entries_for_client(&client));
-        for credential in self.ccache_credentials()? {
-            drop(cache.upsert_credential(credential));
-        }
-        Ok(())
+        cache_update::update(self, cache)
     }
     /// Save current TGT and service-ticket state to a fresh ccache file.
     /// # Errors
@@ -1219,7 +1244,7 @@ impl Tokio {
                 }
             }
         });
-        TokioClientAutoRenewal { handle }
+        TokioClientAutoRenewal::new(handle)
     }
     #[must_use]
     /// Parsed Kerberos configuration.
@@ -1299,12 +1324,6 @@ impl Tokio {
                     &enctypes,
                     &self.config.libdefaults.default_tkt_enctype_ids(),
                     "default_tkt_enctypes",
-                );
-                record_keytab_enctype_diagnostics(
-                    &mut errors,
-                    &enctypes,
-                    &self.config.libdefaults.preferred_preauth_types,
-                    "preferred_preauth_types",
                 );
                 enctypes
             }
@@ -1424,7 +1443,7 @@ impl Tokio {
         let key = service_cache_key(&resolved);
         self.service_tickets.remove(&key)
     }
-    /// Drop expired, non-renewable TGT and service-ticket sessions from local caches.
+    /// Drop unusable TGT and service-ticket sessions, including expired renewable tickets.
     #[inline]
     pub fn prune_unusable_sessions(&mut self) -> PrunedSessions {
         self.prune_unusable_sessions_at(SystemTime::now())
@@ -1466,12 +1485,7 @@ impl Tokio {
     #[cfg(feature = "serde")]
     #[inline]
     pub fn sessions_json(&self) -> Result<String, serde_json::Error> {
-        let sessions = self
-            .tgt_sessions
-            .values()
-            .map(session_json_entry)
-            .collect::<Vec<_>>();
-        serde_json::to_string_pretty(&sessions)
+        session_json::render(self)
     }
     /// Return public service-ticket cache metadata as pretty-printed JSON.
     /// # Errors
@@ -1487,19 +1501,39 @@ impl Tokio {
             .collect::<Vec<_>>();
         serde_json::to_string_pretty(&tickets)
     }
-    /// Insert or replace a service ticket in the cache.
+    /// Cache a service ticket, retaining the better entry for the same service.
+    ///
+    /// A currently valid session wins over an invalid one. If both have the same
+    /// validity, the later end time wins; ties retain the cached session. Thus a
+    /// shorter-lived valid candidate does not replace a longer-lived valid entry.
+    /// To force replacement, first call [`Self::remove_cached_service_ticket`]
+    /// for the service, then insert the candidate. Removal and insertion are
+    /// separate operations; a rejected insertion does not restore a removed ticket.
+    ///
+    /// Client realm and ordered components must match; advisory name type is ignored.
+    /// Rejection leaves the cache unchanged.
+    /// # Errors
+    /// Returns [`Error::CacheClientMismatch`] for another client identity.
     #[inline]
-    pub fn cache_service_ticket(&mut self, ticket: TgsRepSession) {
-        let key = service_cache_key(&ticket.service);
-        let selected =
-            preferred_session_at(self.service_tickets.remove(&key), ticket, SystemTime::now());
-        drop(self.service_tickets.insert(key, selected));
+    pub fn cache_service_ticket(&mut self, ticket: TgsRepSession) -> Result<(), Error> {
+        cache_insert::service_ticket(self, ticket)
     }
-    /// Insert or replace a TGT session in the realm-keyed session cache.
+    /// Cache a TGT session, retaining the better entry for the same target realm.
+    ///
+    /// A currently valid session wins over an invalid one. If both have the same
+    /// validity, the later end time wins; ties retain the cached session. Thus a
+    /// shorter-lived valid candidate does not replace a longer-lived valid entry.
+    /// To force replacement, first call [`Self::remove_tgt_session_for_realm`],
+    /// then insert the candidate. For the client's home realm, removal clears
+    /// both the realm-keyed entry and primary TGT. These are separate operations;
+    /// a rejected insertion does not restore a removed TGT.
+    ///
+    /// Client realm and ordered components must match; advisory name type is ignored.
+    /// Rejection leaves both the primary and realm-keyed caches unchanged.
     /// # Errors
     ///
     /// Returns [`Error::InvalidTgtSession`] when the session's service is not a
-    /// `krbtgt/<realm>` principal.
+    /// `krbtgt/<realm>` principal, or [`Error::CacheClientMismatch`] for another client identity.
     #[inline]
     pub fn cache_tgt_session(&mut self, tgt: AsRepSession) -> Result<(), Error> {
         self.cache_tgt_session_at(tgt, SystemTime::now())
@@ -1512,18 +1546,7 @@ impl Tokio {
     /// Returns [`Error::InvalidTgtSession`] when the session's service is not a
     /// `krbtgt/<realm>` principal.
     fn cache_tgt_session_at(&mut self, tgt: AsRepSession, now: SystemTime) -> Result<(), Error> {
-        let realm = tgt_realm(&tgt).ok_or_else(|| Error::InvalidTgtSession {
-            service: tgt.service.name(),
-        })?;
-        let selected = preferred_session_at(self.tgt_sessions.remove(&realm), tgt, now);
-        if realm == self.client.realm {
-            let primary = preferred_session_at(self.tgt.take(), selected, now);
-            self.tgt = Some(primary.clone());
-            drop(self.tgt_sessions.insert(realm, primary));
-        } else {
-            drop(self.tgt_sessions.insert(realm, selected));
-        }
-        Ok(())
+        cache_insert::tgt_session_at(self, tgt, now)
     }
     /// Ensure this client has a valid TGT, reusing an existing TGT when possible.
     ///
@@ -1639,6 +1662,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::NoTgtSession`] when no TGT is cached for `realm`,
+    /// [`Error::TicketNotRenewable`] for an unflagged, invalid, expired or future ticket,
     /// [`Error::InvalidTgtSession`] when the renewed ticket is not a TGT,
     /// [`Error::Random`] when the nonce cannot be generated, and any TGS exchange,
     /// transport or validation error.
@@ -1660,6 +1684,7 @@ impl Tokio {
             self.tgt_sessions.get(realm).cloned()
         }
         .ok_or(Error::NoTgtSession)?;
+        session_renewable_at(&tgt, SystemTime::now()).ok_or(Error::TicketNotRenewable)?;
         let renewed = self
             .transport
             .renew_tgt_with_config(&self.config, self.protocol, &tgt, self.tgs_req_options()?)
@@ -1726,7 +1751,7 @@ impl Tokio {
                     .await
             {
                 renewed.service = service;
-                self.cache_service_ticket(renewed.clone());
+                self.cache_service_ticket(renewed.clone())?;
                 return Ok(renewed);
             }
         }
@@ -1755,7 +1780,7 @@ impl Tokio {
             self.cache_tgt_session(referral_tgt)?;
         }
         let ticket = result.ticket;
-        self.cache_service_ticket(ticket.clone());
+        self.cache_service_ticket(ticket.clone())?;
         Ok(ticket)
     }
     /// Acquire an `S4U2Self` ticket for an impersonated user using the current service TGT.
@@ -2117,14 +2142,11 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password<P>(
+    pub async fn change_password(
         &mut self,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let (timestamp, cusec) = current_preauth_time()?;
         let sequence_number = random_nonce()?;
         self.change_password_for_with_options(
@@ -2154,15 +2176,12 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for<P>(
+    pub async fn change_password_for(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let (timestamp, cusec) = current_preauth_time()?;
         let sequence_number = random_nonce()?;
         self.change_password_for_with_options(
@@ -2191,19 +2210,20 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_with_options<P>(
+    pub async fn change_password_with_options(
         &mut self,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         self.change_password_for_with_options(self.client.clone(), new_password, options)
             .await
     }
 
     /// Change the given target principal's password using explicit request metadata.
+    ///
+    /// Takes ownership of the original password allocation and erases it on
+    /// completion, failure, or cancellation. A confirmed change to this client's
+    /// own password retains a separate zeroizing credential for future logins.
     ///
     /// # Errors
     ///
@@ -2221,24 +2241,19 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for_with_options<P>(
+    pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
-        let new_password_bytes = Zeroizing::new(new_password.as_ref().to_vec());
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let client = self.client.clone();
         let service = Principal::new(
             target.realm.clone(),
             KRB_NT_PRINCIPAL,
             ["kadmin".to_owned(), "changepw".to_owned()],
         );
-        let update_password_credential = target == self.client
-            && matches!(self.credentials, Some(TokioClientCredentials::Password(_)));
+        let update_password_credential = password_rotation::should_rotate(self, &target);
         let ticket = match self.credentials.clone() {
             Some(TokioClientCredentials::Password(password)) => {
                 self.transport
@@ -2267,7 +2282,7 @@ impl Tokio {
             None => self.get_service_ticket(service).await?,
         };
         let change_data = kadmin::ChangePasswdData::for_target(
-            &new_password_bytes,
+            Password::from_vec(new_password.as_bytes().to_vec()),
             target.name_type,
             target.components.iter().map(String::as_str),
             &target.realm,
@@ -2282,33 +2297,20 @@ impl Tokio {
                 &request.request,
             )
             .await?;
+        // Delivery has occurred: unsigned refusals are unauthenticated diagnostics,
+        // not proof of rollback. Wrap validator failures once, before ensure_success.
         let result = validated_result(&reply, &request, &options)
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
         result.ensure_success()?;
 
         if update_password_credential {
-            self.credentials = Some(TokioClientCredentials::Password(new_password_bytes));
+            self.credentials = Some(TokioClientCredentials::Password(Zeroizing::new(
+                new_password.as_bytes().to_vec(),
+            )));
         }
-
+        drop(new_password);
         Ok(result)
     }
-}
-
-/// JSON shape of one TGT session in [`Tokio::sessions_json`].
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct SessionJsonEntry {
-    /// Realm the TGT is issued for.
-    realm: String,
-    /// Initial authentication time (RFC 3339).
-    auth_time: String,
-    /// Ticket end time (RFC 3339).
-    end_time: String,
-    /// Renewable-until time, or the end time when not renewable (RFC 3339).
-    renew_till: String,
-    /// Session key expiration, or the end time when absent (RFC 3339).
-    session_key_expiration: String,
 }
 
 /// JSON shape of one service ticket in [`Tokio::service_ticket_cache_json`].
@@ -2327,18 +2329,6 @@ struct ServiceTicketJsonEntry {
     end_time: String,
     /// Renewable-until time, or the end time when not renewable (RFC 3339).
     renew_till: String,
-}
-
-/// JSON entry for one TGT session.
-#[cfg(all(feature = "tokio", feature = "serde"))]
-fn session_json_entry(session: &AsRepSession) -> SessionJsonEntry {
-    SessionJsonEntry {
-        realm: session.service.realm.clone(),
-        auth_time: json_time(session.auth_time),
-        end_time: json_time(session.end_time),
-        renew_till: json_time(session.renew_till.unwrap_or(session.end_time)),
-        session_key_expiration: json_time(session.key_expiration.unwrap_or(session.end_time)),
-    }
 }
 
 /// JSON entry for one service ticket.
@@ -2469,6 +2459,7 @@ pub fn build_as_req(
     let der = kdc_req::encode_as_req(&message).map_err(kdc_req_error)?;
 
     Ok(BuiltAsReq {
+        reply_clock: (options.now, options.clock_skew),
         message,
         der,
         client,
@@ -3170,6 +3161,7 @@ fn build_tgs_req_for_realm_inner(
 
     Ok((
         BuiltTgsReq {
+            reply_clock: (options.now, options.clock_skew),
             message,
             der,
             client: tgt.client.clone(),
@@ -3188,7 +3180,8 @@ fn build_tgs_req_for_realm_inner(
 /// Returns [`Error::Decode`] when the service ticket does not decode,
 /// [`Error::InvalidKerberosString`] for an invalid client name or realm,
 /// [`Error::TimeOverflow`] for an out-of-range timestamp, and the AP-REQ build,
-/// encryption and encoding errors.
+/// encryption and encoding errors. Fractional timestamps return [`Error::Encode`];
+/// supply whole seconds in `timestamp` and the fractional part separately in `cusec`.
 #[inline]
 pub fn build_ap_req_with_confounder(
     service_ticket: &TgsRepSession,
@@ -3197,6 +3190,12 @@ pub fn build_ap_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
+    let (_, nanos) = unix_timestamp_parts(timestamp)?;
+    (nanos == 0).ok_or_else(|| Error::Encode {
+        target: "AP-REQ timestamp",
+        message: "expected a whole-second timestamp".to_owned(),
+    })?;
+    let ctime = time::to_kerberos(timestamp).ok_or(Error::TimeOverflow)?;
     let ticket = ticket::decode(&service_ticket.ticket).map_err(ticket_error)?;
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(KRB5_PVNO),
@@ -3204,7 +3203,7 @@ pub fn build_ap_req_with_confounder(
         cname: principal_to_rasn(&service_ticket.client)?,
         cksum: options.checksum,
         cusec: Integer::from(cusec),
-        ctime: kerberos_time_from_system_time(timestamp)?,
+        ctime,
         subkey: options.subkey.as_ref().map(encryption_key_to_rasn),
         seq_number: options.sequence_number,
         authorization_data: None,
@@ -3241,24 +3240,21 @@ pub fn build_ap_req_with_confounder(
 }
 
 /// Build a TGS-REQ that renews an existing TGT session.
+/// Keeps the original server and contacts its issuing realm, including `krbtgt/B@A`.
 /// # Errors
 ///
 /// Returns [`Error::InvalidTgtSession`] when the session is not a TGT, and the
 /// errors of [`build_tgs_req_for_realm`].
 #[inline]
 pub fn build_tgt_renewal_req(tgt: &AsRepSession, options: TgsReq) -> Result<BuiltTgsReq, Error> {
-    let realm = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
+    let _destination = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
         service: tgt.service.name(),
     })?;
-    build_tgs_req_for_realm(
-        tgt,
-        realm.clone(),
-        Principal::tgt_service(realm),
-        options.with_renewal(),
-    )
+    build_ticket_renewal_req(tgt, options)
 }
 
 /// Build a deterministic TGT renewal request with an explicit authenticator timestamp and confounder.
+/// Keeps the original server and contacts its issuing realm, including `krbtgt/B@A`.
 /// # Errors
 ///
 /// Returns [`Error::InvalidTgtSession`] when the session is not a TGT, and the
@@ -3271,18 +3267,10 @@ pub fn build_tgt_renewal_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
-    let realm = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
+    let _destination = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
         service: tgt.service.name(),
     })?;
-    build_tgs_req_for_realm_with_confounder(
-        tgt,
-        realm.clone(),
-        Principal::tgt_service(realm),
-        options.with_renewal(),
-        timestamp,
-        cusec,
-        confounder,
-    )
+    build_ticket_renewal_req_with_confounder(tgt, options, timestamp, cusec, confounder)
 }
 
 /// Build a TGS-REQ that renews an existing service ticket.
@@ -3467,11 +3455,16 @@ where
 {
     let initial_request =
         password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
-    let initial_response = transport.send(&client.realm, &initial_request.der)?;
+    let mut initial_response = transport.send(&client.realm, &initial_request.der)?;
     if let Some(session) =
         password_initial_as_rep_session(&initial_request, &initial_response, &client, password)?
     {
         return Ok(session);
+    }
+    if let Some(probe) = preauth::discovery_request(&initial_request, &options, &initial_response)?
+    {
+        initial_response = transport.send(&client.realm, &probe.der)?;
+        preauth::validate_discovery(&initial_response, &options)?;
     }
     let (request, reply_key) =
         password_preauth_request(client, service, password, options, &initial_response)?;
@@ -3516,11 +3509,16 @@ where
 {
     let initial_request =
         keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
-    let initial_response = transport.send(&client.realm, &initial_request.der)?;
+    let mut initial_response = transport.send(&client.realm, &initial_request.der)?;
     if let Some(session) =
         keytab_initial_as_rep_session(&initial_request, &initial_response, &client, keytab)?
     {
         return Ok(session);
+    }
+    if let Some(probe) = preauth::discovery_request(&initial_request, &options, &initial_response)?
+    {
+        initial_response = transport.send(&client.realm, &probe.der)?;
+        preauth::validate_discovery(&initial_response, &options)?;
     }
     let (request, reply_key) =
         keytab_preauth_request(client, service, keytab, options, &initial_response)?;
@@ -3559,6 +3557,7 @@ pub fn process_as_rep(
     }
 
     let enc_part = kdc_rep::decrypt_as_rep_enc_part(&as_rep, reply_key).map_err(kdc_rep_error)?;
+    reply_constraints::validate(&request.message.0.req_body, &enc_part, request.reply_clock)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
     validate_reply_encrypted_padata(
         (&request.der, request.message.0.padata.as_deref()),
@@ -3761,6 +3760,7 @@ fn process_tgs_rep_inner(
 
     let enc_part =
         kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key).map_err(kdc_rep_error)?;
+    reply_constraints::validate(&request.message.0.req_body, &enc_part, request.reply_clock)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
     validate_reply_encrypted_padata(
         (&request.der, request.message.0.padata.as_deref()),
@@ -4179,31 +4179,6 @@ fn ap_rep_error(error: error::ApRep) -> Error {
     }
 }
 
-/// Answer a `KDC_ERR_PREAUTH_REQUIRED` error with a preauthenticated AS-REQ
-/// keyed from `password`.
-///
-/// # Errors
-///
-/// Returns [`Error::Kdc`] for any other KDC error, and errors from key-info
-/// selection, password key derivation and request building.
-fn password_preauth_request(
-    client: Principal,
-    service: Principal,
-    password: &[u8],
-    requested: AsReq,
-    kdc_error_bytes: &[u8],
-) -> Result<(BuiltAsReq, EncryptionKey), Error> {
-    let error = process_kdc_error(kdc_error_bytes)?;
-    if error.error_code != KDC_ERR_PREAUTH_REQUIRED {
-        return Err(Error::Kdc(Box::new(error)));
-    }
-    let key_info = select_preauth_key_info(&error, &requested.etypes)?;
-    let reply_key = derive_password_reply_key(&client, password, &key_info)?;
-    let options = preauth_retry_options(requested, &error.method_data);
-    let request = build_preauthenticated_as_req(client, service, options, &reply_key, None)?;
-    Ok((request, reply_key))
-}
-
 /// The first AS-REQ of a password login: preauthenticated when configured to
 /// assume preauthentication, otherwise a plain probe.
 ///
@@ -4253,7 +4228,7 @@ fn password_initial_as_rep_session(
             etype,
             salt: padata
                 .iter()
-                .find(|pa| pa.r#type == 3_i32)
+                .find(|pa| pa.r#type == PA_PW_SALT)
                 .map(|pa| str::from_utf8(pa.value.as_ref()).map(str::to_owned))
                 .transpose()?,
             s2kparams: None,
@@ -4261,31 +4236,6 @@ fn password_initial_as_rep_session(
     };
     let reply_key = derive_password_reply_key(client, password, &key_info)?;
     process_as_rep(request, response, &reply_key).map(Some)
-}
-
-/// Answer a `KDC_ERR_PREAUTH_REQUIRED` error with a preauthenticated AS-REQ
-/// keyed from the keytab.
-///
-/// # Errors
-///
-/// Returns [`Error::Kdc`] for any other KDC error, and errors from key-info
-/// selection, keytab lookup and request building.
-fn keytab_preauth_request(
-    client: Principal,
-    service: Principal,
-    keytab: &Keytab,
-    requested: AsReq,
-    kdc_error_bytes: &[u8],
-) -> Result<(BuiltAsReq, EncryptionKey), Error> {
-    let error = process_kdc_error(kdc_error_bytes)?;
-    if error.error_code != KDC_ERR_PREAUTH_REQUIRED {
-        return Err(Error::Kdc(Box::new(error)));
-    }
-    let key_info = select_preauth_key_info(&error, &requested.etypes)?;
-    let (reply_key, kvno) = select_keytab_reply_key(keytab, &client, &key_info)?;
-    let options = preauth_retry_options(requested, &error.method_data);
-    let request = build_preauthenticated_as_req(client, service, options, &reply_key, Some(kvno))?;
-    Ok((request, reply_key))
 }
 
 /// The first AS-REQ of a keytab login: preauthenticated when configured to
@@ -4879,7 +4829,7 @@ fn service_cache_key(service: &Principal) -> (String, Vec<String>) {
 /// Whether a session is inside its start and end time at `now`.
 #[cfg(feature = "tokio")]
 fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
-    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
+    u32::from_be_bytes(session.ticket_flags) & TICKET_FLAG_INVALID == 0
         && session.start_time <= now
         && now < session.end_time
 }
@@ -4890,74 +4840,13 @@ fn session_usable_at(session: &AsRepSession, now: SystemTime) -> bool {
     session_valid_at(session, now) || session_renewable_at(session, now)
 }
 
-/// Whether a session is expired or inside its refresh window at `now`.
-#[cfg(feature = "tokio")]
-fn session_refresh_due_at(session: &AsRepSession, now: SystemTime) -> bool {
-    if now >= session.end_time {
-        return true;
-    }
-    // RFC 4120 keeps auth_time fixed across renewals while a renewal advances
-    // start_time, so the current ticket life is end_time - start_time.
-    let Ok(lifetime) = session.end_time.duration_since(session.start_time) else {
-        return true;
-    };
-    if lifetime.is_zero() {
-        return true;
-    }
-    let remaining = session
-        .end_time
-        .duration_since(now)
-        .unwrap_or(Duration::ZERO);
-    // The divisor is a non-zero constant, so `checked_div` always succeeds.
-    lifetime
-        .checked_div(SESSION_REFRESH_DIVISOR)
-        .is_none_or(|band| remaining <= band)
-}
-
-/// How long until a session enters its refresh window; zero when it is due.
-#[cfg(feature = "tokio")]
-fn session_refresh_delay_at(session: &AsRepSession, now: SystemTime) -> Duration {
-    if session_refresh_due_at(session, now) {
-        return Duration::ZERO;
-    }
-    let Ok(lifetime) = session.end_time.duration_since(session.start_time) else {
-        return Duration::ZERO;
-    };
-    // The divisor is a non-zero constant, so `checked_div` always succeeds.
-    let Some(refresh_at) = lifetime
-        .checked_div(SESSION_REFRESH_DIVISOR)
-        .and_then(|band| session.end_time.checked_sub(band))
-    else {
-        return Duration::ZERO;
-    };
-    refresh_at.duration_since(now).unwrap_or(Duration::ZERO)
-}
-
-/// Whether a session can still be renewed at `now`.
-#[cfg(feature = "tokio")]
-fn session_renewable_at(session: &AsRepSession, now: SystemTime) -> bool {
-    u32::from_be_bytes(session.ticket_flags) & 0x0100_0000 == 0
-        && session
-            .renew_till
-            .is_some_and(|renew_till| now < renew_till)
-}
-
 /// Convert a Kerberos time to a `SystemTime`.
 ///
 /// # Errors
 ///
-/// Returns [`Error::TimeOverflow`] when the time is out of `SystemTime` range.
+/// Returns [`Error::TimeOverflow`] for fractions or times outside `SystemTime` range.
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
-    let seconds = time.0.timestamp();
-    let nanos = time.0.timestamp_subsec_nanos();
-    match u64::try_from(seconds) {
-        Ok(after_epoch) => UNIX_EPOCH
-            .checked_add(Duration::new(after_epoch, nanos))
-            .ok_or(Error::TimeOverflow),
-        Err(_before_epoch) => UNIX_EPOCH
-            .checked_sub(Duration::new(seconds.unsigned_abs(), nanos))
-            .ok_or(Error::TimeOverflow),
-    }
+    time::from_kerberos(time).ok_or(Error::TimeOverflow)
 }
 
 /// Convert a `SystemTime` to a Kerberos time, truncated to whole seconds.

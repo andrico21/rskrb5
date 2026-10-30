@@ -100,7 +100,7 @@ mod tests {
             .checked_add(Duration::from_hours(1))
             .context("end time")?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket.clone());
+        client.cache_service_ticket(service_ticket.clone())?;
 
         let cached = client
             .cached_service_ticket(sample_service_principal())
@@ -145,8 +145,8 @@ mod tests {
         };
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
 
-        client.cache_service_ticket(service_session(120, b"service-long")?);
-        client.cache_service_ticket(service_session(30, b"service-short")?);
+        client.cache_service_ticket(service_session(120, b"service-long")?)?;
+        client.cache_service_ticket(service_session(30, b"service-short")?)?;
         assert_eq!(
             client
                 .cached_service_ticket(sample_service_principal())
@@ -156,7 +156,7 @@ mod tests {
             b"service-long"
         );
 
-        client.cache_service_ticket(service_session(180, b"service-longer")?);
+        client.cache_service_ticket(service_session(180, b"service-longer")?)?;
         assert_eq!(
             client
                 .cached_service_ticket(sample_service_principal())
@@ -176,7 +176,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         assert_eq!(client.cached_service_ticket_count(), 1);
         client.clear_service_ticket_cache();
@@ -213,7 +213,7 @@ mod tests {
                 .insert("host.test.gokrb5".to_owned(), "TEST.GOKRB5".to_owned()),
         );
         let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         assert!(
             client
@@ -230,7 +230,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that pruning drops unusable sessions and keeps renewable ones.
+    /// Pins that pruning drops expired sessions even with a future renewal horizon.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() -> Result<(), TestError>
@@ -263,7 +263,7 @@ mod tests {
         expired_service_ticket.start_time = expired_start;
         expired_service_ticket.end_time = expired_end;
         expired_service_ticket.renew_till = None;
-        client.cache_service_ticket(expired_service_ticket);
+        client.cache_service_ticket(expired_service_ticket)?;
 
         let mut renewable_service_ticket = sample_service_ticket_session(&tgt)?;
         renewable_service_ticket.service =
@@ -271,7 +271,7 @@ mod tests {
         renewable_service_ticket.start_time = expired_start;
         renewable_service_ticket.end_time = expired_end;
         renewable_service_ticket.renew_till = Some(future_renew_till);
-        client.cache_service_ticket(renewable_service_ticket.clone());
+        client.cache_service_ticket(renewable_service_ticket.clone())?;
 
         let pruned = client.prune_unusable_sessions();
 
@@ -280,13 +280,13 @@ mod tests {
             PrunedSessions::default()
                 .with_primary_tgt(false)
                 .with_tgt_sessions(1)
-                .with_service_tickets(1)
+                .with_service_tickets(2)
         );
         assert!(!pruned.is_empty(), "pruning reports the removed sessions");
         assert_eq!(client.tgt_session_count(), 1);
         assert!(client.tgt_session().is_some());
         assert!(client.tgt_session_for_realm("EXPIRED.GOKRB5").is_none());
-        assert_eq!(client.cached_service_ticket_count(), 1);
+        assert_eq!(client.cached_service_ticket_count(), 0);
         assert!(
             client
                 .cached_service_ticket(renewable_service_ticket.service.clone())
@@ -295,7 +295,7 @@ mod tests {
         assert!(
             client
                 .remove_cached_service_ticket(renewable_service_ticket.service)
-                .is_some()
+                .is_none()
         );
         Ok(())
     }
@@ -338,7 +338,7 @@ mod tests {
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt)
             .with_password_credential(TESTUSER_PASSWORD);
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         client.destroy();
 
@@ -693,26 +693,6 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that the auto-renewal handle aborts its task.
-    #[cfg(feature = "tokio")]
-    #[test]
-    fn tokio_client_auto_renewal_handle_aborts() -> Result<(), TestError> {
-        runtime()?.block_on(async {
-            let client = Arc::new(Mutex::new(Tokio::from_tgt_session(
-                Config::new(),
-                KdcProtocol::Tcp,
-                current_tgt_session(10, 50)?,
-            )));
-            let renewal = Tokio::spawn_auto_renewal_with_retry(client, Duration::from_millis(10));
-
-            assert!(!renewal.is_finished());
-            renewal.abort();
-            yield_now().await;
-            Ok::<(), TestError>(())
-        })?;
-        Ok(())
-    }
-
     /// Pins that configuration validation reports a realm without a configured KDC.
     #[cfg(feature = "tokio")]
     #[test]
@@ -774,49 +754,6 @@ mod tests {
             missing_kdc.validate_configuration(),
             Err(Error::NoConfiguredKdc { realm }) if realm == "TEST.GOKRB5"
         ));
-        Ok(())
-    }
-
-    /// Pins that client diagnostics report the keytab and the KDC state.
-    #[cfg(all(feature = "tokio", feature = "serde"))]
-    #[test]
-    fn tokio_client_diagnostics_reports_keytab_and_kdc_state() -> Result<(), TestError> {
-        let client = Tokio::with_keytab(
-            config_with_kdc()?,
-            KdcProtocol::Auto,
-            Principal::user("TEST.GOKRB5", "testuser1"),
-            keytab_with_reply_key(1)?,
-        );
-
-        let diagnostics = runtime()?.block_on(client.diagnostics());
-
-        assert_eq!(diagnostics.client, "testuser1");
-        assert_eq!(diagnostics.realm, "TEST.GOKRB5");
-        assert_eq!(diagnostics.protocol, "Auto");
-        assert_eq!(diagnostics.credential_source, "keytab");
-        assert!(!diagnostics.has_tgt);
-        assert_eq!(diagnostics.tgt_session_count, 0);
-        assert_eq!(diagnostics.service_ticket_cache_count, 0);
-        assert_eq!(diagnostics.default_tkt_enctypes, [18_i32, 17_i32]);
-        assert_eq!(diagnostics.preferred_preauth_types, [18_i32, 17_i32]);
-        assert_eq!(diagnostics.keytab_enctypes, [18_i32]);
-        assert_eq!(diagnostics.udp_kdcs, ["kdc.test.gokrb5:88"]);
-        assert_eq!(diagnostics.tcp_kdcs, ["kdc.test.gokrb5:88"]);
-        assert_eq!(
-            diagnostics.errors,
-            [
-                "default_tkt_enctypes specifies 17 but this enctype is not available in the client's keytab",
-                "preferred_preauth_types specifies 17 but this enctype is not available in the client's keytab",
-            ]
-        );
-        assert!(!diagnostics.is_ok());
-
-        let json = runtime()?
-            .block_on(client.diagnostics_json())
-            .context("diagnostics JSON renders")?;
-        assert!(json.contains(r#""CredentialSource": "keytab""#));
-        assert!(json.contains(r#""UDPKDCs": ["#));
-        assert!(json.contains(r#""TCPKDCs": ["#));
         Ok(())
     }
 
@@ -980,16 +917,16 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that an expired but renewable cached service ticket is renewed at the KDC.
+    /// Pins that an expired renewable service ticket is reacquired using the current TGT.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_renews_expired_renewable_cached_service_ticket() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let tgt = sample_tgt_session()?;
+            let tgt = current_tgt_session(10, 50)?;
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
             service_ticket.session_key.value = vec![0x44; 32];
             let cached_session_key = service_ticket.session_key.clone();
-            let renewal_reply_key = service_ticket.session_key.clone();
+            let renewal_reply_key = tgt.session_key.clone();
             let now = SystemTime::now();
             service_ticket.start_time = now
                 .checked_sub(Duration::from_hours(2))
@@ -1011,7 +948,7 @@ mod tests {
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(service_ticket.clone());
+            client.cache_service_ticket(service_ticket.clone())?;
             assert_eq!(client.cached_service_ticket_count(), 1);
 
             let task = tokio::spawn(async move {
@@ -1019,7 +956,7 @@ mod tests {
                 let decoded: rasn_kerberos::TgsReq =
                     der::decode(&request).context("TGS-REQ decodes")?;
                 let body = &decoded.0.req_body;
-                let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
+                let expected_options = 0x0000_0010_u32;
                 assert_eq!(
                     body.kdc_options.0.as_raw_slice(),
                     expected_options.to_be_bytes().as_slice()
@@ -1038,7 +975,7 @@ mod tests {
             let renewed = client
                 .get_service_ticket(sample_service_principal())
                 .await
-                .context("renewable cached service ticket renews")?;
+                .context("expired service ticket is reacquired")?;
             task.await.context("KDC task succeeds")??;
 
             assert_eq!(renewed.service, sample_service_principal());
@@ -1054,7 +991,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that a renewable service ticket loaded from a ccache is renewed at the KDC.
+    /// Pins that an expired ccache service ticket is reacquired with the current TGT.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_renews_ccache_loaded_renewable_service_ticket() -> Result<(), TestError> {
@@ -1063,7 +1000,7 @@ mod tests {
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
             service_ticket.session_key.value = vec![0x46; 32];
             let cached_session_key = service_ticket.session_key.clone();
-            let renewal_reply_key = service_ticket.session_key.clone();
+            let renewal_reply_key = tgt.session_key.clone();
             let now = u32::try_from(
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -1104,7 +1041,7 @@ mod tests {
                 let decoded: rasn_kerberos::TgsReq =
                     der::decode(&request).context("TGS-REQ decodes")?;
                 let body = &decoded.0.req_body;
-                let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
+                let expected_options = 0x0000_0010_u32;
                 assert_eq!(
                     body.kdc_options.0.as_raw_slice(),
                     expected_options.to_be_bytes().as_slice()
@@ -1123,7 +1060,7 @@ mod tests {
             let renewed = client
                 .get_service_ticket(sample_service_principal())
                 .await
-                .context("ccache-loaded renewable service ticket renews")?;
+                .context("expired ccache service ticket is reacquired")?;
             task.await.context("KDC task succeeds")??;
 
             assert_eq!(renewed.service, sample_service_principal());
@@ -1138,7 +1075,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that a cached referral TGT is renewed before it is reused.
+    /// Pins that an expired referral is reacquired with the current primary TGT.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_renews_cached_referral_tgt_before_reusing_it() -> Result<(), TestError> {
@@ -1147,7 +1084,7 @@ mod tests {
             let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
             referral_tgt.session_key.value = vec![0x45; 32];
             let cached_referral_key = referral_tgt.session_key.clone();
-            let referral_renewal_reply_key = referral_tgt.session_key.clone();
+            let referral_renewal_reply_key = primary_tgt.session_key.clone();
             let now = SystemTime::now();
             referral_tgt.start_time = now
                 .checked_sub(Duration::from_hours(2))
@@ -1182,7 +1119,7 @@ mod tests {
                 let renewal_decoded: rasn_kerberos::TgsReq =
                     der::decode(&renewal_request).context("renewal TGS-REQ decodes")?;
                 let renewal_body = &renewal_decoded.0.req_body;
-                let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
+                let expected_options = 0x0000_0010_u32;
                 assert_eq!(
                     renewal_body.kdc_options.0.as_raw_slice(),
                     expected_options.to_be_bytes().as_slice()
@@ -1192,15 +1129,16 @@ mod tests {
                         &renewal_body.realm,
                         renewal_body.sname.as_ref().context("renewal sname")?
                     )?,
-                    Principal::tgt_service("RESDOM.GOKRB5")
+                    Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"])
                 );
                 let mut renewal_built =
                     built_tgs_request_from_der(renewal_decoded, &renewal_request)?;
                 renewal_built.client = expected_client.clone();
-                let renewal_response = synthetic_tgs_rep(
+                let renewal_response = synthetic_tgs_rep_with_service(
                     &renewal_built,
                     renewal_built.nonce,
                     &referral_renewal_reply_key,
+                    &Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"]),
                 )?;
                 write_tcp_kdc_response(&mut renewal_socket, &renewal_response).await?;
 
@@ -1246,7 +1184,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that the TGT session of a realm is renewed at that realm's KDC.
+    /// Pins that a destination's cached TGT is renewed with its original issuing-realm server.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_renews_tgt_session_for_realm() -> Result<(), TestError> {
@@ -1254,6 +1192,11 @@ mod tests {
             let primary_tgt = current_tgt_session(10, 50)?;
             let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
             referral_tgt.session_key.value = vec![0x47; 32];
+            referral_tgt.auth_time = primary_tgt.auth_time;
+            referral_tgt.start_time = primary_tgt.start_time;
+            referral_tgt.end_time = primary_tgt.end_time;
+            referral_tgt.renew_till = primary_tgt.renew_till;
+            referral_tgt.ticket_flags = primary_tgt.ticket_flags;
             let cached_referral_key = referral_tgt.session_key.clone();
             let referral_renewal_reply_key = referral_tgt.session_key.clone();
             let expected_client = primary_tgt.client.clone();
@@ -1283,7 +1226,7 @@ mod tests {
                 );
                 assert_eq!(
                     principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
-                    Principal::tgt_service("RESDOM.GOKRB5")
+                    Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"])
                 );
 
                 let mut built = built_tgs_request_from_der(decoded, &request)?;
@@ -1299,7 +1242,10 @@ mod tests {
                 .context("referral TGT renews explicitly")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(renewed.service, Principal::tgt_service("RESDOM.GOKRB5"));
+            assert_eq!(
+                renewed.service,
+                Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"])
+            );
             assert_ne!(renewed.session_key, cached_referral_key);
             assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
             assert_eq!(
@@ -1329,7 +1275,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         let cache = client.to_ccache().context("client exports ccache")?;
         assert_eq!(cache.default_principal().realm, "TEST.GOKRB5");
@@ -1366,7 +1312,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         let cache = client.to_ccache().context("client exports ccache")?;
         let path = temp_client_ccache_file("load-name")?;
         let name = format!("FILE:{}", path.display());
@@ -1450,7 +1396,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         let cache = client
             .to_ccache()
             .map_err(|cause| format!("client exports ccache: {cause}"))?;
@@ -1475,7 +1421,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         let directory = temp_client_ccache_dir("dir-collection-name")?;
         fs::create_dir_all(&directory).context("temp DIR collection is created")?;
         let name = format!("DIR:{}", directory.display());
@@ -1509,7 +1455,7 @@ mod tests {
             KdcProtocol::Tcp,
             tgt.clone(),
         );
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         client
             .save_default_ccache_name()
             .context("client saves configured ccache")?;
@@ -1550,7 +1496,7 @@ mod tests {
             KdcProtocol::Tcp,
             tgt.clone(),
         );
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         client
             .save_default_ccache()
             .map_err(|cause| format!("client saves default ccache: {cause}"))?;
@@ -1592,7 +1538,7 @@ mod tests {
             KdcProtocol::Tcp,
             tgt.clone(),
         );
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         client
             .save_default_ccache()
             .map_err(|cause| format!("client saves default ccache from env: {cause}"))?;
@@ -2014,7 +1960,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         let sessions = client.sessions_json().context("sessions JSON renders")?;
         assert_eq!(
@@ -2055,7 +2001,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket.clone());
+        client.cache_service_ticket(service_ticket.clone())?;
 
         let mut old_tgt = tgt.to_ccache_credential().context("TGT converts")?;
         old_tgt.client.name_type = 0_i32;
@@ -2167,7 +2113,7 @@ mod tests {
             Ok(ticket)
         };
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(session_for("auth.cern.ch")?);
+        client.cache_service_ticket(session_for("auth.cern.ch")?)?;
 
         assert!(
             client
@@ -2178,7 +2124,7 @@ mod tests {
                 )?)
                 .is_some()
         );
-        client.cache_service_ticket(session_for("Auth.Cern.CH")?);
+        client.cache_service_ticket(session_for("Auth.Cern.CH")?)?;
         assert_eq!(client.cached_service_ticket_count(), 1);
         Ok(())
     }
@@ -2432,7 +2378,7 @@ mod tests {
         })
     }
 
-    /// Pins that a cache-only client with an expired renewable TGT keeps the renewal error.
+    /// Pins that a cache-only expired TGT is unavailable without any network renewal.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_cache_only_expired_renewable_tgt_keeps_renewal_error() -> Result<(), TestError>
@@ -2453,14 +2399,15 @@ mod tests {
                 expired_renewable_tgt()?,
             );
 
-            if client.affirm_login().await.is_ok() {
-                return Err("a cache-only client must keep the renewal error".into());
-            }
+            assert!(matches!(
+                client.affirm_login().await,
+                Err(Error::NoClientCredentials)
+            ));
             assert_eq!(as_requests.load(Ordering::SeqCst), 0);
             assert_eq!(
                 tgs_requests.load(Ordering::SeqCst),
-                1,
-                "cache-only clients still attempt the in-grace renewal"
+                0,
+                "expired cache-only credentials never attempt renewal"
             );
             kdc.abort();
             Ok::<(), TestError>(())
@@ -2760,7 +2707,7 @@ mod tests {
         service_ticket.service = Principal::new("PARTNER.REALM", 2, ["HTTP", "Host.Example.COM"]);
 
         let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket.clone());
+        client.cache_service_ticket(service_ticket.clone())?;
 
         let lookup = Principal::new("", 2, ["HTTP", "Host.Example.COM"]);
         let cached = client

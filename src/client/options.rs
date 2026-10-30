@@ -14,6 +14,8 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct AsReq {
+    /// Acceptable KDC reply start-time skew from the request clock.
+    pub clock_skew: Duration,
     /// Client clock used for request time fields.
     pub now: SystemTime,
     /// Requested ticket lifetime.
@@ -41,6 +43,7 @@ impl AsReq {
     #[inline]
     pub fn new(now: SystemTime, nonce: u32) -> Self {
         Self {
+            clock_skew: Duration::from_secs(300),
             now,
             ticket_lifetime: DEFAULT_TICKET_LIFETIME,
             renew_lifetime: None,
@@ -66,6 +69,7 @@ impl AsReq {
     #[inline]
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
+        options.clock_skew = defaults.clockskew;
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
             (defaults.renew_lifetime != Duration::ZERO).then_some(defaults.renew_lifetime);
@@ -148,6 +152,8 @@ impl AsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct TgsReq {
+    /// Acceptable KDC reply start-time skew from the request clock.
+    pub clock_skew: Duration,
     /// Frontend service keys used to authenticate delegated ticket identities.
     pub delegation_keytab: Option<Keytab>,
     /// Client clock used for request time fields.
@@ -181,6 +187,7 @@ impl TgsReq {
     #[inline]
     pub fn new(now: SystemTime, nonce: u32) -> Self {
         Self {
+            clock_skew: Duration::from_secs(300),
             now,
             ticket_lifetime: DEFAULT_TICKET_LIFETIME,
             renew_lifetime: None,
@@ -206,6 +213,7 @@ impl TgsReq {
     #[inline]
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
+        options.clock_skew = defaults.clockskew;
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
             (defaults.renew_lifetime != Duration::ZERO).then_some(defaults.renew_lifetime);

@@ -150,9 +150,13 @@ TEST.GOKRB5 = {{
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
         let reply_key = EncryptionKey::new(18, vec![0x55; 32]);
-        let change_data =
-            ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
-                .context("ChangePasswdData builds")?;
+        let change_data = ChangePasswdData::for_target(
+            Password::copy_from_str("newpassword"),
+            1,
+            ["testuser1"],
+            "TEST.GOKRB5",
+        )
+        .context("ChangePasswdData builds")?;
 
         let built = build_kpasswd_request_with_confounders(
             &service_ticket,
@@ -232,7 +236,7 @@ TEST.GOKRB5 = {{
         let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
-        let change_data = ChangePasswdData::new(b"newpassword");
+        let change_data = ChangePasswdData::new(Password::copy_from_str("newpassword"));
 
         let built = build_kpasswd_request(
             &service_ticket,
@@ -321,7 +325,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(changepw_ticket);
+            client.cache_service_ticket(changepw_ticket)?;
             let task = tokio::spawn(async move {
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
@@ -336,7 +340,7 @@ TEST.GOKRB5 = {{
 
             let result = client
                 .change_password_with_options(
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -372,7 +376,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(changepw_ticket);
+            client.cache_service_ticket(changepw_ticket)?;
             let task = tokio::spawn(async move {
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
@@ -396,7 +400,7 @@ TEST.GOKRB5 = {{
 
             let result = client
                 .change_password_with_options(
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -432,7 +436,7 @@ TEST.GOKRB5 = {{
                     KdcProtocol::Tcp,
                     tgt,
                 );
-                client.cache_service_ticket(ticket);
+                client.cache_service_ticket(ticket)?;
                 let task = tokio::spawn(async move {
                     let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                     let parsed = KpasswdRequest::parse(&request)?;
@@ -473,7 +477,7 @@ TEST.GOKRB5 = {{
                 // When the high-level mutation consumes the response.
                 let result = client
                     .change_password_with_options(
-                        b"newpassword",
+                        Password::copy_from_str("newpassword"),
                         RequestOptions::new(
                             timestamp(1_893_553_452)?,
                             456_789,
@@ -507,11 +511,11 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(ticket);
+            client.cache_service_ticket(ticket)?;
             // When connection establishment fails before sending anything.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -551,7 +555,7 @@ TEST.GOKRB5 = {{
                 tgt,
             )
             .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(1)));
-            client.cache_service_ticket(ticket);
+client.cache_service_ticket(ticket)?;
             let (release, wait) = oneshot::channel();
             let task = tokio::spawn(async move {
                 let (_request, socket) = read_tcp_kdc_request(&listener).await?;
@@ -562,7 +566,7 @@ TEST.GOKRB5 = {{
             // When the reply deadline expires after delivery.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -599,7 +603,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(ticket);
+            client.cache_service_ticket(ticket)?;
             let task = tokio::spawn(async move {
                 let (_request, socket) = read_tcp_kdc_request(&listener).await?;
                 drop(socket);
@@ -608,7 +612,7 @@ TEST.GOKRB5 = {{
             // When the response is lost, then callers receive an explicit unknown class.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -640,7 +644,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(ticket);
+            client.cache_service_ticket(ticket)?;
             let task = tokio::spawn(async move {
                 let (_request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 write_tcp_kdc_response(&mut socket, b"invalid").await?;
@@ -649,7 +653,7 @@ TEST.GOKRB5 = {{
             // When response parsing fails after delivery.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -689,7 +693,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(changepw_ticket);
+            client.cache_service_ticket(changepw_ticket)?;
             let task = tokio::spawn(async move {
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
@@ -723,7 +727,7 @@ TEST.GOKRB5 = {{
             let result = client
                 .change_password_for_with_options(
                     target.clone(),
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -759,7 +763,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            tokio_client.cache_service_ticket(changepw_ticket);
+            tokio_client.cache_service_ticket(changepw_ticket)?;
             let mut client = NegotiateClient::from_tokio_client(tokio_client);
 
             let task = tokio::spawn(async move {
@@ -774,7 +778,7 @@ TEST.GOKRB5 = {{
 
             let result = client
                 .change_password_with_options(
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -813,7 +817,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            tokio_client.cache_service_ticket(changepw_ticket);
+            tokio_client.cache_service_ticket(changepw_ticket)?;
             let mut client = NegotiateClient::from_tokio_client(tokio_client);
 
             let task = tokio::spawn(async move {
@@ -850,7 +854,7 @@ TEST.GOKRB5 = {{
             let result = client
                 .change_password_for_with_options(
                     target,
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -886,7 +890,7 @@ TEST.GOKRB5 = {{
             KdcProtocol::Tcp,
             tgt,
         );
-        tokio_client.cache_service_ticket(changepw_ticket);
+        tokio_client.cache_service_ticket(changepw_ticket)?;
         let mut client =
             BlockingNegotiateClient::new(NegotiateClient::from_tokio_client(tokio_client))
                 .map_err(|cause| {
@@ -915,7 +919,7 @@ TEST.GOKRB5 = {{
 
         let result = client
             .change_password_with_options(
-                b"newpassword",
+                Password::copy_from_str("newpassword"),
                 RequestOptions::new(
                     timestamp(1_893_553_452)?,
                     456_789,
@@ -1003,12 +1007,16 @@ TEST.GOKRB5 = {{
                 ipv4_host_address([127, 0, 0, 1]),
             );
             let change_target = client
-                .change_password_for_with_options(explicit_target, new_password, options)
+                .change_password_for_with_options(
+                    explicit_target,
+                    Password::from_vec(new_password.to_vec()),
+                    options,
+                )
                 .await
                 .context("change target password succeeds")?;
             let change_self = client
                 .change_password_with_options(
-                    old_password,
+                    Password::from_vec(old_password.to_vec()),
                     RequestOptions::new(
                         timestamp(1_893_553_453)?,
                         456_790,
@@ -1071,7 +1079,7 @@ TEST.GOKRB5 = {{
 
             let change_self_with_new = client
                 .change_password_with_options(
-                    new_password,
+                    Password::from_vec(new_password.to_vec()),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -1083,7 +1091,7 @@ TEST.GOKRB5 = {{
                 .context("change own password succeeds")?;
             let change_self_with_updated = client
                 .change_password_with_options(
-                    new_password,
+                    Password::from_vec(new_password.to_vec()),
                     RequestOptions::new(
                         timestamp(1_893_553_453)?,
                         456_790,
@@ -1177,7 +1185,7 @@ TEST.GOKRB5 = {{
             for attempt in 0_u64..2 {
                 let Err(error) = client
                     .change_password_with_options(
-                        new_password,
+                        Password::from_vec(new_password.to_vec()),
                         RequestOptions::new(
                             timestamp(1_893_553_452 + attempt)?,
                             456_789,

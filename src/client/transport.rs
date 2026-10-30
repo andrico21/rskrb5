@@ -1587,13 +1587,27 @@ impl Tokio {
     {
         let initial_request =
             password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
-        let (initial_response, mut pinned) = self
+        let (mut initial_response, mut pinned) = self
             .send_pinned(protocol, addr.clone(), &initial_request.der)
             .await?;
         if let Some(session) =
             password_initial_as_rep_session(&initial_request, &initial_response, &client, password)?
         {
             return Ok(session);
+        }
+        if let Some(probe) =
+            super::preauth::discovery_request(&initial_request, &options, &initial_response)?
+        {
+            initial_response =
+                if let Some(response) = self.send_follow_up(pinned.as_mut(), &probe.der).await? {
+                    response
+                } else {
+                    let (response, connection) =
+                        self.send_pinned(protocol, addr.clone(), &probe.der).await?;
+                    pinned = connection;
+                    response
+                };
+            super::preauth::validate_discovery(&initial_response, &options)?;
         }
         let (request, reply_key) =
             password_preauth_request(client, service, password, options, &initial_response)?;
@@ -1662,13 +1676,28 @@ impl Tokio {
     ) -> Result<AsRepSession, Error> {
         let initial_request =
             password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
-        let (initial_response, mut pinned) = self
+        let (mut initial_response, mut pinned) = self
             .send_to_realm_pinned(config, protocol, &client.realm, &initial_request.der)
             .await?;
         if let Some(session) =
             password_initial_as_rep_session(&initial_request, &initial_response, &client, password)?
         {
             return Ok(session);
+        }
+        if let Some(probe) =
+            super::preauth::discovery_request(&initial_request, &options, &initial_response)?
+        {
+            initial_response =
+                if let Some(response) = self.send_follow_up(pinned.as_mut(), &probe.der).await? {
+                    response
+                } else {
+                    let (response, connection) = self
+                        .send_to_realm_pinned(config, protocol, &client.realm, &probe.der)
+                        .await?;
+                    pinned = connection;
+                    response
+                };
+            super::preauth::validate_discovery(&initial_response, &options)?;
         }
         let (request, reply_key) =
             password_preauth_request(client, service, password, options, &initial_response)?;
@@ -1744,13 +1773,27 @@ impl Tokio {
     {
         let initial_request =
             keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
-        let (initial_response, mut pinned) = self
+        let (mut initial_response, mut pinned) = self
             .send_pinned(protocol, addr.clone(), &initial_request.der)
             .await?;
         if let Some(session) =
             keytab_initial_as_rep_session(&initial_request, &initial_response, &client, keytab)?
         {
             return Ok(session);
+        }
+        if let Some(probe) =
+            super::preauth::discovery_request(&initial_request, &options, &initial_response)?
+        {
+            initial_response =
+                if let Some(response) = self.send_follow_up(pinned.as_mut(), &probe.der).await? {
+                    response
+                } else {
+                    let (response, connection) =
+                        self.send_pinned(protocol, addr.clone(), &probe.der).await?;
+                    pinned = connection;
+                    response
+                };
+            super::preauth::validate_discovery(&initial_response, &options)?;
         }
         let (request, reply_key) =
             keytab_preauth_request(client, service, keytab, options, &initial_response)?;
@@ -1817,13 +1860,28 @@ impl Tokio {
     ) -> Result<AsRepSession, Error> {
         let initial_request =
             keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
-        let (initial_response, mut pinned) = self
+        let (mut initial_response, mut pinned) = self
             .send_to_realm_pinned(config, protocol, &client.realm, &initial_request.der)
             .await?;
         if let Some(session) =
             keytab_initial_as_rep_session(&initial_request, &initial_response, &client, keytab)?
         {
             return Ok(session);
+        }
+        if let Some(probe) =
+            super::preauth::discovery_request(&initial_request, &options, &initial_response)?
+        {
+            initial_response =
+                if let Some(response) = self.send_follow_up(pinned.as_mut(), &probe.der).await? {
+                    response
+                } else {
+                    let (response, connection) = self
+                        .send_to_realm_pinned(config, protocol, &client.realm, &probe.der)
+                        .await?;
+                    pinned = connection;
+                    response
+                };
+            super::preauth::validate_discovery(&initial_response, &options)?;
         }
         let (request, reply_key) =
             keytab_preauth_request(client, service, keytab, options, &initial_response)?;

@@ -1,5 +1,13 @@
 use super::*;
 
+#[cfg(feature = "tokio")]
+#[path = "review_cancellation.rs"]
+mod review_cancellation;
+
+#[cfg(all(feature = "tokio", feature = "spnego"))]
+#[path = "review_blocking.rs"]
+mod review_blocking;
+
 /// Cross-realm authenticator regression tests.
 #[cfg(test)]
 #[expect(

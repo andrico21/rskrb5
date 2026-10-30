@@ -403,6 +403,12 @@ pub enum Client {
         /// Actual reply service.
         actual: String,
     },
+    /// Authenticated reply times violate ordering or the requested bounds.
+    #[error("KDC reply violates requested ticket time constraints")]
+    ReplyTimeConstraint,
+    /// Authenticated reply grants ticket capabilities not requested by the client.
+    #[error("KDC reply violates requested ticket flag constraints")]
+    ReplyFlagConstraint,
     /// The KDC-REP nonce did not match the KDC-REQ nonce.
     #[error("KDC-REP nonce {actual} does not match KDC-REQ nonce {expected}")]
     NonceMismatch {
@@ -432,12 +438,26 @@ pub enum Client {
         /// Referral ticket service name.
         service: String,
     },
+    /// An inserted session belongs to a different client realm or component sequence.
+    #[cfg(feature = "tokio")]
+    #[error("cached session client does not match the configured client identity")]
+    CacheClientMismatch,
     /// A renewal helper expected a `krbtgt/<realm>` TGT session.
     #[error("expected a TGT session, got service {service}")]
     InvalidTgtSession {
         /// Actual session service name.
         service: String,
     },
+    /// Explicit renewal requires a valid renewable ticket with a live renewal horizon.
+    #[cfg(feature = "tokio")]
+    #[error("cached ticket is not eligible for renewal")]
+    TicketNotRenewable,
+    /// Blocking Negotiate requires a live runtime outside an entered Tokio context.
+    #[cfg(all(feature = "tokio", feature = "spnego"))]
+    #[error(
+        "blocking Negotiate runtime is unavailable; use the async Negotiate client inside Tokio"
+    )]
+    BlockingRuntimeUnavailable,
     /// A high-level client operation needs password/keytab credentials.
     #[cfg(feature = "tokio")]
     #[error("no password or keytab credentials are configured")]
