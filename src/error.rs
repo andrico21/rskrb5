@@ -1922,7 +1922,6 @@ pub enum Service {
     /// PAC parsing or verification failed.
     #[error("PAC error: {0}")]
     Pac(#[from] Pac),
-    /// Ticket has not become valid or carries the invalid ticket flag.
     /// PAC client name or authentication time does not match the ticket.
     #[error("PAC client metadata does not match ticket client")]
     PacClientMismatch,

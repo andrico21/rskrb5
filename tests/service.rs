@@ -22,8 +22,8 @@ mod pac_ad_win2k;
 mod tests {
     mod configured_skew;
     mod mandatory_pac;
-    mod pac_fixture;
     mod pac_binding;
+    mod pac_fixture;
     mod service_identity;
     mod transit;
 
