@@ -24,6 +24,14 @@ pub enum Any {
     /// PAC parsing or verification failed.
     #[error("PAC error: {0}")]
     Pac(#[from] Pac),
+    /// Kerberos message helper processing failed.
+    #[cfg(feature = "messages")]
+    #[error("message helper error: {0}")]
+    Messages(#[from] Messages),
+    /// HTTP Negotiate processing failed.
+    #[cfg(feature = "http")]
+    #[error("HTTP Negotiate error: {0}")]
+    Http(#[from] Http),
     /// AS exchange client processing failed.
     #[cfg(feature = "messages")]
     #[error("client error: {0}")]
