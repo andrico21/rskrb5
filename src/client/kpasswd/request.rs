@@ -150,8 +150,10 @@ mod tests {
     /// Fractional caller timestamps are rejected before request construction.
     #[test]
     fn fractional_request_time_is_local() -> Result<(), Box<dyn StdError>> {
-        // Given a fractional timestamp and valid microseconds.
-        build_at(1, 0)
+        // Given a fractional timestamp and valid microseconds. 100 ns is the
+        // smallest fraction every platform's `SystemTime` keeps: Windows
+        // counts in 100 ns ticks and drops a 1 ns addition.
+        build_at(100, 0)
     }
 
     /// The first invalid microsecond value is a request-side error.
