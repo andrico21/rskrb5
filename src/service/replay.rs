@@ -56,6 +56,7 @@ impl ReplayCache {
             watermark: None,
             entries: HashMap::new(),
             authenticators: HashMap::new(),
+            expiry: super::BTreeSet::new(),
         }
     }
 
@@ -76,6 +77,8 @@ impl ReplayCache {
     pub fn clear(&mut self) {
         self.entries.clear();
         self.authenticators.clear();
+        self.expiry.clear();
+        self.assert_paired();
     }
 
     #[must_use]
@@ -118,25 +121,27 @@ impl ReplayCache {
     /// Prefer [`Self::prune_expired_at`].
     #[inline]
     pub fn force_clear_older_than_at(&mut self, max_age: Duration, now: SystemTime) -> usize {
-        let entries = &mut self.entries;
-        let before = entries.len();
-        // One pass over the digests; the key index is touched only for the
-        // pairs that expire, not probed once per live key.
-        self.authenticators.retain(|_, record| {
-            let live = now
-                .duration_since(record.last_seen)
-                .map_or(true, |age| age <= max_age);
-            if !live {
+        let before = self.entries.len();
+        while let Some(&(last_seen, digest)) = self.expiry.first() {
+            #[cfg(test)]
+            policy_tests::DIGEST_VISITS.with(|visits| visits.set(visits.get().saturating_add(1)));
+            if now
+                .duration_since(last_seen)
+                .map_or(true, |age| age <= max_age)
+            {
+                break;
+            }
+            let _: Option<(SystemTime, [u8; 32])> = self.expiry.pop_first();
+            if let Some(record) = self.authenticators.remove(&digest) {
                 #[cfg(test)]
                 replay_tests::KEY_INDEX_VISITS
                     .with(|visits| visits.set(visits.get().saturating_add(1)));
-                // Pairing is one to one, so this removes the digest's only key.
-                let _: Option<[u8; 32]> = entries.remove(&*record.key);
+                let _: Option<[u8; 32]> = self.entries.remove(&*record.key);
             }
-            live
-        });
-        // Removal only shrinks the key index, so its length cannot have grown.
-        before.saturating_sub(entries.len())
+            self.assert_paired();
+        }
+        self.assert_paired();
+        before.saturating_sub(self.entries.len())
     }
 
     /// Remove only records outside the automatic retention window.
@@ -202,9 +207,12 @@ impl ReplayCache {
         let mut replay = paired.is_some();
         for digest in paired.into_iter().chain([authenticator_digest]) {
             if let Some(record) = self.authenticators.get_mut(&digest) {
+                let _: bool = self.expiry.remove(&(record.last_seen, digest));
                 record.last_seen = latest;
+                let _: bool = self.expiry.insert((latest, digest));
                 replay = true;
             }
+            self.assert_paired();
         }
         if replay {
             return Ok(false);
@@ -227,6 +235,14 @@ impl ReplayCache {
                 key: shared_key,
             },
         ));
+        let _: bool = self.expiry.insert((latest, authenticator_digest));
+        self.assert_paired();
         Ok(true)
+    }
+
+    /// Diagnose broken pairing without scanning live records.
+    fn assert_paired(&self) {
+        debug_assert_eq!(self.entries.len(), self.authenticators.len());
+        debug_assert_eq!(self.entries.len(), self.expiry.len());
     }
 }

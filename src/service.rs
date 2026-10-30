@@ -10,7 +10,7 @@
 use alloc::{borrow::Cow, sync::Arc};
 use core::{fmt::Debug, str::from_utf8, time::Duration};
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     sync::Mutex,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
@@ -261,6 +261,8 @@ pub struct ReplayCache {
     /// authenticator is a replay whatever cleartext ticket field was rewritten
     /// around it. Keys and digests pair one to one.
     authenticators: HashMap<[u8; 32], DigestRecord>,
+    /// Ordered last-seen times, with the unique digest breaking ties.
+    expiry: BTreeSet<(SystemTime, [u8; 32])>,
 }
 
 /// The digest-index record of one admitted key and digest pair.
