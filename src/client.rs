@@ -24,7 +24,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::{der, types::Integer};
 #[cfg(feature = "tokio")]
-use tokio::{sync::Mutex, task::JoinHandle, time::sleep};
+use tokio::{sync::Mutex, time::sleep};
 #[cfg(feature = "tokio")]
 use zeroize::Zeroizing;
 
@@ -656,36 +656,12 @@ impl PrunedSessions {
         !self.primary_tgt && self.tgt_sessions == 0 && self.service_tickets == 0
     }
 }
+#[cfg(feature = "tokio")]
+/// Background renewal task ownership.
+pub mod auto_renewal;
 /// Handle for a background Tokio TGT auto-renewal task.
 #[cfg(feature = "tokio")]
-#[derive(Debug)]
-pub struct TokioClientAutoRenewal {
-    /// The spawned renewal task.
-    handle: JoinHandle<()>,
-}
-#[cfg(feature = "tokio")]
-impl TokioClientAutoRenewal {
-    /// Request cancellation of the background renewal task.
-    #[inline]
-    pub fn abort(&self) {
-        self.handle.abort();
-    }
-    #[must_use]
-    /// Whether the background task has finished.
-    #[inline]
-    pub fn is_finished(&self) -> bool {
-        self.handle.is_finished()
-    }
-}
-// Drop audit: `JoinHandle::abort` only signals the task, never blocks or panics;
-// the task stops at its next await point and owns only an `Arc` of the client.
-#[cfg(feature = "tokio")]
-impl Drop for TokioClientAutoRenewal {
-    #[inline]
-    fn drop(&mut self) {
-        self.handle.abort();
-    }
-}
+pub type TokioClientAutoRenewal = auto_renewal::TokioClientAutoRenewal;
 /// High-level Tokio Kerberos client with TGT and service-ticket caching.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Eq, PartialEq)]
@@ -1219,7 +1195,7 @@ impl Tokio {
                 }
             }
         });
-        TokioClientAutoRenewal { handle }
+        TokioClientAutoRenewal::new(handle)
     }
     #[must_use]
     /// Parsed Kerberos configuration.
