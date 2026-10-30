@@ -1,9 +1,10 @@
-# Profile composition and name expansion (todo 15, Steps A/B1)
+# Profile composition and name expansion (todo 15, Steps A/B1/B2)
 
 This step changes profile composition, not the set of effective Kerberos
 features. B1 adds explicit-context credential-name parameter expansion.
-Reader adapters, dynamic-provider rejection, additional typed relations and
-diagnostics remain subsequent steps.
+B2 adds bounded reader adapters, dynamic-provider rejection and existing
+credential-consumer integration. Additional typed relations and diagnostics
+remain subsequent steps.
 
 ## Reference and lookup classification
 
@@ -138,11 +139,66 @@ unknown tokens and bare `%{`, remain literal and are never recursively expanded.
 Caller facts retain their path separators, rather than MIT Windows' final slash
 conversion. The result is resolved data: use literal-path APIs (`Keytab::load`,
 `CCache::load`) after handling any store prefix, not token-expanding name APIs.
-Existing name loaders retain their Linux procfs UID/eUID behavior unchanged;
-B1 does not widen their ambient-discovery contract or wire plan-2 consumers.
-There are no new ambient readers, so the exact-owner guard inventory is unchanged.
+At B1, existing name loaders retained their Linux procfs UID/eUID behavior and
+the exact-owner guard inventory was unchanged. B2 connects the consumers below.
 
 `tests/config/expansion.rs` covers each token, platform identity policy,
 missing facts, exact-name errors, malformed tokens, literal percent signs,
 nonrecursive Unicode replacements and resolution of all three profile names.
 B1 alone does not close GAP-4/WP-01 or any additional follow-up register row.
+
+## Reader adapters and dynamic providers (B2)
+
+GO-config-1 names gokrb5 `Load`, `NewFromString`, `NewFromReader`,
+`NewFromScanner`, `New` and `JSON`. Their Rust equivalents are respectively
+`Config::load`/`from_path`, `parse`/`from_string`, `from_reader` (also accepts
+`BufRead`), `new`, and `json`. No Go scanner object or redundant Rust scanner
+constructor is required. The existing parity manifest has an area-level
+`config` row, not a prescribed Rust constructor-name list.
+
+`from_reader` reads at most **4 MiB plus one sentinel byte**, rejects oversize
+input with `IncludeTooLarge`, rejects invalid UTF-8 with `Config::Io` carrying
+`InvalidData`, and retains reader I/O causes. Successful bytes enter the same
+include-aware composition as `parse`. Root and included bytes share the 4 MiB
+budget; includes must be absolute, with unchanged depth/file/cycle checks.
+
+`module MODULEPATH:RESIDUAL` and `module = ...` relations are rejected with
+`Config::UnsupportedDynamicModule` in Compatible and Strict modes. This also
+applies in `[plugins]`, nested or ignored sections, finalized/discarded scopes,
+and included sources. No dynamic code is loaded. These cover MIT-config-54/55
+refusal behavior, not the future WP-16 registered-provider implementation.
+
+## Effective default-name consumers (B2)
+
+Configured names now pass through `DefaultName::expand` with explicit facts
+built by the credential-discovery adapter, outside profile parsing:
+
+- Tokio ccache default load, save and update (both configured-only and
+  environment-override variants), including Negotiate/blocking delegates.
+- Tokio configured/default client keytab.
+- Service validator and HTTP layer/service configured/default server keytab.
+
+The name environment variables retain precedence. Their explicit values keep
+the existing UID-token behavior, not new profile-template semantics. Expanded
+profile values flow into literal-name/path handling without a second scan;
+`DIR:` saves retain primary-file publication. The child-process regression
+`ambient_templates_are_expanded_once` loads real credentials from a directory
+whose substituted value itself contains `%{uid}`.
+
+The adapter reads only requested facts: Linux real/effective IDs from the
+existing procfs reader; `TMPDIR` (fallback `/tmp`) for non-Windows TEMP;
+Windows `TEMP` and `APPDATA`, with `USERCONFIG[DIR]` derived as
+`APPDATA\\MIT\\Kerberos5`. Invalid Unicode is an error. The Windows environment
+mapping is an explicit limitation, not a claim of native shell-folder lookup.
+The three new environment reads are pinned by exact path/owner in
+`ambient_guard`; transitive public consumers document them and literal-input
+alternatives. Configured-name loaders avoid the name-override environment but
+are no longer environment-free when their templates request these facts.
+
+For Step E: all three relations have consumers. Ambient effective-username,
+Windows SID and installation-directory discovery is unavailable under the
+current no-unsafe/no-new-dependency implementation; such tokens fail typed
+`Unavailable` instead of silently selecting a wrong credential. Applications
+can supply those facts through B1's pure API and use explicit literal paths.
+No additional ledger row closes: FU-CFG-09 was already marked fixed by Step A;
+B2 completes its separately noted dynamic-module refusal. GAP-4 remains open.
