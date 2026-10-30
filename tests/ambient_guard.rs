@@ -8,7 +8,7 @@
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod tests {
+pub(crate) mod tests {
     extern crate alloc;
 
     use alloc::collections::BTreeMap;
@@ -611,6 +611,11 @@ mod tests {
         (items, failures)
     }
 
+    /// Classify a source file for transport regressions using the audited reader inventory.
+    pub(crate) fn access_violations(file: &str, source: &str) -> Vec<String> {
+        inventory(file, source).1
+    }
+
     /// Identify call names, resolving Self and self without contaminating unrelated owners.
     fn calls(function: &Function, callee: &Function) -> bool {
         let name = callee.owner.rsplit("::").next().unwrap_or_default();
@@ -844,7 +849,7 @@ mod tests {
             .iter()
             .all(|(file, source, rejected)| {
                 // When: the same inventory used on src sees the fixture.
-                let (_, failures) = inventory(file, source);
+                let failures = access_violations(file, source);
                 // Then: it rejects and identifies the forbidden owner/access.
                 failures.iter().any(|failure| failure.contains(rejected))
             })

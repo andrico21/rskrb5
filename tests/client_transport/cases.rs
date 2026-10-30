@@ -39,6 +39,7 @@ const KPASSWD_HEADER_LEN: usize = 6;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use crate::ambient_guard::tests::access_violations;
     /// Configured preauthentication connection reuse.
     mod affinity;
     /// Live KDC probe exchange implementation.
@@ -314,8 +315,34 @@ mod tests {
     #[test]
     fn transport_dns_has_no_ambient_environment_reads() {
         assert!(
-            !include_str!("../../src/client/transport.rs").contains("env::var("),
+            access_violations(
+                "src/client/transport.rs",
+                include_str!("../../src/client/transport.rs"),
+            )
+            .is_empty(),
             "DNS configuration must be explicitly supplied"
+        );
+    }
+
+    /// Alternate environment reader spellings must not evade transport confinement.
+    #[test]
+    fn transport_ambient_check_rejects_alternate_spellings() {
+        // Given: readers the former substring check admitted.
+        assert!(
+            [
+                "use std::env::var as read; fn hidden() { read(\"HOME\"); }",
+                "fn hidden() { std::env::var_os(\"HOME\"); }",
+                "fn hidden() { std::env::vars().collect::<Vec<_>>(); }",
+                "fn hidden() { std::env::vars_os(); }",
+                "fn hidden() { env::\nvar\n(\"HOME\"); }",
+            ]
+            .iter()
+            .all(|source| {
+                // When: the transport check classifies the fixture.
+                // Then: each ambient discovery is rejected.
+                !access_violations("src/client/transport.rs", source).is_empty()
+            }),
+            "alternate environment spellings must be rejected"
         );
     }
 
