@@ -33,8 +33,6 @@ mod tests {
     #[cfg(feature = "tower")]
     use core::task::{Context, Poll, Waker};
     use core::time::Duration;
-    #[cfg(feature = "tower")]
-    use rskrb5_ng::error::Service as ServiceError;
     use std::time::{SystemTime, UNIX_EPOCH};
     #[cfg(feature = "tower")]
     use std::{
@@ -62,6 +60,8 @@ mod tests {
     };
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::config::Config;
+    #[cfg(feature = "tower")]
+    use rskrb5_ng::error::Service as ServiceError;
     #[cfg(feature = "tokio")]
     use rskrb5_ng::service::ReplayCache;
     #[cfg(any(feature = "tokio", feature = "tower"))]
@@ -684,7 +684,9 @@ mod tests {
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 b"unused".to_vec(),
             );
-            client.cache_service_ticket(service_ticket);
+            client
+                .cache_service_ticket(service_ticket)
+                .context("fixture service ticket matches the client identity")?;
             let mut request = Request::new(());
 
             let context = krb_http::authorize_request_context_with_options(
@@ -718,7 +720,9 @@ mod tests {
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 b"unused".to_vec(),
             );
-            tokio_client.cache_service_ticket(service_ticket.clone());
+            tokio_client
+                .cache_service_ticket(service_ticket.clone())
+                .context("fixture service ticket matches the client identity")?;
             let mut client = NegotiateClient::from_tokio_client(tokio_client);
             let mut request = Request::new(());
 
@@ -756,7 +760,9 @@ mod tests {
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 b"unused".to_vec(),
             );
-            tokio_client.cache_service_ticket(service_ticket);
+            tokio_client
+                .cache_service_ticket(service_ticket)
+                .context("fixture service ticket matches the client identity")?;
             let mut client = NegotiateClient::from_tokio_client(tokio_client);
             let make_calls = Rc::new(Cell::new(0_usize));
             let make_calls_for_factory = Rc::clone(&make_calls);
@@ -2215,7 +2221,9 @@ mod tests {
             Principal::user("TEST.GOKRB5", "testuser1"),
             b"unused".to_vec(),
         );
-        tokio_client.cache_service_ticket(current_service_ticket_session()?);
+        tokio_client
+            .cache_service_ticket(current_service_ticket_session()?)
+            .context("fixture service ticket matches the client identity")?;
         Ok(NegotiateClient::from_tokio_client(tokio_client))
     }
 
