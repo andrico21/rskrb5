@@ -51,6 +51,8 @@ mod password_rotation;
 /// TGT refresh scheduling.
 #[cfg(feature = "tokio")]
 mod refresh_schedule;
+/// Authenticated KDC reply time and flag constraints.
+mod reply_constraints;
 /// TGT session metadata serialization.
 #[cfg(all(feature = "tokio", feature = "serde"))]
 mod session_json;
@@ -160,6 +162,8 @@ pub const KDC_OPTION_RENEW: u32 = 0x0000_0002;
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltAsReq {
+    /// Request clock snapshot and acceptable reply start-time skew.
+    pub reply_clock: (SystemTime, Duration),
     /// ASN.1 AS-REQ message.
     pub message: rasn_kerberos::AsReq,
     /// DER-encoded AS-REQ bytes suitable for KDC transport.
@@ -175,7 +179,7 @@ impl BuiltAsReq {
     /// Creates a `BuiltAsReq` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         message: rasn_kerberos::AsReq,
         der: Vec<u8>,
         client: Principal,
@@ -183,6 +187,7 @@ impl BuiltAsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
             der,
             client,
@@ -195,6 +200,8 @@ impl BuiltAsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
+    /// Request clock snapshot and acceptable reply start-time skew.
+    pub reply_clock: (SystemTime, Duration),
     /// Frontend keys for validating S4U tickets; never encoded on the wire.
     pub delegation_keytab: Option<Keytab>,
     /// ASN.1 TGS-REQ message.
@@ -217,7 +224,7 @@ impl BuiltTgsReq {
     /// Creates a `BuiltTgsReq` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         message: rasn_kerberos::TgsReq,
         der: Vec<u8>,
         client: Principal,
@@ -226,6 +233,7 @@ impl BuiltTgsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
             der,
             client,
@@ -2407,6 +2415,7 @@ pub fn build_as_req(
     let der = kdc_req::encode_as_req(&message).map_err(kdc_req_error)?;
 
     Ok(BuiltAsReq {
+        reply_clock: (options.now, options.clock_skew),
         message,
         der,
         client,
@@ -3108,6 +3117,7 @@ fn build_tgs_req_for_realm_inner(
 
     Ok((
         BuiltTgsReq {
+            reply_clock: (options.now, options.clock_skew),
             message,
             der,
             client: tgt.client.clone(),
@@ -3497,6 +3507,7 @@ pub fn process_as_rep(
     }
 
     let enc_part = kdc_rep::decrypt_as_rep_enc_part(&as_rep, reply_key).map_err(kdc_rep_error)?;
+    reply_constraints::validate(&request.message.0.req_body, &enc_part, request.reply_clock)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
     validate_reply_encrypted_padata(
         (&request.der, request.message.0.padata.as_deref()),
@@ -3699,6 +3710,7 @@ fn process_tgs_rep_inner(
 
     let enc_part =
         kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key).map_err(kdc_rep_error)?;
+    reply_constraints::validate(&request.message.0.req_body, &enc_part, request.reply_clock)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
     validate_reply_encrypted_padata(
         (&request.der, request.message.0.padata.as_deref()),

@@ -91,6 +91,8 @@ mod login_preauth;
 mod password_change;
 #[path = "client/preauth_errors.rs"]
 mod preauth_errors;
+#[path = "client/reply_fixture.rs"]
+mod reply_fixture;
 #[path = "client/review.rs"]
 mod review;
 #[cfg(feature = "tokio")]
@@ -117,6 +119,8 @@ mod review_password_rotation;
 #[cfg(feature = "tokio")]
 #[path = "client/review_refresh.rs"]
 mod review_refresh;
+#[path = "client/review_reply_constraints.rs"]
+mod review_reply_constraints;
 #[path = "client/review_s4u.rs"]
 mod review_s4u;
 #[path = "client/review_salt.rs"]
@@ -521,7 +525,9 @@ mod harness {
     pub(crate) fn sample_request() -> Result<BuiltAsReq, TestError> {
         build_tgt_as_req(
             Principal::user("TEST.GOKRB5", "testuser1"),
-            AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344),
+            AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344)
+                .with_kdc_option_bits(0x4000_0000)
+                .with_renew_lifetime(Some(Duration::from_hours(168))),
         )
         .context("sample request builds")
     }
@@ -616,7 +622,10 @@ mod harness {
         build_tgs_req_with_confounder(
             tgt,
             sample_service_principal(),
-            TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![18_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788)
+                .with_etypes(vec![18_i32])
+                .with_kdc_option_bits(0x4000_0000)
+                .with_renew_lifetime(Some(Duration::from_hours(168))),
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -852,7 +861,7 @@ mod harness {
         encrypted_pa_data: Option<Vec<rasn_kerberos::PaData>>,
     ) -> Result<Vec<u8>, TestError> {
         let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
-        let enc_part = rasn_kerberos::EncAsRepPart(rasn_kerberos::EncKdcRepPart {
+        let mut enc_part = rasn_kerberos::EncAsRepPart(rasn_kerberos::EncKdcRepPart {
             key: rasn_encryption_key(&session_key),
             last_req: vec![rasn_kerberos::LastReqValue {
                 r#type: 0,
@@ -872,6 +881,11 @@ mod harness {
             caddr: None,
             encrypted_pa_data,
         });
+        reply_fixture::conform(
+            &request.message.0.req_body,
+            &mut enc_part.0,
+            request.reply_clock.0,
+        )?;
         let encrypted = encrypt_message(
             reply_key,
             &der::encode(&enc_part).context("EncAsRepPart encodes")?,
@@ -971,7 +985,7 @@ mod harness {
         reply_service: &Principal,
     ) -> Result<Vec<u8>, TestError> {
         let session_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
-        let enc_part = rasn_kerberos::EncTgsRepPart(rasn_kerberos::EncKdcRepPart {
+        let mut enc_part = rasn_kerberos::EncTgsRepPart(rasn_kerberos::EncKdcRepPart {
             key: rasn_encryption_key(&session_key),
             last_req: vec![rasn_kerberos::LastReqValue {
                 r#type: 0,
@@ -991,6 +1005,11 @@ mod harness {
             caddr: None,
             encrypted_pa_data: None,
         });
+        reply_fixture::conform(
+            &request.message.0.req_body,
+            &mut enc_part.0,
+            request.reply_clock.0,
+        )?;
         let encrypted = encrypt_message(
             tgs_session_key,
             &der::encode(&enc_part).context("EncTgsRepPart encodes")?,
@@ -1144,13 +1163,12 @@ mod harness {
         let client = principal_from_parts(&body.realm, body.cname.as_ref().context("cname")?)?;
         let service = principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?;
         let nonce = body.nonce;
-        Ok(BuiltAsReq::new(
-            message,
-            der.to_vec(),
-            client,
-            service,
-            nonce,
-        ))
+        let clock = timestamp(u64::try_from(
+            body.till.0.timestamp().saturating_sub(86_400),
+        )?)?;
+        let mut built = BuiltAsReq::new(message, der.to_vec(), client, service, nonce);
+        built.reply_clock.0 = clock;
+        Ok(built)
     }
 
     /// Rebuilds the [`BuiltTgsReq`] of a decoded TGS-REQ `message` and its `der`.
@@ -1163,14 +1181,12 @@ mod harness {
         let service = principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?;
         let kdc_realm = kerberos_string_to_string(&body.realm)?;
         let nonce = body.nonce;
-        Ok(BuiltTgsReq::new(
-            message,
-            der.to_vec(),
-            client,
-            service,
-            kdc_realm,
-            nonce,
-        ))
+        let clock = timestamp(u64::try_from(
+            body.till.0.timestamp().saturating_sub(86_400),
+        )?)?;
+        let mut built = BuiltTgsReq::new(message, der.to_vec(), client, service, kdc_realm, nonce);
+        built.reply_clock.0 = clock;
+        Ok(built)
     }
 
     /// The AES256 reply key of `testuser1`.

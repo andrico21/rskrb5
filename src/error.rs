@@ -403,6 +403,12 @@ pub enum Client {
         /// Actual reply service.
         actual: String,
     },
+    /// Authenticated reply times violate ordering or the requested bounds.
+    #[error("KDC reply violates requested ticket time constraints")]
+    ReplyTimeConstraint,
+    /// Authenticated reply grants ticket capabilities not requested by the client.
+    #[error("KDC reply violates requested ticket flag constraints")]
+    ReplyFlagConstraint,
     /// The KDC-REP nonce did not match the KDC-REQ nonce.
     #[error("KDC-REP nonce {actual} does not match KDC-REQ nonce {expected}")]
     NonceMismatch {
