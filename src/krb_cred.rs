@@ -1,4 +1,16 @@
 //! KRB-CRED decoding and encrypted-part helpers.
+//!
+//! The codec/conversion functions here are raw RFC-vector operations. Use
+//! [`import`] for policy-checked semantic import before admitting credentials.
+//!
+//! # Security
+//! Raw conversion preserves opaque enctype IDs and historical records for tools
+//! and RFC fixtures; it does not authorize credential use. Raw encrypt/decrypt
+//! helpers require caller-authorized keys. Checked import calls private shared
+//! machinery only after `ImportedCredential` checks, never these public raw wrappers.
+
+/// Policy-checked semantic credential import.
+pub mod import;
 
 /// Conversion of credential fields between ccache and ASN.1.
 mod conversion;
@@ -8,7 +20,7 @@ use rasn::{der, types::Integer};
 
 use crate::{
     ccache,
-    crypto::KerberosEtype,
+    crypto::selection,
     der::{decode_complete, trim_zero_padded_der},
     error::Ticket as TicketError,
     keytab::EncryptionKey,
@@ -62,14 +74,23 @@ pub fn decrypt_krb_cred_enc_part(
     krb_cred: &rasn_kerberos::KrbCred,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::EncKrbCredPart, Error> {
+    decrypt_part(krb_cred, key)
+}
+
+/// Shared decryption machinery; checked import authorizes inputs before entry.
+/// # Errors
+/// Returns key mismatch, cryptographic integrity or DER errors.
+fn decrypt_part(
+    krb_cred: &rasn_kerberos::KrbCred,
+    key: &EncryptionKey,
+) -> Result<rasn_kerberos::EncKrbCredPart, Error> {
     if key.etype != krb_cred.enc_part.etype {
         return Err(Error::KeyEtypeMismatch {
             key_etype: key.etype,
             encrypted_data_etype: krb_cred.enc_part.etype,
         });
     }
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let plaintext = SecretDer::new(
         etype.decrypt_message(
             &key.value,
@@ -173,8 +194,7 @@ pub fn encrypt_ccache_credentials(
     credentials: &[ccache::Credential],
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::KrbCred, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     encrypt_ccache_credentials_to_krb_cred_with_confounder(credentials, key, &confounder)
@@ -194,10 +214,9 @@ pub fn encrypt_ccache_credentials_to_krb_cred_with_confounder(
     key: &EncryptionKey,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbCred, Error> {
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let (tickets, enc_part) = ccache_credentials_to_krb_cred_parts(credentials)?;
     let plaintext = SecretDer::new(encode_der("EncKrbCredPart", &enc_part)?, "krb-cred encode");
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(
         &key.value,
         &plaintext,
@@ -261,6 +280,16 @@ pub fn encode_encrypt_ccache_credentials_to_krb_cred_with_confounder(
 /// and [`Error::Encode`] when a ticket cannot be re-encoded.
 #[inline]
 pub fn decrypted_krb_cred_to_ccache_credentials(
+    krb_cred: &rasn_kerberos::KrbCred,
+    enc_part: &rasn_kerberos::EncKrbCredPart,
+) -> Result<Vec<ccache::Credential>, Error> {
+    convert_credentials(krb_cred, enc_part)
+}
+
+/// Shared representation conversion, never a credential-admission decision.
+/// # Errors
+/// Returns count mismatch or credential-field conversion errors.
+fn convert_credentials(
     krb_cred: &rasn_kerberos::KrbCred,
     enc_part: &rasn_kerberos::EncKrbCredPart,
 ) -> Result<Vec<ccache::Credential>, Error> {

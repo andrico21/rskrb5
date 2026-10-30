@@ -3,8 +3,8 @@
 use rasn::{AsnType, Decode, Decoder as _, Encode, Encoder as _, types::Integer};
 
 use crate::{
-    ap_req, crypto::KerberosEtype, keytab::EncryptionKey, krb_priv,
-    krb_priv::EncKrbPrivPartOptions, messages,
+    ap_req, crypto::selection, keytab::EncryptionKey, krb_priv, krb_priv::EncKrbPrivPartOptions,
+    messages,
 };
 
 /// Wire codecs and protocol error conversion.
@@ -321,8 +321,8 @@ pub fn build_change_password_message(
     session_key: &EncryptionKey,
     options: ChangePasswdMessageOptions,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let etype = KerberosEtype::from_etype_id(session_key.etype)
-        .ok_or(Error::UnsupportedEtype(session_key.etype))?;
+    let etype =
+        selection::enctype(session_key.etype)?.ok_or(Error::UnsupportedEtype(session_key.etype))?;
     let reply_key = EncryptionKey {
         etype: session_key.etype,
         value: random_key_material(etype.key_len())?,
@@ -375,8 +375,8 @@ pub fn build_change_password_request(
     reply_key: EncryptionKey,
     options: EncKrbPrivPartOptions,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let etype = KerberosEtype::from_etype_id(reply_key.etype)
-        .ok_or(Error::UnsupportedEtype(reply_key.etype))?;
+    let etype =
+        selection::enctype(reply_key.etype)?.ok_or(Error::UnsupportedEtype(reply_key.etype))?;
     let confounder = random_key_material(etype.confounder_len())?;
     build_change_password_request_with_confounder(
         ap_req,

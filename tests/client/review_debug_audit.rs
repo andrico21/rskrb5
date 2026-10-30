@@ -30,7 +30,7 @@ mod tests {
             (
                 "src/client.rs",
                 "Tokio",
-                "config,protocol,transport,client,credentials,tgt,tgt_sessions,service_tickets,assume_preauthentication,fast_negotiation",
+                "config,import_policy_error,protocol,transport,client,credentials,tgt,tgt_sessions,service_tickets,assume_preauthentication,fast_negotiation",
             ),
             (
                 "src/client/negotiate.rs",
@@ -85,7 +85,7 @@ mod tests {
         )?;
         fast.ap_req_der = b"fast-token-audit-canary".to_vec();
         fast.authenticator_subkey.value = b"fast-key-audit-canary".to_vec();
-        session.ticket = b"ticket-audit-canary".to_vec();
+        session.ticket = marked_ticket(b"ticket-audit-canary")?;
         client.cache_tgt_session(session)?;
         let credentials =
             TokioClientCredentials::Password(Zeroizing::new(b"password-audit-canary".to_vec()));

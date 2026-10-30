@@ -16,7 +16,7 @@ mod tests {
     use rasn::{der, types::Integer};
     use rskrb5_ng::{
         crypto::AesSha1Etype,
-        error::KrbSafe as Error,
+        error::{Crypto, KrbSafe as Error, Policy, RejectedFeature},
         keytab::EncryptionKey,
         krb_safe::{
             KRB_SAFE_CHECKSUM_USAGE, KRB_SAFE_MSG_TYPE, build as build_krb_safe,
@@ -199,7 +199,13 @@ mod tests {
             .ok_or("unsupported fixture checksum type is rejected")?;
 
         assert!(
-            matches!(error, Error::UnsupportedChecksumType(1_i32)),
+            matches!(
+                error,
+                Error::Crypto(Crypto::Policy(Policy::RejectedFeature {
+                    feature: RejectedFeature::UnauthenticatedChecksum { id: 1_i32 },
+                    reason: _,
+                }))
+            ),
             "{error:?}"
         );
         Ok(())

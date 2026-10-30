@@ -14,6 +14,7 @@ mod tests {
     use rskrb5_ng::{
         ap_req::decrypt_ap_req_authenticator,
         config::LibDefaults,
+        error::{Crypto, Policy},
         messages::{PaForUser, PaPacOptions},
     };
 
@@ -896,7 +897,7 @@ mod tests {
         let request = build_tgs_req_with_confounder(
             &tgt,
             sample_service_principal(),
-            TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![23_i32]),
+            TgsReq::new(timestamp(1_893_553_450)?, 0x5566_7788).with_etypes(vec![17_i32]),
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
@@ -954,8 +955,20 @@ mod tests {
             else {
                 return Err("a session key outside the permit list must be rejected".into());
             };
-            task.await??;
-            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            task.abort();
+            assert!(
+                task.await
+                    .err()
+                    .context("peer was never contacted")?
+                    .is_cancelled()
+            );
+            assert!(matches!(
+                error,
+                Error::Crypto(Crypto::Policy(Policy::EnctypeNotPermitted {
+                    etype: 18_i32,
+                    usage: _
+                }))
+            ));
             Ok::<(), TestError>(())
         })
     }
@@ -1003,8 +1016,20 @@ mod tests {
             else {
                 return Err("a session key outside the permit list must be rejected".into());
             };
-            task.await??;
-            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            task.abort();
+            assert!(
+                task.await
+                    .err()
+                    .context("peer was never contacted")?
+                    .is_cancelled()
+            );
+            assert!(matches!(
+                error,
+                Error::Crypto(Crypto::Policy(Policy::EnctypeNotPermitted {
+                    etype: 18_i32,
+                    usage: _
+                }))
+            ));
             Ok::<(), TestError>(())
         })
     }
@@ -1028,10 +1053,10 @@ mod tests {
             timestamp(1_893_553_451)?,
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
-        )?;
-
-        let decoded: rasn_kerberos::TgsReq = der::decode(&request.der)?;
-        assert_eq!(decoded.0.req_body.etype, vec![18_i32]);
+        )
+        .err()
+        .context("disabled mixed list is rejected")?;
+        assert!(matches!(request, Error::EmptyEtypes));
         Ok(())
     }
 
@@ -1246,8 +1271,17 @@ mod tests {
             else {
                 return Err("an empty explicit allowlist must permit no session key".into());
             };
-            task.await??;
-            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            task.abort();
+            assert!(
+                task.await
+                    .err()
+                    .context("peer was never contacted")?
+                    .is_cancelled()
+            );
+            assert!(matches!(
+                error,
+                Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+            ));
             Ok::<(), TestError>(())
         })
     }
@@ -1296,8 +1330,17 @@ mod tests {
             else {
                 return Err("an empty explicit allowlist must permit no session key".into());
             };
-            task.await??;
-            assert!(matches!(error, Error::EnctypeNotPermitted(18_i32)));
+            task.abort();
+            assert!(
+                task.await
+                    .err()
+                    .context("peer was never contacted")?
+                    .is_cancelled()
+            );
+            assert!(matches!(
+                error,
+                Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+            ));
             Ok::<(), TestError>(())
         })
     }
@@ -1323,7 +1366,10 @@ mod tests {
         else {
             return Err("an empty explicit allowlist must fail the AS-REQ closed".into());
         };
-        assert!(matches!(as_error, Error::EmptyEtypes));
+        assert!(matches!(
+            as_error,
+            Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+        ));
 
         let tgs_options =
             TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
@@ -1342,7 +1388,10 @@ mod tests {
         ) else {
             return Err("an empty explicit allowlist must fail the TGS-REQ closed".into());
         };
-        assert!(matches!(tgs_error, Error::EmptyEtypes));
+        assert!(matches!(
+            tgs_error,
+            Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+        ));
         Ok(())
     }
 }

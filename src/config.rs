@@ -4,7 +4,7 @@
 //! mappings, domain-realm lookup, durations and KDC discovery. Enctype ID
 //! accessors apply the configured family opt-ins and permitted list.
 
-use alloc::collections::BTreeMap;
+use alloc::{borrow::Cow, collections::BTreeMap};
 use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
@@ -14,6 +14,18 @@ use std::{
     io::{self, Read as _},
     path::{Path, PathBuf},
 };
+
+use crate::crypto::{
+    s2k::{Family, Minima},
+    selection,
+};
+/// Removed protocol mode selection boundaries.
+#[path = "config/protocol.rs"]
+pub mod protocol;
+/// Reject forbidden serde configuration selections.
+#[cfg(feature = "serde")]
+#[path = "config/serde_policy.rs"]
+mod serde_policy;
 
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
@@ -36,7 +48,7 @@ const DEFAULT_ENCTYPES: &[&str] = &[
 ];
 
 /// The default `preferred_preauth_types`, most preferred first.
-const DEFAULT_PREAUTH_TYPES: &[i32] = &[17, 16, 15, 14];
+const DEFAULT_PREAUTH_TYPES: &[i32] = &[17, 16];
 
 /// The deepest `include` nesting a configuration may reach before parsing fails
 /// with [`Error::IncludeTooDeep`].
@@ -279,12 +291,12 @@ impl Config {
     /// on the final values after every `[libdefaults]` section of the expanded
     /// input (included files included) is applied.
     ///
-    /// Unsupported and policy-disabled enctype names are skipped, retaining
-    /// usable names in order. Family names, `DEFAULT` and `-name` tokens are
-    /// not expanded, matching 0.2.2's concrete-name interpretation. An explicit
-    /// list with no usable entry fails with [`Error::NoUsableEnctypes`] for
-    /// requests or [`Error::NoPermittedEnctypes`] for the allowlist, never
-    /// falling back to defaults or unrestricted policy.
+    /// Enctype lists use [`EnctypeExpr`], including ordered families, `DEFAULT`
+    /// and subtraction. Forbidden, disabled and unknown positive selections fail
+    /// by name. Compatible mode skips only secure unsupported Camellia, recorded
+    /// by [`LibDefaults::diagnostics`]; use [`Self::parse_with_mode`] for strict mode.
+    /// Empty resolved lists fail closed. Implicit request lists inherit the
+    /// permitted list. Family permissions apply after all sections are read.
     ///
     /// # Errors
     ///
@@ -296,6 +308,15 @@ impl Config {
     #[inline]
     pub fn parse(input: &str) -> Result<Self, Error> {
         Self::parse_with_roots(input, [])
+    }
+
+    /// Parse a profile with explicit secure-unsupported handling.
+    ///
+    /// # Errors
+    /// Returns the errors of [`Self::parse`], including Camellia errors in strict mode.
+    #[inline]
+    pub fn parse_with_mode(input: &str, mode: ParseMode) -> Result<Self, Error> {
+        Self::parse_with_roots_mode(input, [], mode)
     }
 
     /// The parser the string entry point and the two file loaders share: they
@@ -315,10 +336,22 @@ impl Config {
     where
         I: IntoIterator<Item = PathBuf>,
     {
+        Self::parse_with_roots_mode(text, roots, ParseMode::Compatible)
+    }
+
+    /// Expand sources and apply the requested enctype parsing mode.
+    ///
+    /// # Errors
+    /// Returns include, profile and expression-policy errors without fallback.
+    fn parse_with_roots_mode<I>(text: &str, roots: I, mode: ParseMode) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = PathBuf>,
+    {
         let input = IncludeExpansion::default()
             .with_roots(roots)
             .expand(text, 0)?;
         let mut config = Self::new();
+        config.libdefaults.enctype_parse_mode = mode;
         let mut enctypes = EnctypeParseState::default();
         let mut realm_lines = Vec::new();
         let mut current = SectionKind::Unknown;
@@ -341,6 +374,12 @@ impl Config {
                 current = section;
                 lines.clear();
                 continue;
+            }
+
+            if current != SectionKind::DomainRealm
+                && let Some((key, value)) = cleaned.split_once('=')
+            {
+                protocol::relation(key.trim(), value.trim())?;
             }
 
             if current != SectionKind::Unknown {
@@ -468,65 +507,42 @@ where
         .collect()
 }
 
-/// Whether a configuration option is enabled; serialized as its original boolean.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[non_exhaustive]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "serde", serde(from = "bool", into = "bool"))]
-pub enum Toggle {
-    /// The option is disabled.
-    #[default]
-    Disabled,
-    /// The option is enabled.
-    Enabled,
-}
+include!("config/toggle.rs");
+/// Configuration parsing modes and diagnostics.
+#[path = "config/diagnostic.rs"]
+pub mod diagnostic;
+include!("config/enctype_expr.rs");
 
-impl Toggle {
-    /// Converts a configuration boolean into its option state.
-    #[must_use]
-    #[inline]
-    pub const fn from_bool(value: bool) -> Self {
-        if value { Self::Enabled } else { Self::Disabled }
-    }
-
-    /// Returns whether the option is enabled.
-    #[must_use]
-    #[inline]
-    pub const fn is_enabled(self) -> bool {
-        match self {
-            Self::Disabled => false,
-            Self::Enabled => true,
-        }
-    }
-}
-
-impl From<bool> for Toggle {
-    #[inline]
-    fn from(value: bool) -> Self {
-        Self::from_bool(value)
-    }
-}
-
-impl From<Toggle> for bool {
-    #[inline]
-    fn from(value: Toggle) -> Self {
-        value.is_enabled()
-    }
-}
-
-/// `[libdefaults]` configuration values.
+/// `[libdefaults]` configuration values, constructed through [`Self::new`] and builders.
+///
+/// Secure defaults are AES-SHA2 then AES-SHA1: IDs `[20, 19, 18, 17]`.
+/// Legacy permissions never insert entries into explicit request lists. Configuration
+/// parsing validates original terms and final list relationships before returning;
+/// runtime `CryptoPolicy` snapshots revalidate publicly mutated fields before use.
+/// See the [security policy](https://github.com/andrico21/rskrb5-ng/blob/main/docs/security-policy.md#policy).
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct LibDefaults {
-    /// Permit explicitly configured RC4 (23/24); disabled by default.
+    /// Unknown serde relations are checked for prohibited protocol selections.
+    #[cfg(feature = "serde")]
+    #[serde(
+        flatten,
+        deserialize_with = "serde_policy::relations",
+        skip_serializing
+    )]
+    pub protocol_relations: BTreeMap<String, String>,
+    /// API-only trusted minima; serde always restores secure RFC defaults.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub min_s2k_iterations: Minima,
+    /// Permit explicitly configured RC4-HMAC (23); export RC4 (24) is forbidden.
     #[cfg_attr(feature = "serde", serde(default))]
     pub allow_rc4: Toggle,
     /// Permit explicitly configured DES3 (16); disabled by default.
     #[cfg_attr(feature = "serde", serde(default))]
     pub allow_des3: Toggle,
-    /// Whether weak crypto names are retained before supported enctype
-    /// filtering.
+    /// Blanket weakening is permanently rejected when enabled.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::weak"))]
     pub allow_weak_crypto: Toggle,
     /// Whether clients should request canonicalization.
     pub canonicalize: Toggle,
@@ -543,8 +559,10 @@ pub struct LibDefaults {
     /// Default realm.
     pub default_realm: String,
     /// Preferred TGS enctype names.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub default_tgs_enctypes: Vec<String>,
     /// Preferred ticket enctype names.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub default_tkt_enctypes: Vec<String>,
     /// Whether hostnames should be DNS-canonicalized.
     pub dns_canonicalize_hostname: Toggle,
@@ -569,24 +587,28 @@ pub struct LibDefaults {
     /// Whether addresses should be omitted from tickets.
     pub no_addresses: Toggle,
     /// Permitted enctype names.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub permitted_enctypes: Vec<String>,
     /// Whether `[libdefaults] permitted_enctypes` was explicitly configured.
     ///
     /// Parsing a `[libdefaults] permitted_enctypes` line sets this flag. The
-    /// seeded default name list is gokrb5-derived and narrower than MIT's
-    /// default (it has no SHA2 enctypes), so the allowlist is only enforced
-    /// when this flag is set.
+    /// seeded default list is SHA2-first AES `[20, 19, 18, 17]`.
+    /// Explicit request lists outside an explicit permitted list are rejected.
+    /// `CryptoPolicy` always enforces permitted membership, regardless of this flag.
     ///
     /// The flag round-trips through serde. Serialized `LibDefaults` that lack
     /// this field deserialize it as `false`.
     ///
-    /// Code that builds `LibDefaults` programmatically (a struct literal or
-    /// `Default`) and wants the allowlist enforced must set this flag to
-    /// `true` together with `permitted_enctypes`.
-    /// With the flag set, an empty derived list permits no enctype.
+    /// Use [`Self::new`] and builders for programmatic construction; policy
+    /// construction revalidates public fields and rejects an empty permitted list.
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: Toggle,
-    /// Preferred preauthentication type IDs.
+    /// Informational preauthentication preferences. Removed IDs 14/15 from serde
+    /// remain visible here but are ignored and reported by [`Self::diagnostics`].
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_policy::preferences")
+    )]
     pub preferred_preauth_types: Vec<i32>,
     /// Whether tickets should be proxiable.
     pub proxiable: Toggle,
@@ -597,6 +619,7 @@ pub struct LibDefaults {
     /// Renewable ticket lifetime.
     pub renew_lifetime: Duration,
     /// Safe checksum type.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::checksum"))]
     pub safe_checksum_type: i32,
     /// Ticket lifetime.
     pub ticket_lifetime: Duration,
@@ -604,10 +627,53 @@ pub struct LibDefaults {
     pub udp_preference_limit: i32,
     /// Whether AP-REQ verification failure should be fatal.
     pub verify_ap_req_nofail: Toggle,
+    /// Mode applied to secure unsupported enctype selections.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub enctype_parse_mode: ParseMode,
+    /// Diagnostics accumulated while resolving profile enctype expressions.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub enctype_diagnostics: Vec<ConfigDiagnostic>,
 }
 
 impl LibDefaults {
-    /// Sets `allow_weak_crypto`, preserving the other fields.
+    /// Override a family's minimum through trusted application code only.
+    /// # Security
+    /// Lower values weaken resistance to offline password guessing. Never copy
+    /// a KDC-provided value into this override. No krb5.conf relation or serde
+    /// field can set it; deserialization restores RFC defaults.
+    /// # Errors
+    /// Rejects zero and minima above the existing 2^24 work ceiling.
+    #[inline]
+    pub fn with_min_s2k_iterations(mut self, family: Family, minimum: u32) -> Result<Self, Policy> {
+        self.min_s2k_iterations = self.min_s2k_iterations.with_minimum(family, minimum)?;
+        Ok(self)
+    }
+    /// Diagnostics for skipped secure enctypes and ignored draft-9 preferences.
+    /// Serde retains preference IDs for diagnostics, never for outgoing selection.
+    #[inline]
+    #[must_use]
+    pub fn diagnostics(&self) -> Cow<'_, [ConfigDiagnostic]> {
+        let ignored = self
+            .preferred_preauth_types
+            .iter()
+            .copied()
+            .filter(|id| matches!(*id, 14_i32 | 15_i32));
+        let mut diagnostics = Cow::Borrowed(self.enctype_diagnostics.as_slice());
+        for id in ignored {
+            diagnostics
+                .to_mut()
+                .push(ConfigDiagnostic::IgnoredPreauthType { id });
+        }
+        diagnostics
+    }
+
+    /// Parsing mode used for subsequent expression resolution.
+    #[inline]
+    #[must_use]
+    pub const fn parse_mode(&self) -> ParseMode {
+        self.enctype_parse_mode
+    }
+    /// Stage `allow_weak_crypto`; enabled values are rejected by runtime policy construction.
     #[must_use]
     #[inline]
     pub const fn with_allow_weak_crypto(mut self, value: Toggle) -> Self {
@@ -821,7 +887,7 @@ impl LibDefaults {
         self.renew_lifetime = value;
         self
     }
-    /// Sets `safe_checksum_type`, preserving the other fields.
+    /// Stage `safe_checksum_type`; forbidden values are rejected by runtime policy construction.
     #[must_use]
     #[inline]
     pub const fn with_safe_checksum_type(mut self, value: i32) -> Self {
@@ -877,6 +943,7 @@ impl LibDefaults {
             .collect::<Vec<_>>();
         Self {
             allow_rc4: Toggle::Disabled,
+            min_s2k_iterations: Minima::new(),
             allow_des3: Toggle::Disabled,
             allow_weak_crypto: Toggle::Disabled,
             canonicalize: Toggle::Disabled,
@@ -906,10 +973,14 @@ impl LibDefaults {
             rdns: Toggle::Enabled,
             realm_try_domains: -1,
             renew_lifetime: Duration::ZERO,
-            safe_checksum_type: 8,
+            safe_checksum_type: 15,
             ticket_lifetime: Duration::from_hours(24),
             udp_preference_limit: 1465,
             verify_ap_req_nofail: Toggle::Disabled,
+            enctype_parse_mode: ParseMode::Compatible,
+            enctype_diagnostics: Vec::new(),
+            #[cfg(feature = "serde")]
+            protocol_relations: BTreeMap::new(),
         }
     }
 
@@ -918,9 +989,10 @@ impl LibDefaults {
     ///
     /// # Errors
     ///
-    /// Returns an error for a line that is not an assignment, a `v4_`
-    /// directive, a value the key does not accept, and an explicit request
-    /// enctype list the explicit `permitted_enctypes` allowlist does not permit.
+    /// Returns an error for malformed assignments, enabling removed protocols,
+    /// invalid scalar values or unknown enctype tokens. Records expressions for
+    /// final family-permission and request/permitted validation after all sections;
+    /// `Config::parse` never returns a configuration with deferred parse errors.
     fn parse_lines(
         &mut self,
         lines: &[Line],
@@ -930,17 +1002,14 @@ impl LibDefaults {
             let (raw_key, value) = parse_assignment(line, "libdefaults")?;
             let lowered = raw_key.to_ascii_lowercase();
             let key = lowered.as_str();
-            if key.contains("v4_") {
-                return Err(Error::UnsupportedDirective(
-                    "v4 configurations are not supported".to_owned(),
-                ));
-            }
+            protocol::relation(key, value)?;
 
             match key {
                 "allow_rc4" => self.allow_rc4 = Toggle::from_bool(parse_boolean(value)?),
                 "allow_des3" => self.allow_des3 = Toggle::from_bool(parse_boolean(value)?),
                 "allow_weak_crypto" => {
                     self.allow_weak_crypto = Toggle::from_bool(parse_boolean(value)?);
+                    self.reject_weak_crypto()?;
                 }
                 "canonicalize" => self.canonicalize = Toggle::from_bool(parse_boolean(value)?),
                 "ccache_type" => self.ccache_type = parse_i32(value, line, key)?,
@@ -952,11 +1021,13 @@ impl LibDefaults {
                 "default_keytab_name" => value.clone_into(&mut self.default_keytab_name),
                 "default_realm" => value.clone_into(&mut self.default_realm),
                 "default_tgs_enctypes" => {
-                    self.default_tgs_enctypes = parse_words(value);
+                    enctypes.expressions.push(EnctypeExpr::parse(value)?);
+                    self.default_tgs_enctypes = vec![value.to_owned()];
                     enctypes.tgs_explicit = true;
                 }
                 "default_tkt_enctypes" => {
-                    self.default_tkt_enctypes = parse_words(value);
+                    enctypes.expressions.push(EnctypeExpr::parse(value)?);
+                    self.default_tkt_enctypes = vec![value.to_owned()];
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
@@ -983,7 +1054,8 @@ impl LibDefaults {
                     self.no_addresses = Toggle::from_bool(parse_boolean(value)?);
                 }
                 "permitted_enctypes" => {
-                    self.permitted_enctypes = parse_words(value);
+                    enctypes.expressions.push(EnctypeExpr::parse(value)?);
+                    self.permitted_enctypes = vec![value.to_owned()];
                     self.permitted_enctypes_explicit = Toggle::Enabled;
                 }
                 "preferred_preauth_types" => {
@@ -993,7 +1065,12 @@ impl LibDefaults {
                 "rdns" => self.rdns = Toggle::from_bool(parse_boolean(value)?),
                 "realm_try_domains" => self.realm_try_domains = parse_i32(value, line, key)?,
                 "renew_lifetime" => self.renew_lifetime = parse_duration(value)?,
-                "safe_checksum_type" => self.safe_checksum_type = parse_i32(value, line, key)?,
+                "safe_checksum_type" => {
+                    let id = selection::checksum_name(value)
+                        .map_or_else(|| parse_i32(value, line, key), Ok)?;
+                    selection::reject_checksum(id)?;
+                    self.safe_checksum_type = id;
+                }
                 "ticket_lifetime" => self.ticket_lifetime = parse_duration(value)?,
                 "udp_preference_limit" => {
                     self.udp_preference_limit = parse_i32(value, line, key)?;
@@ -1007,126 +1084,9 @@ impl LibDefaults {
 
         Ok(())
     }
-
-    /// Reject an explicit request list that names an enctype the explicit
-    /// `permitted_enctypes` allowlist does not permit.
-    ///
-    /// Dropping the enctype instead would silently send a narrower request
-    /// list than the operator configured. Seeded (implicit) request lists are
-    /// not checked here; `AsReq::from_libdefaults` and
-    /// `TgsReq::from_libdefaults` narrow them to the allowlist.
-    ///
-    /// Unsupported and policy-disabled names are skipped after all sections
-    /// are read. Every explicit list must retain at least one usable entry;
-    /// treating an empty allowlist as "no policy" would permit every enctype.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::NoUsableEnctypes`] for an unusable request list,
-    /// [`Error::NoPermittedEnctypes`] when the explicit allowlist
-    /// resolves to no usable enctype, and [`Error::EnctypeNotPermitted`]
-    /// naming the first explicit request list and enctype outside the
-    /// allowlist.
-    fn validate_explicit_enctypes(&mut self, enctypes: EnctypeParseState) -> Result<(), Error> {
-        if enctypes.tkt_explicit {
-            self.default_tkt_enctypes =
-                self.usable_explicit_enctypes(&self.default_tkt_enctypes, "default_tkt_enctypes")?;
-        }
-        if enctypes.tgs_explicit {
-            self.default_tgs_enctypes =
-                self.usable_explicit_enctypes(&self.default_tgs_enctypes, "default_tgs_enctypes")?;
-        }
-        if self.permitted_enctypes_explicit.is_enabled() {
-            self.permitted_enctypes =
-                self.usable_explicit_enctypes(&self.permitted_enctypes, "permitted_enctypes")?;
-        }
-        if !self.permitted_enctypes_explicit.is_enabled() {
-            return Ok(());
-        }
-        let permitted = self.permitted_enctype_ids();
-        if permitted.is_empty() {
-            return Err(Error::NoPermittedEnctypes {
-                names: self.permitted_enctypes.clone(),
-            });
-        }
-        let request_lists = [
-            (
-                enctypes.tkt_explicit,
-                "default_tkt_enctypes",
-                &self.default_tkt_enctypes,
-            ),
-            (
-                enctypes.tgs_explicit,
-                "default_tgs_enctypes",
-                &self.default_tgs_enctypes,
-            ),
-        ];
-        for (explicit, key, names) in request_lists {
-            if !explicit {
-                continue;
-            }
-            // Names without a supported ID are never requested, so only
-            // supported IDs can be narrowed away.
-            let not_permitted = names
-                .iter()
-                .find(|name| supported_enctype_id(name).is_some_and(|id| !permitted.contains(&id)));
-            if let Some(name) = not_permitted {
-                return Err(Error::EnctypeNotPermitted {
-                    key,
-                    enctype: name.clone(),
-                });
-            }
-        }
-        Ok(())
-    }
-
-    /// Skip unsupported or disabled names under the final section's policy.
-    ///
-    /// # Errors
-    /// Returns a named error with the original input when no usable name remains.
-    fn usable_explicit_enctypes(
-        &self,
-        names: &[String],
-        key: &'static str,
-    ) -> Result<Vec<String>, Error> {
-        let usable: Vec<String> = names
-            .iter()
-            .filter(|name| supported_enctype_id(name).is_some() && self.enctype_enabled(name))
-            .cloned()
-            .collect();
-        if usable.is_empty() {
-            return Err(if key == "permitted_enctypes" {
-                Error::NoPermittedEnctypes {
-                    names: names.to_vec(),
-                }
-            } else {
-                Error::NoUsableEnctypes {
-                    key,
-                    names: names.to_vec(),
-                }
-            });
-        }
-        Ok(usable)
-    }
-    /// Whether both family policy and weak-crypto policy permit this name.
-    fn enctype_enabled(&self, name: &str) -> bool {
-        let family_enabled = match supported_enctype_id(name) {
-            Some(23_i32 | 24_i32) => self.allow_rc4.is_enabled(),
-            Some(16_i32) => self.allow_des3.is_enabled(),
-            Some(_) | None => true,
-        };
-        family_enabled && (self.allow_weak_crypto.is_enabled() || !is_weak_enctype(name))
-    }
-
-    /// Derives implemented IDs with the current independent policy switches.
-    fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32> {
-        names
-            .iter()
-            .filter(|name| self.enctype_enabled(name))
-            .filter_map(|name| supported_enctype_id(name))
-            .collect()
-    }
 }
+
+include!("config/enctype_policy.rs");
 
 impl Default for LibDefaults {
     #[inline]
@@ -1140,6 +1100,14 @@ impl Default for LibDefaults {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct Realm {
+    /// Unknown serde relations cannot enable removed protocol modes.
+    #[cfg(feature = "serde")]
+    #[serde(
+        flatten,
+        deserialize_with = "serde_policy::relations",
+        skip_serializing
+    )]
+    pub protocol_relations: BTreeMap<String, String>,
     /// Realm name.
     #[cfg_attr(feature = "serde", serde(rename = "realm"))]
     pub name: String,
@@ -1166,6 +1134,8 @@ impl Realm {
             return Err(Error::InvalidRealmsSection("empty realm name".to_owned()));
         }
         Ok(Self {
+            #[cfg(feature = "serde")]
+            protocol_relations: BTreeMap::new(),
             name: realm,
             admin_server: Vec::new(),
             default_domain: String::new(),
@@ -1180,7 +1150,7 @@ impl Realm {
     /// # Errors
     ///
     /// Returns [`Error::InvalidLine`] for a line that is not an assignment, and
-    /// [`Error::UnsupportedDirective`] for a `v4_` directive.
+    /// [`Error::Policy`] for an enabled removed-protocol directive.
     fn parse(name: &str, lines: &[Line]) -> Result<Self, Error> {
         let mut realm = Self::new(name.to_owned())?;
         let mut admin_final = false;
@@ -1192,11 +1162,7 @@ impl Realm {
             let (raw_key, value) = parse_assignment(line, "realms")?;
             let lowered = raw_key.to_ascii_lowercase();
             let key = lowered.as_str();
-            if key.contains("v4_") {
-                return Err(Error::UnsupportedDirective(
-                    "v4 configurations are not supported".to_owned(),
-                ));
-            }
+            protocol::relation(key, value)?;
 
             match key {
                 "admin_server" => {
@@ -1253,8 +1219,10 @@ use crate::error::Config as Error;
 /// The state spans every `[libdefaults]` section of the parse, so a request
 /// list from an earlier section is still validated against a
 /// `permitted_enctypes` line from a later one.
-#[derive(Clone, Copy, Debug, Default)]
-struct EnctypeParseState {
+#[derive(Clone, Debug, Default)]
+pub(crate) struct EnctypeParseState {
+    /// Every explicit expression, including values overwritten later.
+    expressions: Vec<EnctypeExpr>,
     /// A `default_tkt_enctypes` line was parsed.
     tkt_explicit: bool,
     /// A `default_tgs_enctypes` line was parsed.
@@ -1508,13 +1476,21 @@ pub fn parse_boolean(value: &str) -> Result<bool, Error> {
 #[inline]
 pub(crate) fn parse_supported_enctype_ids(
     enctypes: &[String],
-    allow_weak_crypto: bool,
+    _allow_weak_crypto: bool,
 ) -> Vec<i32> {
-    enctypes
-        .iter()
-        .filter(|name| allow_weak_crypto || !is_weak_enctype(name))
-        .filter_map(|name| supported_enctype_id(name))
-        .collect()
+    EnctypeExpr::parse(&enctypes.join(" "))
+        .and_then(|expr| expr.resolve(Toggle::Enabled, Toggle::Enabled, ParseMode::Compatible))
+        .map_or_else(
+            |_| Vec::new(),
+            |resolved| {
+                resolved
+                    .enctypes()
+                    .iter()
+                    .copied()
+                    .map(KerberosEtype::etype_id)
+                    .collect()
+            },
+        )
 }
 
 /// The gokrb5 JSON snapshot of a [`Config`], borrowing from it.
@@ -1971,11 +1947,6 @@ fn parse_ip_addresses(value: &str) -> Vec<IpAddr> {
         .collect()
 }
 
-/// The whitespace-separated words of `value`.
-fn parse_words(value: &str) -> Vec<String> {
-    value.split_whitespace().map(str::to_owned).collect()
-}
-
 /// `value` with `:port` appended when it names no port, keeping a trailing
 /// `*` final marker last.
 fn add_default_port(value: &str, port: u16) -> String {
@@ -2008,37 +1979,6 @@ fn append_until_final(values: &mut Vec<String>, value: &str, final_seen: &mut bo
         trimmed = stripped.trim_end();
     }
     values.push(trimmed.to_owned());
-}
-
-/// The enctype ID of a supported enctype name, case-insensitively.
-fn supported_enctype_id(value: &str) -> Option<i32> {
-    Some(match value.to_ascii_lowercase().as_str() {
-        "aes128-cts-hmac-sha1-96" | "aes128-cts" | "aes128-sha1" => 17,
-        "aes256-cts-hmac-sha1-96" | "aes256-cts" | "aes256-sha1" => 18,
-        "aes128-cts-hmac-sha256-128" | "aes128-sha2" => 19,
-        "aes256-cts-hmac-sha384-192" | "aes256-sha2" => 20,
-        "des3-cbc-sha1" | "des3-hmac-sha1" | "des3-cbc-sha1-kd" => 16,
-        "arcfour-hmac" | "rc4-hmac" | "arcfour-hmac-md5" => 23,
-        "arcfour-hmac-exp" | "rc4-hmac-exp" | "arcfour-hmac-md5-exp" => 24,
-        _ => return None,
-    })
-}
-
-/// Whether `value` names a weak enctype that `allow_weak_crypto` gates.
-fn is_weak_enctype(value: &str) -> bool {
-    matches!(
-        value.to_ascii_lowercase().as_str(),
-        "des-cbc-crc"
-            | "des-cbc-md4"
-            | "des-cbc-md5"
-            | "des-cbc-raw"
-            | "des3-cbc-raw"
-            | "des-hmac-sha1"
-            | "arcfour-hmac-exp"
-            | "rc4-hmac-exp"
-            | "arcfour-hmac-md5-exp"
-            | "des"
-    )
 }
 
 /// One `include`/`includedir` directive, split from its argument.
@@ -2484,7 +2424,7 @@ mod fork_tests {
     /// harness's own output.
     const PROBE_PREFIX: &str = "rskrb5-probe:";
     /// This probe test's name in this binary, for the child's `--exact`.
-    const PROBE_TEST: &str = "config::fork_tests::env_free_fields_probe_child";
+    const PROBE_TEST: &str = "configuration::fork_tests::env_free_fields_probe_child";
     /// The hostile `UID` the parent gives the child.
     const HOSTILE_UID: &str = "4242";
     /// The hostile `HOME` the parent gives the child.

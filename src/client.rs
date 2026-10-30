@@ -34,7 +34,7 @@ use crate::config::Config;
 use crate::spnego;
 use crate::{
     ap_req, ccache,
-    crypto::{KerberosEtype, Rc4HmacEtype, kerb_checksum_hmac_md5},
+    crypto::{CryptoPolicy, KerberosEtype, Rc4HmacEtype, Use, kerb_checksum_hmac_md5, selection},
     error, kdc_rep, kdc_req,
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
@@ -45,8 +45,21 @@ mod cache_insert;
 /// In-memory credential-cache replacement.
 #[cfg(feature = "tokio")]
 mod cache_update;
+/// Shared runtime policy validation before client effects.
+mod crypto_policy;
+
 /// Owning password input and erasure.
 pub mod password;
+/// Peer string-to-key policy regression tests.
+#[cfg(test)]
+#[path = "client/s2k_tests.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod s2k_tests;
 /// Owning password input, erased on drop; see its explicit constructors.
 pub type Password = password::Secret;
 /// Password credential rotation eligibility.
@@ -180,6 +193,8 @@ pub const KDC_OPTION_RENEW: u32 = 0x0000_0002;
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltAsReq {
+    /// Policy used for the request and all subsequent reply validation.
+    pub crypto_policy: CryptoPolicy,
     /// Request clock snapshot and acceptable reply start-time skew.
     pub reply_clock: (SystemTime, Duration),
     /// ASN.1 AS-REQ message.
@@ -205,6 +220,7 @@ impl BuiltAsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            crypto_policy: CryptoPolicy::default(),
             reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
             der,
@@ -218,6 +234,8 @@ impl BuiltAsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
+    /// Policy used for the request and all subsequent reply validation.
+    pub crypto_policy: CryptoPolicy,
     /// Request clock snapshot and acceptable reply start-time skew.
     pub reply_clock: (SystemTime, Duration),
     /// Frontend keys for validating S4U tickets; never encoded on the wire.
@@ -251,6 +269,7 @@ impl BuiltTgsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            crypto_policy: CryptoPolicy::default(),
             reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
             der,
@@ -708,6 +727,8 @@ pub type TokioClientAutoRenewal = auto_renewal::Handle;
 #[cfg(feature = "tokio")]
 #[derive(Clone, Eq, PartialEq)]
 pub struct Tokio {
+    /// Deferred typed policy failure from legacy infallible import constructors.
+    import_policy_error: Option<error::Policy>,
     /// Kerberos configuration used for realm and KDC lookups.
     config: Config,
     /// Transport protocol policy for KDC exchanges.
@@ -735,6 +756,7 @@ impl fmt::Debug for Tokio {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             config,
+            import_policy_error,
             protocol,
             transport,
             client,
@@ -746,6 +768,7 @@ impl fmt::Debug for Tokio {
             fast_negotiation,
         } = self;
         f.debug_struct("TokioClient")
+            .field("import_policy_error", import_policy_error)
             .field("config", config)
             .field("protocol", protocol)
             .field("transport", transport)
@@ -923,6 +946,9 @@ impl Tokio {
     /// Create a cache-only client from a ccache.
     ///
     /// Cached TGTs and service tickets are reused and renewed when possible.
+    /// Excluded credentials are not admitted. A policy failure is retained and
+    /// returned by operational methods before effects; use [`Self::try_from_ccache`]
+    /// to receive it immediately.
     /// If no live password or keytab credential is configured, expired
     /// non-renewable entries cannot be re-acquired from the KDC.
     #[inline]
@@ -942,11 +968,26 @@ impl Tokio {
             } else {
                 kerberos.cache_service_ticket(session)
             };
-            if let Err(skipped) = insertion {
-                drop(skipped);
+            if let Err(skipped) = insertion
+                && let Some(policy) = crypto_policy::cause(&skipped)
+            {
+                kerberos.import_policy_error = Some(policy);
             }
         }
         kerberos
+    }
+    /// Import a ccache and report policy rejection immediately.
+    /// # Errors
+    /// Returns typed policy refusal for excluded credentials or invalid configuration.
+    #[inline]
+    pub fn try_from_ccache(
+        config: Config,
+        protocol: KdcProtocol,
+        cache: &ccache::CCache,
+    ) -> Result<Self, Error> {
+        let client = Self::from_ccache(config, protocol, cache);
+        crypto_policy::ready(&client)?;
+        Ok(client)
     }
     /// Create a cache-only client by loading a ccache name.
     ///
@@ -967,7 +1008,7 @@ impl Tokio {
         P: AsRef<str>,
     {
         let cache = ccache::CCache::load_name(cache_name)?;
-        Ok(Self::from_ccache(config, protocol, &cache))
+        Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from `config.libdefaults.default_ccache_name`.
     /// # Errors
@@ -1006,17 +1047,19 @@ impl Tokio {
     #[inline]
     pub fn from_ccache_env(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache = ccache::CCache::load_from_env()?;
-        Ok(Self::from_ccache(config, protocol, &cache))
+        Self::try_from_ccache(config, protocol, &cache)
     }
     #[must_use]
     /// Create a cache-only client from a known TGT session.
+    /// Excluded credentials are not admitted; operational methods return the
+    /// retained policy failure before use.
     #[inline]
     pub fn from_tgt_session(config: Config, protocol: KdcProtocol, tgt: AsRepSession) -> Self {
         let mut kerberos = Self::new(config, protocol, tgt.client.clone(), None);
         // A TGT whose service names no realm cannot be cached; the client then
         // starts without a session, as before.
         if let Err(skipped) = kerberos.cache_tgt_session(tgt) {
-            drop(skipped);
+            kerberos.import_policy_error = crypto_policy::cause(&skipped);
         }
         kerberos
     }
@@ -1177,6 +1220,7 @@ impl Tokio {
         credentials: Option<TokioClientCredentials>,
     ) -> Self {
         Self {
+            import_policy_error: None,
             config,
             protocol,
             transport: TokioKdcTransport::new(),
@@ -1437,9 +1481,16 @@ impl Tokio {
     /// Return a currently valid cached service ticket without contacting a KDC.
     #[inline]
     pub fn cached_service_ticket(&self, service: Principal) -> Option<TgsRepSession> {
+        crypto_policy::ready(self).ok()?;
         let resolved = self.resolve_service_principal(service);
         let key = service_cache_key(&resolved);
         let mut ticket = self.service_tickets.get(&key)?.clone();
+        crypto_policy::session(
+            &crypto_policy::configured(&self.config.libdefaults).ok()?,
+            &ticket,
+            Use::SessionKey,
+        )
+        .ok()?;
         if !session_valid_at(&ticket, SystemTime::now()) {
             return None;
         }
@@ -1572,6 +1623,7 @@ impl Tokio {
     /// take over, and any AS exchange error of [`Self::login`].
     #[inline]
     pub async fn affirm_login(&mut self) -> Result<&AsRepSession, Error> {
+        crypto_policy::ready(self)?;
         if let Some(tgt) = self.tgt.clone() {
             let now = SystemTime::now();
             if session_valid_at(&tgt, now) {
@@ -1607,6 +1659,7 @@ impl Tokio {
     /// place and the call can be repeated. No server-side state is committed.
     #[inline]
     pub async fn login(&mut self) -> Result<&AsRepSession, Error> {
+        crypto_policy::ready(self)?;
         let Some(credentials) = self.credentials.clone() else {
             let Some(tgt) = self.tgt.clone() else {
                 return Err(Error::NoClientCredentials);
@@ -1741,9 +1794,15 @@ impl Tokio {
         &mut self,
         requested: Principal,
     ) -> Result<TgsRepSession, Error> {
+        crypto_policy::ready(self)?;
         let service = self.resolve_service_principal(requested);
         let key = service_cache_key(&service);
         if let Some(mut ticket) = self.service_tickets.get(&key).cloned() {
+            crypto_policy::session(
+                &crypto_policy::configured(&self.config.libdefaults)?,
+                &ticket,
+                Use::SessionKey,
+            )?;
             let now = SystemTime::now();
             if session_valid_at(&ticket, now) {
                 ticket.service = service;
@@ -1962,8 +2021,9 @@ impl Tokio {
     pub async fn spnego_context_with_options(
         &mut self,
         service: Principal,
-        options: spnego::InitiatorContextOptions,
+        mut options: spnego::InitiatorContextOptions,
     ) -> Result<spnego::InitiatorContext, Error> {
+        options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
         let ticket = self.get_service_ticket(service).await?;
         Ok(spnego::init_sec_context(&ticket, options)?)
     }
@@ -1977,7 +2037,13 @@ impl Tokio {
     // cancel-safe: the TGT and caches are replaced only after an exchange
     // completes, so dropping the future leaves the previous session in place.
     async fn ensure_tgt(&mut self) -> Result<AsRepSession, Error> {
+        crypto_policy::ready(self)?;
         if let Some(tgt) = self.tgt.clone() {
+            crypto_policy::session(
+                &crypto_policy::configured(&self.config.libdefaults)?,
+                &tgt,
+                Use::SessionKey,
+            )?;
             let now = SystemTime::now();
             if session_valid_at(&tgt, now) && !session_refresh_due_at(&tgt, now) {
                 return Ok(tgt);
@@ -2008,6 +2074,7 @@ impl Tokio {
     ///
     /// Returns [`Error::Random`] when the nonce cannot be generated.
     fn as_req_options(&self) -> Result<AsReq, Error> {
+        crypto_policy::ready(self)?;
         Ok(
             AsReq::from_libdefaults(SystemTime::now(), random_nonce()?, &self.config.libdefaults)
                 .with_assume_preauthentication(self.assume_preauthentication)
@@ -2020,6 +2087,7 @@ impl Tokio {
     ///
     /// Returns [`Error::Random`] when the nonce cannot be generated.
     fn tgs_req_options(&self) -> Result<TgsReq, Error> {
+        crypto_policy::ready(self)?;
         Ok(TgsReq::from_libdefaults(
             SystemTime::now(),
             random_nonce()?,
@@ -2434,6 +2502,8 @@ pub fn build_as_req(
     service: Principal,
     options: AsReq,
 ) -> Result<BuiltAsReq, Error> {
+    crypto_policy::padata(&options.padata)?;
+    let crypto_policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
     if options.etypes.is_empty() {
         return Err(Error::EmptyEtypes);
     }
@@ -2469,6 +2539,7 @@ pub fn build_as_req(
     let der = kdc_req::encode_as_req(&message).map_err(kdc_req_error)?;
 
     Ok(BuiltAsReq {
+        crypto_policy,
         reply_clock: (options.now, options.clock_skew),
         message,
         der,
@@ -2496,9 +2567,8 @@ pub fn pa_enc_timestamp_with_confounder(
         patimestamp: kerberos_time_from_system_time(timestamp)?,
         pausec: Some(Integer::from(cusec)),
     };
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let plaintext = encode("PA-ENC-TS-ENC", &enc_ts)?;
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(
         &key.value,
         &plaintext,
@@ -2608,8 +2678,7 @@ pub fn pa_enc_timestamp(
     cusec: u32,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::PaData, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     pa_enc_timestamp_with_confounder(key, timestamp, cusec, &confounder, kvno)
@@ -2628,6 +2697,9 @@ pub fn build_preauthenticated_as_req(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<BuiltAsReq, Error> {
+    crypto_policy::padata(&options.padata)?;
+    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    policy.check_use(key.etype, Use::ReplyKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     options
         .padata
@@ -2682,6 +2754,9 @@ pub fn build_tgs_req_for_realm<P>(
 where
     P: Into<String>,
 {
+    crypto_policy::padata(&options.padata)?;
+    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::session(&policy, tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
@@ -2737,6 +2812,9 @@ pub fn build_s4u2self_req(
     user: Principal,
     options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
+    crypto_policy::padata(&options.padata)?;
+    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype))?;
@@ -2759,6 +2837,9 @@ pub fn build_s4u2self_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
+    crypto_policy::padata(&options.padata)?;
+    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     options.padata.retain(|padata| padata.r#type != PA_FOR_USER);
     options
         .padata
@@ -2790,6 +2871,10 @@ pub fn build_s4u2proxy_req(
     target_service: Principal,
     options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
+    crypto_policy::padata(&options.padata)?;
+    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
+    crypto_policy::session(&policy, evidence_ticket, Use::TicketKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype))?;
@@ -2823,6 +2908,10 @@ pub fn build_s4u2proxy_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
+    crypto_policy::padata(&options.padata)?;
+    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
+    crypto_policy::session(&policy, evidence_ticket, Use::TicketKey)?;
     if !principal_matches(&evidence_ticket.service, &service_tgt.client) {
         return Err(Error::ServicePrincipalMismatch {
             expected: service_tgt.client.name(),
@@ -2912,6 +3001,9 @@ pub fn build_tgs_req_for_realm_with_subkey<R>(
 where
     R: Into<String>,
 {
+    crypto_policy::padata(&options.padata)?;
+    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::session(&policy, tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
@@ -3086,6 +3178,9 @@ fn build_tgs_req_for_realm_inner(
     options: TgsReq,
     authenticator_context: TgsAuthenticatorContext<'_>,
 ) -> Result<(BuiltTgsReq, Vec<u8>), Error> {
+    crypto_policy::padata(&options.padata)?;
+    let crypto_policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::session(&crypto_policy, tgt, Use::SessionKey)?;
     let TgsAuthenticatorContext {
         timestamp,
         cusec,
@@ -3171,6 +3266,7 @@ fn build_tgs_req_for_realm_inner(
 
     Ok((
         BuiltTgsReq {
+            crypto_policy,
             reply_clock: (options.now, options.clock_skew),
             message,
             der,
@@ -3200,6 +3296,11 @@ pub fn build_ap_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
+    let policy = options.crypto_policy.clone().unwrap_or_default();
+    crypto_policy::session(&policy, service_ticket, Use::SessionKey)?;
+    if let Some(subkey) = &options.subkey {
+        policy.check_use(subkey.etype, Use::SessionKey)?;
+    }
     let (_, nanos) = unix_timestamp_parts(timestamp)?;
     (nanos == 0).ok_or_else(|| Error::Encode {
         target: "AP-REQ timestamp",
@@ -3336,6 +3437,12 @@ pub fn exchange_as_req<T>(
 where
     T: KdcTransport + ?Sized,
 {
+    crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+    crypto_policy::before_exchange(
+        &request.crypto_policy,
+        &request.message.0.req_body.etype,
+        reply_key,
+    )?;
     let response = transport.send(&request.client.realm, &request.der)?;
     process_as_rep(request, &response, reply_key)
 }
@@ -3353,6 +3460,12 @@ pub fn exchange_tgs_req<T>(
 where
     T: KdcTransport + ?Sized,
 {
+    crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+    crypto_policy::before_exchange(
+        &request.crypto_policy,
+        &request.message.0.req_body.etype,
+        tgs_session_key,
+    )?;
     let response = transport.send(&request.kdc_realm, &request.der)?;
     process_tgs_rep(request, &response, tgs_session_key)
 }
@@ -3551,12 +3664,21 @@ pub fn process_as_rep(
     bytes: &[u8],
     reply_key: &EncryptionKey,
 ) -> Result<AsRepSession, Error> {
+    request
+        .crypto_policy
+        .check_use(reply_key.etype, Use::ReplyKey)?;
     if let Ok(error) = process_kdc_error(bytes) {
         return Err(Error::Kdc(Box::new(error)));
     }
 
     let as_rep = kdc_rep::decode_as_rep(bytes).map_err(kdc_rep_error)?;
     let kdc_rep = &as_rep.0;
+    request
+        .crypto_policy
+        .check_use(kdc_rep.enc_part.etype, Use::ReplyKey)?;
+    request
+        .crypto_policy
+        .check_use(kdc_rep.ticket.enc_part.etype, Use::TicketKey)?;
 
     let client = principal_from_parts(&kdc_rep.crealm, &kdc_rep.cname)?;
     if !principal_matches(&client, &request.client) {
@@ -3567,6 +3689,9 @@ pub fn process_as_rep(
     }
 
     let enc_part = kdc_rep::decrypt_as_rep_enc_part(&as_rep, reply_key).map_err(kdc_rep_error)?;
+    request
+        .crypto_policy
+        .check_use(enc_part.key.r#type, Use::SessionKey)?;
     reply_constraints::validate(&request.message.0.req_body, &enc_part, request.reply_clock)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
     validate_reply_encrypted_padata(
@@ -3657,7 +3782,7 @@ fn validate_reply_encrypted_padata(
         .find(|padata| padata.r#type == PA_REQ_ENC_PA_REP)
         .ok_or(Error::InvalidFastNegotiationResponse)?;
     let checksum = messages::PaReqEncPaRep::decode_der(pa_req_enc_pa_rep.value.as_ref())?;
-    let etype = KerberosEtype::from_checksum_type_id(checksum.checksum_type)
+    let etype = selection::checksum(checksum.checksum_type)?
         .ok_or(Error::UnsupportedChecksumType(checksum.checksum_type))?;
     if !etype.verify_checksum(
         &reply_key.value,
@@ -3720,45 +3845,23 @@ fn process_tgs_rep_inner(
     tgs_session_key: &EncryptionKey,
     allow_referral: bool,
 ) -> Result<TgsRepSession, Error> {
+    request
+        .crypto_policy
+        .check_use(tgs_session_key.etype, Use::ReplyKey)?;
     if let Ok(error) = process_kdc_error(bytes) {
         return Err(Error::Kdc(Box::new(error)));
     }
 
     let tgs_rep = kdc_rep::decode_tgs_rep(bytes).map_err(kdc_rep_error)?;
     let kdc_rep = &tgs_rep.0;
+    request
+        .crypto_policy
+        .check_use(kdc_rep.enc_part.etype, Use::ReplyKey)?;
+    request
+        .crypto_policy
+        .check_use(kdc_rep.ticket.enc_part.etype, Use::TicketKey)?;
 
-    if request
-        .message
-        .0
-        .padata
-        .as_deref()
-        .is_some_and(|data| padata_contains(data, PA_FOR_USER))
-    {
-        let keys = request
-            .delegation_keytab
-            .as_ref()
-            .ok_or(Error::DelegationKeyRequired)?;
-        validate_delegated_ticket(&kdc_rep.ticket, &request.client, keys)?;
-    }
-    if u32::from_be_bytes(ticket_flags_to_bytes(&rasn_kerberos::TicketFlags(
-        request.message.0.req_body.kdc_options.0.clone(),
-    ))) & KDC_OPTION_CNAME_IN_ADDL_TKT
-        != 0
-    {
-        let keys = request
-            .delegation_keytab
-            .as_ref()
-            .ok_or(Error::DelegationKeyRequired)?;
-        let evidence = request
-            .message
-            .0
-            .req_body
-            .additional_tickets
-            .as_ref()
-            .and_then(|tickets| tickets.first())
-            .ok_or(Error::DelegationPrincipalMismatch)?;
-        validate_delegated_ticket(evidence, &request.client, keys)?;
-    }
+    crypto_policy::delegated(request, &kdc_rep.ticket)?;
 
     let client = principal_from_parts(&kdc_rep.crealm, &kdc_rep.cname)?;
     if !principal_matches(&client, &request.client) {
@@ -3770,6 +3873,9 @@ fn process_tgs_rep_inner(
 
     let enc_part =
         kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key).map_err(kdc_rep_error)?;
+    request
+        .crypto_policy
+        .check_use(enc_part.key.r#type, Use::SessionKey)?;
     reply_constraints::validate(&request.message.0.req_body, &enc_part, request.reply_clock)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, enc_part.key.r#type)?;
     validate_reply_encrypted_padata(
@@ -3942,31 +4048,26 @@ pub fn default_password_salt(client: &Principal) -> String {
 }
 
 /// Derive a reply key from password credentials and a preauthentication hint.
+///
+/// Applies RFC-default minimum work factors to peer parameters. Application
+/// overrides on `LibDefaults` are carried by the high-level request/login APIs.
+/// Raw `KerberosEtype::string_to_key` remains policy-free for trusted RFC vectors.
 /// # Errors
 ///
 /// Returns [`Error::UnsupportedEtype`] for an unknown enctype and
-/// [`Error::Crypto`] when key derivation fails.
+/// [`Error::Crypto`] for below-minimum, above-ceiling or malformed work factors,
+/// or when key derivation fails.
 #[inline]
 pub fn derive_password_reply_key(
     client: &Principal,
     password: &[u8],
     key_info: &PreauthKeyInfo,
 ) -> Result<EncryptionKey, Error> {
-    let etype = KerberosEtype::from_etype_id(key_info.etype)
-        .ok_or(Error::UnsupportedEtype(key_info.etype))?;
-    let salt = key_info
-        .salt
-        .clone()
-        .unwrap_or_else(|| default_password_salt(client));
-    let s2kparams = key_info.s2kparams.as_ref().map_or_else(
-        || etype.default_s2kparams().to_owned(),
-        |bytes| encode_hex_lower(bytes),
-    );
-    Ok(EncryptionKey {
-        etype: key_info.etype,
-        value: etype.string_to_key(password, salt.as_bytes(), &s2kparams)?,
-    })
+    password_derivation::derive(&CryptoPolicy::default(), client, password, key_info)
 }
+
+/// Shared password derivation after trusted peer-parameter checks.
+mod password_derivation;
 
 /// Select a reply key from a keytab using a preauthentication hint.
 /// # Errors
@@ -3979,6 +4080,7 @@ pub fn select_keytab_reply_key(
     client: &Principal,
     key_info: &PreauthKeyInfo,
 ) -> Result<(EncryptionKey, u32), Error> {
+    selection::reject_enctype(key_info.etype)?;
     let components = client
         .components
         .iter()
@@ -4074,32 +4176,7 @@ fn kdc_req_error(error: error::KdcReq) -> Error {
     }
 }
 
-/// Map a KRB-ERROR helper error into the client error.
-fn krb_error_error(error: error::KrbErrorCodec) -> Error {
-    match error {
-        error::KrbErrorCodec::Decode { target, message } => Error::Decode { target, message },
-        error::KrbErrorCodec::Encode { target, message } => Error::Encode { target, message },
-        error::KrbErrorCodec::InvalidMessage {
-            field,
-            expected,
-            actual,
-        } => Error::InvalidMessage {
-            field,
-            expected,
-            actual,
-        },
-        error::KrbErrorCodec::IntegerOutOfRange { field, value } => Error::InvalidUnsignedInteger {
-            field,
-            actual: value,
-        },
-        error::KrbErrorCodec::TimeOverflow => Error::TimeOverflow,
-        other @ (error::KrbErrorCodec::InvalidString(_)
-        | error::KrbErrorCodec::KvnoOutOfRange { target: _, kvno: _ }) => Error::Decode {
-            target: "KRB-ERROR",
-            message: other.to_string(),
-        },
-    }
-}
+include!("client/krb_error_mapping.rs");
 
 /// Map a ticket helper error into the client error.
 fn ticket_error(error: error::Ticket) -> Error {
@@ -4202,10 +4279,13 @@ fn password_initial_as_req(
     password: &[u8],
     requested: AsReq,
 ) -> Result<BuiltAsReq, Error> {
+    crypto_policy::padata(&requested.padata)?;
+    let policy = crypto_policy::request(&requested.crypto_policy, &requested.etypes)?;
     let options = initial_preauth_probe_options(requested);
     if options.assume_preauthentication {
         let key_info = assumed_preauth_key_info(&options.etypes)?;
-        let reply_key = derive_password_reply_key(&client, password, &key_info)?;
+        policy.check_use(key_info.etype, Use::ReplyKey)?;
+        let reply_key = password_derivation::derive(&policy, &client, password, &key_info)?;
         build_preauthenticated_as_req(client, service, options, &reply_key, None)
     } else {
         build_as_req(client, service, options)
@@ -4244,7 +4324,11 @@ fn password_initial_as_rep_session(
             s2kparams: None,
         },
     };
-    let reply_key = derive_password_reply_key(client, password, &key_info)?;
+    request
+        .crypto_policy
+        .check_use(key_info.etype, Use::ReplyKey)?;
+    let reply_key =
+        password_derivation::derive(&request.crypto_policy, client, password, &key_info)?;
     process_as_rep(request, response, &reply_key).map(Some)
 }
 
@@ -4261,6 +4345,10 @@ fn keytab_initial_as_req(
     keytab: &Keytab,
     requested: AsReq,
 ) -> Result<BuiltAsReq, Error> {
+    drop(crypto_policy::request(
+        &requested.crypto_policy,
+        &requested.etypes,
+    )?);
     let options = initial_preauth_probe_options(requested);
     if options.assume_preauthentication {
         let (reply_key, kvno) = select_assumed_keytab_reply_key(keytab, &client, &options)?;
@@ -4348,6 +4436,7 @@ fn keytab_initial_as_rep_session(
     let Some((etype, kvno)) = as_rep_reply_key_info(response) else {
         return Ok(None);
     };
+    request.crypto_policy.check_use(etype, Use::ReplyKey)?;
     enforce_requested_enctypes(&request.message.0.req_body.etype, etype)?;
     let (reply_key, _) =
         select_keytab_reply_key_for_etype(keytab, client, kvno.unwrap_or_default(), etype)?;
@@ -5063,6 +5152,7 @@ mod tests {
     /// no confounder profile, before drawing any random bytes for it.
     #[test]
     fn generated_subkey_needs_a_supported_session_key_enctype() -> Result<(), Error> {
+        use crate::error::{Policy, RejectedFeature};
         let tgt = session_with_key(EncryptionKey {
             etype: 1,
             value: vec![0x11; 8],
@@ -5074,8 +5164,16 @@ mod tests {
             TgsReq::new(SystemTime::now(), 1),
         );
         assert!(
-            matches!(result, Err(Error::UnsupportedEtype(1_i32))),
-            "an unsupported session key enctype must be reported as such"
+            matches!(
+                result,
+                Err(Error::Crypto(error::Crypto::Policy(
+                    Policy::RejectedFeature {
+                        feature: RejectedFeature::SingleDes,
+                        reason: _
+                    }
+                )))
+            ),
+            "single DES is rejected by policy before random generation"
         );
         Ok(())
     }

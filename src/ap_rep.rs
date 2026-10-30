@@ -3,7 +3,7 @@
 use rasn::{der, types::Integer};
 
 use crate::{
-    crypto::KerberosEtype,
+    crypto::selection,
     der::{decode_complete, trim_zero_padded_der},
     keytab::EncryptionKey,
     messages::secret_der::SecretDer,
@@ -82,8 +82,7 @@ pub fn decrypt_ap_rep_enc_part(
             encrypted_data_etype: ap_rep.enc_part.etype,
         });
     }
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let plaintext = SecretDer::new(
         etype.decrypt_message(
             &key.value,
@@ -114,8 +113,7 @@ pub fn build(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::ApRep, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     build_ap_rep_with_confounder(enc_part, key, kvno, &confounder)
@@ -135,9 +133,8 @@ pub fn build_ap_rep_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::ApRep, Error> {
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let plaintext = SecretDer::new(encode_der("EncApRepPart", enc_part)?, "ap-rep encode");
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(
         &key.value,
         &plaintext,

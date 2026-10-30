@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
     client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
-    crypto::KerberosEtype,
+    crypto::{CryptoPolicy, KerberosEtype, Use, selection},
     error,
     keytab::EncryptionKey,
     service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
@@ -299,6 +299,7 @@ impl MicToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        selection::reject_enctype(key.etype)?;
         let mut token = Self {
             flags: 0,
             snd_seq_num: 0,
@@ -316,6 +317,7 @@ impl MicToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
+        selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = scratch::Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
@@ -324,8 +326,7 @@ impl MicToken {
         data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
 
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         etype
             .checksum(&key.value, &data, key_usage)
             .map_err(Error::Crypto)
@@ -661,9 +662,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut token = Self {
             flags: 0,
             ec: u16::try_from(etype.hmac_len()).map_err(|_overflow| {
@@ -693,9 +693,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];
         getrandom::fill(&mut confounder)?;
         Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
@@ -752,8 +751,7 @@ impl WrapToken {
 
         let flags = self.flags | GSS_TOKEN_FLAG_SEALED;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let ec = match etype {
             KerberosEtype::Des3CbcSha1Kd(_) => {
                 // DES3's 8-byte confounder and the 16-byte header are already block-aligned.
@@ -807,9 +805,8 @@ impl WrapToken {
             .encrypted_body
             .as_ref()
             .ok_or(Error::MissingGssEncryptedBody)?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let encrypted = rotate_left(encrypted_body, usize::from(self.rrc));
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut plaintext = scratch::Scratch::new(
             etype.decrypt_message(&key.value, &encrypted, key_usage)?,
             "wrap-decrypt",
@@ -865,6 +862,7 @@ impl WrapToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
+        selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = scratch::Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
@@ -873,8 +871,7 @@ impl WrapToken {
         data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
 
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         etype
             .checksum(&key.value, &data, key_usage)
             .map_err(Error::Crypto)
@@ -1475,6 +1472,8 @@ impl Token {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InitiatorContextOptions {
+    /// Runtime policy passed to AP construction; secure defaults when absent.
+    pub crypto_policy: Option<CryptoPolicy>,
     /// GSS-API context flags to place in the authenticator checksum.
     pub context_flags: Vec<u32>,
     /// AP-REQ option bit string.
@@ -1490,11 +1489,19 @@ pub struct InitiatorContextOptions {
 }
 
 impl InitiatorContextOptions {
+    /// Set explicit enctype permission for this initiator context.
+    #[inline]
+    #[must_use]
+    pub fn with_crypto_policy(mut self, policy: CryptoPolicy) -> Self {
+        self.crypto_policy = Some(policy);
+        self
+    }
     #[must_use]
     /// Construct options matching gokrb5's default HTTP SPNEGO flags.
     #[inline]
     pub fn new() -> Self {
         Self {
+            crypto_policy: None,
             context_flags: vec![CONTEXT_FLAG_INTEG, CONTEXT_FLAG_CONF],
             ap_option_bits: 0,
             subkey: None,
@@ -1549,6 +1556,8 @@ impl Default for InitiatorContextOptions {
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InitiatorContext {
+    /// Runtime policy retained for reply keys and server-selected subkeys.
+    pub crypto_policy: CryptoPolicy,
     /// ASN.1 AP-REQ message.
     pub ap_req: rasn_kerberos::ApReq,
     /// DER-encoded AP-REQ bytes.
@@ -1583,6 +1592,7 @@ impl fmt::Debug for InitiatorContext {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
+            crypto_policy: _,
             ap_req: _,
             ap_req_der,
             krb5_token: _,
@@ -1707,8 +1717,16 @@ impl InitiatorContext {
     /// echo the authenticator timestamp.
     #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
+        self.crypto_policy
+            .check_use(self.session_key.etype, Use::SessionKey)?;
         let ap_rep = decode_ap_rep(bytes).map_err(ap_rep_error)?;
+        self.crypto_policy
+            .check_use(ap_rep.enc_part.etype, Use::SessionKey)?;
         let enc_part = decrypt_ap_rep_enc_part(&ap_rep, &self.session_key).map_err(ap_rep_error)?;
+        if let Some(subkey) = &enc_part.subkey {
+            self.crypto_policy
+                .check_use(subkey.r#type, Use::SessionKey)?;
+        }
         let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
         let cusec = integer_to_u32("ap-rep.cusec", &enc_part.cusec)?;
         let authenticator_time = ctime
@@ -1883,6 +1901,11 @@ pub fn init_sec_context(
     service_ticket: &TgsRepSession,
     mut options: InitiatorContextOptions,
 ) -> Result<InitiatorContext, Error> {
+    let policy = options.crypto_policy.clone().unwrap_or_default();
+    policy.check_use(service_ticket.session_key.etype, Use::SessionKey)?;
+    if let Some(subkey) = &options.subkey {
+        policy.check_use(subkey.etype, Use::SessionKey)?;
+    }
     let (timestamp, cusec) = current_time()?;
     if options.sequence_number.is_none() {
         options.sequence_number = Some(random_sequence_number()?);
@@ -1920,7 +1943,7 @@ pub fn init_sec_context_with_confounder(
     let sequence_number = options
         .sequence_number
         .ok_or(Error::MissingAuthenticatorSequence)?;
-    let ap_req_options = ApReq::new()
+    let mut ap_req_options = ApReq::new()
         .with_ap_option_bits(options.ap_option_bits)
         .with_checksum(Some(rasn_kerberos::Checksum {
             r#type: GSSAPI_CHECKSUM_TYPE,
@@ -1928,6 +1951,8 @@ pub fn init_sec_context_with_confounder(
         }))
         .with_subkey(options.subkey.clone())
         .with_sequence_number(Some(sequence_number));
+    let crypto_policy = options.crypto_policy.unwrap_or_default();
+    ap_req_options.crypto_policy = Some(crypto_policy.clone());
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;
@@ -1938,6 +1963,7 @@ pub fn init_sec_context_with_confounder(
     let header = negotiate_header(&spnego_token)?;
 
     Ok(InitiatorContext {
+        crypto_policy,
         ap_req: built_ap_req.message,
         ap_req_der,
         krb5_token,

@@ -7,6 +7,8 @@ use super::{
 };
 use crate::{
     config::LibDefaults,
+    crypto::CryptoPolicy,
+    error::Policy,
     keytab::{EncryptionKey, Keytab},
 };
 
@@ -14,6 +16,8 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct AsReq {
+    /// Runtime policy captured at option construction; errors fail before use.
+    pub crypto_policy: Result<CryptoPolicy, Policy>,
     /// Acceptable KDC reply start-time skew from the request clock.
     pub clock_skew: Duration,
     /// Client clock used for request time fields.
@@ -43,6 +47,7 @@ impl AsReq {
     #[inline]
     pub fn new(now: SystemTime, nonce: u32) -> Self {
         Self {
+            crypto_policy: Ok(CryptoPolicy::default()),
             clock_skew: Duration::from_secs(300),
             now,
             ticket_lifetime: DEFAULT_TICKET_LIFETIME,
@@ -69,6 +74,8 @@ impl AsReq {
     #[inline]
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
+        options.crypto_policy = CryptoPolicy::from_libdefaults(defaults)
+            .map_err(|_invalid_config| Policy::InvalidConfiguration);
         options.clock_skew = defaults.clockskew;
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
@@ -152,6 +159,8 @@ impl AsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct TgsReq {
+    /// Runtime policy captured at option construction; errors fail before use.
+    pub crypto_policy: Result<CryptoPolicy, Policy>,
     /// Acceptable KDC reply start-time skew from the request clock.
     pub clock_skew: Duration,
     /// Frontend service keys used to authenticate delegated ticket identities.
@@ -187,6 +196,7 @@ impl TgsReq {
     #[inline]
     pub fn new(now: SystemTime, nonce: u32) -> Self {
         Self {
+            crypto_policy: Ok(CryptoPolicy::default()),
             clock_skew: Duration::from_secs(300),
             now,
             ticket_lifetime: DEFAULT_TICKET_LIFETIME,
@@ -213,6 +223,8 @@ impl TgsReq {
     #[inline]
     pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
         let mut options = Self::new(now, nonce);
+        options.crypto_policy = CryptoPolicy::from_libdefaults(defaults)
+            .map_err(|_invalid_config| Policy::InvalidConfiguration);
         options.clock_skew = defaults.clockskew;
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
@@ -299,6 +311,8 @@ impl TgsReq {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ApReq {
+    /// Explicit runtime policy, or secure defaults when absent.
+    pub crypto_policy: Option<CryptoPolicy>,
     /// Raw AP option bit string.
     pub ap_option_bits: u32,
     /// Optional authenticator checksum.
@@ -315,6 +329,7 @@ impl ApReq {
     #[inline]
     pub const fn new() -> Self {
         Self {
+            crypto_policy: None,
             ap_option_bits: 0,
             checksum: None,
             subkey: None,

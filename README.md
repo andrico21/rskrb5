@@ -27,6 +27,9 @@ and the gokrb5 fixture parity are treated as compatibility-sensitive.
 [`docs/gokrb5-parity.md`](docs/gokrb5-parity.md) tracks parity with gokrb5
 v8.4.4 and lists every deliberate divergence.
 
+The [security policy](docs/security-policy.md) documents runtime encryption
+permission, permanent feature rejections, derivation limits and residual secret copies.
+
 ## Quick start
 
 ```toml

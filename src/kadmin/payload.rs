@@ -10,8 +10,7 @@ use super::{
     secret_der,
 };
 use crate::{
-    client::Password, crypto::KerberosEtype, keytab::EncryptionKey,
-    krb_priv::KRB_PRIV_ENCPART_USAGE,
+    client::Password, crypto::selection, keytab::EncryptionKey, krb_priv::KRB_PRIV_ENCPART_USAGE,
 };
 
 impl fmt::Debug for ChangePasswdData {
@@ -104,8 +103,7 @@ pub(super) fn encrypt(
     key: &EncryptionKey,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbPriv, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype
         .encrypt_message_with_confounder(&key.value, plaintext, KRB_PRIV_ENCPART_USAGE, confounder)
         .map_err(|source| Error::Crypto {

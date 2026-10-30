@@ -14,7 +14,7 @@
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     ap_rep, ap_req,
-    crypto::KerberosEtype,
+    crypto::{CryptoPolicy, KerberosEtype},
     kadmin, kdc_rep, kdc_req,
     keytab::EncryptionKey,
     krb_cred, krb_error, krb_priv, krb_safe,
@@ -61,6 +61,11 @@ fn key() -> EncryptionKey {
 /// Decode a message, then decrypt its encrypted part with the fixed key.
 fn decrypt(selector: u8, input: &[u8]) {
     let key = key();
+    drop(krb_cred::import::decode_decrypt(
+        &CryptoPolicy::default(),
+        input,
+        &key,
+    ));
     match selector & 0x07 {
         0 => {
             if let Ok(message) = ap_req::decode(input) {

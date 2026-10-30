@@ -406,10 +406,10 @@ mod tests {
             .with_permitted_enctypes(vec!["aes256-cts".into()])
             .with_permitted_enctypes_explicit(true.into());
         let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
-        let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
-
-        let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
-        assert_eq!(decoded.0.req_body.etype, vec![18_i32]);
+        let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+            .err()
+            .context("disabled mixed list is rejected")?;
+        assert!(matches!(error, Error::EmptyEtypes));
         Ok(())
     }
 
@@ -500,7 +500,7 @@ mod tests {
     fn process_as_rep_rejects_session_key_outside_requested_enctypes() -> Result<(), TestError> {
         let request = build_tgt_as_req(
             Principal::user("TEST.GOKRB5", "testuser1"),
-            AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![23_i32]),
+            AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![17_i32]),
         )?;
         let reply_key = reply_key()?;
         let response =
@@ -543,6 +543,7 @@ mod tests {
 [libdefaults]
  default_tkt_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1
  allow_des3 = true
+ permitted_enctypes = DEFAULT des3
 ",
         )?;
 

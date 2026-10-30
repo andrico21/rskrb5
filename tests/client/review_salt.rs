@@ -10,6 +10,10 @@ use super::*;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use rasn::der;
+    use rskrb5_ng::{
+        config::LibDefaults,
+        crypto::{CryptoPolicy, s2k::Family},
+    };
 
     use super::*;
 
@@ -26,7 +30,11 @@ mod tests {
             let info = PreauthKeyInfo::new(18)
                 .with_salt(Some("nondefault-salt".to_owned()))
                 .with_s2kparams(Some(vec![0, 0, 0, 2]));
-            let key = derive_password_reply_key(&built.client, TESTUSER_PASSWORD, &info)?;
+            let etype = KerberosEtype::from_etype_id(info.etype).context("fixture etype")?;
+            let key = EncryptionKey::new(
+                info.etype,
+                etype.string_to_key(TESTUSER_PASSWORD, b"nondefault-salt", "00000002")?,
+            );
             let mut response: rasn_kerberos::AsRep = der::decode(
                 &synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &key)?,
             )?;
@@ -49,12 +57,11 @@ mod tests {
     #[test]
     fn initial_password_reply_uses_info2_salt_and_parameters() -> Result<(), TestError> {
         let client = sample_request()?.client;
-        let session = login_tgt_with_password(
-            &mut SaltKdc,
-            client.clone(),
-            TESTUSER_PASSWORD,
-            AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18_i32]),
-        )?;
+        let defaults = LibDefaults::new().with_min_s2k_iterations(Family::AesSha1, 2)?;
+        let mut options = AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18_i32]);
+        options.crypto_policy = Ok(CryptoPolicy::from_libdefaults(&defaults)?);
+        let session =
+            login_tgt_with_password(&mut SaltKdc, client.clone(), TESTUSER_PASSWORD, options)?;
         assert_eq!(session.client, client);
         Ok(())
     }

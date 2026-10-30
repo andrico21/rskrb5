@@ -92,6 +92,7 @@ pub(super) fn ap_rep_error(error: error::ApRep) -> Error {
 /// Map a KRB-ERROR error onto the kadmin [`Error`].
 pub(super) fn krb_error_error(error: error::KrbErrorCodec) -> Error {
     match error {
+        error::KrbErrorCodec::Policy(policy) => policy.into(),
         error::KrbErrorCodec::Decode { target, message } => Error::Decode { target, message },
         error::KrbErrorCodec::Encode { target, message } => Error::Encode { target, message },
         error::KrbErrorCodec::InvalidMessage {

@@ -513,7 +513,8 @@ mod tests {
         assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [AES256_ETYPE]);
 
         let rc4_config = ad_config(true)?;
-        assert!(rc4_config.libdefaults.allow_weak_crypto.is_enabled());
+        assert!(!rc4_config.libdefaults.allow_weak_crypto.is_enabled());
+        assert!(rc4_config.libdefaults.allow_rc4.is_enabled());
         assert!(rc4_config.libdefaults.canonicalize.is_enabled());
         assert_eq!(
             rc4_config.libdefaults.default_tkt_enctype_ids(),
@@ -824,7 +825,7 @@ mod tests {
         let resource_admin = ad_resource_admin_addr();
         let rc4_options = if rc4 {
             "
-  allow_weak_crypto = true
+  allow_weak_crypto = false
   canonicalize = true
   default_tkt_enctypes = rc4-hmac
   allow_rc4 = true

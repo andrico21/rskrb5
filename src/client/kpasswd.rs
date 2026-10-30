@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     ap_rep::{decrypt_ap_rep_enc_part, validate as validate_ap_rep},
-    crypto::KerberosEtype,
+    crypto::selection,
     kadmin,
     keytab::EncryptionKey,
     messages,
@@ -173,7 +173,7 @@ pub fn build_kpasswd_request(
     change_data: &kadmin::ChangePasswdData,
     options: &RequestOptions,
 ) -> Result<BuiltKpasswdRequest, Error> {
-    let etype = KerberosEtype::from_etype_id(service_ticket.session_key.etype)
+    let etype = selection::enctype(service_ticket.session_key.etype)?
         .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
     let mut reply_key = EncryptionKey {
         etype: service_ticket.session_key.etype,

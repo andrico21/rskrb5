@@ -6,7 +6,12 @@ use super::{
     codec::{ap_req_error, parse_header},
     decode_krb_priv, encode_krb_priv,
 };
-use crate::{ap_req, keytab::EncryptionKey};
+use crate::{
+    ap_req,
+    crypto::selection,
+    error::{Policy, RejectedFeature, RejectionReason},
+    keytab::EncryptionKey,
+};
 
 impl ChangePasswdMessageOptions {
     /// Construct options with the required authenticator timestamp, microseconds,
@@ -81,6 +86,14 @@ impl Request {
     /// field, and [`Error::FrameTooLarge`] when the whole frame does not.
     #[inline]
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
+        if self.krb_priv.enc_part.etype == 0_i32 {
+            return Err(Policy::RejectedFeature {
+                feature: RejectedFeature::UnprotectedPasswordChange,
+                reason: RejectionReason::MissingAuthentication,
+            }
+            .into());
+        }
+        selection::reject_enctype(self.krb_priv.enc_part.etype)?;
         let ap_req = ap_req::encode(&self.ap_req).map_err(ap_req_error)?;
         let krb_priv = encode_krb_priv(&self.krb_priv)?;
         let Ok(ap_req_length) = u16::try_from(ap_req.len()) else {

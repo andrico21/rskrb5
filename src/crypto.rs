@@ -11,10 +11,39 @@
 //! zeroization on ordinary drop. Returned `Vec<u8>` keys/plaintext transfer
 //! cleanup responsibility to the caller. Abort skips destructors; dependency
 //! cipher/hash state and compiler-created register/spill copies are not covered.
+//!
+//! # Runtime policy
+//! Raw RFC-vector primitives and `KerberosEtype` dispatch are policy-free.
+//! Algorithm availability is not permission. Use [`CryptoPolicy::check_use`]
+//! before a checked operation; no Cargo feature alone enables legacy use.
 
 use core::mem;
 
+/// Shared runtime encryption policy and consumer-use categories.
+#[path = "crypto/policy.rs"]
+pub mod policy;
+/// Validated runtime enctype policy; default permission is AES only.
+pub type CryptoPolicy = policy::Policy;
+/// Intended consumer use checked against runtime policy.
+pub type Use = policy::Use;
+
+/// Policy-authorized low-level cryptographic operations.
+#[path = "crypto/checked.rs"]
+pub mod checked;
+/// Trusted per-family string-to-key work-factor policy.
+#[path = "crypto/s2k.rs"]
+pub mod s2k;
+/// Fallible algorithm selection with permanent D2 rejection.
+#[path = "crypto/selection.rs"]
+pub mod selection;
+
+/// Test-only observation of actual PBKDF2 entry, isolated per test thread.
+#[cfg(test)]
+#[path = "crypto/pbkdf2_observation.rs"]
+pub(crate) mod pbkdf2_observation;
+
 /// Internal zeroizing scratch ownership.
+#[path = "crypto/scratch.rs"]
 mod scratch;
 use aes::cipher::{
     BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength, Key, KeyInit, consts::U16,
@@ -152,6 +181,8 @@ impl AesSha1Etype {
     /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
+        #[cfg(test)]
+        pbkdf2_observation::record();
         let mut out = SecretScratch::new(vec![0; self.key_len()]);
         pbkdf2::pbkdf2_hmac::<Sha1>(secret, salt, iterations, &mut out);
         out.into_vec()
@@ -496,6 +527,8 @@ impl AesSha2Etype {
     /// Use [`Self::string_to_key`] for bounded peer-provided parameters.
     #[inline]
     pub fn string_to_pbkdf2(self, secret: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
+        #[cfg(test)]
+        pbkdf2_observation::record();
         let mut out = SecretScratch::new(vec![0; self.key_len()]);
         match self {
             Self::Aes128 => pbkdf2::pbkdf2_hmac::<Sha256>(secret, salt, iterations, &mut out),
@@ -1416,7 +1449,8 @@ pub enum KerberosEtype {
 }
 
 impl KerberosEtype {
-    /// Return a supported encryption type for a Kerberos etype id.
+    /// Probe implemented capability without selecting use (for peer advertisements).
+    /// Use `TryFrom<i32>` or [`selection::enctype`] when selecting an algorithm.
     #[inline]
     pub fn from_etype_id(etype_id: i32) -> Option<Self> {
         AesSha1Etype::from_etype_id(etype_id)
@@ -1426,7 +1460,8 @@ impl KerberosEtype {
             .or_else(|| Rc4HmacEtype::from_etype_id(etype_id).map(Self::Rc4Hmac))
     }
 
-    /// Return a supported encryption type for a Kerberos checksum type id.
+    /// Probe checksum capability without selecting use (for opaque metadata).
+    /// Use [`selection::checksum`] at an integrity verification boundary.
     #[inline]
     pub fn from_checksum_type_id(checksum_type_id: i32) -> Option<Self> {
         match checksum_type_id {
@@ -2221,6 +2256,7 @@ fn hmac_sha384(key: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 /// MAC verification boundary.
+#[path = "crypto/verification.rs"]
 mod verification;
 
 /// Rotate `bytes`, read as one big-endian bit string, right by `steps` bits.

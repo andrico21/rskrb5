@@ -17,7 +17,10 @@ use compcol::{
 };
 use zeroize::Zeroizing;
 
-use crate::{crypto::KerberosEtype, keytab::EncryptionKey};
+use crate::{
+    crypto::{KerberosEtype, selection},
+    keytab::EncryptionKey,
+};
 
 #[cfg(feature = "messages")]
 mod authorization;
@@ -315,10 +318,14 @@ impl Pac {
     /// [`Error::UnsupportedChecksumType`] for an unknown checksum type.
     #[inline]
     pub fn verify_server_checksum(&self, key: &EncryptionKey) -> Result<bool, Error> {
+        selection::reject_enctype(key.etype)?;
         let checksum = self
             .server_checksum
             .as_ref()
             .ok_or(Error::MissingRequiredBuffer("ServerChecksum"))?;
+        if let Ok(id) = i32::try_from(checksum.signature_type) {
+            selection::reject_checksum(id)?;
+        }
         let etype = kerberos_etype_for_checksum_type(checksum.signature_type)
             .ok_or(Error::UnsupportedChecksumType(checksum.signature_type))?;
         if key.etype != etype.etype_id() {
@@ -711,7 +718,7 @@ impl CredentialsInfo {
                 actual: key.etype,
             });
         }
-        let etype = KerberosEtype::from_etype_id(encryption_type)
+        let etype = selection::enctype(encryption_type)?
             .ok_or(Error::UnsupportedEncryptionType(encryption_type))?;
         let plaintext = Zeroizing::new(etype.decrypt_message(
             &key.value,

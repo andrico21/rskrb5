@@ -214,7 +214,10 @@ mod tests {
         #[test]
         fn permitted_enctypes_survive_a_serde_round_trip(enctypes in enctype_subset()) {
             let names: Vec<&str> = enctypes.iter().map(|entry| entry.0).collect();
-            let expected_ids: Vec<i32> = enctypes.iter().map(|entry| entry.1).collect();
+            let mut expected_ids: Vec<i32> = Vec::new();
+            for entry in &enctypes {
+                if !expected_ids.contains(&entry.1) { expected_ids.push(entry.1); }
+            }
             let config = Config::parse(&format!(
                 "[libdefaults]\n allow_rc4 = true\n allow_des3 = true\n permitted_enctypes = {}\n",
                 names.join(" ")
@@ -277,7 +280,7 @@ mod tests {
         Ok(())
     }
 
-    /// Unknown names are skipped when the list also contains a usable entry.
+    /// Unknown positive names are rejected even alongside a usable entry.
     #[test]
     fn unsupported_explicit_enctype_names_are_skipped() -> Result<(), TestError> {
         for key in [
@@ -287,14 +290,11 @@ mod tests {
         ] {
             let input = format!("[libdefaults]\n {key} = aes256-cts typo-enctype\n");
             // When parsing a mixed implemented/unknown list.
-            let config = Config::parse(&input)?;
-            // Then the configured list retains only its usable entry.
-            let names = match key {
-                "default_tkt_enctypes" => &config.libdefaults.default_tkt_enctypes,
-                "default_tgs_enctypes" => &config.libdefaults.default_tgs_enctypes,
-                _ => &config.libdefaults.permitted_enctypes,
-            };
-            assert_eq!(names, &["aes256-cts"]);
+            let error = Config::parse(&input)
+                .err()
+                .ok_or("unknown term was dropped")?;
+            // Then the original unknown token is named.
+            assert!(matches!(error, Error::UnknownEnctype { token } if token == "typo-enctype"));
         }
         Ok(())
     }
@@ -323,7 +323,10 @@ mod tests {
         // When parsing the explicit request list.
         let config = Config::parse(input)?;
         // Then the name list and derived wire IDs agree.
-        assert_eq!(config.libdefaults.default_tgs_enctypes, ["aes128-cts"]);
+        assert_eq!(
+            config.libdefaults.default_tgs_enctypes,
+            ["aes128-cts-hmac-sha1-96"]
+        );
         assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [17_i32]);
         Ok(())
     }
@@ -337,17 +340,12 @@ mod tests {
         let error = Config::parse(input)
             .err()
             .ok_or("disabled list was accepted")?;
-        // Then a named no-usable-list error identifies the key and input.
-        assert!(error.to_string().contains("no usable enctype"), "{error}");
-        assert!(
-            error.to_string().contains("default_tgs_enctypes"),
-            "{error}"
-        );
-        assert!(error.to_string().contains("rc4-hmac"), "{error}");
+        // Then the disabled token is rejected before list filtering.
+        assert!(matches!(error, Error::DisabledEnctype { token } if token == "rc4-hmac"));
         Ok(())
     }
 
-    /// Family and DEFAULT tokens retain 0.2.2's lack of implicit expansion.
+    /// MIT families expand, while invented family names fail by name.
     #[test]
     fn family_and_default_tokens_do_not_invent_enctypes() -> Result<(), TestError> {
         // Given unsupported family/selector tokens alongside a concrete name.
@@ -360,16 +358,29 @@ mod tests {
             "des",
         ] {
             let input = format!("[libdefaults]\n default_tgs_enctypes = {tokens} aes256-cts\n");
-            // When parsing the legacy-compatible concrete subset.
-            let config = Config::parse(&input)?;
-            // Then tokens do not expand into unrelated default algorithms.
-            assert_eq!(config.libdefaults.default_tgs_enctypes, ["aes256-cts"]);
-            assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [18_i32]);
+            // When parsing the same inputs with MIT selector semantics.
+            let result = Config::parse(&input);
+            // Then known selectors expand and unknown names cannot disappear.
+            match tokens {
+                "aes" => assert_eq!(
+                    result?.libdefaults.default_tgs_enctype_ids(),
+                    [18_i32, 17_i32, 20_i32, 19_i32]
+                ),
+                "DEFAULT -rc4" => assert_eq!(
+                    result?.libdefaults.default_tgs_enctype_ids(),
+                    [20_i32, 19_i32, 18_i32, 17_i32]
+                ),
+                "camellia" => assert_eq!(result?.libdefaults.default_tgs_enctype_ids(), [18_i32]),
+                _ => {
+                    let error = result.err().ok_or("invented family accepted")?;
+                    assert!(matches!(error, Error::UnknownEnctype { token } if token == tokens));
+                }
+            }
         }
         Ok(())
     }
 
-    /// Unsupported-only family/DEFAULT lists cannot silently become empty policy.
+    /// Valid family-only and DEFAULT-only lists expand to secure enctypes.
     #[test]
     fn family_and_default_only_lists_fail_closed() -> Result<(), TestError> {
         // Given the F2 family/DEFAULT probe inputs that 0.2.2 mapped to no IDs.
@@ -378,18 +389,20 @@ mod tests {
             ("default_tgs_enctypes", "DEFAULT -rc4"),
         ] {
             let input = format!("[libdefaults]\n {key} = {names}\n");
-            // When applying the explicit-list fail-if-empty contract.
-            let error = Config::parse(&input)
-                .err()
-                .ok_or("empty policy was accepted")?;
-            // Then the error names the list rather than selecting defaults.
-            assert!(error.to_string().contains("no usable enctype"), "{error}");
-            assert!(error.to_string().contains(key), "{error}");
+            // When expanding recognized selectors.
+            let config = Config::parse(&input)?;
+            // Then the exact family/default order reaches the request list.
+            let expected: Vec<i32> = if names == "aes" {
+                vec![18, 17, 20, 19]
+            } else {
+                vec![20, 19, 18, 17]
+            };
+            assert_eq!(config.libdefaults.default_tgs_enctype_ids(), expected);
         }
         Ok(())
     }
 
-    /// Disabled families and weak variants are skipped without reordering AES.
+    /// Disabled positives cannot be silently removed from mixed lists.
     #[test]
     fn disabled_enctypes_are_skipped_in_mixed_lists() -> Result<(), TestError> {
         // Given each list with independent family/weak policy disabled.
@@ -402,14 +415,11 @@ mod tests {
                 "[libdefaults]\n {key} = rc4-hmac aes128-cts des3-cbc-sha1 aes256-cts rc4-hmac-exp\n"
             );
             // When parsing with default policy.
-            let config = Config::parse(&input)?;
-            // Then usable names and derived IDs retain their configured order.
-            let names = match key {
-                "default_tkt_enctypes" => &config.libdefaults.default_tkt_enctypes,
-                "default_tgs_enctypes" => &config.libdefaults.default_tgs_enctypes,
-                _ => &config.libdefaults.permitted_enctypes,
-            };
-            assert_eq!(names, &["aes128-cts", "aes256-cts"]);
+            let error = Config::parse(&input)
+                .err()
+                .ok_or("disabled term was dropped")?;
+            // Then the first disabled token fails before any narrowing.
+            assert!(matches!(error, Error::DisabledEnctype { token } if token == "rc4-hmac"));
         }
         Ok(())
     }
@@ -417,6 +427,7 @@ mod tests {
     /// Deprecated families require their own flag, not just weak-crypto opt-in.
     #[test]
     fn deprecated_enctypes_require_explicit_family_opt_in() -> Result<(), TestError> {
+        use rskrb5_ng::error::{Policy, RejectedFeature};
         for name in [
             "rc4-hmac",
             "arcfour-hmac-md5",
@@ -432,7 +443,13 @@ mod tests {
                 let error = Config::parse(&input)
                     .err()
                     .ok_or("deprecated enctype was accepted")?;
-                assert!(error.to_string().contains(name));
+                assert!(matches!(
+                    error,
+                    Error::Policy(Policy::RejectedFeature {
+                        feature: RejectedFeature::WeakCrypto,
+                        reason: _
+                    })
+                ));
             }
         }
         Ok(())
@@ -1126,10 +1143,7 @@ mod tests {
         )
         .context("config parses")?;
 
-        assert_eq!(
-            config.libdefaults.default_tkt_enctype_ids(),
-            [23_i32, 23_i32, 23_i32]
-        );
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [23_i32]);
         assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [23_i32]);
         Ok(())
     }
@@ -1182,6 +1196,7 @@ mod tests {
     /// Pins that Kerberos v4 realm directives are rejected.
     #[test]
     fn rejects_v4_realm_directives() -> Result<(), TestError> {
+        use rskrb5_ng::error::{Policy, RejectedFeature};
         let err = Config::parse(
             "
 [realms]
@@ -1198,7 +1213,13 @@ mod tests {
         .err()
         .context("v4 directives are rejected")?;
 
-        assert!(matches!(err, Error::UnsupportedDirective(_)));
+        assert!(matches!(
+            err,
+            Error::Policy(Policy::RejectedFeature {
+                feature: RejectedFeature::V4Conversion,
+                reason: _,
+            })
+        ));
         Ok(())
     }
 
@@ -1471,10 +1492,7 @@ mod tests {
         })?;
 
         assert!(config.libdefaults.permitted_enctypes_explicit.is_enabled());
-        assert_eq!(
-            config.libdefaults.default_tkt_enctype_ids(),
-            vec![20_i32, 19_i32, 18_i32, 17_i32]
-        );
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
         #[cfg(feature = "messages")]
         assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
         Ok(())
@@ -1657,20 +1675,13 @@ mod tests {
             .err()
             .ok_or("an allowlist without a supported enctype is rejected")?;
 
-            assert!(
-                matches!(
-                    &error,
-                    Error::NoPermittedEnctypes { names: rejected }
-                        if rejected.join(" ") == names
-                ),
-                "unexpected error for {names}: {error:?}"
-            );
-            let message = error.to_string();
-            assert!(message.contains("permitted_enctypes"), "{message}");
-            assert!(
-                names.split_whitespace().any(|name| message.contains(name)),
-                "{message}"
-            );
+            if names == "camellia256-cts-cmac" {
+                assert!(matches!(error, Error::EmptyEnctypeExpression));
+            } else {
+                assert!(
+                    matches!(error, Error::RejectedEnctype { token, source: _ } if names.starts_with(&token))
+                );
+            }
         }
         Ok(())
     }
@@ -1685,7 +1696,7 @@ mod tests {
             "DES3-CBC-SHA1",
         ] {
             for allow_weak_crypto in [false, true] {
-                let config = Config::parse(&format!(
+                let result = Config::parse(&format!(
                     "
 [libdefaults]
   allow_weak_crypto = {allow_weak_crypto}
@@ -1693,8 +1704,13 @@ mod tests {
  default_tkt_enctypes = {name}
  permitted_enctypes = {name}
 "
-                ))
-                .map_err(|cause| format!("config parses: {cause}"))?;
+                ));
+                if allow_weak_crypto {
+                    let error = result.err().ok_or("weak crypto accepted")?;
+                    assert!(matches!(error, Error::Policy(_)));
+                    continue;
+                }
+                let config = result.map_err(|cause| format!("config parses: {cause}"))?;
 
                 assert_eq!(
                     config.libdefaults.permitted_enctype_ids(),

@@ -20,6 +20,7 @@ use rasn::{der, types::Integer};
 use crate::{
     ap_rep,
     config::Config,
+    crypto::CryptoPolicy,
     error,
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, Pac},
@@ -561,6 +562,8 @@ impl TransitValidator for TransitPolicy {
 /// AP-REQ validator backed by a service keytab.
 #[derive(Debug)]
 pub struct Validator<'keytab> {
+    /// Runtime permission shared by ticket and authenticator validation.
+    crypto_policy: CryptoPolicy,
     /// The service keytab, borrowed or owned.
     keytab: Cow<'keytab, Keytab>,
     /// The accepted clock skew between the authenticator time and now.
@@ -582,6 +585,13 @@ pub struct Validator<'keytab> {
 }
 
 impl<'keytab> Validator<'keytab> {
+    /// Set explicit enctype permission; defaults permit only the secure DEFAULT list.
+    #[inline]
+    #[must_use]
+    pub fn with_crypto_policy(mut self, policy: CryptoPolicy) -> Self {
+        self.crypto_policy = policy;
+        self
+    }
     /// Change the window without consuming replay evidence on failure.
     ///
     /// # Errors
@@ -612,7 +622,7 @@ impl<'keytab> Validator<'keytab> {
         self.replay_cache.max_clock_skew = skew;
         self.shared_replay_cache = cache;
     }
-    /// Create a validator with gokrb5-compatible defaults.
+    /// Create a validator with secure AES-only enctype permission and default replay settings.
     #[must_use]
     #[inline]
     pub fn new(keytab: &'keytab Keytab) -> Self {
@@ -623,6 +633,7 @@ impl<'keytab> Validator<'keytab> {
     /// owned keytab.
     pub(crate) fn from_keytab_cow(keytab: Cow<'keytab, Keytab>) -> Self {
         Self {
+            crypto_policy: CryptoPolicy::default(),
             keytab,
             max_clock_skew: DEFAULT_MAX_CLOCK_SKEW,
             now: None,
@@ -895,6 +906,7 @@ impl Validator<'static> {
     ///
     /// The configured `[libdefaults] clockskew` becomes the acceptance window;
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
+    /// The configured permitted list and legacy flags become the runtime policy.
     ///
     /// # Errors
     ///
@@ -902,7 +914,10 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self, Error> {
+        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
+            .map_err(|_invalid| error::Policy::InvalidConfiguration)?;
         Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
+            .with_crypto_policy(policy)
             .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
@@ -915,6 +930,7 @@ impl Validator<'static> {
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_keytab_name`. The configured
     /// `[libdefaults] clockskew` becomes the acceptance window.
+    /// The configured permitted list and legacy flags also apply to acceptance.
     ///
     /// # Errors
     ///
@@ -922,9 +938,12 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self, Error> {
+        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
+            .map_err(|_invalid| error::Policy::InvalidConfiguration)?;
         Self::from_keytab_name(keytab::default_keytab_name(
             &config.libdefaults.default_keytab_name,
         )?)?
+        .with_crypto_policy(policy)
         .with_max_clock_skew(config.libdefaults.clockskew)
     }
 

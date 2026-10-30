@@ -988,6 +988,12 @@ impl Tokio {
     where
         A: ToSocketAddrs + Clone,
     {
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+        super::crypto_policy::before_exchange(
+            &request.crypto_policy,
+            &request.message.0.req_body.etype,
+            reply_key,
+        )?;
         let response = self.send(protocol, addr, &request.der).await?;
         process_as_rep(request, &response, reply_key)
     }
@@ -1016,10 +1022,19 @@ impl Tokio {
         request: &BuiltAsReq,
         reply_key: &EncryptionKey,
     ) -> Result<AsRepSession, Error> {
+        let policy = super::crypto_policy::configured(&config.libdefaults)?;
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+        super::crypto_policy::before_exchange(
+            &policy,
+            &request.message.0.req_body.etype,
+            reply_key,
+        )?;
+        let mut bound = request.clone();
+        bound.crypto_policy = policy;
         let response = self
             .send_to_realm(config, protocol, &request.client.realm, &request.der)
             .await?;
-        let session = process_as_rep(request, &response, reply_key)?;
+        let session = process_as_rep(&bound, &response, reply_key)?;
         if config.libdefaults.permitted_enctypes_explicit.is_enabled() {
             super::ensure_permitted_enctype(
                 &config.libdefaults.permitted_enctype_ids(),
@@ -1054,6 +1069,12 @@ impl Tokio {
     where
         A: ToSocketAddrs + Clone,
     {
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+        super::crypto_policy::before_exchange(
+            &request.crypto_policy,
+            &request.message.0.req_body.etype,
+            tgs_session_key,
+        )?;
         let response = self.send(protocol, addr, &request.der).await?;
         process_tgs_rep(request, &response, tgs_session_key)
     }
@@ -1082,10 +1103,19 @@ impl Tokio {
         request: &BuiltTgsReq,
         tgs_session_key: &EncryptionKey,
     ) -> Result<TgsRepSession, Error> {
+        let policy = super::crypto_policy::configured(&config.libdefaults)?;
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+        super::crypto_policy::before_exchange(
+            &policy,
+            &request.message.0.req_body.etype,
+            tgs_session_key,
+        )?;
+        let mut bound = request.clone();
+        bound.crypto_policy = policy;
         let response = self
             .send_to_realm(config, protocol, &request.kdc_realm, &request.der)
             .await?;
-        let session = process_tgs_rep(request, &response, tgs_session_key)?;
+        let session = process_tgs_rep(&bound, &response, tgs_session_key)?;
         if config.libdefaults.permitted_enctypes_explicit.is_enabled() {
             super::ensure_permitted_enctype(
                 &config.libdefaults.permitted_enctype_ids(),
@@ -1145,8 +1175,9 @@ impl Tokio {
         protocol: KdcProtocol,
         service_tgt: &AsRepSession,
         user: Principal,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let request = build_s4u2self_req(service_tgt, user, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &service_tgt.session_key)
             .await
@@ -1204,8 +1235,9 @@ impl Tokio {
         service_tgt: &AsRepSession,
         evidence_ticket: &TgsRepSession,
         target_service: Principal,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let request = build_s4u2proxy_req(service_tgt, evidence_ticket, target_service, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &service_tgt.session_key)
             .await
@@ -1259,8 +1291,9 @@ impl Tokio {
         config: &Config,
         protocol: KdcProtocol,
         tgt: &AsRepSession,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let request = build_tgt_renewal_req(tgt, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &tgt.session_key)
             .await
@@ -1314,8 +1347,9 @@ impl Tokio {
         config: &Config,
         protocol: KdcProtocol,
         ticket: &AsRepSession,
-        options: TgsReq,
+        mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
+        options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let request = build_ticket_renewal_req(ticket, options)?;
         self.exchange_tgs_req_with_config(config, protocol, &request, &ticket.session_key)
             .await
@@ -1458,9 +1492,10 @@ impl Tokio {
         protocol: KdcProtocol,
         tgt: &AsRepSession,
         mut service: Principal,
-        options: TgsReq,
+        mut options: TgsReq,
         max_referrals: usize,
     ) -> Result<ReferralTgsResult, Error> {
+        options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let mut current_tgt = tgt.clone();
         let mut current_realm =
             tgt_realm(&current_tgt).ok_or_else(|| Error::InvalidReferralTicket {
@@ -1672,8 +1707,9 @@ impl Tokio {
         client: Principal,
         service: Principal,
         password: &[u8],
-        options: AsReq,
+        mut options: AsReq,
     ) -> Result<AsRepSession, Error> {
+        options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let initial_request =
             password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
         let (mut initial_response, mut pinned) = self
@@ -1856,8 +1892,9 @@ impl Tokio {
         client: Principal,
         service: Principal,
         keytab: &Keytab,
-        options: AsReq,
+        mut options: AsReq,
     ) -> Result<AsRepSession, Error> {
+        options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let initial_request =
             keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
         let (mut initial_response, mut pinned) = self

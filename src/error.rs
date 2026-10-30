@@ -18,6 +18,7 @@ use crate::client::transport::KdcProtocol;
 #[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 include!("error/any.rs");
+include!("error/policy.rs");
 #[cfg(feature = "messages")]
 /// AP-REP helper error.
 #[derive(Debug, thiserror::Error)]
@@ -124,6 +125,9 @@ pub enum ApReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Ccache {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// UID tokens require Linux procfs process identities.
     #[error("credential path process identity is unavailable (UID tokens require Linux procfs)")]
     IdentityUnavailable,
@@ -558,6 +562,46 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// An enctype expression contains a name or operator outside MIT's vocabulary.
+    #[error("unknown enctype expression token: {token}")]
+    UnknownEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+    },
+    /// An explicit positive legacy term lacks its family's runtime permission.
+    #[error("disabled enctype expression token: {token}")]
+    DisabledEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+    },
+    /// An explicit positive insecure term is permanently forbidden.
+    #[error("enctype expression token {token}: {source}")]
+    RejectedEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+        /// Permanent typed policy refusal, retained as a causal error.
+        source: Policy,
+    },
+    /// Strict mode rejects a secure encryption type that is not implemented yet.
+    #[error("unsupported secure enctype expression token {token}; unavailable until {until}")]
+    UnsupportedSecureEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+        /// Work package implementing this encryption type.
+        until: &'static str,
+    },
+    /// The resolved expression cannot permit any encryption type.
+    #[error("enctype expression resolves to an empty list")]
+    EmptyEnctypeExpression,
+    /// Input exceeds the expression parser's allocation budget.
+    #[error("enctype expression exceeds {maximum} bytes")]
+    EnctypeExpressionTooLarge {
+        /// Maximum accepted UTF-8 byte length.
+        maximum: usize,
+    },
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// A named top-level configuration file could not be resolved or read.
     #[error("configuration file {path} could not be read: {source}")]
     File {
@@ -588,9 +632,6 @@ pub enum Config {
         /// Line text after comment stripping.
         text: String,
     },
-    /// A directive is explicitly unsupported.
-    #[error("{0}")]
-    UnsupportedDirective(String),
     /// A boolean value was invalid.
     #[error("invalid boolean value: {0}")]
     InvalidBoolean(String),
@@ -680,28 +721,14 @@ pub enum Config {
         /// The configured enctype name.
         enctype: String,
     },
-    /// An explicit request list has no implemented, policy-enabled entry.
-    #[error("[libdefaults] {key} = {} has no usable enctype", names.join(" "))]
-    NoUsableEnctypes {
-        /// The configured request-list key.
-        key: &'static str,
-        /// The original configured names, before filtering.
-        names: Vec<String>,
-    },
-    /// An explicit `permitted_enctypes` allowlist names no usable enctype.
-    #[error(
-        "[libdefaults] permitted_enctypes = {} has no usable enctype",
-        names.join(" ")
-    )]
-    NoPermittedEnctypes {
-        /// The configured enctype names.
-        names: Vec<String>,
-    },
 }
 /// Errors produced by Kerberos cryptographic operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Crypto {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// AES key material length did not match the selected encryption type.
     #[error("invalid key length: expected {expected} bytes, got {actual}")]
     InvalidKeyLength {
@@ -834,6 +861,9 @@ pub enum Http {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Kadmin {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// The frame is too short to contain the kpasswd header.
     #[error("kadmin reply frame is too short: {actual} bytes")]
     FrameTooShort {
@@ -1262,6 +1292,9 @@ pub enum KrbCred {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum KrbErrorCodec {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]
     Decode {
@@ -1419,6 +1452,9 @@ pub enum KrbSafe {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Messages {
+    /// A requested cryptographic feature violates permanent policy.
+    #[error("policy error: {0}")]
+    Policy(#[from] Policy),
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]
     Decode {
