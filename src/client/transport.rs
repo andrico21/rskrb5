@@ -727,7 +727,9 @@ impl Tokio {
         password_delivery::send_to_endpoints(self, realm, protocol, endpoints, request).await
     }
 
-    /// Send one password mutation, marking the outcome unknown before possible delivery.
+    /// Send one password mutation, reporting uncertainty after possible delivery.
+    ///
+    /// An uncertain outcome returns immediately; the mutation is never retried.
     ///
     /// # Errors
     /// Returns preparation errors before a send, or `KpasswdOutcomeUnknown` afterward.
@@ -1866,7 +1868,9 @@ impl Tokio {
     }
 
     /// Discover kpasswd endpoints through `_kpasswd` DNS SRV records, falling
-    /// back to `_kerberos-adm` when that lookup fails or finds nothing.
+    /// back to `_kerberos-adm._tcp` on ordinary lookup failure or no records.
+    ///
+    /// A root SRV target means service unavailable and stops discovery without fallback.
     ///
     /// # Errors
     ///
