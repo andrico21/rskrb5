@@ -96,3 +96,10 @@ path = "fuzz_targets/http_negotiate.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "kdc_tcp_frame"
+path = "fuzz_targets/kdc_tcp_frame.rs"
+test = false
+doc = false
+bench = false

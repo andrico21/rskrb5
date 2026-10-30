@@ -7,6 +7,19 @@
 //! privileged groups.
 #![cfg(feature = "tokio")]
 
+/// Service endpoint selection for live fixtures.
+#[path = "client_integration/endpoints.rs"]
+mod endpoints;
+
+/// Availability gates for explicitly requested live fixtures.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "client_integration/preflight.rs"]
+mod preflight;
+
 use core::{error::Error, iter, net::Ipv4Addr, time::Duration};
 use std::{
     fs,
@@ -243,7 +256,16 @@ mod tests {
     };
     use tokio::runtime::{Builder, Runtime};
 
-    use super::*;
+    use super::{
+        endpoints::{
+            kdc_addr, kpasswd_addr, latest_kdc_addr, old_kdc_addr, resdom_kdc_addr, short_kdc_addr,
+        },
+        preflight::{
+            integration_enabled, integration_enabled_for, privileged_integration_enabled,
+            privileged_kvno_integration_enabled,
+        },
+        *,
+    };
 
     /// Names a KDC transport protocol in progress messages.
     const fn protocol_label(protocol: KdcProtocol) -> &'static str {
@@ -612,7 +634,7 @@ mod tests {
     /// Pins that a TCP login fails when the only configured KDC is unreachable.
     #[test]
     fn docker_mit_kdc_tcp_login_fails_for_unreachable_kdc() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -758,14 +780,14 @@ mod tests {
     /// Pins that the Tokio client changes the password through kpasswd and back (`TEST_KPASSWD=1`).
     #[test]
     fn docker_mit_kdc_tokio_client_change_password() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
-            return Ok(());
-        }
         if env::var("TEST_KPASSWD").as_deref() != Ok("1") {
             writeln!(
                 io::stderr(),
                 "skipping Docker KDC kpasswd test; set TEST_KPASSWD=1 to enable"
             )?;
+            return Ok(());
+        }
+        if !integration_enabled_for(&[(kdc_addr(), "primary KDC"), (kpasswd_addr(), "kpasswd")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1151,7 +1173,7 @@ mod tests {
     #[test]
     fn docker_mit_old_kdc_password_and_keytab_as_tgs_through_tcp_and_udp()
     -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(old_kdc_addr(), "legacy KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1169,7 +1191,7 @@ mod tests {
     /// Pins that the latest KDC serves password AS/TGS exchanges with both AES-SHA2 enctypes.
     #[test]
     fn docker_mit_latest_kdc_aes_sha2_as_tgs_through_tcp_and_udp() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(latest_kdc_addr(), "AES-SHA2 KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1258,7 +1280,7 @@ mod tests {
     #[test]
     fn docker_mit_latest_kdc_keytab_aes_sha2_as_tgs_through_tcp_and_udp()
     -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(latest_kdc_addr(), "AES-SHA2 KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1387,7 +1409,7 @@ mod tests {
     /// Pins that a renewable TGT renews over UDP and TCP and keeps its renew-till.
     #[test]
     fn docker_mit_kdc_tgt_renewal_through_tcp_and_udp() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(short_kdc_addr(), "short-ticket KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1434,7 +1456,7 @@ mod tests {
     /// Pins that the Tokio client renews its TGT and keeps the renew-till.
     #[test]
     fn docker_mit_kdc_tokio_client_tgt_renewal() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[(short_kdc_addr(), "short-ticket KDC")])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1476,7 +1498,10 @@ mod tests {
     /// Pins that a TGS request for a resource-domain service follows the cross-realm referral.
     #[test]
     fn docker_mit_kdc_tgs_referral_to_resource_domain() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[
+            (kdc_addr(), "primary KDC"),
+            (resdom_kdc_addr(), "resource KDC"),
+        ])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1534,7 +1559,10 @@ mod tests {
     /// Pins that the Tokio client caches the referral TGT and the resource-domain service ticket.
     #[test]
     fn docker_mit_kdc_tokio_client_caches_referral_tgt() -> Result<(), Box<dyn Error>> {
-        if !integration_enabled()? {
+        if !integration_enabled_for(&[
+            (kdc_addr(), "primary KDC"),
+            (resdom_kdc_addr(), "resource KDC"),
+        ])? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -1716,6 +1744,9 @@ mod tests {
         if !integration_enabled()? {
             return Ok(());
         }
+        if !http_service_reachable()? {
+            return Ok(());
+        }
         let _guard = INTEGRATION_LOCK
             .lock()
             .map_err(|cause| format!("integration test lock: {cause}"))?;
@@ -1747,6 +1778,9 @@ mod tests {
     #[test]
     fn docker_mit_kdc_raw_krb5_header_authenticates_to_docker_http() -> Result<(), Box<dyn Error>> {
         if !integration_enabled()? {
+            return Ok(());
+        }
+        if !http_service_reachable()? {
             return Ok(());
         }
         let _guard = INTEGRATION_LOCK
@@ -2436,82 +2470,10 @@ mod tests {
         }
     }
 
-    /// Returns whether the privileged tests run: integration on, `TESTPRIVILEGED=1` and `kinit` found.
-    ///
-    /// Reports a skip on stderr.
-    fn privileged_integration_enabled() -> Result<bool, Box<dyn Error>> {
-        if !integration_enabled()? {
-            return Ok(false);
-        }
-        if env::var("TESTPRIVILEGED").as_deref() != Ok("1") {
-            writeln!(
-                io::stderr(),
-                "skipping privileged Docker KDC integration test; set TESTPRIVILEGED=1 to enable"
-            )?;
-            return Ok(false);
-        }
-        if !command_available("kinit") {
-            writeln!(
-                io::stderr(),
-                "skipping privileged Docker KDC integration test; set a PATH-accessible kinit binary to enable"
-            )?;
-            return Ok(false);
-        }
-        Ok(true)
-    }
-
-    /// Returns whether the Docker tests run: `INTEGRATION=1` and every fixture reachable.
-    ///
-    /// Reports a skip on stderr.
-    fn integration_enabled() -> Result<bool, Box<dyn Error>> {
-        if env::var("INTEGRATION").as_deref() != Ok("1") {
-            writeln!(
-                io::stderr(),
-                "skipping Docker KDC integration test; set INTEGRATION=1 to enable"
-            )?;
-            return Ok(false);
-        }
-
-        let endpoints = [
-            (kdc_addr(), "primary KDC"),
-            (old_kdc_addr(), "legacy KDC"),
-            (latest_kdc_addr(), "AES-SHA2 KDC"),
-            (resdom_kdc_addr(), "resource KDC"),
-            (short_kdc_addr(), "short-ticket KDC"),
-        ];
-        for (endpoint, label) in endpoints {
-            if !tcp_reachable(&endpoint, label)? {
-                writeln!(
-                    io::stderr(),
-                    "skipping Docker KDC integration test; cannot reach {label} endpoint at {endpoint}"
-                )?;
-                return Ok(false);
-            }
-        }
-
-        if env::var("TEST_KPASSWD").as_deref() == Ok("1")
-            && !tcp_reachable(&kpasswd_addr(), "kpasswd")?
-        {
-            writeln!(
-                io::stderr(),
-                "skipping Docker KDC integration test; cannot reach kpasswd endpoint at {}",
-                kpasswd_addr()
-            )?;
-            return Ok(false);
-        }
-
-        #[cfg(feature = "spnego")]
-        if !http_service_reachable()? {
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
     /// Returns whether any resolved address of `endpoint` accepts a TCP connection within a second.
     ///
     /// A resolution failure is reported on stderr and counts as unreachable.
-    fn tcp_reachable(endpoint: &str, label: &str) -> Result<bool, Box<dyn Error>> {
+    pub(super) fn tcp_reachable(endpoint: &str, label: &str) -> Result<bool, Box<dyn Error>> {
         let mut addrs = match endpoint.to_socket_addrs() {
             Ok(addrs) => addrs,
             Err(error) => {
@@ -2528,7 +2490,7 @@ mod tests {
 
     /// Returns whether the Docker HTTP fixture accepts connections; reports a skip on stderr.
     #[cfg(feature = "spnego")]
-    fn http_service_reachable() -> Result<bool, Box<dyn Error>> {
+    pub(super) fn http_service_reachable() -> Result<bool, Box<dyn Error>> {
         let target = match http_target("/modgssapi/index.html") {
             Ok(target) => target.addr,
             Err(error) => {
@@ -2536,7 +2498,7 @@ mod tests {
                     io::stderr(),
                     "skipping Docker KDC integration test; invalid TEST_HTTP_URL/TEST_HTTP_ADDR: {error}"
                 )?;
-                return Ok(false);
+                return preflight::unavailable("invalid HTTP fixture endpoint");
             }
         };
 
@@ -2548,33 +2510,7 @@ mod tests {
             io::stderr(),
             "skipping Docker KDC integration test; cannot reach Docker HTTP fixture at {target}"
         )?;
-        Ok(false)
-    }
-
-    /// Returns whether the `kvno` tests run: the privileged tests run and `kvno` is found.
-    fn privileged_kvno_integration_enabled() -> Result<bool, Box<dyn Error>> {
-        if !privileged_integration_enabled()? {
-            return Ok(false);
-        }
-        if !command_available("kvno") {
-            writeln!(
-                io::stderr(),
-                "skipping privileged Docker KDC kvno tests; set a PATH-accessible kvno binary to enable"
-            )?;
-            return Ok(false);
-        }
-        Ok(true)
-    }
-
-    /// Returns whether `program --version` can be started from `PATH`.
-    fn command_available(program: &str) -> bool {
-        Command::new(program)
-            .arg("--version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok()
+        preflight::unavailable("HTTP fixture unreachable")
     }
 
     /// Renders the `krb5.conf` handed to the MIT tools.
@@ -2615,71 +2551,9 @@ mod tests {
         )))
     }
 
-    /// Returns the primary KDC endpoint from `TEST_KDC_ADDR`/`TEST_KDC_PORT`.
-    fn kdc_addr() -> String {
-        let host = env::var("TEST_KDC_ADDR").unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_KDC_PORT").unwrap_or_else(|_| "88".to_owned());
-        format!("{host}:{port}")
-    }
-
     /// Returns an endpoint no KDC listens on, from `TEST_BAD_KDC_ADDR`.
     fn closed_tcp_kdc_addr() -> String {
         env::var("TEST_BAD_KDC_ADDR").unwrap_or_else(|_| "127.0.0.1:9".to_owned())
-    }
-
-    /// Returns the short-ticket KDC endpoint.
-    fn short_kdc_addr() -> String {
-        let host = env::var("TEST_SHORT_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_SHORT_KDC_PORT").unwrap_or_else(|_| "58".to_owned());
-        format!("{host}:{port}")
-    }
-
-    /// Returns the legacy KDC endpoint.
-    fn old_kdc_addr() -> String {
-        let host = env::var("TEST_OLD_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_OLD_KDC_PORT").unwrap_or_else(|_| "78".to_owned());
-        format!("{host}:{port}")
-    }
-
-    /// Returns the latest (AES-SHA2) KDC endpoint.
-    fn latest_kdc_addr() -> String {
-        let host = env::var("TEST_LATEST_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_LATEST_KDC_PORT").unwrap_or_else(|_| "98".to_owned());
-        format!("{host}:{port}")
     }
 
     /// Builds a configuration with the primary KDC and the resource-realm KDC.
@@ -2755,36 +2629,6 @@ mod tests {
             kdc_addr(),
             kpasswd_addr()
         ))?)
-    }
-
-    /// Returns the resource-realm KDC endpoint.
-    fn resdom_kdc_addr() -> String {
-        let host = env::var("TEST_RESDOM_KDC_ADDR")
-            .or_else(|_| env::var("TEST_KDC_ADDR"))
-            .unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_RESDOM_KDC_PORT").unwrap_or_else(|_| "188".to_owned());
-        format!("{host}:{port}")
-    }
-
-    /// Returns the kpasswd endpoint from `TEST_KPASSWD_ADDR`/`TEST_KPASSWD_PORT`.
-    fn kpasswd_addr() -> String {
-        let host = env::var("TEST_KPASSWD_ADDR").unwrap_or_else(|_| "127.0.0.1".to_owned());
-        if host
-            .rsplit_once(':')
-            .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
-        {
-            return host;
-        }
-
-        let port = env::var("TEST_KPASSWD_PORT").unwrap_or_else(|_| "464".to_owned());
-        format!("{host}:{port}")
     }
 
     /// Builds a configuration that discovers the KDCs through DNS SRV records.

@@ -21,6 +21,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `gss_token` | RFC 4121 tokens and AP-REP bytes | `Krb5MechToken::decode`; `MicToken` and `WrapToken` decode, verify and unwrap with AES128, AES256, AES-SHA2, DES3 and RC4 test keys; a sealed Wrap whose fuzzed plaintext is encrypted under the key; `InitiatorContext::verify_ap_rep` and `verify_ap_rep_response_header`, raw and with a fuzzed `EncAPRepPart` encrypted under the session key |
 | `http_negotiate` | `Authorization` or `WWW-Authenticate` header values | `http::accept_request` (service side) and `www_authenticate_negotiate_header`, `classify_negotiate_response` and `verify_ap_rep_response` (client side) |
 | `kdc_reply` | KDC replies | `decode_as_rep`, `decode_tgs_rep`, `decode_enc_kdc_rep_part`, the KRB-ERROR and METHOD-DATA decoders, `process_kdc_error` with preauthentication hint selection and `s2kparams` parsing, `process_as_rep`, `process_tgs_rep` and `process_tgs_rep_with_referral` against fixed requests, and structured AS/TGS replies whose fuzzed `EncKDCRepPart` is encrypted under the request's key |
+| `kdc_tcp_frame` | four-byte KDC TCP record mark, tested against zero, small and large caps | `client::transport::kdc_tcp_record_length`; production shares the reserved-bit, zero-length and pre-allocation cap checks |
 | `krb_messages` | Kerberos messages | AP-REQ, Authenticator, AP-REP, `EncAPRepPart`, KRB-CRED, `EncKrbCredPart`, KRB-PRIV, `EncKrbPrivPart`, KRB-SAFE, Ticket, `EncTicketPart`, KRB-ERROR, `KDC-REQ-BODY`, AS-REQ, TGS-REQ, the PA-DATA messages and the kpasswd `ChangePasswdData` and KRB-PRIV codecs; the decrypt functions under a fixed key; and a sealed mode that encrypts the fuzzed plaintext into a message template so the decoders behind decryption see it |
 | `der_oid` | DER and OID bytes | the crate's SPNEGO DER reader and OID decoder (decode, re-encode, decode again must give the same value), `ObjectIdentifier::from_arcs`, and a decrypted Authenticator whose fuzzed plaintext reaches the zero-padding trimmer and the complete-message decoder |
 | `krb5_conf` | `krb5.conf` text (UTF-8-lossy) | `Config::parse_without_env` and `Config::parse`, includes, then `parse_supported_enctype_ids` on the parsed enctype lists |
@@ -33,14 +34,11 @@ the `http_negotiate` target needs that feature.
 
 ### The TCP record-mark reader
 
-The KDC TCP record-mark reader is not a separable function: it reads the
-4-byte mark from a `TcpStream` inside the async `Tokio::exchange_tcp_framed`,
-checks it with the private `validate_tcp_length` and bounds it by the response
-limit before it allocates the record. So there is no `kdc_tcp_frame` target.
-The record body goes to the reply decoders, which `kdc_reply` fuzzes, and the
-reader is covered by the unit test `tcp_lengths_are_service_specific` and the
-integration tests `kdc_tcp_rejects_reserved_bit_before_body_read` and
-`tokio_transport_uses_tcp_length_prefix` (`tests/client_transport.rs`).
+The `kdc_tcp_frame` target exercises the pure KDC record-mark validator,
+`client::transport::kdc_tcp_record_length`, independently of inner DER decoding.
+Production calls the same validator before allocating a response body. Seeds
+cover zero length, the inclusive small cap, oversized length and the reserved
+high bit. Kpasswd retains its distinct unsigned framing rules.
 
 ## Corpus
 
@@ -86,6 +84,7 @@ timeout artifact:
 | `gss_token` | 293,635 | 121 s | 0 |
 | `http_negotiate` | 284,293 | 121 s | 0 |
 | `kdc_reply` | 650,531 | 121 s | 0 |
+| `kdc_tcp_frame` | 24,229,707 | 121 s | 0 |
 | `krb_messages` | 306,487 | 121 s | 0 |
 | `der_oid` | 348,348 | 121 s | 0 |
 | `krb5_conf` | 280,234 | 121 s | 0 |
@@ -155,6 +154,7 @@ does.
 
 | Function | Source | Fuzz target | Reason |
 | --- | --- | --- | --- |
+| `rskrb5_ng::client::transport::kdc_tcp_record_length` | `src/client/transport.rs` | `kdc_tcp_frame` | Pure outer record-mark validation; separate from inner DER decoding |
 | `rskrb5_ng::ap_rep::decode` | `src/ap_rep.rs` | `krb_messages` |  |
 | `rskrb5_ng::ap_rep::decode_der` | `src/ap_rep.rs` | `krb_messages` |  |
 | `rskrb5_ng::ap_rep::decode_enc_ap_rep_part` | `src/ap_rep.rs` | `krb_messages` |  |

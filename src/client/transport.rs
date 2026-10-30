@@ -4,8 +4,46 @@ use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use std::io;
 
+/// Service-specific TCP record length validation.
+mod framing;
+
+/// Validate a KDC TCP record mark before allocating its response body.
+///
+/// # Errors
+/// Returns [`Error::TcpReservedBitSet`] for the RFC 4120 reserved high bit,
+/// [`Error::TcpResponseTooLarge`] above `max`, and [`Error::EmptyKdcResponse`]
+/// for a zero-length record. This validator does not apply to kpasswd framing.
+#[inline]
+pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
+    framing::kdc_record_length(header, max)
+}
+/// DNS server literal boundary tests.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod dns_literal_tests;
+/// Single-delivery password mutation transport.
+mod password_delivery;
+/// Configured password endpoint selection.
+mod password_discovery;
+/// DNS password-service fallback.
+mod password_dns;
+/// Password result consumption after a transport exchange.
+mod password_result;
+/// Configured realm protocol preference.
+mod realm_auto;
+/// Ordered SRV target address resolution.
+mod srv_targets;
+/// Bounded UDP socket primitives.
+mod udp;
+use framing::tcp_request_length;
+#[cfg(test)]
+use framing::validate_tcp_length;
 use hickory_resolver::{
     TokioResolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
@@ -14,7 +52,7 @@ use hickory_resolver::{
 };
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::{TcpStream, ToSocketAddrs, UdpSocket, lookup_host},
+    net::{TcpStream, ToSocketAddrs},
     time::timeout,
 };
 
@@ -28,6 +66,7 @@ use super::{
     service_realm, tgt_realm,
 };
 use crate::{
+    client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
     config::Config,
     error::Config as ConfigError,
     kadmin,
@@ -186,6 +225,9 @@ impl Tokio {
 
     #[must_use]
     /// Override the timeout applied to each KDC exchange.
+    ///
+    /// Password mutations deliberately use separate preparation and send/reply
+    /// budgets, each of this duration, so one attempt can take up to twice it.
     #[inline]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -195,6 +237,8 @@ impl Tokio {
     /// Select an explicit DNS server using an IP literal and optional port.
     ///
     /// Blank input selects the system resolver. Bare IP literals use port 53.
+    /// An explicit IPv6 port requires brackets, for example `[fd00::1]:5353`.
+    /// Bare `fd00::1:5353` is an IPv6 address using the default port 53.
     ///
     /// # Errors
     ///
@@ -230,7 +274,9 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::UdpRequestTooLarge`] when `request` exceeds the largest
-    /// UDP datagram, [`Error::Io`] when the socket fails,
+    /// UDP datagram, [`Error::UdpResponseTooLarge`] when a reply exceeds the
+    /// configured receive cap (including Windows WSAEMSGSIZE),
+    /// [`Error::Io`] when the socket fails,
     /// [`Error::TransportTimeout`] when the exchange exceeds the transport
     /// timeout, and [`Error::EmptyKdcResponse`] for an empty reply.
     ///
@@ -252,44 +298,9 @@ impl Tokio {
         }
 
         self.with_transport_timeout(async {
-            let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
-            let mut connected = None;
-            for candidate in lookup_host(addr).await? {
-                let wildcard = if candidate.is_ipv4() {
-                    "0.0.0.0:0"
-                } else {
-                    "[::]:0"
-                };
-                let attempt = async {
-                    let socket = UdpSocket::bind(wildcard).await?;
-                    socket.connect(candidate).await?;
-                    Ok::<_, io::Error>(socket)
-                }
-                .await;
-                match attempt {
-                    Ok(socket) => {
-                        connected = Some(socket);
-                        break;
-                    }
-                    Err(error) => last_error = error,
-                }
-            }
-            let socket = connected.ok_or(last_error)?;
+            let socket = udp::connect(addr).await?;
             let _: usize = socket.send(request).await?;
-
-            let capacity = self
-                .udp_response_limit
-                .min(usize::from(u16::MAX))
-                .saturating_add(1);
-            let mut response = vec![0; capacity];
-            let len = socket.recv(&mut response).await?;
-            if len > self.udp_response_limit {
-                return Err(Error::UdpResponseTooLarge {
-                    limit: self.udp_response_limit,
-                });
-            }
-            response.truncate(len);
-            Ok(response)
+            udp::receive(&socket, self.udp_response_limit).await
         })
         .await
         .and_then(non_empty_kdc_response)
@@ -300,6 +311,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::Io`] when the connection or the stream fails,
+    /// [`Error::TcpReservedBitSet`] when the reply record's reserved high bit is set,
     /// [`Error::TransportTimeout`] when the exchange exceeds the transport
     /// timeout, [`Error::TcpRequestTooLarge`] or [`Error::TcpResponseTooLarge`]
     /// when a message exceeds its limit, and [`Error::EmptyKdcResponse`] for an
@@ -358,6 +370,9 @@ impl Tokio {
     /// Applies no timeout of its own; callers wrap this in
     /// [`Self::with_transport_timeout`] together with the exchanges they intend
     /// to perform, so one logical request keeps one timeout budget.
+    /// Password mutation is the exception: connection preparation and the
+    /// send/reply phase each receive the full timeout. Total elapsed time can
+    /// reach twice the configured timeout; post-send expiry is outcome-unknown.
     ///
     /// # Errors
     ///
@@ -422,17 +437,8 @@ impl Tokio {
 
         let mut header = [0; TCP_RECORD_MARK_LEN];
         let _: usize = stream.read_exact(&mut header).await?;
-        let response_len = u32::from_be_bytes(header);
-        validate_tcp_length(response_len, framing)?;
-        let Some(response_len_usize) = usize::try_from(response_len)
-            .ok()
-            .filter(|len| *len <= self.tcp_response_limit)
-        else {
-            return Err(Error::TcpResponseTooLarge {
-                actual: response_len,
-                limit: self.tcp_response_limit,
-            });
-        };
+        let response_len_usize =
+            framing::response_length(header, framing, self.tcp_response_limit)?;
 
         let mut response = vec![0; response_len_usize];
         let _: usize = stream.read_exact(&mut response).await?;
@@ -576,7 +582,8 @@ impl Tokio {
     ///
     /// Returns [`Error::InvalidKdcEndpoint`] for a malformed configured KDC
     /// entry, [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when DNS SRV
-    /// discovery fails, [`Error::NoKdcEndpoints`] when the realm is configured
+    /// discovery fails, [`Error::DnsServiceUnavailable`] for a root SRV target,
+    /// [`Error::NoKdcEndpoints`] when the realm is configured
     /// without KDCs or DNS finds none, and a configuration error when the realm is
     /// unknown and DNS lookup is disabled.
     ///
@@ -624,6 +631,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKdcEndpoint`] for a malformed server entry,
+    /// [`Error::DnsServiceUnavailable`] for an authoritative root SRV target,
     /// [`Error::DnsResolverConfig`], [`Error::DnsSrvLookup`] or
     /// [`Error::NoKdcEndpoints`] when DNS SRV discovery fails or finds nothing,
     /// and a configuration error when no kpasswd server can be derived from the
@@ -640,27 +648,7 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        if let Some(realm_entry) = config.realm(realm)
-            && !realm_entry.kpasswd_server.is_empty()
-        {
-            return realm_entry
-                .kpasswd_server
-                .iter()
-                .map(|value| KdcEndpoint::configured_with_default_port(protocol, value, 464))
-                .collect();
-        }
-
-        if config.libdefaults.dns_lookup_kdc.is_enabled() {
-            return self
-                .discover_kpasswd_servers_with_dns(realm, protocol)
-                .await;
-        }
-
-        config
-            .configured_kpasswd_servers(realm)?
-            .iter()
-            .map(|value| KdcEndpoint::configured_with_default_port(protocol, value, 464))
-            .collect()
+        password_discovery::discover(self, config, realm, protocol).await
     }
 
     /// Send an encoded request to the first reachable KDC discovered from config.
@@ -714,10 +702,7 @@ impl Tokio {
         request: &[u8],
     ) -> Result<(Vec<u8>, Option<TcpStream>), Error> {
         if protocol == KdcProtocol::Auto {
-            return self
-                .send_to_realm_auto(config, realm, request)
-                .await
-                .map(|response| (response, None));
+            return self.send_to_realm_auto(config, realm, request).await;
         }
         let endpoints = self.discover_kdcs(config, realm, protocol).await?;
         self.send_to_endpoints_pinned(realm, protocol, endpoints, request)
@@ -738,29 +723,12 @@ impl Tokio {
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let mut failures = Vec::new();
-        for endpoint in endpoints {
-            let result = self
-                .send_password_once(
-                    endpoint.protocol,
-                    (endpoint.host.as_str(), endpoint.port),
-                    request,
-                )
-                .await;
-            match result {
-                Ok(response) => return Ok(response),
-                Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
-                Err(error) => failures.push(error.to_string()),
-            }
-        }
-        Err(Error::KdcEndpointFailures {
-            realm: realm.to_owned(),
-            protocol,
-            failures,
-        })
+        password_delivery::send_to_endpoints(self, realm, protocol, endpoints, request).await
     }
 
-    /// Send one password mutation, marking the outcome unknown before possible delivery.
+    /// Send one password mutation, reporting uncertainty after possible delivery.
+    ///
+    /// An uncertain outcome returns immediately; the mutation is never retried.
     ///
     /// # Errors
     /// Returns preparation errors before a send, or `KpasswdOutcomeUnknown` afterward.
@@ -774,71 +742,9 @@ impl Tokio {
         request: &[u8],
     ) -> Result<Vec<u8>, Error>
     where
-        A: ToSocketAddrs + Clone,
+        A: ToSocketAddrs,
     {
-        match protocol {
-            KdcProtocol::Tcp => {
-                let _length = tcp_request_length(request.len(), TcpFraming::Kpasswd)?;
-                let mut stream = self.with_transport_timeout(Self::connect_tcp(addr)).await?;
-                self.with_transport_timeout(self.exchange_tcp_framed(
-                    &mut stream,
-                    request,
-                    TcpFraming::Kpasswd,
-                ))
-                .await
-                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
-            }
-            KdcProtocol::Udp | KdcProtocol::Auto => {
-                if request.len() > MAX_UDP_DATAGRAM {
-                    return Err(Error::UdpRequestTooLarge {
-                        actual: request.len(),
-                        limit: MAX_UDP_DATAGRAM,
-                    });
-                }
-                let socket = self
-                    .with_transport_timeout(async {
-                        let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
-                        for candidate in lookup_host(addr).await? {
-                            let wildcard = if candidate.is_ipv4() {
-                                "0.0.0.0:0"
-                            } else {
-                                "[::]:0"
-                            };
-                            let result = async {
-                                let socket = UdpSocket::bind(wildcard).await?;
-                                socket.connect(candidate).await?;
-                                Ok::<_, io::Error>(socket)
-                            }
-                            .await;
-                            match result {
-                                Ok(socket) => return Ok(socket),
-                                Err(error) => last_error = error,
-                            }
-                        }
-                        Err(Error::Io(last_error))
-                    })
-                    .await?;
-                self.with_transport_timeout(async {
-                    let _: usize = socket.send(request).await?;
-                    let mut response = vec![
-                        0;
-                        self.udp_response_limit
-                            .min(usize::from(u16::MAX))
-                            .saturating_add(1)
-                    ];
-                    let length = socket.recv(&mut response).await?;
-                    if length > self.udp_response_limit {
-                        return Err(Error::UdpResponseTooLarge {
-                            limit: self.udp_response_limit,
-                        });
-                    }
-                    response.truncate(length);
-                    non_empty_kdc_response(response)
-                })
-                .await
-                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
-            }
-        }
+        password_delivery::send(self, protocol, addr, request).await
     }
 
     /// Send to configured KDC endpoints using KDC framing.
@@ -924,6 +830,11 @@ impl Tokio {
 
     /// Send a framed kpasswd request through Tokio transport and parse the reply.
     ///
+    /// # Security
+    /// This raw API does not authenticate AP-REP or validate protected reply
+    /// controls. Use [`Self::exchange_kpasswd_result`] for a checked outcome.
+    /// An unsigned result is diagnostic data, never confirmation of rejection.
+    ///
     /// # Errors
     ///
     /// Returns an error when the request cannot be encoded, the errors of
@@ -944,7 +855,7 @@ impl Tokio {
         request: &kadmin::Request,
     ) -> Result<kadmin::Reply, Error>
     where
-        A: ToSocketAddrs + Clone,
+        A: ToSocketAddrs,
     {
         let frame = request.encode()?;
         let response = self.send_password_once(protocol, addr, &frame).await?;
@@ -953,6 +864,11 @@ impl Tokio {
     }
 
     /// Send a framed kpasswd request to a configured kpasswd server and parse the reply.
+    ///
+    /// # Security
+    /// This raw API only parses the response. Use
+    /// [`Self::exchange_kpasswd_result_with_config`] to authenticate its context
+    /// before treating its result as a confirmed password-change outcome.
     ///
     /// # Errors
     ///
@@ -986,9 +902,12 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Self::exchange_kpasswd_request`], an error when
-    /// the result cannot be decrypted with `reply_key`, and an error when the
-    /// server reports a non-success result code.
+    /// Returns the pre-delivery errors of [`Self::exchange_kpasswd_request`].
+    /// After possible delivery, decryption, AP-REP, freshness, sequence,
+    /// address, reflection and unsigned-result failures are wrapped exactly
+    /// once in [`Error::KpasswdOutcomeUnknown`]. Only an authenticated,
+    /// contextually valid rejection returns `Kadmin::PasswordChangeFailed`.
+    /// Server-selected AP-REP subkeys are honored.
     ///
     /// # Cancel safety
     ///
@@ -1001,27 +920,27 @@ impl Tokio {
         &self,
         protocol: KdcProtocol,
         addr: A,
-        request: &kadmin::Request,
-        reply_key: &EncryptionKey,
+        request: &BuiltKpasswdRequest,
+        options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error>
     where
-        A: ToSocketAddrs + Clone,
+        A: ToSocketAddrs,
     {
         let reply = self
-            .exchange_kpasswd_request(protocol, addr, request)
+            .exchange_kpasswd_request(protocol, addr, &request.request)
             .await?;
-        let result = reply.decrypt_result(reply_key)?;
-        result.ensure_success()?;
-        Ok(result)
+        password_result::checked(&reply, request, options)
     }
 
     /// Send a framed kpasswd request to a configured server and return a checked result.
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Self::exchange_kpasswd_request_with_config`], an
-    /// error when the result cannot be decrypted with `reply_key`, and an error
-    /// when the server reports a non-success result code.
+    /// Returns the pre-delivery errors of [`Self::exchange_kpasswd_request_with_config`]
+    /// and the same authenticated outcome classification as
+    /// [`Self::exchange_kpasswd_result`]. Invalid or unauthenticated replies
+    /// after delivery return exactly one [`Error::KpasswdOutcomeUnknown`];
+    /// only a contextually valid authenticated rejection is definite.
     ///
     /// # Cancel safety
     ///
@@ -1035,15 +954,13 @@ impl Tokio {
         config: &Config,
         protocol: KdcProtocol,
         realm: &str,
-        request: &kadmin::Request,
-        reply_key: &EncryptionKey,
+        request: &BuiltKpasswdRequest,
+        options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
         let reply = self
-            .exchange_kpasswd_request_with_config(config, protocol, realm, request)
+            .exchange_kpasswd_request_with_config(config, protocol, realm, &request.request)
             .await?;
-        let result = reply.decrypt_result(reply_key)?;
-        result.ensure_success()?;
-        Ok(result)
+        password_result::checked(&reply, request, options)
     }
 
     /// Send an AS-REQ through Tokio transport and process the returned AS-REP.
@@ -1950,7 +1867,9 @@ impl Tokio {
     }
 
     /// Discover kpasswd endpoints through `_kpasswd` DNS SRV records, falling
-    /// back to `_kerberos-adm` when that lookup fails or finds nothing.
+    /// back to `_kerberos-adm._tcp` on ordinary lookup failure or no records.
+    ///
+    /// A root SRV target means service unavailable and stops discovery without fallback.
     ///
     /// # Errors
     ///
@@ -1967,34 +1886,7 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        match self
-            .discover_srv_endpoints("_kpasswd", realm, protocol)
-            .await
-        {
-            Ok(endpoints) if !endpoints.is_empty() => return Ok(endpoints),
-            Err(
-                error @ Error::DnsServiceUnavailable {
-                    service: _,
-                    realm: _,
-                },
-            ) => return Err(error),
-            Ok(_) | Err(_) => {}
-        }
-
-        let mut endpoints = self
-            .discover_srv_endpoints("_kerberos-adm", realm, protocol)
-            .await?;
-        for endpoint in &mut endpoints {
-            endpoint.port = 464;
-        }
-        if endpoints.is_empty() {
-            Err(Error::NoKdcEndpoints {
-                realm: realm.to_owned(),
-                protocol,
-            })
-        } else {
-            Ok(endpoints)
-        }
+        password_dns::discover(self, realm, protocol).await
     }
 
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
@@ -2007,7 +1899,8 @@ impl Tokio {
     ///
     /// Returns [`Error::DnsResolverConfig`] when the resolver or the
     /// DNS server option is invalid, and [`Error::DnsSrvLookup`] when
-    /// the SRV lookup or the resolution of a target fails.
+    /// the SRV lookup fails or no selected target resolves. Returns
+    /// [`Error::DnsServiceUnavailable`] when an SRV target is the root name.
     ///
     /// # Cancel safety
     ///
@@ -2066,23 +1959,14 @@ impl Tokio {
             .collect::<Vec<_>>();
         order_srv_records(&mut records, srv_draw)?;
 
-        let resolve_targets = self.dns_server.is_some();
-        let mut endpoints = Vec::with_capacity(records.len());
-        for (_, _, target, port) in records {
-            let hosts = if resolve_targets {
-                resolve_dns_endpoint_host(&resolver, realm, protocol, &target).await?
-            } else {
-                vec![target]
-            };
-            endpoints.extend(hosts.into_iter().map(|host| KdcEndpoint {
-                protocol,
-                host,
-                port,
-                source: KdcEndpointSource::DnsSrv,
-            }));
-        }
-
-        Ok(endpoints)
+        srv_targets::resolve(
+            &resolver,
+            realm,
+            protocol,
+            records,
+            self.dns_server.is_some(),
+        )
+        .await
     }
 
     /// Try each endpoint in turn and return the first response.
@@ -2179,31 +2063,8 @@ impl Tokio {
         config: &Config,
         realm: &str,
         request: &[u8],
-    ) -> Result<Vec<u8>, Error> {
-        let udp_first = auto_uses_udp_first(config, request.len());
-        let (first, second) = if udp_first {
-            (KdcProtocol::Udp, KdcProtocol::Tcp)
-        } else {
-            (KdcProtocol::Tcp, KdcProtocol::Udp)
-        };
-
-        match self
-            .send_to_realm_explicit(config, first, realm, request)
-            .await
-        {
-            Ok(response)
-                if first == KdcProtocol::Udp
-                    && kdc_error_code(&response) == Some(KRB_ERR_RESPONSE_TOO_BIG) =>
-            {
-                self.send_to_realm_explicit(config, second, realm, request)
-                    .await
-            }
-            Ok(response) => Ok(response),
-            Err(_) => {
-                self.send_to_realm_explicit(config, second, realm, request)
-                    .await
-            }
-        }
+    ) -> Result<(Vec<u8>, Option<TcpStream>), Error> {
+        realm_auto::send(self, config, realm, request).await
     }
 
     /// Send to a realm's kpasswd servers over the protocol
@@ -2266,29 +2127,6 @@ impl Tokio {
             Err(_elapsed) => Err(Error::TransportTimeout(self.timeout)),
         }
     }
-}
-
-/// Validate the reserved bit only for RFC 4120 KDC records.
-///
-/// # Errors
-/// Returns the named reserved-bit error for KDC frames.
-const fn validate_tcp_length(length: u32, framing: TcpFraming) -> Result<(), Error> {
-    match framing {
-        TcpFraming::Kdc if length & 0x8000_0000 != 0 => Err(Error::TcpReservedBitSet),
-        TcpFraming::Kdc | TcpFraming::Kpasswd => Ok(()),
-    }
-}
-
-/// Convert an outgoing length according to the service's framing rules.
-///
-/// # Errors
-/// Returns a request-size error if the service's record mark cannot represent it.
-fn tcp_request_length(length: usize, framing: TcpFraming) -> Result<u32, Error> {
-    let value =
-        u32::try_from(length).map_err(|_overflow| Error::TcpRequestTooLarge { actual: length })?;
-    validate_tcp_length(value, framing)
-        .map_err(|_reserved| Error::TcpRequestTooLarge { actual: length })?;
-    Ok(value)
 }
 
 /// Select without replacement within ascending priorities using RFC 2782 draws.
@@ -2516,6 +2354,9 @@ async fn resolve_dns_endpoint_host(
 }
 
 /// Parse an `ip` or `ip:port` DNS server literal, defaulting to port 53.
+///
+/// Explicit IPv6 ports require `[address]:port`; an unbracketed IPv6 literal
+/// always uses port 53, even if its last component looks like a port.
 ///
 /// # Errors
 ///
