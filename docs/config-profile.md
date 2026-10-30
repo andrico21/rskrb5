@@ -1,8 +1,9 @@
-# Profile composition (todo 15, Step A)
+# Profile composition and name expansion (todo 15, Steps A/B1)
 
 This step changes profile composition, not the set of effective Kerberos
-features. Parameter expansion, reader adapters, dynamic-provider rejection,
-additional typed relations and diagnostics remain subsequent steps.
+features. B1 adds explicit-context credential-name parameter expansion.
+Reader adapters, dynamic-provider rejection, additional typed relations and
+diagnostics remain subsequent steps.
 
 ## Reference and lookup classification
 
@@ -95,3 +96,53 @@ while `dev.mit.edu` and `mit.edu` map to `ATHENA.MIT.EDU`.
 Composition and boundary tests live in `tests/config/profile*.rs`; the original
 config tests remain, with deliberately changed expectations recorded in the
 follow-up register and task evidence.
+
+## Explicit-context name expansion (B1)
+
+`config::parameters::expand(template, &ExpansionContext)` is pure: it reads no
+environment, files or process identity. `DefaultName::{Ccache, Keytab,
+ClientKeytab}.expand(&config.libdefaults, &context)` selects the first-wins
+template for `default_ccache_name`, `default_keytab_name` or
+`default_client_keytab_name`, then applies that same expander. Parsing still
+preserves templates and does not discover facts or resolve names implicitly.
+Expansion errors are raised when a name is resolved, not by ordinary parsing.
+
+The contract follows MIT's
+[parameter table](https://web.mit.edu/kerberos/krb5-1.22/doc/admin/conf_files/krb5_conf.html#parameter-expansion)
+and the pinned
+[1.22.2 scanner](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/expand_path.c).
+
+| Parameter | Explicit context fact |
+| --- | --- |
+| `TEMP` | Temporary directory |
+| `uid`, `euid` | Real/effective `u32` identities, Linux only |
+| `USERID` | Real UID on Linux; supplied SID on Windows |
+| `username` | Username of the effective identity, not `USER`/`USERNAME` text |
+| `null` | Empty string, without a context field |
+| `LIBDIR`, `BINDIR`, `SBINDIR` | Installation directories supplied by the embedding application |
+| `USERCONFIGDIR`, `USERCONFIG` | Per-user MIT configuration directory |
+| `APPDATA` | Roaming application data directory |
+
+`USERCONFIGDIR` is the plan's spelling, supported as an explicit extension:
+MIT documents `USERCONFIG`. The Windows directory facts and username may be
+provided explicitly on any host; this is not Windows shell-folder or account
+discovery. No installation prefix, SID, username or home-derived directory is
+invented. Missing facts return `parameters::Failure::Unavailable`; unrecognized
+names return `UnknownToken`, and an unterminated `%{` returns
+`UnterminatedToken`. Exact names are required: MIT's incidental prefix matching
+is deliberately not copied.
+
+`%%` remains two percent signs; it is not an escape. `%%{TEMP}` produces one
+literal percent followed by the replacement. Inserted values, including `%{uid}`,
+unknown tokens and bare `%{`, remain literal and are never recursively expanded.
+Caller facts retain their path separators, rather than MIT Windows' final slash
+conversion. The result is resolved data: use literal-path APIs (`Keytab::load`,
+`CCache::load`) after handling any store prefix, not token-expanding name APIs.
+Existing name loaders retain their Linux procfs UID/eUID behavior unchanged;
+B1 does not widen their ambient-discovery contract or wire plan-2 consumers.
+There are no new ambient readers, so the exact-owner guard inventory is unchanged.
+
+`tests/config/expansion.rs` covers each token, platform identity policy,
+missing facts, exact-name errors, malformed tokens, literal percent signs,
+nonrecursive Unicode replacements and resolution of all three profile names.
+B1 alone does not close GAP-4/WP-01 or any additional follow-up register row.
