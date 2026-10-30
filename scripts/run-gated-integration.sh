@@ -41,6 +41,8 @@ Useful environment:
   TEST_KPASSWD=1                 Enable live password-change coverage.
   TESTAD=1                       Enable Active Directory tests, if the lab is reachable.
   TESTAD_REQUIRED=1              Fail instead of soft-skipping when TESTAD setup is unreachable.
+  INTEGRATION_REQUIRED=0         Let the requested integration suite skip unreachable fixtures
+                                 (the runner sets INTEGRATION_REQUIRED=1 by default).
   TEST_AD_*_KEYTAB_PATH          AD lab-specific keytab file overrides.
   TEST_AD_*_KEYTAB_HEX           AD lab-specific keytab hex secret overrides.
   TEST_AD_*_KEYTAB_BASE64        AD lab-specific keytab base64 secret overrides.
@@ -256,71 +258,54 @@ prepare_env_dir() {
   chmod 700 "$ENV_DIR" || return 1
 }
 
+# Every variable of the environment file, in file order. `write_env` and
+# `print_env` both work from this list, never from the file's text.
+ENV_NAMES=(
+  INTEGRATION INTEGRATION_REQUIRED TESTPRIVILEGED TESTAD TESTAD_REQUIRED TEST_KPASSWD TEST_DNS_KDC
+  TEST_AD_USER_KDC_ADDR TEST_AD_RESOURCE_KDC_ADDR TEST_AD_USER_ADMIN_ADDR TEST_AD_RESOURCE_ADMIN_ADDR
+  TEST_AD_KDC_ADDR TEST_AD_RES_KDC_ADDR TEST_AD_ADMIN_ADDR TEST_AD_RES_ADMIN_ADDR
+  TEST_AD_TESTUSER1_KEYTAB_PATH TEST_AD_TESTUSER1_KEYTAB_HEX TEST_AD_TESTUSER1_KEYTAB_BASE64
+  TEST_AD_TESTUSER2_KEYTAB_PATH TEST_AD_TESTUSER2_KEYTAB_HEX TEST_AD_TESTUSER2_KEYTAB_BASE64
+  TEST_AD_TESTUSER3_KEYTAB_PATH TEST_AD_TESTUSER3_KEYTAB_HEX TEST_AD_TESTUSER3_KEYTAB_BASE64
+  TEST_AD_SYSHTTP_KEYTAB_PATH TEST_AD_SYSHTTP_KEYTAB_HEX TEST_AD_SYSHTTP_KEYTAB_BASE64
+  TEST_KDC_ADDR TEST_OLD_KDC_ADDR TEST_LATEST_KDC_ADDR TEST_RESDOM_KDC_ADDR TEST_SHORT_KDC_ADDR
+  TEST_KPASSWD_ADDR TEST_KPASSWD_SADDR TEST_HTTP_URL TEST_HTTP_ADDR DNS_IP DNSUTILS_OVERRIDE_NS
+  RSKRB5_DNS_SERVER
+)
+
+# Keytab secret material: printed by `env` only as <redacted>.
+is_secret_name() {
+  [[ "$1" =~ ^TEST_AD_[A-Z0-9_]+_KEYTAB_(HEX|BASE64)$ ]]
+}
+
 write_env() {
-  local primary_addr="$1"
-  local old_addr="$2"
-  local latest_addr="$3"
-  local resdom_addr="$4"
-  local short_addr="$5"
-  local kpasswd_addr="$6"
-  local kpasswd_sender_addr="$7"
-  local dns_ip="$8"
-  local dns_override_ns="$9"
-  local http_url="${10}"
-  local http_addr="${11}"
-  local test_dns_kdc="${12}"
+  # The positional arguments, under the names the file exports. Each value is
+  # serialized with `printf %q`, so a space, quote, `$(...)`, `;` or newline
+  # in an operator value stays data when `test` sources the file.
+  local TEST_KDC_ADDR="$1" TEST_OLD_KDC_ADDR="$2" TEST_LATEST_KDC_ADDR="$3"
+  local TEST_RESDOM_KDC_ADDR="$4" TEST_SHORT_KDC_ADDR="$5" TEST_KPASSWD_ADDR="$6"
+  local TEST_KPASSWD_SADDR="$7" DNS_IP="$8" DNSUTILS_OVERRIDE_NS="$9" RSKRB5_DNS_SERVER="$9"
+  local TEST_HTTP_URL="${10}" TEST_HTTP_ADDR="${11}" TEST_DNS_KDC="${12}"
+  # The runner is an explicit request for the integration suite: a fixture the
+  # tests cannot reach fails them instead of skipping, unless the operator
+  # sets INTEGRATION_REQUIRED=0.
+  local INTEGRATION=1 INTEGRATION_REQUIRED="${INTEGRATION_REQUIRED:-1}"
+  local TESTPRIVILEGED="${TESTPRIVILEGED:-1}" TESTAD="${TESTAD:-0}"
+  local TESTAD_REQUIRED="${TESTAD_REQUIRED:-0}" TEST_KPASSWD="${TEST_KPASSWD:-0}"
 
   prepare_env_dir || return 1
   # Stage under a fresh mode-0600 name in the private directory, then rename:
   # the secrets never land in a file with umask-default or inherited
   # permissions, and an earlier permissive file is replaced, not rewritten.
-  local staged
+  local staged name
   staged="$(mktemp "$ENV_DIR/.gated-integration.env.XXXXXX")" || return 1
   chmod 600 "$staged" || {
     rm -f "$staged"
     return 1
   }
-  if ! cat >"$staged" <<EOF
-export INTEGRATION=1
-export TESTPRIVILEGED=${TESTPRIVILEGED:-1}
-export TESTAD=${TESTAD:-0}
-export TESTAD_REQUIRED=${TESTAD_REQUIRED:-0}
-export TEST_KPASSWD=${TEST_KPASSWD:-0}
-export TEST_DNS_KDC=$test_dns_kdc
-export TEST_AD_USER_KDC_ADDR=${TEST_AD_USER_KDC_ADDR:-}
-export TEST_AD_RESOURCE_KDC_ADDR=${TEST_AD_RESOURCE_KDC_ADDR:-}
-export TEST_AD_USER_ADMIN_ADDR=${TEST_AD_USER_ADMIN_ADDR:-}
-export TEST_AD_RESOURCE_ADMIN_ADDR=${TEST_AD_RESOURCE_ADMIN_ADDR:-}
-export TEST_AD_KDC_ADDR=${TEST_AD_KDC_ADDR:-}
-export TEST_AD_RES_KDC_ADDR=${TEST_AD_RES_KDC_ADDR:-}
-export TEST_AD_ADMIN_ADDR=${TEST_AD_ADMIN_ADDR:-}
-export TEST_AD_RES_ADMIN_ADDR=${TEST_AD_RES_ADMIN_ADDR:-}
-export TEST_AD_TESTUSER1_KEYTAB_PATH=${TEST_AD_TESTUSER1_KEYTAB_PATH:-}
-export TEST_AD_TESTUSER1_KEYTAB_HEX=${TEST_AD_TESTUSER1_KEYTAB_HEX:-}
-export TEST_AD_TESTUSER1_KEYTAB_BASE64=${TEST_AD_TESTUSER1_KEYTAB_BASE64:-}
-export TEST_AD_TESTUSER2_KEYTAB_PATH=${TEST_AD_TESTUSER2_KEYTAB_PATH:-}
-export TEST_AD_TESTUSER2_KEYTAB_HEX=${TEST_AD_TESTUSER2_KEYTAB_HEX:-}
-export TEST_AD_TESTUSER2_KEYTAB_BASE64=${TEST_AD_TESTUSER2_KEYTAB_BASE64:-}
-export TEST_AD_TESTUSER3_KEYTAB_PATH=${TEST_AD_TESTUSER3_KEYTAB_PATH:-}
-export TEST_AD_TESTUSER3_KEYTAB_HEX=${TEST_AD_TESTUSER3_KEYTAB_HEX:-}
-export TEST_AD_TESTUSER3_KEYTAB_BASE64=${TEST_AD_TESTUSER3_KEYTAB_BASE64:-}
-export TEST_AD_SYSHTTP_KEYTAB_PATH=${TEST_AD_SYSHTTP_KEYTAB_PATH:-}
-export TEST_AD_SYSHTTP_KEYTAB_HEX=${TEST_AD_SYSHTTP_KEYTAB_HEX:-}
-export TEST_AD_SYSHTTP_KEYTAB_BASE64=${TEST_AD_SYSHTTP_KEYTAB_BASE64:-}
-export TEST_KDC_ADDR=$primary_addr
-export TEST_OLD_KDC_ADDR=$old_addr
-export TEST_LATEST_KDC_ADDR=$latest_addr
-export TEST_RESDOM_KDC_ADDR=$resdom_addr
-export TEST_SHORT_KDC_ADDR=$short_addr
-export TEST_KPASSWD_ADDR=$kpasswd_addr
-export TEST_KPASSWD_SADDR=$kpasswd_sender_addr
-export TEST_HTTP_URL=$http_url
-export TEST_HTTP_ADDR=$http_addr
-export DNS_IP=$dns_ip
-export DNSUTILS_OVERRIDE_NS=$dns_override_ns
-export RSKRB5_DNS_SERVER=$dns_override_ns
-EOF
-  then
+  if ! for name in "${ENV_NAMES[@]}"; do
+    printf 'export %s=%q\n' "$name" "${!name:-}"
+  done >"$staged"; then
     rm -f "$staged"
     return 1
   fi
@@ -470,13 +455,25 @@ run_tests() {
 }
 
 # Prints the environment with every non-empty keytab HEX/BASE64 override
-# replaced by <redacted>; `test` sources the unredacted file directly.
+# replaced by <redacted>; `test` sources the unredacted file directly. The
+# values are read back by name and re-serialized, so a multiline secret
+# never reaches the output, whatever its line structure.
 print_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
     echo "Missing $ENV_FILE; run '$0 start' first." >&2
     return 1
   fi
-  sed -E 's/^(export TEST_AD_[A-Z0-9_]+_KEYTAB_(HEX|BASE64)=).+$/\1<redacted>/' "$ENV_FILE"
+  (
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    for name in "${ENV_NAMES[@]}"; do
+      if is_secret_name "$name" && [[ -n "${!name:-}" ]]; then
+        printf 'export %s=<redacted>\n' "$name"
+      else
+        printf 'export %s=%q\n' "$name" "${!name:-}"
+      fi
+    done
+  )
 }
 
 # Exercises write_env, print_env and stop_all on dummy keytab secrets in a
@@ -529,6 +526,51 @@ self_test() {
 
   stop_all
   [[ ! -e "$ENV_FILE" ]] || st_fail "stop left the env file with keytab secrets behind"
+
+  # Operator values with spaces, quotes, substitutions, semicolons and
+  # newlines are data: they round-trip byte for byte through the file the
+  # test command sources, and nothing in them runs.
+  local marker="$scratch/EXECUTED"
+  local spaced_path="/tmp/lab keytabs/user's \"one\".keytab"
+  local hostile_addr="kdc.example:88; touch $marker"
+  local hostile_url="http://example.test/\$(touch $marker)/\`touch $marker\`"
+  local wrapped_b64=$'BQIAAAdummy-first-line\nsecond-line-dummy-secret==\n'
+  local wrapped_hex=$'0502000000\n  dummyhexsecondline'
+  TEST_AD_TESTUSER1_KEYTAB_PATH="$spaced_path" TEST_AD_USER_KDC_ADDR="$hostile_addr" \
+    TEST_AD_SYSHTTP_KEYTAB_BASE64="$wrapped_b64" TEST_AD_TESTUSER2_KEYTAB_HEX="$wrapped_hex" \
+    write_env 127.0.0.1:88 127.0.0.1:78 127.0.0.1:98 127.0.0.1:188 127.0.0.1:58 \
+    127.0.0.1:464 127.0.0.1 127.0.88.53 127.0.88.53:53 "$hostile_url" 127.0.0.1 0
+  local loaded
+  loaded="$(
+    # shellcheck disable=SC1090
+    source "$ENV_FILE" &&
+      printf '%s\0' "$TEST_AD_TESTUSER1_KEYTAB_PATH" "$TEST_AD_USER_KDC_ADDR" "$TEST_HTTP_URL" \
+        "$TEST_AD_SYSHTTP_KEYTAB_BASE64" "$TEST_AD_TESTUSER2_KEYTAB_HEX" "$INTEGRATION_REQUIRED" | od -An -c
+  )" || st_fail "the env file with operator values does not source"
+  [[ "$loaded" == "$(printf '%s\0' "$spaced_path" "$hostile_addr" "$hostile_url" "$wrapped_b64" "$wrapped_hex" 1 | od -An -c)" ]] ||
+    st_fail "operator values did not round-trip through the env file"
+  printed="$(print_env)"
+  local secret_line
+  while IFS= read -r secret_line; do
+    [[ -z "${secret_line// /}" || "$printed" != *"$secret_line"* ]] ||
+      st_fail "env printed a line of a multiline keytab secret: $secret_line"
+  done <<<"$wrapped_b64"$'\n'"$wrapped_hex"
+  [[ "$printed" == *"export TEST_AD_SYSHTTP_KEYTAB_BASE64=<redacted>"* &&
+    "$printed" == *"export TEST_AD_TESTUSER2_KEYTAB_HEX=<redacted>"* ]] ||
+    st_fail "env did not mark the multiline keytab values redacted"
+  local seen="$scratch/seen-by-tests"
+  cargo() { printf '%s' "$TEST_AD_SYSHTTP_KEYTAB_BASE64" >"$seen"; }
+  RSKRB5_CONFIGURE_RESOLVER=0 run_tests >/dev/null || st_fail "test could not run on the operator values"
+  unset -f cargo
+  printf '%s' "$wrapped_b64" | cmp -s - "$seen" ||
+    st_fail "the test command did not receive the complete multiline keytab value"
+  [[ ! -e "$marker" ]] || st_fail "an operator value ran as a shell command"
+  # A requested run fails instead of skipping unless the operator opts out.
+  INTEGRATION_REQUIRED=0 write_env 127.0.0.1:88 127.0.0.1:78 127.0.0.1:98 127.0.0.1:188 127.0.0.1:58 \
+    127.0.0.1:464 127.0.0.1 127.0.88.53 127.0.88.53:53 http://127.0.0.1 127.0.0.1 0
+  [[ "$(source "$ENV_FILE" && printf '%s' "$INTEGRATION_REQUIRED")" == "0" ]] ||
+    st_fail "an operator INTEGRATION_REQUIRED=0 was not kept"
+  stop_all
 
   # A symlinked environment directory is refused; nothing reaches its target.
   mkdir "$scratch/elsewhere"

@@ -297,79 +297,219 @@ mod tests {
             .ok_or_else(|| -> TestError { format!("workflow has no job {id}").into() })
     }
 
-    /// Jobs of `.github/workflows/release.yml`.
-    fn release_jobs() -> Result<Vec<(String, String)>, TestError> {
-        Ok(workflow_jobs(&repository_file(
-            ".github/workflows/release.yml",
-        )?))
+    /// Jobs of `.github/workflows/<name>`.
+    fn workflow(name: &str) -> Result<Vec<(String, String)>, TestError> {
+        Ok(workflow_jobs(&repository_file(&format!(
+            ".github/workflows/{name}"
+        ))?))
     }
 
-    /// The tag lookup holds no secret and waits for no environment, so every green
-    /// CI run reports its tag state without an approval prompt.
+    /// Body of the shell function `name` in `scripts/release-publish.sh`.
+    fn release_script_function(name: &str) -> Result<String, TestError> {
+        let script = repository_file("scripts/release-publish.sh")?;
+        let start = format!("\n{name}() {{\n");
+        let (_, rest) = script
+            .split_once(start.as_str())
+            .ok_or_else(|| format!("release-publish.sh has no function {name}"))?;
+        let (body, _) = rest
+            .split_once("\n}\n")
+            .ok_or_else(|| format!("function {name} is not closed"))?;
+        Ok(body.to_owned())
+    }
+
+    /// The release coordinator holds no secret and dispatches `publish.yml` at the tag.
+    ///
+    /// It waits for no environment, so every green CI run reports its tag state
+    /// without an approval prompt, and it accepts only `N.N.N` tags.
     #[test]
-    fn release_find_tag_job_holds_no_secret_and_reports_untagged_runs() -> Result<(), TestError> {
-        let jobs = release_jobs()?;
+    fn release_coordinator_holds_no_secret_and_dispatches_publish_at_the_tag()
+    -> Result<(), TestError> {
+        let text = repository_file(".github/workflows/release.yml")?;
+        assert!(
+            !text.contains("secrets."),
+            "release.yml must not read a secret"
+        );
+        assert!(
+            !text.contains("environment:"),
+            "release.yml must not wait for an environment"
+        );
+        let jobs = workflow("release.yml")?;
+        let ids: Vec<&str> = jobs.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["find-tag"],
+            "the coordinator has the one job find-tag"
+        );
         let find_tag = job(&jobs, "find-tag")?;
+        for required in [
+            "actions: write",
+            "contents: read",
+            "release-publish.sh find-tag \"$SHA\" \"$HEAD_BRANCH\"",
+            "release-publish.sh check-ref \"refs/tags/$TAG\" \"$SHA\"",
+            "gh workflow run publish.yml --ref \"$TAG\"",
+        ] {
+            assert!(find_tag.contains(required), "find-tag lacks `{required}`");
+        }
+        let lookup = release_script_function("find_tag")?;
         assert!(
-            !find_tag.contains("secrets."),
-            "find-tag must not read a secret"
-        );
-        assert!(
-            !find_tag.contains("environment:"),
-            "find-tag must not wait for an environment"
-        );
-        assert!(
-            find_tag.contains("No vN.N.N tag points at"),
+            lookup.contains("No N.N.N tag points at"),
             "find-tag must report a run without a release tag"
         );
         assert!(
-            find_tag.contains("tag: ${{ steps."),
-            "find-tag must output the tag it found"
-        );
-        assert!(
-            find_tag.contains("grep -E '^v[0-9]+"),
-            "find-tag must accept only v-prefixed tags, the names the tag ruleset protects"
+            repository_file("scripts/release-publish.sh")?
+                .contains("RELEASE_TAG='^[0-9]+\\.[0-9]+\\.[0-9]+$'"),
+            "only N.N.N tags, the names the tag ruleset protects, are release tags"
         );
         Ok(())
     }
 
-    /// Publishing needs a tag found by `find-tag`, the reviewed `release` environment
-    /// and a tagged commit that is on `main`.
+    /// `publish.yml` runs only on `workflow_dispatch`, verifying before it publishes.
+    ///
+    /// Its token-free `verify` job re-checks the tag ref, the ancestry on `main`
+    /// and the CI result before it packages; `publish` waits in the reviewed
+    /// `release` environment and checks the tag again.
     #[test]
-    fn release_publish_job_requires_tag_environment_and_main_ancestry() -> Result<(), TestError> {
-        let jobs = release_jobs()?;
+    fn publish_runs_at_a_tag_after_a_token_free_verify_job() -> Result<(), TestError> {
+        let text = repository_file(".github/workflows/publish.yml")?;
+        let (triggers, _) = text
+            .split_once("\npermissions:")
+            .ok_or("publish.yml has workflow permissions")?;
+        assert!(
+            triggers.contains("\non:\n  workflow_dispatch:\n"),
+            "publish.yml must be dispatched"
+        );
+        for trigger in ["push:", "pull_request", "workflow_run", "schedule"] {
+            assert!(
+                !triggers.contains(trigger),
+                "publish.yml must run only on workflow_dispatch, not {trigger}"
+            );
+        }
+        let jobs = workflow("publish.yml")?;
+        let verify = job(&jobs, "verify")?;
+        assert!(
+            !verify.contains("secrets."),
+            "verify must not read a secret"
+        );
+        assert!(!verify.contains("environment:"), "verify must not wait");
+        for required in [
+            "release-publish.sh check-ref \"$REF\" \"$SHA\"",
+            "release-publish.sh check-ci-run \"$REPO\" \"$SHA\"",
+            "release-publish.sh package",
+        ] {
+            assert!(verify.contains(required), "verify lacks `{required}`");
+        }
         let publish = job(&jobs, "publish")?;
         for required in [
-            "needs: find-tag",
-            "if: needs.find-tag.outputs.tag != ''",
+            "needs: verify",
             "environment: release",
-            "git merge-base --is-ancestor",
-            "origin/main",
+            "release-publish.sh check-ref \"$REF\" \"$SHA\"",
         ] {
-            assert!(publish.contains(required), "publish job lacks `{required}`");
+            assert!(publish.contains(required), "publish lacks `{required}`");
+        }
+        let check_ref = release_script_function("check_ref")?;
+        for required in [
+            "^refs/tags/([0-9]+\\.[0-9]+\\.[0-9]+)$",
+            "git -C \"$ROOT_DIR\" merge-base --is-ancestor \"$sha\" origin/main",
+            "[[ \"$tagged\" == \"$sha\" ]]",
+            "[[ \"$version\" == \"$tag\" ]]",
+        ] {
+            assert!(check_ref.contains(required), "check-ref lacks `{required}`");
+        }
+        let ci_run = release_script_function("check_ci_run")?;
+        for required in [
+            ".conclusion == \"success\"",
+            ".head_repository.full_name == $repo",
+            "(.event == \"push\" or .event == \"workflow_dispatch\")",
+        ] {
+            assert!(ci_run.contains(required), "check-ci-run lacks `{required}`");
         }
         Ok(())
     }
 
-    /// The registry token reaches only the reviewed publish job, and its upload step
-    /// does not build the tagged tree (the token-free dry run verified it).
+    /// The registry token reaches only a publish job that builds nothing.
+    ///
+    /// That job runs no dependency build code (no build, test, dry run or
+    /// verifying package); it re-packages with `--no-verify` and must match the
+    /// verified sha256.
     #[test]
-    fn release_registry_token_reaches_only_the_publish_upload() -> Result<(), TestError> {
-        let jobs = release_jobs()?;
-        let holders: Vec<&str> = jobs
-            .iter()
-            .filter(|(_, body)| body.contains("CARGO_REGISTRY_TOKEN"))
-            .map(|(id, _)| id.as_str())
-            .collect();
+    fn registry_token_reaches_only_a_publish_job_that_builds_nothing() -> Result<(), TestError> {
+        let mut holders = Vec::new();
+        for name in ["ci.yml", "release.yml", "publish.yml"] {
+            for (id, body) in workflow(name)? {
+                if body.contains("CARGO_REGISTRY_TOKEN") {
+                    holders.push(format!("{name}:{id}"));
+                }
+            }
+        }
         assert_eq!(
             holders,
-            ["publish"],
+            ["publish.yml:publish"],
             "only the publish job may reference the registry token"
         );
+        let jobs = workflow("publish.yml")?;
         let publish = job(&jobs, "publish")?;
+        let upload = release_script_function("publish")?;
+        let verify_published = release_script_function("verify_published")?;
+        for text in [publish, upload.as_str(), verify_published.as_str()] {
+            for forbidden in [
+                "cargo build",
+                "cargo test",
+                "cargo check",
+                "cargo clippy",
+                "cargo doc",
+                "cargo run",
+                "cargo install",
+                "--dry-run",
+                "release-publish.sh package",
+            ] {
+                assert!(
+                    !text.contains(forbidden),
+                    "the token-holding job runs build code: `{forbidden}`"
+                );
+            }
+        }
+        let cargo_calls: Vec<&str> = upload
+            .lines()
+            .filter(|line| line.contains("&& cargo "))
+            .map(str::trim)
+            .collect();
+        assert_eq!(
+            cargo_calls.len(),
+            2,
+            "publish runs exactly one package and one upload: {cargo_calls:?}"
+        );
+        assert!(upload.contains("cargo package --locked --no-verify"));
+        assert!(upload.contains("cargo publish --locked --no-verify"));
         assert!(
-            publish.contains("cargo publish --locked --no-verify"),
-            "the token-holding upload must not run the tagged tree's build scripts"
+            upload.contains("[[ \"$local_sha\" == \"$expected\" ]]"),
+            "the re-package must equal the verified artifact"
+        );
+        Ok(())
+    }
+
+    /// Release recovery creates the missing GitHub release once, from verified bytes.
+    ///
+    /// After an upload whose GitHub release failed, a re-dispatch verifies the
+    /// published bytes and creates the release exactly once; different published
+    /// bytes are never certified (`scripts/release-publish.sh self-test`, GNU tools
+    /// on Linux, as on the `ubuntu-latest` release runners).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn release_recovery_verifies_the_published_crate_and_creates_one_release()
+    -> Result<(), TestError> {
+        use std::process::Command;
+
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/release-publish.sh");
+        let output = Command::new("bash")
+            .arg(&script)
+            .arg("self-test")
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success() && stdout.contains("self-test: ok"),
+            "release-publish.sh self-test failed ({}):\n{stdout}{stderr}",
+            output.status
         );
         Ok(())
     }

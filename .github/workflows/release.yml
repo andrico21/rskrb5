@@ -1,47 +1,29 @@
 name: Release
 
-# Publishes `rskrb5-ng` to crates.io only when (a) a `vN.N.N` tag exists
-# on a commit, (b) the CI workflow on that exact commit completed
-# successfully, (c) the tagged commit is on `main` and (d) the repository
-# owner approves the `publish` job in the `release` environment. Triggered
-# off `workflow_run: [CI]` (not `push: tags`) so a red CI blocks the publish.
+# The secret-free release coordinator. It runs after every completed `CI` run
+# and uses no secret and no deployment environment. For a successful push or dispatch
+# CI run of this repository it looks for an `N.N.N` release tag at the run's
+# commit (`scripts/release-publish.sh find-tag`). Without one it prints
+# "No N.N.N tag points at <sha>" and dispatches nothing. With one, it checks
+# that the tag carries the `Cargo.toml` version and that the commit is on
+# `main`, and, for the CI run on the tag ref itself, dispatches
+# `publish.yml` at `refs/tags/<tag>` (`gh workflow run publish.yml --ref
+# <tag>`; a `workflow_dispatch` started with `GITHUB_TOKEN` is allowed to
+# start runs). The CI run on `main` for the same commit dispatches nothing,
+# so a release is dispatched once.
 #
-# Two jobs split the release authority:
-#   find-tag  no secret, no environment: runs for every green same-repository
-#             push/dispatch CI run, prints "No vN.N.N tag points at <sha>" and
-#             outputs an empty tag when the commit carries no release tag, so
-#             an ordinary push never waits for an approval.
-#   publish   `needs: find-tag` and runs only when a tag was found. It runs in
-#             the `release` environment (required reviewer: the repository
-#             owner), re-checks the tag, proves the tagged commit is an
-#             ancestor of `origin/main`, and only then reads the registry token.
+# `publish.yml` re-validates all of this itself (it can be dispatched by hand
+# too), builds and packages the crate in a token-free `verify` job, and
+# uploads in its `publish` job, which runs in the reviewed `release`
+# environment, the only holder of `CARGO_REGISTRY_TOKEN`. See
+# docs/RELEASING.md.
 #
-# Repository settings this workflow relies on (recorded in
-# docs/review/release-ci.md):
-#   - environment `release` with required reviewer `andrico21`;
-#   - tag ruleset "release tags": creating, updating or deleting
-#     `refs/tags/v*` is restricted to repository admins;
-#   - `CARGO_REGISTRY_TOKEN` stored as a secret of the `release` environment,
-#     not as a repository secret (a repository secret is readable by any
-#     workflow a writer can push).
-#
-# Cutting a release:
-#   1. land the release commit on `main` (version bumped, CHANGELOG.md
-#      entry written); CI on `main` must be green
-#   2. an admin pushes the tag (`v0.3.0`) at that same SHA; CI runs again on
-#      the tag ref
-#   3. when that run completes successfully `find-tag` finds the tag and
-#      `publish` waits for the owner's approval in the `release` environment
-#   4. after approval `publish` verifies the tag against the crate version and
-#      `main` ancestry, dry-runs (verify build, no token), uploads with the
-#      environment's CARGO_REGISTRY_TOKEN, and opens the GitHub release
-#   A re-run of the CI workflow on the same SHA is the manual recovery path.
-#
-# The branch-push and tag-push CI runs share one SHA, so both pass the tag
-# lookup and `cargo publish` can be attempted twice. The publish step is
-# therefore idempotent: "already exists on crates.io index" exits success and
-# records published=false, and the GitHub release is gated on published=true -
-# a run that did not upload the bytes never certifies them.
+# Repository settings this relies on (docs/review/release-ci.md):
+#   - environment `release`: required reviewer `andrico21`, deployments only
+#     from tags matching `[0-9]*.[0-9]*.[0-9]*`, no admin bypass, and the
+#     `CARGO_REGISTRY_TOKEN` secret;
+#   - tag ruleset "release tags" (25943056): creating, moving or deleting
+#     `refs/tags/[0-9]*.[0-9]*.[0-9]*` is restricted to repository admins.
 
 on:
   workflow_run:
@@ -64,169 +46,34 @@ jobs:
        github.event.workflow_run.event == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: read
-    outputs:
-      tag: ${{ steps.find-tag.outputs.tag }}
-      version: ${{ steps.find-tag.outputs.version }}
     steps:
       # The exact commit CI ran against, tags included for the lookup below.
-      # This job reads local git metadata only and holds no secret.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Find a vN.N.N tag pointing at this commit
+      - name: Find an N.N.N tag pointing at this commit
         id: find-tag
-        shell: bash
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-          # Only `v`-prefixed names: the tag ruleset protects `refs/tags/v*`,
-          # so a v-less `0.3.0` tag (creatable by any writer) never counts.
-          TAGS=$(git tag --points-at "$SHA" \
-                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || true)
-          if [ -z "$TAGS" ]; then
-            echo "::notice::No vN.N.N tag points at $SHA - this run is not a release invocation. Skipping publish."
-            echo "tag=" >> "$GITHUB_OUTPUT"
-            echo "version=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          COUNT=$(printf '%s\n' "$TAGS" | wc -l)
-          if [ "$COUNT" -ne 1 ]; then
-            echo "::error::more than one vN.N.N tag points at $SHA: $(tr '\n' ' ' <<<"$TAGS"); a release commit carries exactly one."
-            exit 1
-          fi
-          TAG="$TAGS"
-          VERSION="${TAG#v}"
-          echo "Found tag: $TAG (version $VERSION)"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: bash scripts/release-publish.sh find-tag "$SHA" "$HEAD_BRANCH"
 
-  publish:
-    name: publish
-    needs: find-tag
-    if: needs.find-tag.outputs.tag != ''
-    runs-on: ubuntu-latest
-    # Required reviewer gate: the job (and the environment's registry token)
-    # starts only after the repository owner approves the deployment.
-    environment: release
-    permissions:
-      contents: write
-    env:
-      SHA: ${{ github.event.workflow_run.head_sha }}
-      TAG: ${{ needs.find-tag.outputs.tag }}
-      VERSION: ${{ needs.find-tag.outputs.version }}
-    steps:
-      # No push credential is persisted into the tagged-tree checkout.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Re-check the tag and its ancestry on main
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The approval can come long after find-tag: the tag must still
-          # point at the CI-verified commit.
-          git fetch --no-tags --force origin "refs/tags/$TAG:refs/tags/$TAG"
-          TAGGED=$(git rev-parse "refs/tags/$TAG^{commit}")
-          if [ "$TAGGED" != "$SHA" ]; then
-            echo "::error::tag $TAG now points at $TAGGED, not at the CI-verified $SHA"
-            exit 1
-          fi
-          # Only a commit that already landed on main is released.
-          git fetch --no-tags --force origin "+refs/heads/main:refs/remotes/origin/main"
-          if ! git merge-base --is-ancestor "$SHA" origin/main; then
-            echo "::error::$SHA (tag $TAG) is not an ancestor of origin/main; release commits land on main first"
-            exit 1
-          fi
-          echo "$TAG -> $SHA is on origin/main."
-
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
-        with:
-          toolchain: stable
-
-      - name: Verify crate name and version
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The crate name is part of the contract: consumers depend on
-          # `rskrb5-ng`. A rename without a release workflow update must fail
-          # here, not publish under a new name.
-          META=$(cargo metadata --locked --no-deps --format-version 1)
-          NAME=$(echo "$META" | jq -r --arg c "rskrb5-ng" '.packages[] | select(.name == $c) | .name')
-          CRATE_VERSION=$(echo "$META" | jq -r --arg c "rskrb5-ng" '.packages[] | select(.name == $c) | .version')
-          if [ "$NAME" != "rskrb5-ng" ]; then
-            echo "::error::package rskrb5-ng not found; the crate name changed without this workflow"
-            exit 1
-          fi
-          if [ "$CRATE_VERSION" != "$VERSION" ]; then
-            echo "::error::tag $TAG does not match rskrb5-ng's manifest version $CRATE_VERSION"
-            exit 1
-          fi
-          echo "rskrb5-ng $CRATE_VERSION is publishable."
-
-      - name: Release notes
-        shell: bash
-        run: |
-          set -euo pipefail
-          NOTES_PATH="${RUNNER_TEMP}/RELEASE_NOTES.md"
-          if [ -f CHANGELOG.md ]; then
-            awk -v ver="$VERSION" '
-              $0 ~ "^## \\[" ver "\\]" { found=1; next }
-              found && /^## \[/        { exit }
-              found                    { print }
-            ' CHANGELOG.md > "$NOTES_PATH"
-          fi
-          if [ ! -s "$NOTES_PATH" ]; then
-            printf 'rskrb5-ng %s; see CHANGELOG.md\n' "$VERSION" > "$NOTES_PATH"
-          fi
-          echo "NOTES_PATH=${NOTES_PATH}" >> "$GITHUB_ENV"
-
-      - name: Dry-run publish
-        # Packages and verify-builds the tagged tree without the registry
-        # token in the environment. Default features, matching the
-        # validation the consumer repository ran against the vendored tree.
-        run: cargo publish --dry-run --locked
-
-      - name: Publish to crates.io
-        id: publish
+      - name: Check the tag, its version and its ancestry on main
+        if: steps.find-tag.outputs.dispatch == 'true'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        shell: bash
-        run: |
-          set -uo pipefail
-          # --no-verify: the dry run above already verify-built this exact
-          # tree; skipping the rebuild keeps the tagged tree's build scripts
-          # (and its dependencies') from running with the token in scope.
-          OUTPUT=$(cargo publish --locked --no-verify 2>&1) && STATUS=0 || STATUS=$?
-          echo "$OUTPUT"
-          if [ "$STATUS" -eq 0 ]; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Published rskrb5-ng@$TAG to crates.io."
-            exit 0
-          fi
-          if echo "$OUTPUT" | grep -qiF "already exists on crates.io index"; then
-            echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::rskrb5-ng@$TAG was already on crates.io before this run; this pipeline did not upload these bytes and will not create a release for them. If this is not the expected duplicate trigger for the same SHA, the version was published out of band - verify the uploaded artifact."
-            exit 0
-          fi
-          echo "::error::cargo publish failed for rskrb5-ng@$TAG (exit $STATUS)."
-          exit "$STATUS"
+          TAG: ${{ steps.find-tag.outputs.tag }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: bash scripts/release-publish.sh check-ref "refs/tags/$TAG" "$SHA"
 
-      - name: Create GitHub release
-        if: steps.publish.outputs.published == 'true'
+      - name: Dispatch publish.yml at the tag
+        if: steps.find-tag.outputs.dispatch == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release create "$TAG" \
-            --title "rskrb5-ng $TAG" \
-            --notes-file "${NOTES_PATH}" \
-            --verify-tag
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.find-tag.outputs.tag }}
+        run: gh workflow run publish.yml --ref "$TAG" -R "$REPO"

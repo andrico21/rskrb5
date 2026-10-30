@@ -14,6 +14,8 @@ import sys
 import tomllib
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from contextlib import redirect_stdout
+from io import StringIO
 
 import common
 
@@ -87,18 +89,17 @@ def self_test() -> int:
         )
         assert check(root, True) == []
         (root / "Cargo.toml").write_text(manifest.replace('"deny"', '"warn"'))
-        (root / "scripts/lint-gates").mkdir(parents=True)
-        (root / "scripts/lint-gates/profile-deltas.toml").write_text(
-            '[[level]]\nlint = "clippy::unwrap_used"\nlevel = "warn"\n'
-        )
-        assert any("unwrap_used" in e for e in check(root))
-        assert main(["--root", str(root)]) == 1
+        assert check(root) == [
+            "clippy.unwrap_used: core={'level': 'deny'} Cargo.toml={'level': 'warn'}"
+        ]
+        with redirect_stdout(StringIO()):
+            assert main(["--root", str(root)]) == 1
         (root / "Cargo.toml").write_text(manifest.replace('unwrap_used = "deny"\n', ""))
         assert any("unwrap_used" in e for e in check(root))
         (root / "Cargo.toml").write_text(manifest)
         (root / "clippy.toml").write_text(sample.replace('[".."]', '["Kerberos"]'))
         assert any("doc-valid-idents" in e for e in check(root, True))
-    print("profile_eq self-test: ok (level, missing lint, delta bypass, append-only)")
+    print("profile_eq self-test: ok (level, missing lint, append-only)")
     return 0
 
 

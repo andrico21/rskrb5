@@ -38,6 +38,8 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -289,6 +291,21 @@ EVASIONS: Final = (
     ),
 )
 
+# A forbidden lint beside a sanctioned one, spelled so that a parser reading
+# only `\w+(::\w+)*` arguments drops it: `clippy-driver -D clippy::unwrap_used`
+# honours both attributes (U6-01), so each must be a hit naming `unwrap_used`.
+HIDDEN_LINT: Final = (
+    "#[expect(clippy::missing_const_for_fn, {lint},\n"
+    '    reason = "deliberate: crate::f - runtime API")]\n'
+    "pub fn f(o: Option<u8>) -> u8 {{ o.unwrap() }}\n"
+)
+HIDDEN_LINTS: Final = (
+    ("spaced lint path", "clippy :: unwrap_used"),
+    ("raw lint path segment", "clippy::r#unwrap_used"),
+    ("spaced raw lint path", "clippy ::\n    r#unwrap_used"),
+    ("unparsed argument", "clippy::unwrap_used()"),
+)
+
 
 WHY: Final = {
     "invariant:": "transition reason form 'invariant'",
@@ -336,6 +353,16 @@ def self_test() -> int:
     # Lexical evasions from the Wave 4 review compile clean and must be hits.
     for label, file, source in EVASIONS:
         assert len(scan(file, source)) >= 1, (label, scan(file, source))
+    for label, lint in HIDDEN_LINTS:
+        hits = scan("src/der.rs", HIDDEN_LINT.format(lint=lint))
+        assert len(hits) == 1 and "unwrap_used" in hits[0], (label, hits)
+    # The canonical spelling of a sanctioned lint still passes.
+    spaced_ok = HIDDEN_LINT.replace(
+        "clippy::missing_const_for_fn, {lint},", "clippy :: r#missing_const_for_fn,"
+    )
+    assert scan("src/der.rs", spaced_ok.format()) == [], scan(
+        "src/der.rs", spaced_ok.format()
+    )
     # Spacing alone neither hides nor breaks a sanctioned form.
     assert scan("src/crypto.rs", ACCEPTED[2][1].replace("#[expect", "# [expect")) == []
     # A test pair on a mod nested in a cfg(test) mod is under cfg(test).
@@ -352,10 +379,26 @@ def self_test() -> int:
         assert main(["--enforce", "--root", str(root)]) == 1
         (root / "src/der.rs").write_text(ACCEPTED[1][1])
         assert main(["--enforce", "--root", str(root)]) == 0
+        # A build script and a custom-path Cargo target are scanned too.
+        (root / "tools").mkdir()
+        (root / "Cargo.toml").write_text(
+            '[package]\nname = "p"\nbuild = "build.rs"\n'
+            '[[bin]]\nname = "probe"\npath = "tools/probe.rs"\n'
+        )
+        (root / "build.rs").write_text(REJECTED[0][2])
+        (root / "tools/probe.rs").write_text(
+            HIDDEN_LINT.format(lint="clippy::unwrap_used")
+        )
+        printed = StringIO()
+        with redirect_stdout(printed):
+            assert main(["--enforce", "--root", str(root)]) == 1
+        assert "build.rs:1:" in printed.getvalue(), printed.getvalue()
+        assert "tools/probe.rs:1:" in printed.getvalue(), printed.getvalue()
     print(
         "exception_gate self-test: ok (six sanctioned forms and a deny opt-in "
-        "accepted; five rejected forms, seven near misses and "
-        f"{len(EVASIONS)} lexical evasions rejected)"
+        "accepted; five rejected forms, seven near misses, "
+        f"{len(EVASIONS)} lexical evasions and {len(HIDDEN_LINTS)} hidden lint "
+        "paths rejected)"
     )
     return 0
 
@@ -363,13 +406,16 @@ def self_test() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=common.ROOT)
-    parser.add_argument("--report", action="store_true")
     parser.add_argument("--enforce", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
-    hits = report(args.root)
+    try:
+        hits = report(args.root)
+    except common.source_set.SourceSetError as error:
+        print(f"exception_gate: {error}")
+        return 1
     print(
         "\n".join(
             hits

@@ -242,6 +242,8 @@ does.
 | `rskrb5_ng::config::IncludeExpansion::read_include` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::IncludeExpansion::splice` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::LibDefaults::parse_lines` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::LibDefaults::usable_explicit_enctypes` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::LibDefaults::validate_explicit_enctypes` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::Realm::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::SectionKind::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::brace_delta` | `src/config.rs` | `krb5_conf` |  |
@@ -251,7 +253,6 @@ does.
 | `rskrb5_ng::config::parse_colon_duration` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_domain_realm` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_duration` | `src/config.rs` | `name_parse` |  |
-| `rskrb5_ng::config::parse_explicit_enctypes` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_hex_u32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32_list` | `src/config.rs` | `krb5_conf` |  |

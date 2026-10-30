@@ -14,10 +14,13 @@ import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from contextlib import redirect_stdout
+from io import StringIO
 from typing import Final
 
 import common
 import path_scope
+import prose_scope
 from prose_infallible import infallible_test
 
 CHECKS: Final = (
@@ -30,22 +33,17 @@ CHECKS: Final = (
 )
 
 
-def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
+def item_hits(
+    source: str,
+    production: bool,
+    test_ranges: list[tuple[int, int]],
+    generated_tests: bool,
+) -> list[tuple[str, int, str]]:
+    """The item checks over `source`; `generated_tests` exempts proptest cases."""
     stripped = common.strip_comments_and_strings(source)
-    literals = common.strip_comments_and_strings(source, keep_literals=True)
-    items = common.scan_items(source)
-    test_ranges = common.cfg_test_line_ranges(stripped)
     lines = source.splitlines()
     hits = []
-    touched = set(items)
-    proptest_ranges = []
-    for match in re.finditer(r"\bproptest!\s*\{", stripped):
-        close = common.match_bracket(stripped, match.end() - 1)
-        if close is not None:
-            proptest_ranges.append((match.start(), close))
-    for item in items:
-        if item not in touched:
-            continue
+    for item in common.scan_items(source):
         line = common.line_of(source, item.keyword)
         prefix = source[item.start : item.keyword]
         attrs = [
@@ -55,6 +53,9 @@ def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
             )
         ]
         signature = stripped[item.keyword : item.end].split("{", 1)[0]
+        attached = prose_scope.attached_lines(
+            lines, common.line_of(source, item.start), line
+        )
         if item.kind == "fn":
             is_async = bool(
                 re.search(
@@ -66,10 +67,7 @@ def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
                 for attr in attrs
             )
             if production and is_async and not common.in_ranges(line, test_ranges):
-                lookback = lines[max(0, line - 7) : line - 1]
-                if "Cancel safety" not in prefix and not any(
-                    "cancel-safe:" in value for value in lookback
-                ):
+                if not prose_scope.has_cancel_contract(attached):
                     hits.append(("cancel-safety", line, f"async fn {item.name}"))
             if is_async and re.match(
                 r"(?:change_password|set_password|exchange_kpasswd)", item.name
@@ -79,7 +77,7 @@ def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
                 )
                 if section is None or "NOT cancel-safe" not in section[1]:
                     hits.append(("credential-mutating", line, f"async fn {item.name}"))
-            if is_test and not any(a <= item.keyword <= b for a, b in proptest_ranges):
+            if is_test and not generated_tests:
                 if not re.search(r"(?m)^\s*///", prefix):
                     hits.append(("test-docs", line, f"fn {item.name}"))
                 if (
@@ -94,15 +92,22 @@ def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
             production
             and item.kind == "impl"
             and re.search(r"\bDrop\s+for\b", signature)
+            and not common.in_ranges(line, test_ranges)
+            and not any("Drop audit" in value for value in attached)
         ):
-            if not any(
-                "Drop audit" in value for value in lines[max(0, line - 4) : line - 1]
-            ):
-                hits.append(("drop-audit", line, item.identity))
+            hits.append(("drop-audit", line, item.identity))
+    return hits
+
+
+def scan(source: str, production: bool) -> list[tuple[str, int, str]]:
+    """Every check over one file; items a macro generates are checked too."""
+    stripped = common.strip_comments_and_strings(source)
+    literals = common.strip_comments_and_strings(source, keep_literals=True)
+    test_ranges = common.cfg_test_line_ranges(stripped)
+    hits = item_hits(source, production, test_ranges, False)
+    for name, body in prose_scope.macro_bodies(source):
+        hits += item_hits(body, production, test_ranges, name == "proptest")
     for match in re.finditer(r"(?<!\w)(?:debug_)?assert!\s*\(", stripped):
-        item = common.owner(items, match.start())
-        if item not in touched:
-            continue
         opening = match.end() - 1
         close = common.match_bracket(stripped, opening)
         if close is None:
@@ -140,9 +145,42 @@ def report(root: Path, paths: list[str] | None) -> list[tuple[str, str, int, str
         source = path.read_text()
         hits.extend(
             (gate, relative, line, detail)
-            for gate, line, detail in scan(source, relative.startswith("src/"))
+            for gate, line, detail in scan(
+                source, not prose_scope.is_test_path(relative)
+            )
         )
     return hits
+
+
+# Items a macro generates are checked like written ones (U6-03).
+GENERATED: Final = (
+    ("macro_rules async fn", "macro_rules! gen { () => { async fn work() {} }; }\ngen!();\n", ["cancel-safety"]),
+    ("macro_rules metavariable name", "macro_rules! gen { ($n:ident) => { pub async fn $n() {} }; }\n", ["cancel-safety"]),
+    ("macro_rules test", "macro_rules! t { () => { #[test]\nfn generated() { work(); } }; }\n", ["test-docs", "test-result"]),
+    ("macro_rules Drop", "macro_rules! d { ($t:ty) => { impl Drop for $t { fn drop(&mut self) {} } }; }\n", ["drop-audit"]),
+    ("foreign macro body", "cfg_if::cfg_if! { if #[cfg(unix)] { async fn work() {} } }\n", ["cancel-safety"]),
+    (
+        "documented generated async fn",
+        "macro_rules! gen { () => {\n/// # Cancel safety\n///\n/// Dropping it is harmless.\nasync fn work() {} }; }\n",
+        [],
+    ),
+    ("proptest body", "proptest! {\n#[test]\nfn roundtrip(x in 0u8..) { check(x); }\n}\n", []),
+)
+# The cancellation contract is attached to its own function and says something (U6-04).
+ATTACHED: Final = (
+    ("note above an earlier item", "// cancel-safe: previous operation only\nfn previous() {}\nasync fn undocumented() {}\n", ["cancel-safety"]),
+    ("blank line between", "// cancel-safe: detached\n\nasync fn undocumented() {}\n", ["cancel-safety"]),
+    ("empty note", "// cancel-safe:\nasync fn undocumented() {}\n", ["cancel-safety"]),
+    ("heading only", "/// Does work.\n///\n/// # Cancel safety\nasync fn undocumented() {}\n", ["cancel-safety"]),
+    (
+        "heading followed by another heading",
+        "/// # Cancel safety\n///\n/// # Errors\n///\n/// Fails.\nasync fn undocumented() {}\n",
+        ["cancel-safety"],
+    ),
+    ("attached note", "/// Does work.\n// cancel-safe: dropping it loses\n// nothing.\n#[inline]\nasync fn documented() {}\n", []),
+    ("note wrapped onto the next line", "// cancel-safe:\n// dropping it loses nothing.\nasync fn documented() {}\n", []),
+    ("doc section", "/// # Cancel safety\n///\n/// Dropping it loses nothing.\nasync fn documented() {}\n", []),
+)
 
 
 def self_test() -> int:
@@ -203,7 +241,29 @@ def self_test() -> int:
             moved.replace("v.is_empty()", "w.is_empty()")
         )
         assert report(root, ["tests/support/*.rs"])
-    print("prose_gate self-test: ok (all six checks, whole-tree and explicit scopes)")
+        with redirect_stdout(StringIO()):
+            assert main(["--root", str(root)]) == 0
+            assert main(["--enforce", "--root", str(root)]) == 1
+        # Production is every non-test context: an example's async helper and
+        # Drop impl need their prose, an integration test's do not.
+        (root / "tests/support/topic.rs").unlink()
+        (root / "examples").mkdir()
+        (root / "examples/probe.rs").write_text(
+            "async fn work() {}\nimpl Drop for Guard { fn drop(&mut self) {} }\n"
+        )
+        (root / "tests/flow.rs").write_text("/// t\nasync fn helper() {}\n")
+        assert sorted(gate for gate, _, _, _ in report(root, None)) == [
+            "cancel-safety",
+            "drop-audit",
+        ], report(root, None)
+    for label, source, expected in GENERATED + ATTACHED:
+        found = sorted(gate for gate, _, _ in scan(source, True))
+        assert found == expected, (label, found)
+    print(
+        "prose_gate self-test: ok (all six checks, whole-tree and explicit scopes, "
+        f"production by test context, {len(GENERATED)} macro-generated and "
+        f"{len(ATTACHED)} attached-contract cases)"
+    )
     return 0
 
 
@@ -214,7 +274,6 @@ def main(argv: list[str] | None = None) -> int:
         "--paths", nargs="+", help="path globs to scan (default: the whole tree)"
     )
     parser.add_argument("--only", action="append", choices=CHECKS)
-    parser.add_argument("--report", action="store_true")
     parser.add_argument("--enforce", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)

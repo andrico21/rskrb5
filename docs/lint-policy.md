@@ -18,6 +18,9 @@ builds, lints and tests clean, and so does Windows.
   may differ, and only by appending.
 - [`.cargo/config.toml`](../.cargo/config.toml) sets
   `build.warnings = "deny"`. CI keeps `-D warnings` on clippy and rustdoc.
+  For local work in progress, `CARGO_BUILD_WARNINGS=allow` lets one cargo
+  invocation build with warnings; CI sets it only where the profile is not
+  the gate (`msrv`, `fuzz-build`, `fuzz`, `mutants`).
 - [`rustfmt.toml`](../rustfmt.toml) is run with `nightly-2026-10-03`.
 - The fuzz crate (`fuzz/Cargo.toml`) is a separate workspace without lint
   tables; `fuzz_lint.py` applies the root profile to it as command-line flags.
@@ -30,9 +33,16 @@ builds, lints and tests clean, and so does Windows.
 ## The six sanctioned exceptions
 
 A lint that fires is fixed in code. The only `#[expect]`/`#![expect]`
-attributes allowed anywhere in `src`, `tests`, `examples`, `benches` and
-`fuzz/fuzz_targets`, including inside `cfg_attr`, are these, with exactly
-these reason texts and on these item kinds:
+attributes allowed anywhere in the Rust sources, including inside
+`cfg_attr`, are these, with exactly these reason texts and on these item
+kinds. The sources are `src`, `tests`, `examples`, `benches` and
+`fuzz/fuzz_targets` plus everything the checkout's Cargo manifests compile:
+build scripts and targets with a custom `path`
+([`source_set.py`](../scripts/lint-gates/source_set.py)); a target outside
+the checkout, an out-of-line `mod` in a file scanned on its own, or an empty
+source set fails every gate. A lint path is read the way rustc reads it, so
+`clippy :: r#unwrap_used` is `clippy::unwrap_used`, and an argument that is
+not a lint path is reported, never dropped:
 
 | # | Lints | Reason | Where |
 |---|---|---|---|
@@ -72,22 +82,48 @@ in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
 | `profile_eq.py --clippy-toml` | `[lints]` equals the vendored core profile; `clippy.toml` equals the core sample apart from the two append-only keys |
 | `completeness_check.py` | the profile is complete for the current stable: the rustc and `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions |
 | `facade_gate.py --enforce` | no `pub use` (or `pub(..) use`) outside the crate-root scope of `src/lib.rs`, cfg-disabled code included |
-| `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run) |
+| `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run; `facade_gate.py --paths` works the same way, and an empty selection selects nothing) |
 | `feature_closures.py run` | every feature closure: `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |
-| `feature_closures.py check-ci .github/workflows/ci.yml` | the matrix of the job whose id is `closures` lists exactly the computed closures, each once; the job is defined once, no other `closures:` key exists (no decoy job or matrix), the matrix has no `include`/`exclude`, the job has no `if`/`continue-on-error`, and its steps run exactly the strict clippy and test commands |
-| `fuzz_lint.py --enforce` | the root profile on the nightly fuzz crate, in a disposable copy |
+| `feature_closures.py check-ci .github/workflows/ci.yml` | the matrix of the job whose id is `closures` lists exactly the computed closures, each once; the job is defined once, no other `closures:` key exists (no decoy job or matrix), the matrix has no `include`/`exclude`, the job has no `if`/`continue-on-error`, and its steps run exactly the strict clippy and test commands. Nothing may cap lints or swallow a failure: the job has no `env`, `defaults`, `shell`, `container` or `working-directory` and uses only the checkout, toolchain and cache actions; the workflow sets no `defaults` and no Cargo or rustc variable beyond `CARGO_TERM_COLOR`, `CARGO_INCREMENTAL`, `CARGO_NET_RETRY` and `RUST_BACKTRACE`; and `.cargo/config.toml` keeps `build.warnings = "deny"` with no `rustflags`, wrapper, `rustc` or Cargo/rustc `[env]` variable |
+| `fuzz_lint.py --enforce` | the root profile on the nightly fuzz crate, in a disposable copy (without `--enforce` it reports the clippy result and exits 0, like every gate) |
+| `fuzz_coverage.py --enforce` | the parser inventory of [`review/fuzz.md`](review/fuzz.md) exists and is not empty, lists every function the parser search finds, names only functions still defined in their source file, and names only targets of `fuzz/Cargo.toml` (`--coverage DIR` proves the mappings from coverage exports) |
+| `workflow_gate.py --enforce` | the `lint-gates` job and the prek hook run every gate, plus the offline self-tests of `scripts/check-github-ad-gate.py`, `scripts/check-ad-integration-env-smoke.py`, `scripts/run-gated-integration.sh` and `scripts/release-publish.sh`, and the job may not be skipped or advisory; every action is pinned to a commit SHA, each `dtolnay/rust-toolchain` channel to one SHA, and the release workflows use CI's `# stable` revision |
+| `gate_hygiene.py --enforce` | the gate scripts carry no dead work: every `argparse` option is read, and every module-level helper is used outside a `self_test` |
+
+`docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
+optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly
+that feature set and `--cfg docsrs`, as docs.rs does, and checks the
+`NegotiateLayer` and `send_with_negotiate` pages exist.
+
+Two reports serve advisory jobs and are self-tested with the gates:
+`geiger_report.py` classifies the `geiger` job's JSON scan (complete unless a
+Rust source went unscanned outside build-script output) and prints the unsafe
+totals of the crate and of its dependencies; `mutants_report.py --artifacts
+DIR --expect-shards 16 [--register docs/review/mutants.md] [--allow-open]
+--enforce` fails a mutation campaign with a missing or unfinished shard, or
+(with the register) with a missed or timed-out mutant that has no final
+status (`killed`, `equivalent`, or `hang` for a timeout only). Register rows
+are `| campaign | mutant (full name) | file | function | operator | outcome |
+status | proof or reason |`, keyed by the campaign SHA and the full
+cargo-mutants name with its location; write a `|` inside a cell as `\|`.
 
 `rg -n 'lint-migration' src tests examples fuzz` must print nothing.
 `semver_baseline.py` is not a lint gate: it drives `cargo semver-checks`
-against the last published release (the `semver-checks` job).
+against the highest published `rskrb5-ng` version at or below the candidate,
+taken from crates.io (the `semver-checks` job). A published version equal to
+the candidate must be this exact package (same `.crate` sha256), otherwise it
+fails with "version already published; bump the version"; release tags whose
+manifest names `rskrb5-ng` must carry their own version.
 
 ### Prose gate
 
 `prose_gate.py` ports rmcp-server-kit's prose gates and adds one Kerberos
 overlay rule. Each check has an `--only` selector:
 
-- `cancel-safety`: a production `async fn` documents `# Cancel safety` (or
-  carries a `cancel-safe:` note just above it);
+- `cancel-safety`: a production `async fn` documents `# Cancel safety` with
+  text under the heading, or carries a non-empty `cancel-safe:` note in the
+  comment, doc and attribute lines attached directly above it (a blank line or
+  another item in between detaches it);
 - `credential-mutating`: an async `change_password*`, `set_password*` or
   `exchange_kpasswd*` has a `# Cancel safety` section containing
   `NOT cancel-safe`;
@@ -95,6 +131,14 @@ overlay rule. Each check has an `--only` selector:
 - `test-result`: a test with a propagation site returns `Result`;
 - `drop-audit`: a production `impl Drop` has a `Drop audit` note;
 - `emptiness-message`: `assert!(x.is_empty())` carries a message.
+
+Production means every file outside `tests/` and `benches/` (so `src`,
+`examples`, fuzz targets and build scripts), minus `cfg(test)` code. Items a
+macro generates are checked as well: every `macro_rules!` definition or macro
+invocation whose tokens can produce an `async fn`, a test or a `Drop` impl is
+scanned like source, metavariables read as identifiers
+([`prose_scope.py`](../scripts/lint-gates/prose_scope.py)); `proptest!` cases
+are exempt only from `test-docs` and `test-result`.
 
 `test-result` requires `Result` only when the test body has a propagation site
 ([`prose_infallible.py`](../scripts/lint-gates/prose_infallible.py)).

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import common
+from workflow_yaml import Line, children, only, scalar, structure, subtree
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,111 +84,47 @@ def load(root: Path) -> list[Closure]:
         return compute(tomllib.load(stream)["features"])
 
 
-@dataclass(frozen=True, slots=True)
-class Line:
-    """One structural line of a block-style YAML workflow."""
-
-    number: int
-    indent: int
-    item: bool
-    key: str | None
-    value: str
-
-
 CLIPPY_RUN = "cargo clippy --all-targets ${{ matrix.closures }} -- -D warnings"
 TEST_RUN = "cargo test ${{ matrix.closures }}"
-_KEY = re.compile(
-    r"""(?P<key>"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#:\[\]{},&*!|>%@`-][^:#]*?|-[^\s:#][^:#]*?)"""
-    r"""\s*:(?:[ \t]+(?P<value>.*)|)$"""
+# Keys that can cap lints, swap the compiler or swallow a failing command:
+# none may appear anywhere in the closures job.
+JOB_FORBIDDEN = frozenset(
+    {"continue-on-error", "if", "env", "defaults", "shell", "container", "working-directory"}
 )
+ACTIONS = ("actions/checkout@", "dtolnay/rust-toolchain@", "Swatinem/rust-cache@")
+# Workflow-level variables Cargo or rustc read; only these harmless ones may be set.
+CARGO_ENV_ALLOWED = frozenset({"CARGO_TERM_COLOR", "CARGO_INCREMENTAL", "CARGO_NET_RETRY", "RUST_BACKTRACE"})
 
 
-def _scalar(text: str, where: str) -> str:
-    """Read one flow scalar: quoted, or plain, with an optional trailing comment."""
-    text = text.strip()
-    if text[:1] == '"':
-        match = re.fullmatch(r'"([^"\\]*)"\s*(?:#.*)?', text)
-        if match is None:
-            raise RuntimeError(f"{where}: unsupported double-quoted scalar: {text}")
-        return match[1]
-    if text[:1] == "'":
-        match = re.fullmatch(r"'((?:[^']|'')*)'\s*(?:#.*)?", text)
-        if match is None:
-            raise RuntimeError(f"{where}: unsupported single-quoted scalar: {text}")
-        return match[1].replace("''", "'")
-    value = re.split(r"\s+#", text, maxsplit=1)[0].strip()
-    if not value or value[0] in "[]{},&*!|>%@`#" or ": " in value:
-        raise RuntimeError(f"{where}: unsupported scalar: {text}")
-    return value
+def check_workflow_scope(lines: list[Line], top: list[int]) -> None:
+    """No workflow-level default or variable reaches the closures job's cargo."""
+    for index in top:
+        if lines[index].key == "defaults":
+            raise RuntimeError(f"ci.yml:{lines[index].number}: a workflow `defaults:` reaches the closures job")
+        if lines[index].key == "env":
+            for child in children(lines, index):
+                name = lines[child].key or ""
+                if name.startswith(("CARGO", "RUST")) and name not in CARGO_ENV_ALLOWED:
+                    raise RuntimeError(f"ci.yml:{lines[child].number}: workflow env {name} reaches the closures job")
 
 
-def _structure(text: str) -> list[Line]:
-    """Split a block-style workflow into keyed and list-item lines.
-
-    Comments, blank lines and the bodies of `|`/`>` block scalars are dropped,
-    so a script line such as `closures:` inside `run: |` is never a key. Tabs in
-    indentation, flow collections and anchors are rejected, not guessed at.
-    """
-    lines: list[Line] = []
-    block: int | None = None
-    for number, raw in enumerate(text.splitlines(), 1):
-        body = raw.lstrip(" ")
-        indent = len(raw) - len(body)
-        if block is not None:
-            if not body.strip() or indent > block:
-                continue
-            block = None
-        if not body.strip() or body.startswith("#"):
-            continue
-        if body.startswith("\t") or raw.startswith("\t"):
-            raise RuntimeError(f"ci.yml:{number}: tab in indentation")
-        item = False
-        if re.match(r"-(?:\s|$)", body):
-            item = True
-            rest = body[1:].lstrip(" ")
-            indent += len(body) - len(rest)
-            body = rest
-        match = _KEY.match(body.rstrip())
-        if match is None:
-            lines.append(Line(number, indent, item, None, body.rstrip()))
-            continue
-        key = match["key"]
-        if key[0] == '"':
-            key = key[1:-1]
-        elif key[0] == "'":
-            key = key[1:-1].replace("''", "'")
-        value = (match["value"] or "").strip()
-        if value.startswith(("&", "*", "<<")) or key == "<<":
-            raise RuntimeError(f"ci.yml:{number}: anchors and merges are not supported")
-        if re.match(r"[|>][-+0-9]*\s*(?:#.*)?$", value):
-            block = indent
-        lines.append(Line(number, indent, item, key, value))
-    return lines
-
-
-def _children(lines: list[Line], parent: int) -> list[int]:
-    """Indexes of the direct children of `lines[parent]`."""
-    end = parent + 1
-    while end < len(lines) and lines[end].indent > lines[parent].indent:
-        end += 1
-    if end == parent + 1:
-        return []
-    depth = lines[parent + 1].indent
-    return [i for i in range(parent + 1, end) if lines[i].indent == depth]
-
-
-def _subtree(lines: list[Line], parent: int) -> list[Line]:
-    end = parent + 1
-    while end < len(lines) and lines[end].indent > lines[parent].indent:
-        end += 1
-    return lines[parent + 1 : end]
-
-
-def _only(lines: list[Line], indexes: list[int], key: str, where: str) -> int:
-    found = [i for i in indexes if lines[i].key == key and not lines[i].item]
-    if len(found) != 1:
-        raise RuntimeError(f"{where} needs exactly one `{key}:` key, found {len(found)}")
-    return found[0]
+def check_cargo_config(path: Path) -> None:
+    """`.cargo/config.toml` keeps `build.warnings = "deny"` and adds no flags or wrapper."""
+    try:
+        config = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise RuntimeError(f"{path}: {error}") from error
+    build = config.get("build", {})
+    if build.get("warnings") != "deny":
+        raise RuntimeError(f'{path}: build.warnings must be "deny", is {build.get("warnings")!r}')
+    for key in ("rustflags", "rustc-wrapper", "rustc-workspace-wrapper", "rustc"):
+        if key in build:
+            raise RuntimeError(f"{path}: build.{key} would change how the closures compile")
+    for name, table in config.get("target", {}).items():
+        if isinstance(table, dict) and "rustflags" in table:
+            raise RuntimeError(f"{path}: target.{name}.rustflags would change how the closures compile")
+    if any(name.startswith(("CARGO", "RUST")) for name in config.get("env", {})):
+        raise RuntimeError(f"{path}: [env] sets a Cargo or rustc variable")
 
 
 def ci_matrix(text: str) -> list[str]:
@@ -195,22 +132,28 @@ def ci_matrix(text: str) -> list[str]:
 
     The job is selected by its id, exactly once; no other `closures:` key may
     exist anywhere (a decoy job or matrix), the matrix holds nothing else
-    (no `include`/`exclude`), and the job runs both strict steps on every leg.
+    (no `include`/`exclude`), and the job runs both strict steps on every leg
+    with nothing that caps lints or swallows a failure: no `env`, `defaults`,
+    `shell`, `container`, `working-directory`, `if` or `continue-on-error` in
+    the job, no lint-relevant workflow `env` or `defaults`, and only the
+    checkout, toolchain and cache actions.
     """
-    lines = _structure(text)
+    lines = structure(text)
     top = [i for i, line in enumerate(lines) if line.indent == 0]
     if any(lines[i].item or lines[i].key is None for i in top):
         raise RuntimeError("ci.yml: the top level must be a mapping")
-    jobs = _only(lines, top, "jobs", "ci.yml")
-    job = _only(lines, _children(lines, jobs), "closures", "jobs")
-    strategy = _only(lines, _children(lines, job), "strategy", "jobs.closures")
-    matrix = _only(
-        lines, _children(lines, strategy), "matrix", "jobs.closures.strategy"
+    jobs = only(lines, top, "jobs", "ci.yml")
+    job = only(lines, children(lines, jobs), "closures", "jobs")
+    strategy = only(lines, children(lines, job), "strategy", "jobs.closures")
+    matrix = only(
+        lines, children(lines, strategy), "matrix", "jobs.closures.strategy"
     )
-    keys = [lines[i].key for i in _children(lines, matrix)]
+    keys = [lines[i].key for i in children(lines, matrix)]
     if keys != ["closures"]:
-        raise RuntimeError(f"jobs.closures matrix must hold only `closures`, has {keys}")
-    key = _children(lines, matrix)[0]
+        raise RuntimeError(
+            f"jobs.closures matrix must hold only `closures`, has {keys}"
+        )
+    key = children(lines, matrix)[0]
     if lines[key].value and not lines[key].value.startswith("#"):
         raise RuntimeError("the closures matrix must be a block list of strings")
     entries = []
@@ -221,25 +164,33 @@ def ci_matrix(text: str) -> list[str]:
     ):
         end += 1
     items = lines[key + 1 : end]
-    if any(not line.item or line.key is not None for line in items) or len(
-        {line.indent for line in items}
-    ) > 1:
+    if (
+        any(not line.item or line.key is not None for line in items)
+        or len({line.indent for line in items}) > 1
+    ):
         raise RuntimeError("the closures matrix must be a flat list of strings")
     for line in items:
-        entries.append(_scalar(line.value, f"ci.yml:{line.number}"))
+        entries.append(scalar(line.value, f"ci.yml:{line.number}"))
     stray = [
         line.number
         for line in lines
         if line.key == "closures" and line is not lines[job] and line is not lines[key]
     ]
     if stray:
-        raise RuntimeError(f"ci.yml: another `closures:` key (decoy) on line(s) {stray}")
-    body = _subtree(lines, job)
+        raise RuntimeError(
+            f"ci.yml: another `closures:` key (decoy) on line(s) {stray}"
+        )
+    check_workflow_scope(lines, top)
+    body = subtree(lines, job)
     for line in body:
-        if line.key in ("continue-on-error", "if"):
-            raise RuntimeError(f"ci.yml:{line.number}: the closures job may not use `{line.key}:`")
+        if line.key in JOB_FORBIDDEN:
+            raise RuntimeError(
+                f"ci.yml:{line.number}: the closures job may not use `{line.key}:`"
+            )
+        if line.key == "uses" and not scalar(line.value, "uses").startswith(ACTIONS):
+            raise RuntimeError(f"ci.yml:{line.number}: the closures job may use only {ACTIONS}")
     runs = [
-        _scalar(line.value, f"ci.yml:{line.number}")
+        scalar(line.value, f"ci.yml:{line.number}")
         for line in body
         if line.key == "run"
     ]
@@ -319,11 +270,14 @@ def self_test() -> int:
         "single-quoted, commented, unquoted and blank-separated entries": head
         + job(
             [f"'{value[1:-1]}'" for value in quoted[:-3]]
-            + [quoted[-3] + "  # trailing comment\n\n          # comment line", quoted[-2]]
+            + [
+                quoted[-3] + "  # trailing comment\n\n          # comment line",
+                quoted[-2],
+            ]
             + [quoted[-1][1:-1] or '""']
         ).replace("      matrix:\n", "      matrix: # comment\n"),
         "quoted keys": head.replace("jobs:", '"jobs":')
-        + job(quoted, key="'closures':").replace('  closures:\n', '  "closures":\n', 1),
+        + job(quoted, key="'closures':").replace("  closures:\n", '  "closures":\n', 1),
         "a block scalar mentioning closures": head + script + job(quoted),
     }
     rejected = {
@@ -346,11 +300,65 @@ def self_test() -> int:
         "continue-on-error": head
         + job(quoted).replace("    steps:", "    continue-on-error: true\n    steps:"),
         "skipped step": head
-        + job(quoted).replace("        run: cargo test", "        if: false\n        run: cargo test"),
+        + job(quoted).replace(
+            "        run: cargo test", "        if: false\n        run: cargo test"
+        ),
         "no -D warnings": head
-        + job(quoted, runs=("cargo clippy --all-targets ${{ matrix.closures }}", TEST_RUN)),
+        + job(
+            quoted, runs=("cargo clippy --all-targets ${{ matrix.closures }}", TEST_RUN)
+        ),
         "no test step": head + job(quoted, runs=(CLIPPY_RUN,)),
         "tab indentation": head + job(quoted).replace("          - ", "\t- ", 1),
+    }
+    steps = "    steps:\n"
+    capped = '      RUSTFLAGS: "--cap-lints=allow"\n'
+    rejected |= {
+        "job env capping lints": head
+        + job(quoted).replace(steps, "    env:\n" + capped + steps),
+        "the fuzz-build env pair": head
+        + job(quoted).replace(
+            steps,
+            '    env:\n      RUSTFLAGS: "--cap-lints=warn"\n      CARGO_BUILD_WARNINGS: allow\n'
+            + steps,
+        ),
+        "step env": head
+        + job(quoted).replace(
+            "        run: cargo test",
+            "        env:\n    " + capped + "        run: cargo test",
+        ),
+        "workflow env": head.replace(
+            "jobs:", "env:\n  CARGO_BUILD_WARNINGS: allow\njobs:"
+        )
+        + job(quoted),
+        "workflow env wrapper": head.replace(
+            "jobs:", "env:\n  RUSTC_WRAPPER: /tmp/w\njobs:"
+        )
+        + job(quoted),
+        "workflow defaults shell": head.replace(
+            "jobs:", "defaults:\n  run:\n    shell: \"bash -c '{0} || true'\"\njobs:"
+        )
+        + job(quoted),
+        "job defaults shell": head
+        + job(quoted).replace(
+            steps, "    defaults:\n      run:\n        shell: sh\n" + steps
+        ),
+        "step shell": head
+        + job(quoted).replace(
+            "        run: cargo test",
+            "        shell: 'bash {0} || true'\n        run: cargo test",
+        ),
+        "container": head
+        + job(quoted).replace(steps, "    container: rust:slim\n" + steps),
+        "working directory": head
+        + job(quoted).replace(
+            "        run: cargo test",
+            "        working-directory: fuzz\n        run: cargo test",
+        ),
+        "unknown action": head
+        + job(quoted).replace(
+            steps + "      - uses: actions/checkout@v7 # pinned\n",
+            steps + "      - uses: someone/set-rustflags@v1\n",
+        ),
     }
     with TemporaryDirectory() as directory:
         path = Path(directory) / "ci.yml"
@@ -366,6 +374,30 @@ def self_test() -> int:
                 pass
             else:
                 raise AssertionError(f"check-ci accepted: {label}")
+        config = Path(directory) / "config.toml"
+        accepted_configs = (
+            '[build]\nwarnings = "deny"\n',
+            '[build]\nwarnings = "deny"\nedition = "2024"\n[alias]\nxtask = "run"\n',
+        )
+        rejected_configs = (
+            "",
+            '[build]\nwarnings = "allow"\n',
+            '[build]\nwarnings = "deny"\nrustflags = ["--cap-lints=allow"]\n',
+            '[build]\nwarnings = "deny"\n[target.x86_64-unknown-linux-gnu]\nrustflags = ["--cap-lints", "allow"]\n',
+            '[build]\nwarnings = "deny"\nrustc-wrapper = "/tmp/w"\n',
+            '[build]\nwarnings = "deny"\n[env]\nRUSTFLAGS = "--cap-lints=allow"\n',
+        )
+        for text in accepted_configs:
+            config.write_text(text)
+            check_cargo_config(config)
+        for text in rejected_configs:
+            config.write_text(text)
+            try:
+                check_cargo_config(config)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError(f"check-ci accepted .cargo/config.toml: {text!r}")
     print(
         f"feature_closures self-test: ok (check-ci: {len(accepted)} workflows "
         f"accepted, {len(rejected)} rejected)"
@@ -393,6 +425,7 @@ def main() -> int:
             print(closure.label + "\t" + shlex.join(closure.arguments))
     elif args.command == "check-ci":
         check_ci(closures, args.workflow)
+        check_cargo_config(args.root / ".cargo/config.toml")
     elif args.command == "run":
         failures = 0
         for closure in closures:

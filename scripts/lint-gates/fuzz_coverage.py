@@ -9,11 +9,13 @@
 Two checks, both reading the inventory table of `docs/review/fuzz.md`
 (columns: function | source file | fuzz target | reason):
 
-* `--inventory`: every function the step-4 search finds
+* `--inventory` (`--enforce` in CI): the table exists and is not empty; every
+  function the step-4 search finds
   (`fn (parse|decode|load_bytes|from_bytes|read)\\w*` under `src/`), plus
   `find_pac_in_authorization_data`, is a row, keyed by its fully qualified
-  name and its source file; every row names exactly one of a target or a
-  reason; and every named target is in `cargo fuzz list`.
+  name and its source file; every row's function is still defined in that
+  file; every row names exactly one of a target or a reason; and every named
+  target is a `[[bin]]` of `fuzz/Cargo.toml` (what `cargo fuzz list` prints).
 * `--coverage DIR`: every row that names a target is proved by that target's
   own coverage. `DIR/<target>.json` is the `llvm-cov export` of the target's
   coverage binary with its `coverage.profdata` (write them with `--export
@@ -36,9 +38,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Iterable
+from typing import Callable, Final, Iterable
 
 import common
 from rust_lex import match_bracket, strip_comments_and_strings
@@ -48,6 +51,7 @@ NIGHTLY: Final = "+nightly-2026-10-03"
 SEARCH: Final = re.compile(r"\bfn ((?:parse|decode|load_bytes|from_bytes|read)\w*)")
 ALWAYS: Final = (("rskrb5_ng::pac::find_pac_in_authorization_data", "src/pac.rs"),)
 NO_TARGET: Final = {"", "-", "—"}
+EMPTY: Final = "the inventory table of docs/review/fuzz.md is missing or empty"
 
 
 @dataclass(frozen=True)
@@ -180,11 +184,54 @@ def qualified_functions(relative: str, original: str) -> list[tuple[str, int]]:
         path = ["rskrb5_ng", *module_path(relative)]
         for _, _, kind, name in enclosing:
             if kind == "trait-impl":
-                raise ValueError(f"{relative}: search hit {match[1]} in a trait impl ({name})")
+                raise ValueError(
+                    f"{relative}: search hit {match[1]} in a trait impl ({name})"
+                )
             path.append(name)
         path.append(match[1])
         hits.append(("::".join(path), stripped.count("\n", 0, position) + 1))
     return hits
+
+
+def defined_functions(relative: str, original: str) -> set[str]:
+    """Every `fn` of one file, named as inventory rows name it.
+
+    A trait-impl method is `<path::Type as Trait>::name`, with only the trait's
+    last path segment, so a row's fully qualified trait matches its source.
+    """
+    stripped = strip_comments_and_strings(original)
+    blocks = scopes(stripped)
+    names = set()
+    for match in re.finditer(r"\bfn\s+(?:r#)?(\w+)", stripped):
+        path = ["rskrb5_ng", *module_path(relative)]
+        trait = None
+        for _, _, kind, name in sorted(
+            (block for block in blocks if block[0] < match.start() < block[1]),
+            key=lambda block: block[0],
+        ):
+            if kind == "trait-impl":
+                trait_path, _, self_type = name.partition(" for ")
+                trait = trait_path.strip().rsplit("::", 1)[-1]
+                path.append(self_type.strip())
+            else:
+                path.append(name)
+        qualified = "::".join(path)
+        names.add(f"<{qualified} as {trait}>::{match[1]}" if trait else f"{qualified}::{match[1]}")
+    return names
+
+
+def check_live(rows: list[Row], read: Callable[[str], str | None]) -> list[str]:
+    """Rows whose function is no longer defined in the row's source file."""
+    defined: dict[str, set[str]] = {}
+    errors = []
+    for row in rows:
+        if row.source not in defined:
+            text = read(row.source)
+            defined[row.source] = set() if text is None else defined_functions(row.source, text)
+        name = re.sub(r" as (?:\w+::)*(\w+)>", r" as \1>", row.function)
+        if name not in defined[row.source]:
+            errors.append(f"stale inventory row: {row.function} is not defined in {row.source}")
+    return errors
 
 
 def inventory_keys(root: Path) -> dict[tuple[str, str], int]:
@@ -203,6 +250,8 @@ def inventory_keys(root: Path) -> dict[tuple[str, str], int]:
 def check_rows(
     rows: list[Row], keys: Iterable[tuple[str, str]], targets: set[str]
 ) -> list[str]:
+    if not rows:
+        return [EMPTY]
     errors = []
     present = {(row.function, row.source) for row in rows}
     for name, relative in sorted(set(keys) - present):
@@ -292,6 +341,8 @@ def match_row(row: Row, index: dict) -> tuple[str, str, int] | None:
 def check_coverage(
     rows: list[Row], indexes: dict[str, dict]
 ) -> tuple[list[str], list[str]]:
+    if not rows:
+        return [EMPTY], []
     errors, records = [], []
     for row in rows:
         if row.target in NO_TARGET:
@@ -309,15 +360,20 @@ def check_coverage(
     return errors, records
 
 
+def manifest_targets(manifest: str) -> set[str]:
+    """The `[[bin]]` names of the fuzz manifest: what `cargo fuzz list` prints."""
+    return {
+        target["name"]
+        for target in tomllib.loads(manifest).get("bin", [])
+        if isinstance(target.get("name"), str)
+    }
+
+
 def fuzz_targets(root: Path) -> set[str]:
-    listing = subprocess.run(
-        ["cargo", NIGHTLY, "fuzz", "list"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return {line.strip() for line in listing.stdout.splitlines() if line.strip()}
+    targets = manifest_targets((root / "fuzz/Cargo.toml").read_text(encoding="utf-8"))
+    if not targets:
+        raise RuntimeError("fuzz/Cargo.toml declares no [[bin]] fuzz target")
+    return targets
 
 
 def export_coverage(
@@ -472,19 +528,80 @@ def self_test() -> int:
     ], unknown
     both = [Row("x", "src/x.rs", "pac_parse", "reason"), Row("y", "src/y.rs", "-", "")]
     assert len(check_rows(both, set(), {"pac_parse"})) == 2
+    # A missing or empty inventory table is an error for both checks.
+    for text in (
+        "not a table",
+        "| Function | Source | Fuzz target | Reason |\n| --- | --- | --- | --- |\n",
+    ):
+        assert check_rows(parse_table(text), set(), {"pac_parse"}) == [EMPTY], text
+        assert check_coverage(parse_table(text), {})[0] == [EMPTY], text
+    # Targets come from the fuzz manifest, so CI needs no cargo-fuzz.
+    manifest = '[package]\nname = "f"\n[[bin]]\nname = "pac_parse"\npath = "fuzz_targets/pac_parse.rs"\n'
+    assert manifest_targets(manifest) == {"pac_parse"}
+    # A row whose function is no longer defined in its file is stale, for a
+    # target row and a reason-only row alike; helpers outside the search
+    # regex and trait-impl rows stay valid.
+    config = (
+        "impl LibDefaults {\n    fn validate_explicit_enctypes(&mut self) {}\n}\n"
+        "fn brace_delta(line: &str) -> i32 { 0 }\n"
+        "impl<'a> Iterator for Segments<'a> {\n    type Item = u8;\n    fn next(&mut self) -> Option<u8> { None }\n}\n"
+    )
+    live = [
+        Row(
+            "rskrb5_ng::config::LibDefaults::validate_explicit_enctypes",
+            "src/config.rs",
+            "krb5_conf",
+            "",
+        ),
+        Row("rskrb5_ng::config::brace_delta", "src/config.rs", "krb5_conf", ""),
+        Row(
+            "<rskrb5_ng::config::Segments as core::iter::traits::iterator::Iterator>::next",
+            "src/config.rs",
+            "krb5_conf",
+            "",
+        ),
+    ]
+    stale = [
+        Row(
+            "rskrb5_ng::config::parse_explicit_enctypes",
+            "src/config.rs",
+            "krb5_conf",
+            "",
+        ),
+        Row(
+            "rskrb5_ng::config::Config::load_removed",
+            "src/config.rs",
+            "-",
+            "reads a file",
+        ),
+        Row("rskrb5_ng::config::LibDefaults::next", "src/config.rs", "-", "wrong impl"),
+    ]
+    sources = {"src/config.rs": config}
+    assert check_live(live, sources.get) == [], check_live(live, sources.get)
+    assert check_live(stale, sources.get) == [
+        f"stale inventory row: {row.function} is not defined in {row.source}"
+        for row in stale
+    ], check_live(stale, sources.get)
+    assert check_live(
+        [Row("rskrb5_ng::gone::f", "src/gone.rs", "-", "x")], sources.get
+    ) == ["stale inventory row: rskrb5_ng::gone::f is not defined in src/gone.rs"]
     print(
-        "fuzz_coverage self-test: ok (another type's parse, another file and a missing row are rejected)"
+        "fuzz_coverage self-test: ok (another type's parse, another file, a missing row, "
+        "an empty table and stale rows are rejected; targets from the manifest)"
     )
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--root", type=Path, default=common.ROOT)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--inventory", action="store_true")
+    parser.add_argument(
+        "--enforce", action="store_true", help="the CI gate: same as --inventory"
+    )
     parser.add_argument("--coverage", type=Path, metavar="DIR")
     parser.add_argument("--export", type=Path, metavar="DIR")
     parser.add_argument("--coverage-target-dir", type=Path)
@@ -494,7 +611,7 @@ def main() -> int:
         type=Path,
         help="checkout the coverage binaries were built from (default: --root)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
     root = args.root
@@ -502,9 +619,15 @@ def main() -> int:
     if args.export:
         return export_coverage(root, rows, args.export, args.coverage_target_dir)
     errors: list[str] = []
-    if args.inventory:
+    if args.inventory or args.enforce:
         keys = inventory_keys(root)
         errors += check_rows(rows, keys, fuzz_targets(root))
+        errors += check_live(
+            rows,
+            lambda relative: (root / relative).read_text(encoding="utf-8")
+            if (root / relative).is_file()
+            else None,
+        )
         print(f"inventory: {len(keys)} searched functions, {len(rows)} rows")
     if args.coverage:
         indexes = {}
@@ -525,8 +648,10 @@ def main() -> int:
             )
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
-    if not (args.inventory or args.coverage):
-        parser.error("choose --self-test, --inventory, --coverage DIR or --export DIR")
+    if not (args.inventory or args.enforce or args.coverage):
+        parser.error(
+            "choose --self-test, --inventory (--enforce), --coverage DIR or --export DIR"
+        )
     return 1 if errors else 0
 
 

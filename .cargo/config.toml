@@ -2,6 +2,6 @@
 # `RUSTFLAGS="-D warnings"`: unlike RUSTFLAGS it does not invalidate the build
 # cache, and it covers every local package (a warning in a vendored path
 # dependency fails the build too). Toggle per-invocation for local WIP with
-# `CARGO_BUILD_WARNINGS=allow` (see CONTRIBUTING.md).
+# `CARGO_BUILD_WARNINGS=allow` (see docs/lint-policy.md).
 [build]
 warnings = "deny"

@@ -45,16 +45,6 @@ class Item:
         return self.name
 
 
-@dataclass(frozen=True, slots=True)
-class Attribute:
-    start: int
-    end: int
-    inner: bool
-    lints: tuple[str, ...]
-    predicate: str
-    reason: str
-
-
 IDENT: Final = re.compile(rb"(?:r#)?[a-zA-Z_\x80-\xff][a-zA-Z_0-9\x80-\xff]*|[0-9]+")
 LITERAL: Final = re.compile(
     rb"(?:b|c)?\"(?:\\.|[^\"\\])*\"|b?'(?:\\(?:u\{[0-9a-fA-F]+\}|x[0-9a-fA-F]{2}|.)|[^'\\\n])'",
@@ -142,11 +132,6 @@ def pairs(ts: list[Token]) -> dict[int, int]:
     if stack:
         raise ScanError(f"unclosed delimiter at byte {ts[stack[-1]].start}")
     return result
-
-
-def canonical(text: str) -> str:
-    """Ignore formatting, but never whitespace inside a string literal."""
-    return "".join(t.text for t in tokens(text))
 
 
 def scan_items(source: str | bytes) -> list[Item]:
@@ -292,98 +277,6 @@ def scan_items(source: str | bytes) -> list[Item]:
     return unique
 
 
-def locate_item(source: str | bytes, offset: int) -> Item | None:
-    return min(
-        (item for item in scan_items(source) if item.start <= offset < item.end),
-        key=lambda item: item.end - item.start,
-        default=None,
-    )
-
-
-def inner_position(source: bytes, start: int = 0) -> int:
-    """Insert after leading inner docs/attributes, including inline modules."""
-    ts = tokens(source[start:])
-    ends = pairs(ts)
-    i = 0
-    position = start
-    while i < len(ts):
-        if ts[i].text.startswith(("//!", "/*!")):
-            position = start + ts[i].end
-            i += 1
-        elif (
-            ts[i].text == "#"
-            and i + 2 < len(ts)
-            and ts[i + 1].text == "!"
-            and ts[i + 2].text == "["
-        ):
-            i = ends[i + 2] + 1
-            position = start + ts[i - 1].end
-        else:
-            break
-    newline = source.find(b"\n", position)
-    if newline >= 0 and not source[position:newline].strip():
-        return newline + 1
-    return position
-
-
-def attributes(source: str | bytes) -> list[Attribute]:
-    data = source.encode() if isinstance(source, str) else source
-    ts = tokens(data)
-    ends = pairs(ts)
-    result: list[Attribute] = []
-
-    def split(lo: int, hi: int) -> list[tuple[int, int]]:
-        segments: list[tuple[int, int]] = []
-        first = lo
-        while lo < hi:
-            if ts[lo].text == ",":
-                segments.append((first, lo))
-                first = lo + 1
-            lo = ends[lo] + 1 if lo in ends else lo + 1
-        if first < hi:
-            segments.append((first, hi))
-        return segments
-
-    def visit(lo: int, hi: int, pred: str, bounds: tuple[int, int, bool]) -> None:
-        if hi - lo < 3 or ts[lo + 1].text != "(":
-            return
-        segments = split(lo + 2, ends[lo + 1])
-        if ts[lo].text == "cfg_attr" and segments:
-            a, b = segments[0]
-            condition = "".join(t.text for t in ts[a:b])
-            condition = condition if pred == "always" else f"all({pred},{condition})"
-            for a, b in segments[1:]:
-                visit(a, b, condition, bounds)
-        elif ts[lo].text == "expect":
-            lints: list[str] = []
-            reason = ""
-            for a, b in segments:
-                if ts[a].text == "reason" and b - a == 3:
-                    literal = ts[a + 2].text
-                    if literal.startswith("r"):
-                        reason = literal[literal.index('"') + 1 : literal.rindex('"')]
-                    else:
-                        import json
-
-                        reason = json.loads(literal)
-                else:
-                    lint = "".join(t.text for t in ts[a:b])
-                    if not re.fullmatch(r"\w+(?:::\w+)*", lint):
-                        raise ScanError(f"invalid expect lint {lint!r}")
-                    lints.append(lint)
-            result.append(Attribute(*bounds, tuple(lints), pred, reason))
-
-    for i, token in enumerate(ts):
-        if token.text != "#" or i + 1 >= len(ts):
-            continue
-        inner = ts[i + 1].text == "!"
-        bracket = i + 2 if inner else i + 1
-        if bracket in ends and ts[bracket].text == "[":
-            end = ends[bracket]
-            visit(bracket + 1, end, "always", (token.start, ts[end].end, inner))
-    return result
-
-
 def self_test() -> None:
     assert len(scan_items('fn f() { let x: &\'static str = "hi"; }')) == 1
     # Given lexical traps, when locating bytes, then only real items are returned.
@@ -413,21 +306,23 @@ use std::{time::Duration, fmt};
 const N: usize = { 1 };
 """
     data = source.encode()
-    assert locate_item(data, data.index(b"_raw")).name == "impl Foo::fn bar"
-    assert locate_item(data, data.index(b"std::")).kind == "use"
-    assert locate_item(data, data.index(b"pub fn")).name == "impl Foo::fn bar"
+
+    def innermost(offset: int) -> Item:
+        return min(
+            (i for i in scan_items(data) if i.start <= offset < i.end),
+            key=lambda i: i.end - i.start,
+        )
+
+    assert innermost(data.index(b"_raw")).name == "impl Foo::fn bar"
+    assert innermost(data.index(b"std::")).kind == "use"
+    assert innermost(data.index(b"pub fn")).name == "impl Foo::fn bar"
     assert len(scan_items(data)) == 5
-    assert data[: inner_position(data)].endswith(b"#![deny(warnings)]\n")
     assert (
         scan_items("extern crate core; pub type X = fn(); static mut N: u8 = 0;")[
             1
         ].kind
         == "type"
     )
-    attr = attributes(
-        '#[cfg_attr(test, expect(dead_code, reason = "lint-migration: test"), derive(Debug))] fn f() {}'
-    )[0]
-    assert (attr.predicate, attr.lints, attr.inner) == ("test", ("dead_code",), False)
     print("scanner self-test: PASS")
 
 

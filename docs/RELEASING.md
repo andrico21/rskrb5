@@ -7,30 +7,57 @@ existed. Publishing needs the owner steps below, then one tag.
 
 ## How a release runs
 
-The `Release` workflow ([`.github/workflows/release.yml`](../.github/workflows/release.yml))
-runs after every completed `CI` run. It has two jobs:
+Release tags are `N.N.N`, without a `v` (owner decision D14, 2026-10-29); the
+historical `v0.1.0` to `v0.2.2` tags stay as they are and are never release
+tags of `rskrb5-ng`. Two workflows split the release authority, and every
+check they make lives in [`scripts/release-publish.sh`](../scripts/release-publish.sh),
+whose `self-test` runs them on stubs:
 
-1. `find-tag` holds no secret. For a successful push or dispatch CI run of
-   this repository it looks for a `vN.N.N` tag on the run's commit. Without
-   one it prints `No vN.N.N tag points at <sha>` and ends, and `publish` is
-   skipped. Two matching tags fail the job.
-2. `publish` runs only when a tag was found, in the `release` environment,
-   so it waits for the owner's approval. Then it:
-   - checks that the tag still points at the commit CI verified, and that the
-     commit is an ancestor of `origin/main`;
-   - checks that `Cargo.toml` names the package `rskrb5-ng` and that its
-     version equals the tag without the `v`;
-   - takes the release notes from the matching `CHANGELOG.md` section;
-   - runs `cargo publish --dry-run --locked` without the token;
-   - uploads with `cargo publish --locked --no-verify`, the only step that
-     sees `CARGO_REGISTRY_TOKEN`; a version that is already on crates.io
-     is reported and not released again;
-   - creates the GitHub release for the tag, only when this run uploaded.
+1. The coordinator `Release`
+   ([`.github/workflows/release.yml`](../.github/workflows/release.yml)) runs
+   after every completed `CI` run and uses no secret and no deployment
+   environment. For a successful push or dispatch CI run of this repository it
+   looks for an `N.N.N` tag on the run's commit. Without one it prints
+   `No N.N.N tag points at <sha>` and dispatches nothing; two matching tags
+   fail the job. With one, and only in the CI run on the tag's own ref (the
+   run on `main` for the same commit only reports the tag), it checks that the
+   tag equals the `Cargo.toml` version and that the commit is on `main`, then
+   runs `gh workflow run publish.yml --ref <tag>`.
+2. `Publish` ([`.github/workflows/publish.yml`](../.github/workflows/publish.yml))
+   runs only on `workflow_dispatch`, so it always runs at the dispatched tag
+   ref, which the `release` environment's tag-only deployment policy admits.
+   - Its `verify` job holds no secret and waits for no environment. It
+     re-checks everything itself, because `publish.yml` can also be dispatched
+     by hand: the ref is `refs/tags/N.N.N`, the tag equals the `Cargo.toml`
+     version and points at the dispatched commit, the commit is an ancestor of
+     `origin/main`, and a `CI` run of this repository for that commit,
+     triggered by push or dispatch, concluded `success` (GitHub API). It then
+     verify-builds and packages the crate (`cargo package --locked`) and
+     uploads the `.crate` and its sha256 as the `verified-crate` artifact.
+     All dependency build code of the release runs in this job.
+   - Its `publish` job runs in the `release` environment, so it waits for the
+     owner's approval, and it is the only job that sees
+     `CARGO_REGISTRY_TOKEN`. It repeats the tag, version, commit and ancestry
+     checks (the tag could have moved during the wait), downloads the
+     artifact, re-packages without building (`cargo package --locked
+     --no-verify`) and requires the verified sha256. Then:
+     - if crates.io does not have the version, it uploads with
+       `cargo publish --locked --no-verify`;
+     - if crates.io has it, it downloads the published `.crate` and requires
+       its sha256 to equal the tag's package; other bytes fail the job and no
+       release is created;
+     - only then does it create the GitHub release for the tag, with the notes
+       of the matching `CHANGELOG.md` section, unless that release exists
+       (`gh release view` first; never twice).
+     No step of this job builds, tests or verify-packages anything, so no
+     dependency build code runs on the runner that holds the token.
 
 CI itself runs on the tag push as well, so a release tag gets the full CI
 matrix first, including `cargo package --locked`, `cargo publish --dry-run
 --locked`, the consumer build and `semver-checks` (a notice for this first
-`rskrb5-ng` release, because no earlier `rskrb5-ng` version is published).
+`rskrb5-ng` release, because no `rskrb5-ng` version is published; after a
+publication, a commit that keeps a published version fails `semver-checks`
+with "version already published; bump the version").
 
 ## Repository settings already in place
 
@@ -88,15 +115,33 @@ and revoke the API token.
 2. Tag that exact commit (repository admins only) and push the tag:
 
    ```sh
-   git tag -a v0.3.0 <sha> -m "rskrb5-ng 0.3.0" && git push origin v0.3.0
+   git tag -a 0.3.0 <sha> -m "rskrb5-ng 0.3.0" && git push origin 0.3.0
    ```
 
-3. CI runs on the tag. When it is green, `Release` starts, `find-tag` finds
-   `v0.3.0`, and `publish` waits for approval in the `release` environment.
-   Approve it in the Actions UI.
+3. CI runs on the tag. When it is green, `Release` finds `0.3.0` and
+   dispatches `Publish` at `refs/tags/0.3.0`. `verify` runs at once; `publish`
+   waits for approval in the `release` environment. Approve it in the Actions
+   UI.
 4. After the run: `https://crates.io/crates/rskrb5-ng` lists 0.3.0, and the
-   GitHub release `v0.3.0` exists. A failed run can be repeated by re-running
-   the CI workflow on the same commit.
+   GitHub release `0.3.0` exists.
+
+## Recovering a failed run
+
+Re-dispatch `Publish` at the tag; nothing else is needed:
+
+```sh
+gh workflow run publish.yml --ref 0.3.0 -R andrico21/rskrb5-ng
+```
+
+`verify` checks the tag and CI again and re-packages. `publish` then either
+uploads (the earlier run failed before the upload) or, when the earlier run
+uploaded and failed afterwards (for example while creating the GitHub
+release), downloads the published `.crate`, requires the sha256 of this tag's
+package, and creates the missing GitHub release once. A version on crates.io
+whose bytes differ from the tag's package (an out-of-band publication) fails
+the job; it is never certified by a release. Re-running the CI workflow is not
+a recovery path: the coordinator dispatches from the CI run on the tag ref, so
+re-run that run only if `Publish` was never dispatched.
 
 ## rskrb5-patched (optional, future)
 

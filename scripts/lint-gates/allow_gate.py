@@ -57,7 +57,10 @@ EVASIONS: Final = (
         "cfg_attr fragment",
         "macro_rules! m { ($($t:tt)*) => { #[cfg_attr(all(), $($t)*)] fn f() {} } }\n",
     ),
-    ("foreign macro argument", "other_crate::with_attr!(allow(dead_code), fn f() {});\n"),
+    (
+        "foreign macro argument",
+        "other_crate::with_attr!(allow(dead_code), fn f() {});\n",
+    ),
     ("include! of a .txt", 'include!("d.txt");\n'),
     ("include! of a computed path", 'include!(concat!(env!("OUT_DIR"), "/d.rs"));\n'),
     ("include! outside the tree", 'include!("../../d.rs");\n'),
@@ -82,7 +85,9 @@ def self_test() -> int:
         (root / "fuzz/fuzz_targets").mkdir(parents=True)
         (root / "fuzz/fuzz_targets/probe.rs").write_text("#![allow(unused)]")
         assert len(scan(list(common.iter_rust_files(root)))) == 1
-        assert main(["--enforce", "--files", str(path)]) == 1
+        with redirect_stdout(StringIO()):
+            assert main(["--files", str(path)]) == 0
+            assert main(["--enforce", "--files", str(path)]) == 1
         path.write_text(
             '//! docs\n#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "lint-migration: upstream baseline at abc1234"))]\npub fn f() {}\n'
         )
@@ -97,13 +102,34 @@ def self_test() -> int:
             'fn f() { x.expect("y"); Option::expect(o, "y"); }\nfn expect() {}\n'
         )
         assert scan([path]) == [], scan([path])
+        # A build script and a custom-path Cargo target are scanned too.
+        package = root / "package"
+        (package / "src").mkdir(parents=True)
+        (package / "tools").mkdir()
+        (package / "Cargo.toml").write_text(
+            '[package]\nname = "p"\n[[bin]]\nname = "probe"\npath = "tools/probe.rs"\n'
+        )
+        (package / "src/lib.rs").write_text("pub fn f() {}\n")
+        (package / "build.rs").write_text("#![allow(unused)]\nfn main() {}\n")
+        (package / "tools/probe.rs").write_text("#[allow(dead_code)]\nfn main() {}\n")
+        with redirect_stdout(StringIO()) as printed:
+            assert main(["--enforce", "--root", str(package)]) == 1
+        assert "build.rs:1:" in printed.getvalue(), printed.getvalue()
+        assert "probe.rs:1:" in printed.getvalue(), printed.getvalue()
+        assert "allow_gate: 2 " in printed.getvalue(), printed.getvalue()
+        # An empty source set is an error, never a clean pass.
+        (package / "src/lib.rs").unlink()
+        (package / "build.rs").unlink()
+        (package / "tools/probe.rs").unlink()
+        (package / "Cargo.toml").write_text('[package]\nname = "p"\n')
+        with redirect_stdout(StringIO()):
+            assert main(["--enforce", "--root", str(package)]) == 1
     print(f"allow_gate self-test: ok ({len(EVASIONS)} lexical evasions rejected)")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--report", action="store_true")
     parser.add_argument("--enforce", action="store_true")
     parser.add_argument("--files", nargs="+")
     parser.add_argument("--root", type=Path, default=common.ROOT)
@@ -111,16 +137,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
-    files = (
-        [Path(p) for p in args.files]
-        if args.files
-        else list(common.iter_rust_files(args.root))
-    )
+    try:
+        files = (
+            [Path(p) for p in args.files]
+            if args.files
+            else common.iter_rust_files(args.root)
+        )
+    except common.source_set.SourceSetError as error:
+        print(f"allow_gate: {error}")
+        return 1
     hits = scan(files)
     print(
         "\n".join(
             hits
-            + [f"allow_gate: {len(hits)} allow attribute(s) or unscannable construct(s)"]
+            + [
+                f"allow_gate: {len(hits)} allow attribute(s) or unscannable construct(s)"
+            ]
         )
     )
     return int(args.enforce and bool(hits))

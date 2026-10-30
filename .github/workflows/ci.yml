@@ -1,10 +1,12 @@
 name: CI
 
-# CI and the release gate: `release.yml` triggers on this workflow's
-# completion. Its secret-free `find-tag` job looks for a `vN.N.N` tag at the
-# run's head SHA; only then does its `publish` job run, in the reviewed
-# `release` environment and only for a tagged commit on `main`. Every job's
-# `name:` equals its job id.
+# CI and the release gate: the secret-free coordinator `release.yml` runs on
+# this workflow's completion. Its `find-tag` job looks for an `N.N.N` tag at
+# the run's head SHA and, for the CI run on that tag's ref, dispatches
+# `publish.yml` at the tag; `publish.yml` re-verifies the tag, the commit's
+# ancestry on `main` and this workflow's success, and uploads only in the
+# reviewed `release` environment (docs/RELEASING.md). Every job's `name:`
+# equals its job id.
 #
 # Lint profile. The crate adopts the core Section 9 `[lints]` tables of the
 # vendored Rust guidelines unchanged, the core `clippy.toml` sample,
@@ -35,17 +37,18 @@ name: CI
 # `docs/gokrb5-parity.toml` keeps their upstream runs as attributed historical
 # evidence (gate status `historical-upstream`).
 #
-# Blocking: every job except the four advisory ones below. Advisory (never a
+# Blocking: every job except the advisory ones below. Advisory (never a
 # merge gate, per core Section 12 "Recommended"): `geiger`,
-# `rustdoc-nightly-canary`, and the scheduled/dispatch `fuzz` and `mutants`;
-# they are the only jobs allowed to fail.
+# `rustdoc-nightly-canary`, and the scheduled/dispatch `fuzz`, `mutants` and
+# `mutants-report`; they are the only jobs allowed to fail.
 
 on:
   push:
     branches: [main]
-    # Release tags (`v*`, creatable by repository admins only, per the tag
-    # ruleset): `release.yml` publishes only from a green run on the tag.
-    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+    # Release tags (`N.N.N` without a `v`, creatable by repository admins
+    # only, per the tag ruleset): `release.yml` dispatches `publish.yml` only
+    # from a green run on the tag.
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
   schedule:
     # Weekly, Monday 03:37 UTC: the advisory mutants + fuzz pass.
@@ -288,6 +291,16 @@ jobs:
         run: cargo +stable doc --no-deps --all-features
       - name: Rustdoc (nightly-2026-10-03)
         run: cargo +nightly-2026-10-03 doc --no-deps --all-features
+      # What docs.rs builds: the default features plus the
+      # `[package.metadata.docs.rs]` features, with `--cfg docsrs`, in a fresh
+      # target directory so the checked pages come from this build.
+      - name: Rustdoc with the docs.rs feature set
+        shell: bash
+        run: |
+          set -euo pipefail
+          features="$(python3 scripts/lint-gates/docsrs_check.py --features)"
+          RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +nightly-2026-10-03 doc --no-deps --features "$features" --target-dir "$RUNNER_TEMP/docsrs"
+          python3 scripts/lint-gates/docsrs_check.py --verify "$RUNNER_TEMP/docsrs/doc"
 
   msrv:
     name: msrv
@@ -314,7 +327,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # semver_baseline.py reads every release tag's Cargo.toml.
+          # semver_baseline.py checks every release tag's Cargo.toml version.
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -323,10 +336,11 @@ jobs:
       # current stable.
       - name: Install cargo-semver-checks
         run: cargo install cargo-semver-checks --locked --force --version '^0.51'
-      # The baseline is the highest `vX.Y.Z` tag that names `rskrb5-ng` below
-      # the candidate version and is published on crates.io; without one (the
-      # first rskrb5-ng release) the script prints a notice and exits 0.
-      - name: Check release semver (against the latest published rskrb5-ng tag)
+      # The baseline is the highest rskrb5-ng version on crates.io at or below
+      # the candidate (the registry bytes). An equal version must be this exact
+      # package (sha256), else "version already published; bump the version".
+      # Only a crate with no published version prints the first-release notice.
+      - name: Check release semver (against the highest published rskrb5-ng version)
         run: python3 scripts/lint-gates/semver_baseline.py
 
   publish-dryrun:
@@ -482,6 +496,22 @@ jobs:
         run: python3 scripts/lint-gates/feature_closures.py check-ci .github/workflows/ci.yml
       - name: Fuzz lint profile
         run: python3 scripts/lint-gates/fuzz_lint.py --enforce
+      # Targets come from fuzz/Cargo.toml, so this needs no cargo-fuzz.
+      - name: Fuzz inventory (every parser has a row, every row a live function)
+        run: python3 scripts/lint-gates/fuzz_coverage.py --enforce
+      - name: No dead options or helpers in the gate scripts
+        run: python3 scripts/lint-gates/gate_hygiene.py --enforce
+      - name: Gate wiring and action pins
+        run: python3 scripts/lint-gates/workflow_gate.py --enforce
+      # The offline regression suites of the helper scripts.
+      - name: AD dispatch helper self-test
+        run: python3 scripts/check-github-ad-gate.py --self-test
+      - name: AD environment preflight smoke tests
+        run: python3 scripts/check-ad-integration-env-smoke.py
+      - name: Fixture runner self-test
+        run: bash scripts/run-gated-integration.sh self-test
+      - name: Release script self-test
+        run: bash scripts/release-publish.sh self-test
       - name: No lint-migration attributes
         run: |
           grep -rn lint-migration src tests examples fuzz && exit 1
@@ -524,15 +554,21 @@ jobs:
         run: cargo package --locked
 
   # ---------------------------------------------------------------------------
-  # Advisory jobs (informational, core Section 12 "Recommended"). These four
+  # Advisory jobs (informational, core Section 12 "Recommended"). These five
   # are the only jobs allowed to fail without failing the workflow.
   # ---------------------------------------------------------------------------
 
   geiger:
     name: geiger
     runs-on: ubuntu-latest
-    # Informational only: cargo-geiger exits non-zero whenever it finds unsafe
-    # code (including in dependencies), so it must never gate merges.
+    # Informational only: an unsafe-code inventory, never a merge gate. The
+    # text output exits 1 on its own "Dependency file was never scanned"
+    # warnings (run 40742338863: "error: Found 333 warnings"), which made a
+    # completed scan look failed, so the scan writes JSON and
+    # `geiger_report.py` classifies those files (build-script output and
+    # included non-Rust files) and exits 0 when the scan is complete. Unsafe
+    # code in dependencies is a reported result, not a failure; a fatal scan
+    # error or an unscanned Rust source fails the step.
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -540,8 +576,22 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-geiger
         run: cargo install cargo-geiger --locked
-      - name: Run cargo geiger
-        run: cargo geiger --all-features
+      - name: Run cargo geiger (JSON report)
+        run: cargo geiger --all-features --locked --output-format Json > geiger.json 2> geiger.log
+      - name: Classify the scan and summarize unsafe counts
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/lint-gates/geiger_report.py geiger.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload the geiger report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: geiger-report
+          path: |
+            geiger.json
+            geiger.log
+          retention-days: 14
 
   rustdoc-nightly-canary:
     name: rustdoc-nightly-canary
@@ -559,22 +609,24 @@ jobs:
 
   mutants:
     name: mutants
-    # The whole crate, split deterministically into 8 shards (cargo-mutants
-    # shards are zero-indexed: `--shard k/8` takes k = 0..7). `--all-features`
-    # because cargo-mutants ignores `cfg`: without it every mutant in
-    # feature-gated code (`src/http.rs`, the tokio transport) is a false
-    # MISSED. No fixed `--timeout`: cargo-mutants derives the per-run cap from
-    # the measured baseline test time of each shard.
+    # The whole crate, split deterministically into 16 shards (cargo-mutants
+    # shards are zero-indexed: `--shard k/16` takes k = 0..15; the 8-shard
+    # campaign 7953988 needed 201-336 mutant-minutes per 413-mutant shard and
+    # two shards never finished). `--all-features` because cargo-mutants
+    # ignores `cfg`: without it every mutant in feature-gated code
+    # (`src/http.rs`, the tokio transport) is a false MISSED. No fixed
+    # `--timeout`: cargo-mutants derives the per-run cap from the measured
+    # baseline test time of each shard. `mutants-report` aggregates the shards.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
-    # Above the 170m wall of the run step, so the shard ends through
-    # `timeout` (and still uploads `mutants.out`) instead of being killed.
-    timeout-minutes: 180
+    # The run step ends by 175m (170m wall, then SIGKILL 5m later), leaving
+    # about 25m of this budget for setup, the summary and the upload.
+    timeout-minutes: 200
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     # Mutation runs only need the build to compile. The deny-level profile
     # would make most mutants unviable (a mutant often leaves an unused
     # binding), so lints are capped and warnings let through for this job.
@@ -586,14 +638,15 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-mutants
         run: cargo install cargo-mutants --locked
-      - name: Run cargo mutants (shard ${{ matrix.shard }}/8, wall-capped at 170m)
-        # `timeout` reports 124 (or 137 after SIGKILL) when the wall expires:
-        # the untested tail is then absent from outcomes.json, which the
-        # summary below reports as truncated. cargo-mutants' own statuses
-        # (2 = missed mutants, 3 = timeouts) are advisory findings.
+      - name: Run cargo mutants (shard ${{ matrix.shard }}/16, wall-capped at 170m)
+        # `timeout` sends TERM at 170m and KILL 5m later if the run ignores
+        # TERM, reporting 124 or 137: the untested tail is then absent from
+        # outcomes.json, which the summary and `mutants-report` report as
+        # unfinished. cargo-mutants' own statuses (2 = missed mutants,
+        # 3 = timeouts) are advisory findings.
         run: |
           set +e
-          timeout 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/8 -j 2
+          timeout -k 5m 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/16 -j 2
           status=$?
           set -e
           echo "MUTANTS_STATUS=$status" >> "$GITHUB_ENV"
@@ -603,7 +656,7 @@ jobs:
             echo "TRUNCATED=0" >> "$GITHUB_ENV"
           fi
           exit "$status"
-      - name: Summarize mutation results (shard ${{ matrix.shard }}/8)
+      - name: Summarize mutation results (shard ${{ matrix.shard }}/16)
         if: always()
         shell: bash
         run: |
@@ -611,7 +664,7 @@ jobs:
           generated=$(jq 'length' "$out/mutants.json" 2>/dev/null || echo 0)
           total=$(jq '[.outcomes[]? | select(.scenario != "Baseline")] | length' "$out/outcomes.json" 2>/dev/null || echo 0)
           summary=$(jq -r '"caught=\(.caught) missed=\(.missed) unviable=\(.unviable) timeout=\(.timeout) success=\(.success)"' "$out/outcomes.json" 2>/dev/null || echo "no outcomes.json")
-          line="shard ${{ matrix.shard }}/8: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
+          line="shard ${{ matrix.shard }}/16: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
           echo "$line"
           echo "$line" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload mutants.out
@@ -621,6 +674,33 @@ jobs:
           name: mutants-out-shard-${{ matrix.shard }}
           path: mutants.out
           retention-days: 14
+
+  mutants-report:
+    name: mutants-report
+    # Aggregates every shard: a missing or unfinished shard makes the
+    # campaign incomplete, and with docs/review/mutants.md every missed or
+    # timed-out mutant of this SHA needs a final status there.
+    needs: mutants
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download every shard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mutants-out-shard-*
+          path: mutants-artifacts
+      - name: Campaign completeness and triage
+        shell: bash
+        run: |
+          set -o pipefail
+          args=(--artifacts mutants-artifacts --expect-shards 16 --campaign "$GITHUB_SHA" --enforce)
+          if [ -f docs/review/mutants.md ]; then
+            args+=(--register docs/review/mutants.md --allow-open)
+          fi
+          python3 scripts/lint-gates/mutants_report.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   fuzz:
     name: fuzz
