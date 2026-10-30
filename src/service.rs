@@ -7,10 +7,10 @@
 //! builds and verifies AP-REP mutual-auth replies using the AP-REQ
 //! authenticator timestamp.
 
-use alloc::{borrow::Cow, sync::Arc};
+use alloc::{borrow::Cow, collections::BTreeSet, sync::Arc};
 use core::{fmt::Debug, str::from_utf8, time::Duration};
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::HashMap,
     sync::Mutex,
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
@@ -251,6 +251,8 @@ pub struct ReplayCache {
     max_clock_skew: Duration,
     /// Maximum live records; admission never evicts a live replay record.
     capacity: usize,
+    /// Per-client admission accounting, independent of service aliases.
+    principal_quota: replay_quota::PrincipalQuota,
     /// Highest admission time, preserved even by explicit clearing.
     watermark: Option<SystemTime>,
     /// RFC 4120 replay keys of the accepted authenticators, each with the digest
@@ -276,6 +278,7 @@ struct DigestRecord {
 }
 
 mod replay;
+mod replay_quota;
 
 /// Shareable in-memory AP-REQ replay cache.
 ///
@@ -288,6 +291,26 @@ pub struct SharedReplayCache {
 }
 
 impl SharedReplayCache {
+    /// Safely prune expired pairs while holding the shared admission lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
+    #[inline]
+    pub fn prune_expired(&self) -> Result<usize, Error> {
+        self.with_cache_mut(ReplayCache::prune_expired)
+    }
+
+    /// Safely prune at `min(now, admission watermark)` across every clone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
+    #[inline]
+    pub fn prune_expired_at(&self, now: SystemTime) -> Result<usize, Error> {
+        self.with_cache_mut(|cache| cache.prune_expired_at(now))
+    }
+
     #[must_use]
     /// Create an empty shared replay cache.
     #[inline]

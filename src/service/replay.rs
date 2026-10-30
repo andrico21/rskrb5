@@ -4,29 +4,11 @@
 use super::replay_tests;
 
 #[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
 mod policy_tests;
-
-impl super::SharedReplayCache {
-    /// Safely prune expired pairs while holding the shared admission lock.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
-    #[inline]
-    pub fn prune_expired(&self) -> Result<usize, Error> {
-        self.with_cache_mut(ReplayCache::prune_expired)
-    }
-
-    /// Safely prune at `min(now, admission watermark)` across every clone.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
-    #[inline]
-    pub fn prune_expired_at(&self, now: SystemTime) -> Result<usize, Error> {
-        self.with_cache_mut(|cache| cache.prune_expired_at(now))
-    }
-}
 use super::{
     Arc, DEFAULT_MAX_CLOCK_SKEW, DigestRecord, Duration, Error, HashMap, ReplayCache, ReplayKey,
     SystemTime,
@@ -40,6 +22,20 @@ impl Default for ReplayCache {
 }
 
 impl ReplayCache {
+    /// Set the maximum live records per authenticated client realm and components.
+    ///
+    /// Defaults to one eighth of total capacity (at least one for nonempty caches).
+    /// Values are clamped below total capacity when it is at least two; zero
+    /// refuses new records. Existing evidence is retained even if over the new
+    /// limit. A capacity of one cannot reserve room for another client. Multiple
+    /// colluding principals may still exhaust the global bound.
+    #[must_use]
+    #[inline]
+    pub fn with_principal_capacity(mut self, capacity: usize) -> Self {
+        self.principal_quota.set_limit(capacity, self.capacity);
+        self
+    }
+
     /// Create an empty cache with immutable skew and live-entry admission limits.
     ///
     /// Validators exceeding `max_clock_skew` are rejected on admission. Zero
@@ -53,6 +49,7 @@ impl ReplayCache {
         Self {
             max_clock_skew,
             capacity,
+            principal_quota: super::replay_quota::PrincipalQuota::new(capacity),
             watermark: None,
             entries: HashMap::new(),
             authenticators: HashMap::new(),
@@ -78,6 +75,7 @@ impl ReplayCache {
         self.entries.clear();
         self.authenticators.clear();
         self.expiry.clear();
+        self.principal_quota.clear();
         self.assert_paired();
     }
 
@@ -133,6 +131,7 @@ impl ReplayCache {
             }
             let _: Option<(SystemTime, [u8; 32])> = self.expiry.pop_first();
             if let Some(record) = self.authenticators.remove(&digest) {
+                self.principal_quota.remove(&record.key.client);
                 #[cfg(test)]
                 replay_tests::KEY_INDEX_VISITS
                     .with(|visits| visits.set(visits.get().saturating_add(1)));
@@ -224,6 +223,7 @@ impl ReplayCache {
         }
         // Both lookups above missed, so neither insert replaces an entry and
         // the new key and digest pair one to one.
+        self.principal_quota.admit(&key.client)?;
         let shared_key = Arc::new(key);
         let _: Option<[u8; 32]> = self
             .entries
@@ -242,7 +242,15 @@ impl ReplayCache {
 
     /// Diagnose broken pairing without scanning live records.
     fn assert_paired(&self) {
-        debug_assert_eq!(self.entries.len(), self.authenticators.len());
-        debug_assert_eq!(self.entries.len(), self.expiry.len());
+        debug_assert_eq!(
+            self.entries.len(),
+            self.authenticators.len(),
+            "replay key/digest pairing"
+        );
+        debug_assert_eq!(
+            self.entries.len(),
+            self.expiry.len(),
+            "replay expiry pairing"
+        );
     }
 }

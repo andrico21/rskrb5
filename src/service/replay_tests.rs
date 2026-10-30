@@ -149,6 +149,26 @@ impl Reference {
                 capacity: self.capacity,
             };
         }
+        let principal_capacity = self
+            .capacity
+            .checked_div(8)
+            .unwrap_or(0)
+            .max(1)
+            .min(self.capacity);
+        if self
+            .entries
+            .keys()
+            .filter(|existing| {
+                existing.client.realm == key.client.realm
+                    && existing.client.components == key.client.components
+            })
+            .count()
+            >= principal_capacity
+        {
+            return Outcome::CapacityExceeded {
+                capacity: principal_capacity,
+            };
+        }
         let _: Option<[u8; 32]> = self.entries.insert(key, authenticator_digest);
         let _: Option<SystemTime> = self.authenticators.insert(authenticator_digest, latest);
         Outcome::Admitted
