@@ -45,6 +45,9 @@ pub(super) async fn send_to_endpoints(
 
 /// Send one password mutation with separate preparation and delivery budgets.
 ///
+/// Each phase gets the full configured timeout, allowing twice that duration
+/// in total. Preparation failure is definite; send/reply expiry is unknown.
+///
 /// # Errors
 /// Returns preparation errors before a send, or `KpasswdOutcomeUnknown` afterward.
 ///

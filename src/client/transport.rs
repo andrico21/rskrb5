@@ -223,6 +223,9 @@ impl Tokio {
 
     #[must_use]
     /// Override the timeout applied to each KDC exchange.
+    ///
+    /// Password mutations deliberately use separate preparation and send/reply
+    /// budgets, each of this duration, so one attempt can take up to twice it.
     #[inline]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -365,6 +368,9 @@ impl Tokio {
     /// Applies no timeout of its own; callers wrap this in
     /// [`Self::with_transport_timeout`] together with the exchanges they intend
     /// to perform, so one logical request keeps one timeout budget.
+    /// Password mutation is the exception: connection preparation and the
+    /// send/reply phase each receive the full timeout. Total elapsed time can
+    /// reach twice the configured timeout; post-send expiry is outcome-unknown.
     ///
     /// # Errors
     ///
