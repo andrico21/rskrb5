@@ -200,3 +200,10 @@ mod raw_selection;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod protocols;
+
+/// Security-policy documentation and serde diagnostic contracts.
+#[cfg(test)]
+#[path = "policy/documentation.rs"]
+#[expect(clippy::missing_errors_doc, clippy::missing_panics_doc, reason = "test code is not rendered API documentation")]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod documentation;

@@ -188,7 +188,7 @@ fn profile_camellia_diagnostics_are_visible() -> Result<(), Box<dyn Error>> {
     let config = Config::parse(text)?;
     // Then skipped secure selections are observable and strict mode errors.
     assert!(
-        matches!(config.libdefaults.diagnostics(), [ConfigDiagnostic::UnsupportedSecureEnctype { token, until: "plan-2 WP-03" }] if token == "camellia")
+        matches!(config.libdefaults.diagnostics().as_ref(), [ConfigDiagnostic::UnsupportedSecureEnctype { token, until: "plan-2 WP-03" }] if token == "camellia")
     );
     assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [18_i32]);
     let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;

@@ -15,6 +15,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use alloc::borrow::Cow;
+
 use crate::crypto::{
     s2k::{Family, Minima},
     selection,
@@ -513,7 +515,13 @@ include!("config/toggle.rs");
 pub mod diagnostic;
 include!("config/enctype_expr.rs");
 
-/// `[libdefaults]` configuration values.
+/// `[libdefaults]` configuration values, constructed through [`Self::new`] and builders.
+///
+/// Secure defaults are AES-SHA2 then AES-SHA1: IDs `[20, 19, 18, 17]`.
+/// Legacy permissions never insert entries into explicit request lists. Configuration
+/// parsing validates original terms and final list relationships before returning;
+/// runtime `CryptoPolicy` snapshots revalidate publicly mutated fields before use.
+/// See the [security policy](https://github.com/andrico21/rskrb5-ng/blob/main/docs/security-policy.md#policy).
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
@@ -597,7 +605,8 @@ pub struct LibDefaults {
     /// construction revalidates public fields and rejects an empty permitted list.
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: Toggle,
-    /// Preferred preauthentication type IDs.
+    /// Informational preauthentication preferences. Removed IDs 14/15 from serde
+    /// remain visible here but are ignored and reported by [`Self::diagnostics`].
     #[cfg_attr(
         feature = "serde",
         serde(deserialize_with = "serde_policy::preferences")
@@ -641,11 +650,23 @@ impl LibDefaults {
         self.min_s2k_iterations = self.min_s2k_iterations.with_minimum(family, minimum)?;
         Ok(self)
     }
-    /// Diagnostics for secure unsupported selections encountered while parsing.
+    /// Diagnostics for skipped secure enctypes and ignored draft-9 preferences.
+    /// Serde retains preference IDs for diagnostics, never for outgoing selection.
     #[inline]
     #[must_use]
-    pub fn diagnostics(&self) -> &[ConfigDiagnostic] {
-        &self.enctype_diagnostics
+    pub fn diagnostics(&self) -> Cow<'_, [ConfigDiagnostic]> {
+        let ignored = self
+            .preferred_preauth_types
+            .iter()
+            .copied()
+            .filter(|id| matches!(*id, 14_i32 | 15_i32));
+        let mut diagnostics = Cow::Borrowed(self.enctype_diagnostics.as_slice());
+        for id in ignored {
+            diagnostics
+                .to_mut()
+                .push(ConfigDiagnostic::IgnoredPreauthType { id });
+        }
+        diagnostics
     }
 
     /// Parsing mode used for subsequent expression resolution.
@@ -970,9 +991,10 @@ impl LibDefaults {
     ///
     /// # Errors
     ///
-    /// Returns an error for a line that is not an assignment, a `v4_`
-    /// directive, a value the key does not accept, and an explicit request
-    /// enctype list the explicit `permitted_enctypes` allowlist does not permit.
+    /// Returns an error for malformed assignments, enabling removed protocols,
+    /// invalid scalar values or unknown enctype tokens. Records expressions for
+    /// final family-permission and request/permitted validation after all sections;
+    /// `Config::parse` never returns a configuration with deferred parse errors.
     fn parse_lines(
         &mut self,
         lines: &[Line],

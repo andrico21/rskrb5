@@ -171,7 +171,7 @@ fn draft9_preferences_are_ignored_with_diagnostics() -> Result<(), Box<dyn Error
     assert_eq!(config.libdefaults.preferred_preauth_types, [17_i32, 16_i32]);
     assert_eq!(config.libdefaults.diagnostics().len(), 2);
     assert!(matches!(
-        config.libdefaults.diagnostics(),
+        config.libdefaults.diagnostics().as_ref(),
         [
             ConfigDiagnostic::IgnoredPreauthType { id: 15_i32 },
             ConfigDiagnostic::IgnoredPreauthType { id: 14_i32 }

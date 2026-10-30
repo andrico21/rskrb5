@@ -79,14 +79,12 @@ where
     Ok(BTreeMap::new())
 }
 
-/// Ignore removed preference IDs when restoring a serialized configuration.
+/// Preserve informational preference IDs so the diagnostic accessor can report them.
 /// # Errors
 /// Returns serde's error for malformed integer lists.
 pub(super) fn preferences<'de, D>(deserializer: D) -> Result<Vec<i32>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let mut ids = Vec::<i32>::deserialize(deserializer)?;
-    super::protocol::preferences(&mut ids, &mut Vec::new());
-    Ok(ids)
+    Vec::<i32>::deserialize(deserializer)
 }
