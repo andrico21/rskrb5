@@ -4,7 +4,7 @@
 //! mappings, domain-realm lookup, durations and KDC discovery. Enctype ID
 //! accessors apply the configured family opt-ins and permitted list.
 
-use alloc::collections::BTreeMap;
+use alloc::{borrow::Cow, collections::BTreeMap};
 use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
@@ -14,8 +14,6 @@ use std::{
     io::{self, Read as _},
     path::{Path, PathBuf},
 };
-
-use alloc::borrow::Cow;
 
 use crate::crypto::{
     s2k::{Family, Minima},
