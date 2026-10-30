@@ -162,7 +162,7 @@ limits are recorded under FU-OPS-03.
 | FU-DOC-15 | minor | File-name docs omit procfs I/O and IdentityUnavailable | open | - | - | - |
 | FU-DOC-16 | minor | Cache insert-or-replace docs hide keep-better behavior | open | - | - | - |
 | FU-DOC-17 | minor | DNS override docs omit bracket requirement for IPv6 ports | fixed | Attached with_dns_server/parse_dns_server doc inspection; `ipv6_dns_port_requires_brackets`; commit `docs: clarify explicit IPv6 DNS ports (FU-DOC-17)` | none; brackets select explicit IPv6 port while bare literal keeps port53 | Before docs omitted bracket rule; after both boundaries state it. Fixture [fd00::1]:5353 selects5353, bare fd00::1:5353 selects53; test1 passed, strict clippy passed; task-4 evidence |
-| FU-DOC-18 | minor | Transport Errors docs omit newly named framing/discovery errors | open | - | - | - |
+| FU-DOC-18 | minor | Transport Errors docs omit newly named framing/discovery errors | fixed | Attached transport rustdoc review; RUSTDOCFLAGS=-D warnings cargo doc --no-deps; commit `docs: name transport framing and discovery errors (FU-DOC-18)` | none; documents UdpResponseTooLarge, TcpReservedBitSet and DnsServiceUnavailable at their entry points | Before API docs omitted the named variants; after send_udp/send_tcp/discover_kdcs/discover_kpasswd_servers/discover_srv_endpoints document conditions; rustdoc passed; task-4 evidence |
 | FU-DOC-19 | minor | Single-timeout comment omits deliberate password two-phase exception | open | - | - | - |
 | FU-DOC-20 | minor | Password transport comments contradict no-retry/discovery boundaries | open | - | - | - |
 | FU-DOC-21 | minor | Enctype policy docs describe old defaults/construction/validation phase | open | - | - | - |

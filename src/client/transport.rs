@@ -269,7 +269,9 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::UdpRequestTooLarge`] when `request` exceeds the largest
-    /// UDP datagram, [`Error::Io`] when the socket fails,
+    /// UDP datagram, [`Error::UdpResponseTooLarge`] when a reply exceeds the
+    /// configured receive cap (including Windows WSAEMSGSIZE),
+    /// [`Error::Io`] when the socket fails,
     /// [`Error::TransportTimeout`] when the exchange exceeds the transport
     /// timeout, and [`Error::EmptyKdcResponse`] for an empty reply.
     ///
@@ -304,6 +306,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::Io`] when the connection or the stream fails,
+    /// [`Error::TcpReservedBitSet`] when the reply record's reserved high bit is set,
     /// [`Error::TransportTimeout`] when the exchange exceeds the transport
     /// timeout, [`Error::TcpRequestTooLarge`] or [`Error::TcpResponseTooLarge`]
     /// when a message exceeds its limit, and [`Error::EmptyKdcResponse`] for an
@@ -571,7 +574,8 @@ impl Tokio {
     ///
     /// Returns [`Error::InvalidKdcEndpoint`] for a malformed configured KDC
     /// entry, [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when DNS SRV
-    /// discovery fails, [`Error::NoKdcEndpoints`] when the realm is configured
+    /// discovery fails, [`Error::DnsServiceUnavailable`] for a root SRV target,
+    /// [`Error::NoKdcEndpoints`] when the realm is configured
     /// without KDCs or DNS finds none, and a configuration error when the realm is
     /// unknown and DNS lookup is disabled.
     ///
@@ -619,6 +623,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKdcEndpoint`] for a malformed server entry,
+    /// [`Error::DnsServiceUnavailable`] for an authoritative root SRV target,
     /// [`Error::DnsResolverConfig`], [`Error::DnsSrvLookup`] or
     /// [`Error::NoKdcEndpoints`] when DNS SRV discovery fails or finds nothing,
     /// and a configuration error when no kpasswd server can be derived from the
@@ -1885,7 +1890,8 @@ impl Tokio {
     ///
     /// Returns [`Error::DnsResolverConfig`] when the resolver or the
     /// DNS server option is invalid, and [`Error::DnsSrvLookup`] when
-    /// the SRV lookup or the resolution of a target fails.
+    /// the SRV lookup fails or no selected target resolves. Returns
+    /// [`Error::DnsServiceUnavailable`] when an SRV target is the root name.
     ///
     /// # Cancel safety
     ///
