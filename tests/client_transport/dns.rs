@@ -4,6 +4,50 @@ use hickory_resolver::proto::op::ResponseCode;
 
 use super::*;
 
+/// Root SRV targets produce the precise unavailable-service error.
+#[test]
+fn root_srv_error_is_precise() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given an authoritative root target for password service discovery.
+        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let server = socket.local_addr()?;
+        let task = tokio::spawn(dns_admin_fixture(socket, Some(Name::root())));
+        let config = Config::parse("[libdefaults]\ndns_lookup_kdc = true\n")?;
+        // When discovery runs, then it reports unavailable, not a generic lookup failure.
+        let result = Tokio::new()
+            .with_dns_server(&server.to_string())?
+            .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+            .await;
+        task.abort();
+        assert!(
+            matches!(result, Err(ClientError::DnsServiceUnavailable { service, realm })
+            if service == "_kpasswd" && realm == "TEST.GOKRB5")
+        );
+        Ok(())
+    })
+}
+
+/// Reserved KDC record marks are classified before attempting a body read.
+#[test]
+fn reserved_record_error_is_precise() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a peer advertising a reserved-bit response length.
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let peer = async {
+            let (_request, mut stream) = read_tcp_request(&listener).await?;
+            stream.write_all(&0x8000_0001_u32.to_be_bytes()).await?;
+            Ok::<_, TestError>(())
+        };
+        let transport = Tokio::new();
+        // When the transport reads the mark, then it returns the named framing error.
+        let (sent, result) = tokio::join!(peer, transport.send_tcp(addr, &[1]));
+        sent?;
+        assert!(matches!(result, Err(ClientError::TcpReservedBitSet)));
+        Ok(())
+    })
+}
+
 /// A failed SRV target does not suppress another usable target in either service.
 #[test]
 fn srv_target_failure_keeps_usable_peers() -> Result<(), TestError> {
