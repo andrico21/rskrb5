@@ -65,6 +65,8 @@ mod reply_constraints;
 /// TGT session metadata serialization.
 #[cfg(all(feature = "tokio", feature = "serde"))]
 mod session_json;
+/// Shared Kerberos whole-second conversion boundary.
+pub(crate) mod time;
 #[cfg(feature = "tokio")]
 use refresh_schedule::{session_refresh_delay_at, session_refresh_due_at};
 /// Password-change request construction and verification.
@@ -3160,7 +3162,8 @@ fn build_tgs_req_for_realm_inner(
 /// Returns [`Error::Decode`] when the service ticket does not decode,
 /// [`Error::InvalidKerberosString`] for an invalid client name or realm,
 /// [`Error::TimeOverflow`] for an out-of-range timestamp, and the AP-REQ build,
-/// encryption and encoding errors.
+/// encryption and encoding errors. Fractional timestamps return [`Error::Encode`];
+/// supply whole seconds in `timestamp` and the fractional part separately in `cusec`.
 #[inline]
 pub fn build_ap_req_with_confounder(
     service_ticket: &TgsRepSession,
@@ -3169,6 +3172,12 @@ pub fn build_ap_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
+    let (_, nanos) = unix_timestamp_parts(timestamp)?;
+    (nanos == 0).ok_or_else(|| Error::Encode {
+        target: "AP-REQ timestamp",
+        message: "expected a whole-second timestamp".to_owned(),
+    })?;
+    let ctime = time::to_kerberos(timestamp).ok_or(Error::TimeOverflow)?;
     let ticket = ticket::decode(&service_ticket.ticket).map_err(ticket_error)?;
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(KRB5_PVNO),
@@ -3176,7 +3185,7 @@ pub fn build_ap_req_with_confounder(
         cname: principal_to_rasn(&service_ticket.client)?,
         cksum: options.checksum,
         cusec: Integer::from(cusec),
-        ctime: kerberos_time_from_system_time(timestamp)?,
+        ctime,
         subkey: options.subkey.as_ref().map(encryption_key_to_rasn),
         seq_number: options.sequence_number,
         authorization_data: None,
@@ -4868,18 +4877,9 @@ fn session_usable_at(session: &AsRepSession, now: SystemTime) -> bool {
 ///
 /// # Errors
 ///
-/// Returns [`Error::TimeOverflow`] when the time is out of `SystemTime` range.
+/// Returns [`Error::TimeOverflow`] for fractions or times outside `SystemTime` range.
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
-    let seconds = time.0.timestamp();
-    let nanos = time.0.timestamp_subsec_nanos();
-    match u64::try_from(seconds) {
-        Ok(after_epoch) => UNIX_EPOCH
-            .checked_add(Duration::new(after_epoch, nanos))
-            .ok_or(Error::TimeOverflow),
-        Err(_before_epoch) => UNIX_EPOCH
-            .checked_sub(Duration::new(seconds.unsigned_abs(), nanos))
-            .ok_or(Error::TimeOverflow),
-    }
+    time::from_kerberos(time).ok_or(Error::TimeOverflow)
 }
 
 /// Convert a `SystemTime` to a Kerberos time, truncated to whole seconds.

@@ -2304,16 +2304,11 @@ fn random_sequence_number() -> Result<u32, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::TimeOverflow`] when the time is outside the `SystemTime` range.
+/// Returns [`Error::TimeOverflow`] for fractions or times outside the `SystemTime` range.
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
-    let seconds = time.0.timestamp();
-    let nanos = time.0.timestamp_subsec_nanos();
-    u64::try_from(seconds)
-        .map_or_else(
-            |_before_epoch| UNIX_EPOCH.checked_sub(Duration::new(seconds.unsigned_abs(), nanos)),
-            |after_epoch| UNIX_EPOCH.checked_add(Duration::new(after_epoch, nanos)),
-        )
-        .ok_or(Error::TimeOverflow)
+    use crate::client::time::from_kerberos;
+
+    from_kerberos(time).ok_or(Error::TimeOverflow)
 }
 
 /// Decode the `NegotiationToken` CHOICE from its outer element.

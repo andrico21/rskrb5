@@ -130,6 +130,8 @@ mod review_refresh;
 mod review_renewal_eligibility;
 #[path = "client/review_reply_constraints.rs"]
 mod review_reply_constraints;
+#[path = "client/review_time.rs"]
+mod review_time;
 #[path = "client/review_s4u.rs"]
 mod review_s4u;
 #[path = "client/review_salt.rs"]
