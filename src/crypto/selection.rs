@@ -88,3 +88,32 @@ impl TryFrom<i32> for KerberosEtype {
         enctype(value)?.ok_or(Policy::UnknownEnctype { etype: value })
     }
 }
+
+/// Reject an explicit removed preauthentication mechanism, not a peer advertisement.
+/// # Errors
+/// Returns `Draft9Pkinit` for PA types 14 and 15.
+#[inline]
+pub const fn preauth(id: i32) -> Result<(), Policy> {
+    if matches!(id, 14_i32 | 15_i32) {
+        return Err(Policy::RejectedFeature {
+            feature: RejectedFeature::Draft9Pkinit,
+            reason: RejectionReason::RemovedAndInsecure,
+        });
+    }
+    Ok(())
+}
+
+/// Select a protected password-change framing version before constructing a request.
+/// Versions 1 (RFC 3244 section 2 change) and 0xff80 (set) both require KRB-PRIV.
+/// # Errors
+/// Returns `UnprotectedPasswordChange` for every other version; no fallback is allowed.
+#[inline]
+pub const fn password_change_version(version: u16) -> Result<(), Policy> {
+    if matches!(version, 1_u16 | 0xff80_u16) {
+        return Ok(());
+    }
+    Err(Policy::RejectedFeature {
+        feature: RejectedFeature::UnprotectedPasswordChange,
+        reason: RejectionReason::MissingAuthentication,
+    })
+}

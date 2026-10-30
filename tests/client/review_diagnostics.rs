@@ -80,10 +80,7 @@ mod tests {
         let diagnostics = runtime()?.block_on(client.diagnostics());
 
         // Then: padata stays informational and the fully provisioned keytab is healthy.
-        assert_eq!(
-            diagnostics.preferred_preauth_types,
-            [17_i32, 16_i32, 15_i32, 14_i32]
-        );
+        assert_eq!(diagnostics.preferred_preauth_types, [17_i32, 16_i32]);
         assert_eq!(
             diagnostics.keytab_enctypes,
             [17_i32, 18_i32, 19_i32, 20_i32]

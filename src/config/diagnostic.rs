@@ -14,6 +14,11 @@ pub enum ParseMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Diagnostic {
+    /// A removed draft-9 mechanism was ignored in a preference list.
+    IgnoredPreauthType {
+        /// Ignored PA type, never selected for an outgoing exchange.
+        id: i32,
+    },
     /// A secure encryption type is known but not implemented in this release.
     UnsupportedSecureEnctype {
         /// Original expression token, including its prefix and case.

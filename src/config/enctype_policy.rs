@@ -55,6 +55,10 @@ impl EnctypeDefaults for LibDefaults {
             }
         }
         self.enctype_diagnostics = permitted.diagnostics().to_vec();
+        protocol::preferences(
+            &mut self.preferred_preauth_types,
+            &mut self.enctype_diagnostics,
+        );
         if enctypes.tkt_explicit {
             self.enctype_diagnostics
                 .extend_from_slice(ticket.diagnostics());

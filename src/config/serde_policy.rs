@@ -1,4 +1,6 @@
 //! Serde selection guards; opaque cache/key records are not selecting configuration.
+use alloc::collections::BTreeMap;
+
 use serde::{Deserialize as _, Deserializer, de::Error as _};
 
 use super::{EnctypeExpr, ParseMode, Toggle};
@@ -54,4 +56,37 @@ where
     let id = i32::deserialize(deserializer)?;
     selection::reject_checksum(id).map_err(D::Error::custom)?;
     Ok(id)
+}
+
+/// Check unknown configuration relations at the serde boundary, then discard them.
+/// # Errors
+/// Returns serde's envelope for a prohibited protocol selection.
+pub(super) fn relations<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let values = BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
+    for (key, value) in values {
+        let text = match value {
+            serde_json::Value::String(text) => text,
+            serde_json::Value::Bool(enabled) => enabled.to_string(),
+            serde_json::Value::Number(number) => number.to_string(),
+            serde_json::Value::Null => String::new(),
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => "{".to_owned(),
+        };
+        super::protocol::relation(&key, &text).map_err(D::Error::custom)?;
+    }
+    Ok(BTreeMap::new())
+}
+
+/// Ignore removed preference IDs when restoring a serialized configuration.
+/// # Errors
+/// Returns serde's error for malformed integer lists.
+pub(super) fn preferences<'de, D>(deserializer: D) -> Result<Vec<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut ids = Vec::<i32>::deserialize(deserializer)?;
+    super::protocol::preferences(&mut ids, &mut Vec::new());
+    Ok(ids)
 }

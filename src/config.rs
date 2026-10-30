@@ -19,6 +19,9 @@ use crate::crypto::{
     s2k::{Family, Minima},
     selection,
 };
+/// Removed protocol mode selection boundaries.
+#[path = "config/protocol.rs"]
+pub mod protocol;
 /// Reject forbidden serde configuration selections.
 #[cfg(feature = "serde")]
 #[path = "config/serde_policy.rs"]
@@ -45,7 +48,7 @@ const DEFAULT_ENCTYPES: &[&str] = &[
 ];
 
 /// The default `preferred_preauth_types`, most preferred first.
-const DEFAULT_PREAUTH_TYPES: &[i32] = &[17, 16, 15, 14];
+const DEFAULT_PREAUTH_TYPES: &[i32] = &[17, 16];
 
 /// The deepest `include` nesting a configuration may reach before parsing fails
 /// with [`Error::IncludeTooDeep`].
@@ -373,6 +376,12 @@ impl Config {
                 continue;
             }
 
+            if current != SectionKind::DomainRealm
+                && let Some((key, value)) = cleaned.split_once('=')
+            {
+                protocol::relation(key.trim(), value.trim())?;
+            }
+
             if current != SectionKind::Unknown {
                 lines.push(Line {
                     number: line_number,
@@ -509,6 +518,14 @@ include!("config/enctype_expr.rs");
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct LibDefaults {
+    /// Unknown serde relations are checked for prohibited protocol selections.
+    #[cfg(feature = "serde")]
+    #[serde(
+        flatten,
+        deserialize_with = "serde_policy::relations",
+        skip_serializing
+    )]
+    pub protocol_relations: BTreeMap<String, String>,
     /// API-only trusted minima; serde always restores secure RFC defaults.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub min_s2k_iterations: Minima,
@@ -581,6 +598,10 @@ pub struct LibDefaults {
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: Toggle,
     /// Preferred preauthentication type IDs.
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_policy::preferences")
+    )]
     pub preferred_preauth_types: Vec<i32>,
     /// Whether tickets should be proxiable.
     pub proxiable: Toggle,
@@ -939,6 +960,8 @@ impl LibDefaults {
             verify_ap_req_nofail: Toggle::Disabled,
             enctype_parse_mode: ParseMode::Compatible,
             enctype_diagnostics: Vec::new(),
+            #[cfg(feature = "serde")]
+            protocol_relations: BTreeMap::new(),
         }
     }
 
@@ -959,11 +982,7 @@ impl LibDefaults {
             let (raw_key, value) = parse_assignment(line, "libdefaults")?;
             let lowered = raw_key.to_ascii_lowercase();
             let key = lowered.as_str();
-            if key.contains("v4_") {
-                return Err(Error::UnsupportedDirective(
-                    "v4 configurations are not supported".to_owned(),
-                ));
-            }
+            protocol::relation(key, value)?;
 
             match key {
                 "allow_rc4" => self.allow_rc4 = Toggle::from_bool(parse_boolean(value)?),
@@ -1061,6 +1080,14 @@ impl Default for LibDefaults {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct Realm {
+    /// Unknown serde relations cannot enable removed protocol modes.
+    #[cfg(feature = "serde")]
+    #[serde(
+        flatten,
+        deserialize_with = "serde_policy::relations",
+        skip_serializing
+    )]
+    pub protocol_relations: BTreeMap<String, String>,
     /// Realm name.
     #[cfg_attr(feature = "serde", serde(rename = "realm"))]
     pub name: String,
@@ -1087,6 +1114,8 @@ impl Realm {
             return Err(Error::InvalidRealmsSection("empty realm name".to_owned()));
         }
         Ok(Self {
+            #[cfg(feature = "serde")]
+            protocol_relations: BTreeMap::new(),
             name: realm,
             admin_server: Vec::new(),
             default_domain: String::new(),
@@ -1101,7 +1130,7 @@ impl Realm {
     /// # Errors
     ///
     /// Returns [`Error::InvalidLine`] for a line that is not an assignment, and
-    /// [`Error::UnsupportedDirective`] for a `v4_` directive.
+    /// [`Error::Policy`] for an enabled removed-protocol directive.
     fn parse(name: &str, lines: &[Line]) -> Result<Self, Error> {
         let mut realm = Self::new(name.to_owned())?;
         let mut admin_final = false;
@@ -1113,11 +1142,7 @@ impl Realm {
             let (raw_key, value) = parse_assignment(line, "realms")?;
             let lowered = raw_key.to_ascii_lowercase();
             let key = lowered.as_str();
-            if key.contains("v4_") {
-                return Err(Error::UnsupportedDirective(
-                    "v4 configurations are not supported".to_owned(),
-                ));
-            }
+            protocol::relation(key, value)?;
 
             match key {
                 "admin_server" => {

@@ -632,9 +632,6 @@ pub enum Config {
         /// Line text after comment stripping.
         text: String,
     },
-    /// A directive is explicitly unsupported.
-    #[error("{0}")]
-    UnsupportedDirective(String),
     /// A boolean value was invalid.
     #[error("invalid boolean value: {0}")]
     InvalidBoolean(String),

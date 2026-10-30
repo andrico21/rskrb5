@@ -189,3 +189,14 @@ mod selection;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod raw_selection;
+
+/// Removed protocol selections cannot be enabled through configuration or APIs.
+#[cfg(test)]
+#[path = "policy/protocols.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod protocols;

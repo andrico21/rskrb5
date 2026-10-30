@@ -1196,6 +1196,7 @@ mod tests {
     /// Pins that Kerberos v4 realm directives are rejected.
     #[test]
     fn rejects_v4_realm_directives() -> Result<(), TestError> {
+        use rskrb5_ng::error::{Policy, RejectedFeature};
         let err = Config::parse(
             "
 [realms]
@@ -1212,7 +1213,13 @@ mod tests {
         .err()
         .context("v4 directives are rejected")?;
 
-        assert!(matches!(err, Error::UnsupportedDirective(_)));
+        assert!(matches!(
+            err,
+            Error::Policy(Policy::RejectedFeature {
+                feature: RejectedFeature::V4Conversion,
+                reason: _,
+            })
+        ));
         Ok(())
     }
 
