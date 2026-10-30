@@ -39,6 +39,9 @@ const KPASSWD_HEADER_LEN: usize = 6;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    /// Configured preauthentication connection reuse.
+    #[path = "../client_transport/affinity.rs"]
+    mod affinity;
     /// DNS protocol and target failover regressions.
     #[path = "../client_transport/dns.rs"]
     mod dns;

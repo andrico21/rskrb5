@@ -702,10 +702,7 @@ impl Tokio {
         request: &[u8],
     ) -> Result<(Vec<u8>, Option<TcpStream>), Error> {
         if protocol == KdcProtocol::Auto {
-            return self
-                .send_to_realm_auto(config, realm, request)
-                .await
-                .map(|response| (response, None));
+            return self.send_to_realm_auto(config, realm, request).await;
         }
         let endpoints = self.discover_kdcs(config, realm, protocol).await?;
         self.send_to_endpoints_pinned(realm, protocol, endpoints, request)
@@ -2066,7 +2063,7 @@ impl Tokio {
         config: &Config,
         realm: &str,
         request: &[u8],
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<(Vec<u8>, Option<TcpStream>), Error> {
         realm_auto::send(self, config, realm, request).await
     }
 
