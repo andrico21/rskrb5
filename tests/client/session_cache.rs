@@ -1138,7 +1138,7 @@ mod tests {
                     &renewal_built,
                     renewal_built.nonce,
                     &referral_renewal_reply_key,
-                    &Principal::tgt_service("RESDOM.GOKRB5"),
+                    &Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"]),
                 )?;
                 write_tcp_kdc_response(&mut renewal_socket, &renewal_response).await?;
 
@@ -1184,7 +1184,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that the TGT session of a realm is renewed at that realm's KDC.
+    /// Pins that a destination's cached TGT is renewed with its original issuing-realm server.
     #[cfg(feature = "tokio")]
     #[test]
     fn tokio_client_renews_tgt_session_for_realm() -> Result<(), TestError> {
@@ -1226,7 +1226,7 @@ mod tests {
                 );
                 assert_eq!(
                     principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
-                    Principal::tgt_service("RESDOM.GOKRB5")
+                    Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"])
                 );
 
                 let mut built = built_tgs_request_from_der(decoded, &request)?;
@@ -1242,7 +1242,10 @@ mod tests {
                 .context("referral TGT renews explicitly")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(renewed.service, Principal::tgt_service("RESDOM.GOKRB5"));
+            assert_eq!(
+                renewed.service,
+                Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"])
+            );
             assert_ne!(renewed.session_key, cached_referral_key);
             assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
             assert_eq!(

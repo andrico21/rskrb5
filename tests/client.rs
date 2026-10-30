@@ -102,33 +102,33 @@ mod review_cache;
 #[path = "client/review_cache_identity.rs"]
 mod review_cache_identity;
 #[cfg(feature = "tokio")]
-#[path = "client/review_cache_update.rs"]
-mod review_cache_update;
-#[cfg(feature = "tokio")]
 #[path = "client/review_cache_replacement.rs"]
 mod review_cache_replacement;
+#[cfg(feature = "tokio")]
+#[path = "client/review_cache_update.rs"]
+mod review_cache_update;
 #[path = "client/review_canonical.rs"]
 mod review_canonical;
 #[path = "client/review_cookie.rs"]
 mod review_cookie;
-#[path = "client/review_optimistic.rs"]
-mod review_optimistic;
-#[path = "client/review_discovery.rs"]
-mod review_discovery;
 #[cfg(feature = "tokio")]
-#[path = "client/review_diagnostics.rs"]
-mod review_diagnostics;
+#[path = "client/review_cross_realm_renewal.rs"]
+mod review_cross_realm_renewal;
 #[cfg(feature = "tokio")]
 #[path = "client/review_debug_audit.rs"]
 mod review_debug_audit;
+#[cfg(feature = "tokio")]
+#[path = "client/review_diagnostics.rs"]
+mod review_diagnostics;
+#[path = "client/review_discovery.rs"]
+mod review_discovery;
 #[path = "client/review_integrity.rs"]
 mod review_integrity;
+#[path = "client/review_optimistic.rs"]
+mod review_optimistic;
 #[cfg(feature = "tokio")]
 #[path = "client/review_password_rotation.rs"]
 mod review_password_rotation;
-#[cfg(feature = "tokio")]
-#[path = "client/review_unsigned_rejection.rs"]
-mod review_unsigned_rejection;
 #[cfg(feature = "tokio")]
 #[path = "client/review_refresh.rs"]
 mod review_refresh;
@@ -137,8 +137,6 @@ mod review_refresh;
 mod review_renewal_eligibility;
 #[path = "client/review_reply_constraints.rs"]
 mod review_reply_constraints;
-#[path = "client/review_time.rs"]
-mod review_time;
 #[path = "client/review_s4u.rs"]
 mod review_s4u;
 #[path = "client/review_salt.rs"]
@@ -146,6 +144,11 @@ mod review_salt;
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[path = "client/review_session_json.rs"]
 mod review_session_json;
+#[path = "client/review_time.rs"]
+mod review_time;
+#[cfg(feature = "tokio")]
+#[path = "client/review_unsigned_rejection.rs"]
+mod review_unsigned_rejection;
 #[cfg(feature = "tokio")]
 #[path = "client/review_validity.rs"]
 mod review_validity;
@@ -587,7 +590,7 @@ mod harness {
         tgt: &AsRepSession,
         realm: &str,
     ) -> Result<AsRepSession, TestError> {
-        let referral_service = Principal::tgt_service(realm);
+        let referral_service = Principal::new(tgt.service.realm.clone(), 2, ["krbtgt", realm]);
         let request = build_tgs_req_with_confounder(
             tgt,
             referral_service.clone(),

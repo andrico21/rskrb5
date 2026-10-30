@@ -3240,24 +3240,21 @@ pub fn build_ap_req_with_confounder(
 }
 
 /// Build a TGS-REQ that renews an existing TGT session.
+/// Keeps the original server and contacts its issuing realm, including `krbtgt/B@A`.
 /// # Errors
 ///
 /// Returns [`Error::InvalidTgtSession`] when the session is not a TGT, and the
 /// errors of [`build_tgs_req_for_realm`].
 #[inline]
 pub fn build_tgt_renewal_req(tgt: &AsRepSession, options: TgsReq) -> Result<BuiltTgsReq, Error> {
-    let realm = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
+    let _destination = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
         service: tgt.service.name(),
     })?;
-    build_tgs_req_for_realm(
-        tgt,
-        realm.clone(),
-        Principal::tgt_service(realm),
-        options.with_renewal(),
-    )
+    build_ticket_renewal_req(tgt, options)
 }
 
 /// Build a deterministic TGT renewal request with an explicit authenticator timestamp and confounder.
+/// Keeps the original server and contacts its issuing realm, including `krbtgt/B@A`.
 /// # Errors
 ///
 /// Returns [`Error::InvalidTgtSession`] when the session is not a TGT, and the
@@ -3270,18 +3267,10 @@ pub fn build_tgt_renewal_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
-    let realm = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
+    let _destination = tgt_realm(tgt).ok_or_else(|| Error::InvalidTgtSession {
         service: tgt.service.name(),
     })?;
-    build_tgs_req_for_realm_with_confounder(
-        tgt,
-        realm.clone(),
-        Principal::tgt_service(realm),
-        options.with_renewal(),
-        timestamp,
-        cusec,
-        confounder,
-    )
+    build_ticket_renewal_req_with_confounder(tgt, options, timestamp, cusec, confounder)
 }
 
 /// Build a TGS-REQ that renews an existing service ticket.
