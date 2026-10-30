@@ -34,7 +34,7 @@ use std::{
 use rskrb5_ng::{
     ccache::CCache,
     client::{
-        AsRepSession, BuiltAsReq, PreauthKeyInfo, Tokio, build_tgs_req, build_tgt_as_req,
+        AsRepSession, BuiltAsReq, Password, PreauthKeyInfo, Tokio, build_tgs_req, build_tgt_as_req,
         derive_password_reply_key,
         options::{AsReq, TgsReq},
         pa_enc_timestamp_with_confounder,
@@ -822,12 +822,18 @@ mod tests {
             .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
 
             let changed = client
-                .change_password(TEMP_PASSWORD, kpasswd_sender_address()?)
+                .change_password(
+                    Password::from_vec(TEMP_PASSWORD.to_vec()),
+                    kpasswd_sender_address()?,
+                )
                 .await?;
             assert_eq!(changed.code, KPASSWD_SUCCESS);
 
             let restored = client
-                .change_password(PASSWORD, kpasswd_sender_address()?)
+                .change_password(
+                    Password::from_vec(PASSWORD.to_vec()),
+                    kpasswd_sender_address()?,
+                )
                 .await?;
             assert_eq!(restored.code, KPASSWD_SUCCESS);
 
@@ -2253,7 +2259,9 @@ mod tests {
         .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
 
         let sender = kpasswd_sender_address()?;
-        Ok(client.change_password(new_password, sender).await?)
+        Ok(client
+            .change_password(Password::from_vec(new_password.to_vec()), sender)
+            .await?)
     }
 
     /// Logs the test user in with `password` and returns the TGT session.
