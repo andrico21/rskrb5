@@ -4,6 +4,35 @@ use rskrb5_ng::keytab::{Keytab, Principal as KeytabPrincipal};
 
 use super::*;
 
+/// Pins that the Auto protocol goes straight to TCP under `udp_preference_limit = 1`.
+#[test]
+fn tokio_transport_auto_honors_tcp_only_udp_preference_limit() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let config = config_with_kdcs_and_udp_limit([addr.to_string()], 1)?;
+        let task = tokio::spawn(async move {
+            let (request, mut socket) = read_tcp_request(&listener).await?;
+            assert_eq!(request, b"auto-config-as-req");
+            write_tcp_response(&mut socket, b"auto-config-tcp-as-rep").await
+        });
+
+        let response = Tokio::new()
+            .with_timeout(Duration::from_secs(2))
+            .send_to_realm(
+                &config,
+                KdcProtocol::Auto,
+                "TEST.GOKRB5",
+                b"auto-config-as-req",
+            )
+            .await?;
+
+        task.await??;
+        assert_eq!(response, b"auto-config-tcp-as-rep");
+        Ok::<_, TestError>(())
+    })
+}
+
 /// Configured password and keytab Auto logins reuse the TCP winner on both preference paths.
 #[test]
 fn configured_auto_logins_reuse_connection() -> Result<(), TestError> {
