@@ -500,7 +500,7 @@ mod tests {
         );
         assert_eq!(validator.replay_cache_mut().len(), 1);
 
-        let removed = validator.replay_cache_mut().clear_older_than_at(
+        let removed = validator.replay_cache_mut().force_clear_older_than_at(
             Duration::from_mins(5),
             now.checked_add(Duration::from_secs(5 * 60 + 1))
                 .context("cleanup time")?,
@@ -555,7 +555,7 @@ mod tests {
         ));
 
         let removed = replay_cache
-            .clear_older_than_at(
+            .force_clear_older_than_at(
                 Duration::from_secs(1),
                 now.checked_add(Duration::from_secs(2))
                     .context("cleanup time")?,
@@ -1045,7 +1045,7 @@ mod tests {
         assert_eq!(
             validator
                 .replay_cache_mut()
-                .clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)?),
+                .force_clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)?),
             1
         );
         drop(
@@ -1083,7 +1083,7 @@ mod tests {
         assert_eq!(
             validator
                 .replay_cache_mut()
-                .clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_460)?),
+                .force_clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_460)?),
             0
         );
         assert_eq!(validator.replay_cache_mut().len(), 1);
@@ -1091,7 +1091,7 @@ mod tests {
         assert_eq!(
             validator
                 .replay_cache_mut()
-                .clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_463)?),
+                .force_clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_463)?),
             1
         );
         drop(
@@ -1912,7 +1912,7 @@ mod tests {
         drop(validator.validate_ap_req(&replay_request_at(1_893_553_450)?)?);
         // Administrative pruning exposes the two last-seen timestamps independently.
         assert_eq!(
-            cache.clear_older_than_at(Duration::from_secs(20), timestamp(1_893_553_472)?)?,
+            cache.force_clear_older_than_at(Duration::from_secs(20), timestamp(1_893_553_472)?)?,
             0
         );
         assert_eq!(cache.len()?, 2);

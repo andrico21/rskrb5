@@ -5,6 +5,28 @@ use super::replay_tests;
 
 #[cfg(test)]
 mod policy_tests;
+
+impl super::SharedReplayCache {
+    /// Safely prune expired pairs while holding the shared admission lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
+    #[inline]
+    pub fn prune_expired(&self) -> Result<usize, Error> {
+        self.with_cache_mut(ReplayCache::prune_expired)
+    }
+
+    /// Safely prune at `min(now, admission watermark)` across every clone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
+    #[inline]
+    pub fn prune_expired_at(&self, now: SystemTime) -> Result<usize, Error> {
+        self.with_cache_mut(|cache| cache.prune_expired_at(now))
+    }
+}
 use super::{
     Arc, DEFAULT_MAX_CLOCK_SKEW, DigestRecord, Duration, Error, HashMap, ReplayCache, ReplayKey,
     SystemTime,
@@ -45,6 +67,11 @@ impl ReplayCache {
     }
 
     /// Remove all cached replay entries.
+    ///
+    /// # Security
+    ///
+    /// This reopens replay protection for previously accepted authenticators.
+    /// Use [`Self::prune_expired`] for invariant-preserving maintenance instead.
     #[inline]
     pub fn clear(&mut self) {
         self.entries.clear();
@@ -69,9 +96,14 @@ impl ReplayCache {
     ///
     /// Entries are aged by the watermark at which they were last seen, not by
     /// the clock sample of their presentation.
+    ///
+    /// # Security
+    ///
+    /// Arbitrary ages reopen replay protection by discarding live evidence.
+    /// Prefer [`Self::prune_expired`].
     #[inline]
-    pub fn clear_older_than(&mut self, max_age: Duration) -> usize {
-        self.clear_older_than_at(max_age, SystemTime::now())
+    pub fn force_clear_older_than(&mut self, max_age: Duration) -> usize {
+        self.force_clear_older_than_at(max_age, SystemTime::now())
     }
 
     /// Remove entries last seen more than `max_age` before `now`.
@@ -79,8 +111,13 @@ impl ReplayCache {
     /// Entries are aged by the watermark at which they were last seen, not by
     /// the clock sample of their presentation. A replay key and its
     /// authenticator digest are removed together.
+    ///
+    /// # Security
+    ///
+    /// Arbitrary ages or future clock samples can reopen replay protection.
+    /// Prefer [`Self::prune_expired_at`].
     #[inline]
-    pub fn clear_older_than_at(&mut self, max_age: Duration, now: SystemTime) -> usize {
+    pub fn force_clear_older_than_at(&mut self, max_age: Duration, now: SystemTime) -> usize {
         let entries = &mut self.entries;
         let before = entries.len();
         // One pass over the digests; the key index is touched only for the
@@ -100,6 +137,25 @@ impl ReplayCache {
         });
         // Removal only shrinks the key index, so its length cannot have grown.
         before.saturating_sub(entries.len())
+    }
+
+    /// Remove only records outside the automatic retention window.
+    #[inline]
+    pub fn prune_expired(&mut self) -> usize {
+        self.prune_expired_at(SystemTime::now())
+    }
+
+    /// Safely expire records at the lesser of `now` and the admission watermark.
+    ///
+    /// Maintenance cannot advance the watermark or shorten three-skew retention.
+    #[inline]
+    pub fn prune_expired_at(&mut self, now: SystemTime) -> usize {
+        self.watermark.map_or(0, |watermark| {
+            self.force_clear_older_than_at(
+                self.max_clock_skew.saturating_mul(3),
+                now.min(watermark),
+            )
+        })
     }
 
     /// Record one presentation, or report it as a replay.
@@ -139,7 +195,7 @@ impl ReplayCache {
         // For first presentation P, c <= P+s. A tolerated sample T >= W-s
         // can accept c only if c >= T-s, hence P >= W-3s. Keep equality live.
         let retention = self.max_clock_skew.saturating_mul(3);
-        let _: usize = self.clear_older_than_at(retention, latest);
+        let _: usize = self.force_clear_older_than_at(retention, latest);
         // A key hit refreshes the digest admitted with it, and a digest hit
         // refreshes its own record, so a pair never ages apart.
         let paired = self.entries.get(&key).copied();

@@ -71,3 +71,22 @@ fn skew_300_rejects_validator_301() {
         if maximum == Duration::from_secs(300) && requested == Duration::from_secs(301))
     );
 }
+
+/// Administrative expiry cannot advance the admission watermark.
+#[test]
+fn safe_pruning_preserves_replay_after_future_clock_sample() {
+    // Given a live pair admitted at the epoch.
+    let skew = Duration::from_secs(300);
+    let mut cache = ReplayCache::with_limits(skew, 8);
+    assert!(matches!(
+        cache.insert(key(1), [1; 32], SystemTime::UNIX_EPOCH, skew),
+        Ok(true)
+    ));
+    // When maintenance sees a time beyond retention, without an admission.
+    let _: usize = cache.prune_expired_at(SystemTime::UNIX_EPOCH + Duration::from_secs(901));
+    // Then rolling back to a valid presentation still rejects the replay.
+    assert!(matches!(
+        cache.insert(key(1), [1; 32], SystemTime::UNIX_EPOCH, skew),
+        Ok(false)
+    ));
+}

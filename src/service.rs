@@ -304,6 +304,10 @@ impl SharedReplayCache {
 
     /// Remove all cached replay entries.
     ///
+    /// # Security
+    ///
+    /// Clearing reopens replay protection across every clone. Prefer safe pruning.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
@@ -337,12 +341,16 @@ impl SharedReplayCache {
     /// Entries are aged by the watermark at which they were last seen, not by
     /// the clock sample of their presentation.
     ///
+    /// # Security
+    ///
+    /// Arbitrary ages reopen replay protection across every clone.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
     #[inline]
-    pub fn clear_older_than(&self, max_age: Duration) -> Result<usize, Error> {
-        self.with_cache_mut(|cache| cache.clear_older_than(max_age))
+    pub fn force_clear_older_than(&self, max_age: Duration) -> Result<usize, Error> {
+        self.with_cache_mut(|cache| cache.force_clear_older_than(max_age))
     }
 
     /// Remove entries last seen more than `max_age` before `now`.
@@ -351,12 +359,20 @@ impl SharedReplayCache {
     /// the clock sample of their presentation. A replay key and its
     /// authenticator digest are removed together.
     ///
+    /// # Security
+    ///
+    /// Arbitrary ages or future samples reopen replay protection across every clone.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
     #[inline]
-    pub fn clear_older_than_at(&self, max_age: Duration, now: SystemTime) -> Result<usize, Error> {
-        self.with_cache_mut(|cache| cache.clear_older_than_at(max_age, now))
+    pub fn force_clear_older_than_at(
+        &self,
+        max_age: Duration,
+        now: SystemTime,
+    ) -> Result<usize, Error> {
+        self.with_cache_mut(|cache| cache.force_clear_older_than_at(max_age, now))
     }
 
     /// [`ReplayCache::insert`] on the shared cache, under its lock.

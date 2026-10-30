@@ -267,7 +267,7 @@ fn sweep_one(seed: u64, coverage: &mut Coverage) -> Result<(), TryFromIntError> 
             1..=2 => {
                 let max_age = Duration::from_millis(rng.below(15).saturating_mul(500));
                 let purge_at = at(clock.saturating_add(rng.below(9)).saturating_sub(4));
-                let removed = cache.clear_older_than_at(max_age, purge_at);
+                let removed = cache.force_clear_older_than_at(max_age, purge_at);
                 assert_eq!(
                     removed,
                     reference.clear_older_than_at(max_age, purge_at),
@@ -380,7 +380,7 @@ fn replay_purge_visits_key_index_only_for_expired_pairs() -> Result<(), Error> {
 
     // When an explicit purge removes every pair seen before the latest.
     KEY_INDEX_VISITS.set(0);
-    let removed = cache.clear_older_than_at(Duration::ZERO, at(1_802));
+    let removed = cache.force_clear_older_than_at(Duration::ZERO, at(1_802));
 
     // Then it visited one key per removed pair.
     assert_eq!(removed, 2);
