@@ -20,7 +20,7 @@ pub(super) fn ap_req_with_pac_bytes(pac_bytes: Vec<u8>) -> Result<Vec<u8>, TestE
     let client = principal(["testuser1"])?;
     let service = principal(["sysHTTP"])?;
     let pac_authorization_data = pac_authorization_data(pac_bytes)?;
-    let auth_time = kerberos_time(1_893_553_445)?;
+    let auth_time = kerberos_time(1_494_085_991)?;
     let ctime = kerberos_time(1_893_553_447)?;
 
     let enc_ticket = rasn_kerberos::EncTicketPart {
@@ -32,8 +32,8 @@ pub(super) fn ap_req_with_pac_bytes(pac_bytes: Vec<u8>) -> Result<Vec<u8>, TestE
             r#type: 1,
             contents: Vec::new().into(),
         },
-        auth_time: auth_time.clone(),
-        start_time: Some(auth_time),
+        auth_time,
+        start_time: Some(kerberos_time(1_893_553_445)?),
         end_time: kerberos_time(1_893_639_845)?,
         renew_till: None,
         caddr: None,

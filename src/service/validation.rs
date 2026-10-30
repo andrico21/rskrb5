@@ -79,7 +79,7 @@ impl Validator<'_> {
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         self.validate_transit(&ticket_service, &enc_ticket)?;
-        let pac = verified_ticket_pac(enc_ticket.authorization_data.as_ref(), service_key.0)?;
+        let pac = verified_ticket_pac(&enc_ticket, service_key.0)?;
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
         let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);

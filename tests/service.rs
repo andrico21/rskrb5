@@ -23,6 +23,7 @@ mod tests {
     mod configured_skew;
     mod mandatory_pac;
     mod pac_fixture;
+    mod pac_binding;
     mod service_identity;
     mod transit;
 
