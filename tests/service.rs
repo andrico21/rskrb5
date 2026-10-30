@@ -18,7 +18,18 @@ mod pac_ad_win2k;
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "service"]
 mod tests {
+    mod client_address;
+    mod configured_skew;
+    mod mandatory_pac;
+    mod pac_binding;
+    mod pac_fixture;
+    mod service_identity;
+    mod transit;
+
+    use pac_fixture::{ap_req_with_pac, ap_req_with_pac_bytes};
+
     use alloc::sync::Arc;
     use core::{iter, time::Duration};
     use std::{
@@ -497,7 +508,7 @@ mod tests {
         );
         assert_eq!(validator.replay_cache_mut().len(), 1);
 
-        let removed = validator.replay_cache_mut().clear_older_than_at(
+        let removed = validator.replay_cache_mut().force_clear_older_than_at(
             Duration::from_mins(5),
             now.checked_add(Duration::from_secs(5 * 60 + 1))
                 .context("cleanup time")?,
@@ -525,10 +536,10 @@ mod tests {
         let replay_cache = SharedReplayCache::new();
         let mut first = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
         let mut second = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
 
         assert!(
             replay_cache
@@ -552,7 +563,7 @@ mod tests {
         ));
 
         let removed = replay_cache
-            .clear_older_than_at(
+            .force_clear_older_than_at(
                 Duration::from_secs(1),
                 now.checked_add(Duration::from_secs(2))
                     .context("cleanup time")?,
@@ -567,7 +578,7 @@ mod tests {
 
         let mut local = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(replay_cache)
+            .with_shared_replay_cache(replay_cache)?
             .without_shared_replay_cache();
         drop(
             local
@@ -711,87 +722,6 @@ mod tests {
 ",
         );
         Config::parse(&input).context("config parses")
-    }
-
-    fn ap_req_with_pac() -> Result<Vec<u8>, TestError> {
-        ap_req_with_pac_bytes(decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?)
-    }
-
-    fn ap_req_with_pac_bytes(pac_bytes: Vec<u8>) -> Result<Vec<u8>, TestError> {
-        let keytab = syshttp_keytab()?;
-        let (service_key, _) = keytab
-            .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
-            .context("sysHTTP service key exists")?;
-        let session_key = EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?);
-        let client = principal(["testuser1"])?;
-        let service = principal(["sysHTTP"])?;
-        let pac_authorization_data = pac_authorization_data(pac_bytes)?;
-        let auth_time = kerberos_time(1_893_553_445)?;
-        let ctime = kerberos_time(1_893_553_447)?;
-
-        let enc_ticket = rasn_kerberos::EncTicketPart {
-            flags: rasn_kerberos::TicketFlags(zero_kerberos_flags()),
-            key: encryption_key(&session_key),
-            crealm: realm("TEST.GOKRB5")?,
-            cname: client.clone(),
-            transited: rasn_kerberos::TransitedEncoding {
-                r#type: 1,
-                contents: Vec::new().into(),
-            },
-            auth_time: auth_time.clone(),
-            start_time: Some(auth_time),
-            end_time: kerberos_time(1_893_639_845)?,
-            renew_till: None,
-            caddr: None,
-            authorization_data: Some(pac_authorization_data),
-        };
-        let ticket_cipher = encrypt_message(
-            service_key,
-            &der::encode(&enc_ticket).context("EncTicketPart encodes")?,
-            KDC_REP_TICKET_USAGE_FOR_TEST,
-            PAC_TICKET_CONFOUNDER,
-        )?;
-
-        let authenticator = rasn_kerberos::Authenticator {
-            authenticator_vno: 5_i32.into(),
-            crealm: realm("TEST.GOKRB5")?,
-            cname: client,
-            cksum: None,
-            cusec: 123_456_i32.into(),
-            ctime,
-            subkey: None,
-            seq_number: Some(42),
-            authorization_data: None,
-        };
-        let authenticator_cipher = encrypt_message(
-            &session_key,
-            &der::encode(&authenticator).context("Authenticator encodes")?,
-            AP_REQ_AUTHENTICATOR_USAGE_FOR_TEST,
-            PAC_AUTHENTICATOR_CONFOUNDER,
-        )?;
-
-        let ap_req = rasn_kerberos::ApReq {
-            pvno: 5_i32.into(),
-            msg_type: 14_i32.into(),
-            ap_options: rasn_kerberos::ApOptions(zero_kerberos_flags()),
-            ticket: rasn_kerberos::Ticket {
-                tkt_vno: 5_i32.into(),
-                realm: realm("TEST.GOKRB5")?,
-                sname: service,
-                enc_part: rasn_kerberos::EncryptedData {
-                    etype: service_key.etype,
-                    kvno: Some(2),
-                    cipher: ticket_cipher.into(),
-                },
-            },
-            authenticator: rasn_kerberos::EncryptedData {
-                etype: session_key.etype,
-                kvno: None,
-                cipher: authenticator_cipher.into(),
-            },
-        };
-
-        der::encode(&ap_req).context("AP-REQ encodes")
     }
 
     fn pac_authorization_data(
@@ -1002,10 +932,10 @@ mod tests {
         let replay_cache = SharedReplayCache::new();
         let mut first = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
         let mut second = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
         drop(
             first
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -1042,7 +972,7 @@ mod tests {
         assert_eq!(
             validator
                 .replay_cache_mut()
-                .clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)?),
+                .force_clear_older_than_at(Duration::ZERO, timestamp(1_893_553_448)?),
             1
         );
         drop(
@@ -1080,7 +1010,7 @@ mod tests {
         assert_eq!(
             validator
                 .replay_cache_mut()
-                .clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_460)?),
+                .force_clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_460)?),
             0
         );
         assert_eq!(validator.replay_cache_mut().len(), 1);
@@ -1088,7 +1018,7 @@ mod tests {
         assert_eq!(
             validator
                 .replay_cache_mut()
-                .clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_463)?),
+                .force_clear_older_than_at(Duration::from_secs(10), timestamp(1_893_553_463)?),
             1
         );
         drop(
@@ -1447,21 +1377,6 @@ mod tests {
                 .context("unchecked transit rejected")?;
             assert!(matches!(error, Error::TransitPolicyRejected));
             assert_eq!(validator.replay_cache_mut().len(), 0);
-        }
-        Ok(())
-    }
-
-    /// Same-realm tickets and KDC-checked cross-realm paths retain their existing acceptance.
-    #[test]
-    fn transit_preserves_same_realm_and_kdc_checked_paths() -> Result<(), TestError> {
-        for (client_realm, checked) in [("TEST.GOKRB5", false), ("FOREIGN.DUMMY", true)] {
-            let keytab = http_keytab()?;
-            let bytes = transit_ap_req(client_realm, 1, b"UNTRUSTED", checked)?;
-            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
-            assert_eq!(
-                validator.validate_ap_req(&bytes)?.client.realm,
-                client_realm
-            );
         }
         Ok(())
     }
@@ -1868,8 +1783,8 @@ mod tests {
         let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
         let captured = replay_request_at(1_893_553_447)?;
         let mut validator = Validator::new(&keytab)
-            .with_max_clock_skew(skew)
-            .with_shared_replay_cache(cache)
+            .with_max_clock_skew(skew)?
+            .with_shared_replay_cache(cache)?
             .with_now(timestamp(1_893_553_438)?);
         drop(validator.validate_ap_req(&captured)?);
         validator = validator.with_now(timestamp(1_893_553_459)?);
@@ -1896,8 +1811,8 @@ mod tests {
         let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
         let captured = replay_request_at(1_893_553_447)?;
         let mut validator = Validator::new(&keytab)
-            .with_max_clock_skew(skew)
-            .with_shared_replay_cache(cache.clone())
+            .with_max_clock_skew(skew)?
+            .with_shared_replay_cache(cache.clone())?
             .with_now(timestamp(1_893_553_447)?);
         drop(validator.validate_ap_req(&captured)?);
         validator = validator.with_now(timestamp(1_893_553_452)?);
@@ -1909,7 +1824,7 @@ mod tests {
         drop(validator.validate_ap_req(&replay_request_at(1_893_553_450)?)?);
         // Administrative pruning exposes the two last-seen timestamps independently.
         assert_eq!(
-            cache.clear_older_than_at(Duration::from_secs(20), timestamp(1_893_553_472)?)?,
+            cache.force_clear_older_than_at(Duration::from_secs(20), timestamp(1_893_553_472)?)?,
             0
         );
         assert_eq!(cache.len()?, 2);
@@ -1924,8 +1839,8 @@ mod tests {
         let skew = Duration::from_secs(10);
         let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
         let mut validator = Validator::new(&keytab)
-            .with_max_clock_skew(skew)
-            .with_shared_replay_cache(cache.clone())
+            .with_max_clock_skew(skew)?
+            .with_shared_replay_cache(cache.clone())?
             .with_now(timestamp(1_893_553_478)?);
         drop(validator.validate_ap_req(&replay_request_at(1_893_553_478)?)?);
         // Given a later admission from a sample one tolerated second older.
@@ -1966,14 +1881,14 @@ mod tests {
         let now = timestamp(1_893_553_447)?;
         let mut first = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(cache.clone());
+            .with_shared_replay_cache(cache.clone())?;
         drop(first.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
         let mut second = Validator::new(&keytab)
             .with_now(
                 now.checked_sub(Duration::from_micros(1))
                     .context("earlier clock")?,
             )
-            .with_shared_replay_cache(cache.clone());
+            .with_shared_replay_cache(cache.clone())?;
 
         // When the older sample reaches admission after the newer sample.
         drop(second.validate_ap_req(&replay_request_at(1_893_553_447)?)?);
@@ -2015,7 +1930,7 @@ mod tests {
         let now = timestamp(1_893_553_447)?;
         let mut first = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(cache.clone());
+            .with_shared_replay_cache(cache.clone())?;
         drop(first.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
         let barrier = Arc::new(Barrier::new(8));
 
@@ -2029,7 +1944,7 @@ mod tests {
                         now.checked_sub(Duration::from_micros(offset))
                             .context("earlier clock")?,
                     )
-                    .with_shared_replay_cache(cache.clone());
+                    .with_shared_replay_cache(cache.clone())?;
                 let start = Arc::clone(&barrier);
                 handles.push(scope.spawn(move || {
                     let _wait = start.wait();
@@ -2057,7 +1972,7 @@ mod tests {
             SharedReplayCache::from_cache(ReplayCache::with_limits(Duration::from_secs(300), 1));
         let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(cache);
+            .with_shared_replay_cache(cache)?;
         drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
         assert!(matches!(
             validator
@@ -2081,15 +1996,12 @@ mod tests {
     fn replay_lifecycle_rejects_wider_shared_skew() -> Result<(), TestError> {
         let keytab = http_keytab()?;
         let cache = SharedReplayCache::new();
-        let mut validator = Validator::new(&keytab)
+        let validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(Duration::from_secs(301))
+            .with_max_clock_skew(Duration::from_secs(301))?
             .with_shared_replay_cache(cache.clone());
         assert!(matches!(
-            validator
-                .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
-                .err()
-                .context("wider skew rejected")?,
+            validator.err().context("wider skew rejected")?,
             Error::ReplayCacheSkewExceeded {
                 maximum: _,
                 requested: _

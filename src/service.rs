@@ -7,7 +7,7 @@
 //! builds and verifies AP-REP mutual-auth replies using the AP-REQ
 //! authenticator timestamp.
 
-use alloc::{borrow::Cow, sync::Arc};
+use alloc::{borrow::Cow, collections::BTreeSet, sync::Arc};
 use core::{fmt::Debug, str::from_utf8, time::Duration};
 use std::{
     collections::HashMap,
@@ -16,15 +16,13 @@ use std::{
 };
 
 use rasn::{der, types::Integer};
-use sha2::{Digest as _, Sha256};
 
 use crate::{
-    ap_rep, ap_req,
+    ap_rep,
     config::Config,
     error,
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, Pac},
-    ticket,
 };
 
 /// Default AP-REQ acceptance window: five minutes, MIT's default `clockskew`.
@@ -74,17 +72,7 @@ pub struct HostAddress {
     pub address: Vec<u8>,
 }
 
-impl HostAddress {
-    #[must_use]
-    /// Construct an IPv4 host address.
-    #[inline]
-    pub fn ipv4(address: [u8; 4]) -> Self {
-        Self {
-            addr_type: 2,
-            address: address.to_vec(),
-        }
-    }
-}
+mod host_address;
 
 /// Successful AP-REQ validation result.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -92,7 +80,8 @@ impl HostAddress {
 pub struct ValidatedApReq {
     /// Client identity from the KDC-authenticated ticket.
     pub client: Principal,
-    /// Service identity from the ticket.
+    /// Realm and components matched by the keytab lookup that decrypted the ticket.
+    /// The name type remains advisory ticket metadata, not an authenticated identity.
     pub service: Principal,
     /// Ticket session key used to decrypt the authenticator.
     pub session_key: EncryptionKey,
@@ -245,12 +234,21 @@ pub struct VerifiedApRep {
 }
 
 /// In-memory AP-REQ replay cache.
+///
+/// Size total capacity for peak admission rate times three times the maximum
+/// clock skew, with headroom for bursts and replay refreshes. Each live record
+/// occupies paired key, digest and expiry indexes. Capacity exhaustion rejects
+/// new records, never evicts live replay evidence. The default total is 65,536;
+/// each client realm/components identity gets one eighth (minimum one), tunable
+/// with [`Self::with_principal_capacity`]. Size both limits for expected traffic.
 #[derive(Debug)]
 pub struct ReplayCache {
     /// Immutable skew ceiling for every validator using this cache.
     max_clock_skew: Duration,
     /// Maximum live records; admission never evicts a live replay record.
     capacity: usize,
+    /// Per-client admission accounting, independent of service aliases.
+    principal_quota: replay_quota::PrincipalQuota,
     /// Highest admission time, preserved even by explicit clearing.
     watermark: Option<SystemTime>,
     /// RFC 4120 replay keys of the accepted authenticators, each with the digest
@@ -261,6 +259,8 @@ pub struct ReplayCache {
     /// authenticator is a replay whatever cleartext ticket field was rewritten
     /// around it. Keys and digests pair one to one.
     authenticators: HashMap<[u8; 32], DigestRecord>,
+    /// Ordered last-seen times, with the unique digest breaking ties.
+    expiry: BTreeSet<(SystemTime, [u8; 32])>,
 }
 
 /// The digest-index record of one admitted key and digest pair.
@@ -273,175 +273,20 @@ struct DigestRecord {
     key: Arc<ReplayKey>,
 }
 
-impl Default for ReplayCache {
-    #[inline]
-    fn default() -> Self {
-        Self::with_limits(DEFAULT_MAX_CLOCK_SKEW, 0x0001_0000)
-    }
-}
+mod replay;
+mod replay_quota;
+mod ticket_pac;
+mod validation;
 
-impl ReplayCache {
-    /// Create an empty cache with immutable skew and live-entry admission limits.
-    ///
-    /// Validators exceeding `max_clock_skew` are rejected on admission. Zero
-    /// capacity rejects all new records. Expiry retains three times the skew
-    /// from the last-seen watermark, covering future authenticators and rollback.
-    /// Backward clock samples up to this skew are tolerated without lowering
-    /// the high-water mark; larger rollbacks fail closed.
-    #[must_use]
-    #[inline]
-    pub fn with_limits(max_clock_skew: Duration, capacity: usize) -> Self {
-        Self {
-            max_clock_skew,
-            capacity,
-            watermark: None,
-            entries: HashMap::new(),
-            authenticators: HashMap::new(),
-        }
-    }
-
-    #[must_use]
-    /// Create an empty replay cache.
-    #[inline]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Remove all cached replay entries.
-    #[inline]
-    pub fn clear(&mut self) {
-        self.entries.clear();
-        self.authenticators.clear();
-    }
-
-    #[must_use]
-    /// Number of cached RFC 4120 replay entries, excluding the digest index.
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    #[must_use]
-    /// Whether the RFC 4120 replay entries are empty, excluding the digest index.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Remove entries last seen more than `max_age` ago.
-    ///
-    /// Entries are aged by the watermark at which they were last seen, not by
-    /// the clock sample of their presentation.
-    #[inline]
-    pub fn clear_older_than(&mut self, max_age: Duration) -> usize {
-        self.clear_older_than_at(max_age, SystemTime::now())
-    }
-
-    /// Remove entries last seen more than `max_age` before `now`.
-    ///
-    /// Entries are aged by the watermark at which they were last seen, not by
-    /// the clock sample of their presentation. A replay key and its
-    /// authenticator digest are removed together.
-    #[inline]
-    pub fn clear_older_than_at(&mut self, max_age: Duration, now: SystemTime) -> usize {
-        let entries = &mut self.entries;
-        let before = entries.len();
-        // One pass over the digests; the key index is touched only for the
-        // pairs that expire, not probed once per live key.
-        self.authenticators.retain(|_, record| {
-            let live = now
-                .duration_since(record.last_seen)
-                .map_or(true, |age| age <= max_age);
-            if !live {
-                #[cfg(test)]
-                replay_tests::KEY_INDEX_VISITS
-                    .with(|visits| visits.set(visits.get().saturating_add(1)));
-                // Pairing is one to one, so this removes the digest's only key.
-                let _: Option<[u8; 32]> = entries.remove(&*record.key);
-            }
-            live
-        });
-        // Removal only shrinks the key index, so its length cannot have grown.
-        before.saturating_sub(entries.len())
-    }
-
-    /// Record one presentation, or report it as a replay.
-    ///
-    /// Returns `false` when either the RFC 4120 replay key or authenticator digest
-    /// was already seen, refreshing every matched key and digest pair together;
-    /// `true` once both are recorded.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ReplayCacheSkewExceeded`], [`Error::ReplayCacheClockRollback`]
-    /// or [`Error::ReplayCacheCapacityExceeded`] when cache policy rejects admission.
-    fn insert(
-        &mut self,
-        key: ReplayKey,
-        authenticator_digest: [u8; 32],
-        presented_at: SystemTime,
-        validator_skew: Duration,
-    ) -> Result<bool, Error> {
-        if validator_skew > self.max_clock_skew {
-            return Err(Error::ReplayCacheSkewExceeded {
-                maximum: self.max_clock_skew,
-                requested: validator_skew,
-            });
-        }
-        if self.watermark.is_some_and(|latest| {
-            latest
-                .duration_since(presented_at)
-                .is_ok_and(|rollback| rollback > self.max_clock_skew)
-        }) {
-            return Err(Error::ReplayCacheClockRollback);
-        }
-        let latest = self
-            .watermark
-            .map_or(presented_at, |time| time.max(presented_at));
-        self.watermark = Some(latest);
-        // For first presentation P, c <= P+s. A tolerated sample T >= W-s
-        // can accept c only if c >= T-s, hence P >= W-3s. Keep equality live.
-        let retention = self.max_clock_skew.saturating_mul(3);
-        let _: usize = self.clear_older_than_at(retention, latest);
-        // A key hit refreshes the digest admitted with it, and a digest hit
-        // refreshes its own record, so a pair never ages apart.
-        let paired = self.entries.get(&key).copied();
-        let mut replay = paired.is_some();
-        for digest in paired.into_iter().chain([authenticator_digest]) {
-            if let Some(record) = self.authenticators.get_mut(&digest) {
-                record.last_seen = latest;
-                replay = true;
-            }
-        }
-        if replay {
-            return Ok(false);
-        }
-        if self.entries.len() >= self.capacity {
-            return Err(Error::ReplayCacheCapacityExceeded {
-                capacity: self.capacity,
-            });
-        }
-        // Both lookups above missed, so neither insert replaces an entry and
-        // the new key and digest pair one to one.
-        let shared_key = Arc::new(key);
-        let _: Option<[u8; 32]> = self
-            .entries
-            .insert(Arc::clone(&shared_key), authenticator_digest);
-        drop(self.authenticators.insert(
-            authenticator_digest,
-            DigestRecord {
-                last_seen: latest,
-                key: shared_key,
-            },
-        ));
-        Ok(true)
-    }
-}
+use ticket_pac::verified_ticket_pac;
 
 /// Shareable in-memory AP-REQ replay cache.
 ///
 /// This is useful when a service framework clones middleware or builds several
 /// service instances from the same acceptor state.
+/// Size the underlying [`ReplayCache`] for aggregate peak admission rate across
+/// all clones over the three-skew retention window, including burst headroom.
+/// Principal quotas and the global limit fail closed without evicting evidence.
 #[derive(Clone, Debug, Default)]
 pub struct SharedReplayCache {
     /// The cache shared by every clone.
@@ -449,6 +294,44 @@ pub struct SharedReplayCache {
 }
 
 impl SharedReplayCache {
+    /// Verify a validator's window under the cache lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns a poisoned-lock or incompatible-skew error.
+    pub(crate) fn ensure_skew(&self, requested: Duration) -> Result<(), Error> {
+        self.with_cache(|cache| cache.ensure_skew(requested))?
+    }
+
+    /// Configure an internally owned shared cache before its first admission.
+    ///
+    /// # Errors
+    ///
+    /// Returns a poisoned-lock error or refuses an increase after admission.
+    #[cfg(feature = "tower")]
+    pub(crate) fn configure_owned_skew(&self, requested: Duration) -> Result<(), Error> {
+        self.with_cache_mut(|cache| cache.configure_owned_skew(requested))?
+    }
+    /// Safely prune expired pairs while holding the shared admission lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
+    #[inline]
+    pub fn prune_expired(&self) -> Result<usize, Error> {
+        self.with_cache_mut(ReplayCache::prune_expired)
+    }
+
+    /// Safely prune at `min(now, admission watermark)` across every clone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ReplayCachePoisoned`] if the cache lock is poisoned.
+    #[inline]
+    pub fn prune_expired_at(&self, now: SystemTime) -> Result<usize, Error> {
+        self.with_cache_mut(|cache| cache.prune_expired_at(now))
+    }
+
     #[must_use]
     /// Create an empty shared replay cache.
     #[inline]
@@ -466,6 +349,10 @@ impl SharedReplayCache {
     }
 
     /// Remove all cached replay entries.
+    ///
+    /// # Security
+    ///
+    /// Clearing reopens replay protection across every clone. Prefer safe pruning.
     ///
     /// # Errors
     ///
@@ -500,12 +387,16 @@ impl SharedReplayCache {
     /// Entries are aged by the watermark at which they were last seen, not by
     /// the clock sample of their presentation.
     ///
+    /// # Security
+    ///
+    /// Arbitrary ages reopen replay protection across every clone.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
     #[inline]
-    pub fn clear_older_than(&self, max_age: Duration) -> Result<usize, Error> {
-        self.with_cache_mut(|cache| cache.clear_older_than(max_age))
+    pub fn force_clear_older_than(&self, max_age: Duration) -> Result<usize, Error> {
+        self.with_cache_mut(|cache| cache.force_clear_older_than(max_age))
     }
 
     /// Remove entries last seen more than `max_age` before `now`.
@@ -514,12 +405,20 @@ impl SharedReplayCache {
     /// the clock sample of their presentation. A replay key and its
     /// authenticator digest are removed together.
     ///
+    /// # Security
+    ///
+    /// Arbitrary ages or future samples reopen replay protection across every clone.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::ReplayCachePoisoned`] when the lock is poisoned.
     #[inline]
-    pub fn clear_older_than_at(&self, max_age: Duration, now: SystemTime) -> Result<usize, Error> {
-        self.with_cache_mut(|cache| cache.clear_older_than_at(max_age, now))
+    pub fn force_clear_older_than_at(
+        &self,
+        max_age: Duration,
+        now: SystemTime,
+    ) -> Result<usize, Error> {
+        self.with_cache_mut(|cache| cache.force_clear_older_than_at(max_age, now))
     }
 
     /// [`ReplayCache::insert`] on the shared cache, under its lock.
@@ -683,6 +582,36 @@ pub struct Validator<'keytab> {
 }
 
 impl<'keytab> Validator<'keytab> {
+    /// Change the window without consuming replay evidence on failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns a retention-policy error for an incompatible window.
+    pub(crate) fn set_max_clock_skew(&mut self, requested: Duration) -> Result<(), Error> {
+        if let Some(cache) = &self.shared_replay_cache {
+            cache.ensure_skew(requested)?;
+        }
+        self.replay_cache.configure_owned_skew(requested)?;
+        self.max_clock_skew = requested;
+        Ok(())
+    }
+
+    /// Attach shared state already checked by the HTTP construction boundary.
+    #[cfg(feature = "tower")]
+    pub(crate) fn attach_replay_cache(&mut self, cache: SharedReplayCache) {
+        self.shared_replay_cache = Some(cache);
+    }
+    /// Apply replay settings already checked by the HTTP construction boundary.
+    #[cfg(feature = "tower")]
+    pub(crate) fn apply_replay_settings(
+        &mut self,
+        skew: Duration,
+        cache: Option<SharedReplayCache>,
+    ) {
+        self.max_clock_skew = skew;
+        self.replay_cache.max_clock_skew = skew;
+        self.shared_replay_cache = cache;
+    }
     /// Create a validator with gokrb5-compatible defaults.
     #[must_use]
     #[inline]
@@ -715,11 +644,15 @@ impl<'keytab> Validator<'keytab> {
     }
 
     /// Override the maximum accepted clock skew.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a cache policy error for incompatible retention. Increasing the
+    /// window after admission begins is rejected rather than losing evidence.
     #[inline]
-    pub const fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
-        self.max_clock_skew = max_clock_skew;
-        self
+    pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Result<Self, Error> {
+        self.set_max_clock_skew(max_clock_skew)?;
+        Ok(self)
     }
 
     /// Override the principal used for keytab lookup.
@@ -766,11 +699,18 @@ impl<'keytab> Validator<'keytab> {
     }
 
     /// Share replay detection state with other validators.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a cache policy error when the retention ceiling is incompatible.
     #[inline]
-    pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Self {
+    pub fn with_shared_replay_cache(
+        mut self,
+        replay_cache: SharedReplayCache,
+    ) -> Result<Self, Error> {
+        replay_cache.ensure_skew(self.max_clock_skew)?;
         self.shared_replay_cache = Some(replay_cache);
-        self
+        Ok(self)
     }
 
     /// Remove any shared replay cache and use this validator's local cache.
@@ -813,160 +753,6 @@ impl<'keytab> Validator<'keytab> {
     #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
         self.validate_ap_req_with_check(bytes, |_, _| Ok::<(), Error>(()))
-    }
-
-    /// Apply a protocol-specific authenticator check before committing replay state.
-    ///
-    /// # Errors
-    ///
-    /// Returns the errors of [`Self::validate_ap_req`] or the supplied check.
-    pub(crate) fn validate_ap_req_with_check<F, E>(
-        &mut self,
-        bytes: &[u8],
-        check: F,
-    ) -> Result<ValidatedApReq, E>
-    where
-        F: FnOnce(&rasn_kerberos::Authenticator, &EncryptionKey) -> Result<(), E>,
-        E: From<Error>,
-    {
-        let ap_req = ap_req::decode(bytes).map_err(ap_req_error)?;
-
-        let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
-        let ticket_etype = ap_req.ticket.enc_part.etype;
-        let ticket_kvno = ap_req.ticket.enc_part.kvno.unwrap_or(0);
-        let keytab_components = self
-            .keytab_principal
-            .clone()
-            .unwrap_or_else(|| ticket_service.components.clone());
-        let keytab_refs = keytab_components
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        let service_key = self
-            .keytab
-            .find_key(
-                &keytab_refs,
-                &ticket_service.realm,
-                ticket_kvno,
-                ticket_etype,
-            )
-            .map_err(Error::from)?;
-
-        let enc_ticket =
-            ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key.0).map_err(ticket_error)?;
-        self.validate_ticket_times(&ticket_service, &enc_ticket)?;
-        self.validate_client_address(&ticket_service, &enc_ticket)?;
-        self.validate_transit(&ticket_service, &enc_ticket)?;
-        let pac = verified_ticket_pac(enc_ticket.authorization_data.as_ref(), service_key.0)?;
-
-        let session_key = encryption_key_from_rasn(&enc_ticket.key);
-        let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
-        let authenticator =
-            ap_req::decrypt_ap_req_authenticator(&ap_req, &session_key, authenticator_usage)
-                .map_err(ap_req_error)?;
-
-        validate_authorization_data(authenticator.authorization_data.as_ref(), false)?;
-
-        let ticket_client = principal_from_parts(&enc_ticket.crealm, &enc_ticket.cname)?;
-        let authenticator_client =
-            principal_from_parts(&authenticator.crealm, &authenticator.cname)?;
-        // RFC 4120 section 3.2.3: compare the client name and realm of the
-        // ticket with the same fields in the authenticator and reject
-        // KRB_AP_ERR_BADMATCH on any mismatch.
-        if authenticator_client.realm != ticket_client.realm
-            || authenticator_client.components != ticket_client.components
-        {
-            return Err(Error::ClientPrincipalMismatch {
-                ticket: format!("{}@{}", ticket_client.name(), ticket_client.realm),
-                authenticator: format!(
-                    "{}@{}",
-                    authenticator_client.name(),
-                    authenticator_client.realm
-                ),
-            }
-            .into());
-        }
-
-        let cusec = microseconds_to_u32("authenticator.cusec", &authenticator.cusec)?;
-        let authenticator_ctime = system_time_from_kerberos_time(&authenticator.ctime)?;
-        let authenticator_timestamp = authenticator_ctime
-            .checked_add(Duration::from_micros(cusec.into()))
-            .ok_or(Error::TimeOverflow)?;
-        let now = self.now();
-        if abs_duration(now, authenticator_timestamp) > self.max_clock_skew {
-            return Err(Error::ClockSkew {
-                max_clock_skew: self.max_clock_skew,
-            }
-            .into());
-        }
-
-        check(&authenticator, &session_key)?;
-
-        // RFC 4120 section 3.2.3 keys the replay cache on the server name, the
-        // client name, the time and the microseconds. Section 6.2 makes the
-        // advisory name-type "not significant when checking for equivalence",
-        // and the ticket's outer sname is cleartext a peer can rewrite, so the
-        // identity is built without it; the service side is the key identity
-        // that actually accepted the ticket (the configured override when one
-        // is set, otherwise the ticket's own components). Keep that RFC key,
-        // and also index the authenticator ciphertext to reject re-presentation
-        // under any rewritten cleartext ticket field, including an sname alias
-        // whose keytab entry shares the key. Hash only the cipher octets:
-        // unauthenticated etype/kvno metadata must not create a fresh digest.
-        let authenticator_digest: [u8; 32] =
-            Sha256::digest(ap_req.authenticator.cipher.as_ref()).into();
-        let replay_key = ReplayKey {
-            service: Principal {
-                realm: ticket_service.realm.clone(),
-                name_type: 0,
-                components: keytab_components.clone(),
-            },
-            client: Principal {
-                realm: authenticator_client.realm.clone(),
-                name_type: 0,
-                components: authenticator_client.components,
-            },
-            ctime_seconds: authenticator.ctime.0.timestamp(),
-            cusec,
-        };
-        let validated = ValidatedApReq {
-            client: ticket_client,
-            service: ticket_service,
-            session_key,
-            subkey: authenticator.subkey.as_ref().map(encryption_key_from_rasn),
-            sequence_number: authenticator.seq_number,
-            ticket_start: ticket_start_time(&enc_ticket)?,
-            ticket_end: system_time_from_kerberos_time(&enc_ticket.end_time)?,
-            authenticator_ctime,
-            authenticator_cusec: cusec,
-            authenticator_time: authenticator_timestamp,
-            pac,
-        };
-        self.record_replay(replay_key, authenticator_digest, now)?;
-        Ok(validated)
-    }
-
-    /// Enforce RFC 4120 section 2.7 before replay admission.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::TransitPolicyRejected`] for unchecked cross-realm paths
-    /// without explicit approval, or [`Error::InvalidString`] for invalid realms.
-    fn validate_transit(
-        &self,
-        service: &Principal,
-        ticket: &rasn_kerberos::EncTicketPart,
-    ) -> Result<(), Error> {
-        let client_realm = kerberos_string_to_string(&ticket.crealm)?;
-        if client_realm != service.realm
-            && !ticket.flags.0.get(12).is_some_and(|bit| *bit)
-            && !self.transit_policy.as_ref().is_some_and(|policy| {
-                policy.accepts(&client_realm, &service.realm, &ticket.transited)
-            })
-        {
-            return Err(Error::TransitPolicyRejected);
-        }
-        Ok(())
     }
 
     /// The validation time: the fixed time when one is set, otherwise the
@@ -1116,10 +902,8 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self, Error> {
-        Ok(
-            Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
-                .with_max_clock_skew(config.libdefaults.clockskew),
-        )
+        Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
+            .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a validator from the default keytab.
@@ -1134,10 +918,10 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self, Error> {
-        Ok(Self::from_keytab_name(keytab::default_keytab_name(
+        Self::from_keytab_name(keytab::default_keytab_name(
             &config.libdefaults.default_keytab_name,
         )?)?
-        .with_max_clock_skew(config.libdefaults.clockskew))
+        .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a validator by loading the file keytab named by `KRB5_KTNAME`.
@@ -1235,26 +1019,6 @@ fn validate_authorization_elements(
         }
     }
     Ok(())
-}
-
-/// Validate every ticket restriction before extracting and verifying its first PAC.
-///
-/// # Errors
-///
-/// Returns authorization-policy errors or [`Error::Pac`] for PAC parsing/checksum failures.
-fn verified_ticket_pac(
-    data: Option<&rasn_kerberos::AuthorizationData>,
-    key: &EncryptionKey,
-) -> Result<Option<Pac>, Error> {
-    validate_authorization_data(data, true)?;
-    let Some(elements) = data else {
-        return Ok(None);
-    };
-    let pac = pac::find_pac_in_authorization_data(elements)?;
-    if let Some(value) = &pac {
-        value.verify(key)?;
-    }
-    Ok(pac)
 }
 
 /// RFC 4120 section 3.2.3 replay-cache key of one authenticator.
@@ -1382,10 +1146,6 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 }
 
 /// Convert a wire encryption key to the keytab key type.
-///
-/// # Errors
-///
-/// Never fails today; the `Result` is kept for the callers' `?` chains.
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
     EncryptionKey {
         etype: value.r#type,

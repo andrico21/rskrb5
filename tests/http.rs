@@ -1,7 +1,7 @@
 //! HTTP Negotiate helper, client wrapper and Tower layer tests against the gokrb5 vectors.
 #![cfg(feature = "http")]
 
-#[cfg(any(feature = "tokio", feature = "tower"))]
+#[cfg(feature = "tokio")]
 extern crate alloc;
 #[path = "support/context.rs"]
 mod context;
@@ -20,8 +20,6 @@ mod env;
 mod tests {
     #[cfg(feature = "tokio")]
     use alloc::rc::Rc;
-    #[cfg(feature = "tower")]
-    use alloc::sync::Arc;
     #[cfg(feature = "tokio")]
     use core::cell::{Cell, RefCell};
     #[cfg(feature = "tokio")]
@@ -35,6 +33,8 @@ mod tests {
     #[cfg(feature = "tower")]
     use core::task::{Context, Poll, Waker};
     use core::time::Duration;
+    #[cfg(feature = "tower")]
+    use rskrb5_ng::error::Service as ServiceError;
     use std::time::{SystemTime, UNIX_EPOCH};
     #[cfg(feature = "tower")]
     use std::{
@@ -209,22 +209,39 @@ mod tests {
     #[derive(Clone)]
     struct PolicyService;
 
-    /// Replay-cache configuration faults are server failures, not credential rejection.
+    /// Replay-cache incompatibility is rejected before serving requests.
     #[cfg(feature = "tower")]
     #[test]
     fn internal_validation_failure_returns_500() -> Result<(), TestError> {
         let keytab = keytab()?;
+        let service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_max_clock_skew(Duration::from_secs(301))?
+            .with_shared_replay_cache(SharedReplayCache::new());
+        assert!(matches!(
+            service,
+            Err(HttpError::Spnego(SpnegoError::Service(
+                ServiceError::ReplayCacheSkewExceeded {
+                    maximum: _,
+                    requested: _
+                }
+            )))
+        ));
+        Ok(())
+    }
+
+    /// An owned layer cache follows a configured 301-second acceptance window.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn configured_skew_accepts_fresh_http_request() -> Result<(), TestError> {
+        let keytab = keytab()?;
         let mut service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(Duration::from_secs(301))
-            .with_shared_replay_cache(SharedReplayCache::new())
+            .with_max_clock_skew(Duration::from_secs(301))?
             .layer(PolicyService);
         let mut request = Request::new(());
         krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
-        let response = run_ready(service.call(request))??;
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        assert!(response.extensions().get::<Arc<HttpError>>().is_some());
-        assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
+        assert_eq!(run_ready(service.call(request))??.status(), StatusCode::OK);
         Ok(())
     }
 
@@ -1150,8 +1167,6 @@ mod tests {
 
     /// Pins that `NegotiateService::from_keytab_env` loads the `KRB5_KTNAME` keytab.
     #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[test]
     fn tower_service_loads_keytab_env() -> Result<(), TestError> {
         const TEST_PATH: &str = "tests::tower_service_loads_keytab_env";
@@ -1192,8 +1207,6 @@ mod tests {
     }
 
     /// Pins that `NegotiateLayer::from_keytab_env` loads the `KRB5_KTNAME` keytab.
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[cfg(feature = "tower")]
     #[test]
     fn tower_layer_loads_keytab_env() -> Result<(), TestError> {
@@ -1267,8 +1280,6 @@ mod tests {
 
     /// Pins that the layer falls back to the config default keytab without `KRB5_KTNAME`.
     #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[test]
     fn tower_layer_loads_default_keytab_when_env_is_absent() -> Result<(), TestError> {
         const TEST_PATH: &str = "tests::tower_layer_loads_default_keytab_when_env_is_absent";
@@ -1306,8 +1317,6 @@ mod tests {
     }
 
     /// Pins that the service prefers `KRB5_KTNAME` over the config default keytab.
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[cfg(feature = "tower")]
     #[test]
     fn tower_service_prefers_env_keytab_over_config_default() -> Result<(), TestError> {
@@ -1435,12 +1444,12 @@ mod tests {
         let cache = SharedReplayCache::new();
         let mut first_service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(cache.clone())
+            .with_shared_replay_cache(cache.clone())?
             .with_ap_rep(false)
             .layer(AssertAcceptedService);
         let mut second_service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(cache)
+            .with_shared_replay_cache(cache)?
             .with_ap_rep(false)
             .layer(AssertAcceptedService);
         let header = valid_authorization_header()?;
@@ -1536,10 +1545,6 @@ mod tests {
     }
 
     /// Builds the fixture initiator context with `options`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the fixture context cannot be built.
     fn initiator_context_with_options(
         options: InitiatorContextOptions,
     ) -> Result<spnego::InitiatorContext, TestError> {
@@ -2226,10 +2231,10 @@ mod tests {
         let wide_skew = Duration::from_hours(100 * 365 * 24);
         let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(wide_skew)
+            .with_max_clock_skew(wide_skew)?
             .with_shared_replay_cache(SharedReplayCache::from_cache(ReplayCache::with_limits(
                 wide_skew, 16,
-            )));
+            )))?;
         let accepted = spnego::accept_sec_context_header(&mut validator, authorization)
             .map_err(|cause| format!("wrapper Authorization header validates: {cause}"))?;
         Ok(accepted
