@@ -908,6 +908,10 @@ impl Validator<'static> {
 
     /// Create a validator from the default keytab.
     ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME` before the configured fallback; invalid Unicode is an
+    /// error. Use [`Self::from_keytab_name`] for an explicit keytab name.
+    ///
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_keytab_name`. The configured
     /// `[libdefaults] clockskew` becomes the acceptance window.
@@ -925,6 +929,10 @@ impl Validator<'static> {
     }
 
     /// Create a validator by loading the file keytab named by `KRB5_KTNAME`.
+    ///
+    /// # Ambient input
+    /// Reads `KRB5_KTNAME`; unset or non-Unicode values are errors. Use
+    /// [`Self::from_keytab_name`] for an explicit keytab name.
     ///
     /// # Errors
     ///
