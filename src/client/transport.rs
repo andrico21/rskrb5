@@ -19,6 +19,8 @@ mod framing;
 pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
     framing::kdc_record_length(header, max)
 }
+/// Configured password endpoint selection.
+mod password_discovery;
 /// Password result consumption after a transport exchange.
 mod password_result;
 use framing::tcp_request_length;
@@ -650,27 +652,7 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        if let Some(realm_entry) = config.realm(realm)
-            && !realm_entry.kpasswd_server.is_empty()
-        {
-            return realm_entry
-                .kpasswd_server
-                .iter()
-                .map(|value| KdcEndpoint::configured_with_default_port(protocol, value, 464))
-                .collect();
-        }
-
-        if config.libdefaults.dns_lookup_kdc.is_enabled() {
-            return self
-                .discover_kpasswd_servers_with_dns(realm, protocol)
-                .await;
-        }
-
-        config
-            .configured_kpasswd_servers(realm)?
-            .iter()
-            .map(|value| KdcEndpoint::configured_with_default_port(protocol, value, 464))
-            .collect()
+        password_discovery::discover(self, config, realm, protocol).await
     }
 
     /// Send an encoded request to the first reachable KDC discovered from config.
