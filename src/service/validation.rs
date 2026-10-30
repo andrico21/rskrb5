@@ -10,9 +10,30 @@ use super::{
     principal_from_parts, system_time_from_kerberos_time, ticket_error, ticket_start_time,
     validate_authorization_data, verified_ticket_pac,
 };
-use crate::{ap_req, ticket};
+use crate::{ap_req, crypto::Use, ticket};
 
 impl Validator<'_> {
+    /// Resolve the ticket's key identity without altering policy or replay state.
+    /// # Errors
+    /// Returns the keytab lookup error when no matching key exists.
+    fn ticket_key(
+        &self,
+        service: &Principal,
+        ticket: &rasn_kerberos::Ticket,
+    ) -> Result<(Vec<String>, &EncryptionKey), Error> {
+        let components = self
+            .keytab_principal
+            .clone()
+            .unwrap_or_else(|| service.components.clone());
+        let refs = components.iter().map(String::as_str).collect::<Vec<_>>();
+        let (key, _) = self.keytab.find_key(
+            &refs,
+            &service.realm,
+            ticket.enc_part.kvno.unwrap_or(0),
+            ticket.enc_part.etype,
+        )?;
+        Ok((components, key))
+    }
     /// Enforce RFC 4120 section 2.7 before replay admission.
     ///
     /// # Errors
@@ -52,40 +73,36 @@ impl Validator<'_> {
         E: From<Error>,
     {
         let ap_req = ap_req::decode(bytes).map_err(ap_req_error)?;
-
-        let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
-        let ticket_etype = ap_req.ticket.enc_part.etype;
-        let ticket_kvno = ap_req.ticket.enc_part.kvno.unwrap_or(0);
-        let keytab_components = self
-            .keytab_principal
-            .clone()
-            .unwrap_or_else(|| ticket_service.components.clone());
-        let keytab_refs = keytab_components
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        let service_key = self
-            .keytab
-            .find_key(
-                &keytab_refs,
-                &ticket_service.realm,
-                ticket_kvno,
-                ticket_etype,
-            )
+        self.crypto_policy
+            .check_use(ap_req.ticket.enc_part.etype, Use::AcceptorTicket)
+            .map_err(Error::from)?;
+        self.crypto_policy
+            .check_use(ap_req.authenticator.etype, Use::AcceptorTicket)
             .map_err(Error::from)?;
 
+        let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
+        let (keytab_components, service_key) = self.ticket_key(&ticket_service, &ap_req.ticket)?;
+
         let enc_ticket =
-            ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key.0).map_err(ticket_error)?;
+            ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key).map_err(ticket_error)?;
+        self.crypto_policy
+            .check_use(enc_ticket.key.r#type, Use::AcceptorTicket)
+            .map_err(Error::from)?;
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         self.validate_transit(&ticket_service, &enc_ticket)?;
-        let pac = verified_ticket_pac(&enc_ticket, service_key.0)?;
+        let pac = verified_ticket_pac(&enc_ticket, service_key)?;
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
         let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
         let authenticator =
             ap_req::decrypt_ap_req_authenticator(&ap_req, &session_key, authenticator_usage)
                 .map_err(ap_req_error)?;
+        if let Some(subkey) = &authenticator.subkey {
+            self.crypto_policy
+                .check_use(subkey.r#type, Use::AcceptorSubkey)
+                .map_err(Error::from)?;
+        }
 
         validate_authorization_data(authenticator.authorization_data.as_ref(), false)?;
 

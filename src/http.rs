@@ -41,6 +41,8 @@ use crate::{
     service::{Validator, VerifiedApRep},
     spnego::{self, AcceptedContext},
 };
+#[cfg(feature = "tower")]
+use crate::{crypto::CryptoPolicy, error::Policy};
 
 /// HTTP Negotiate adapter result.
 pub type Result<T> = CoreResult<T, Error>;
@@ -988,6 +990,13 @@ pub struct NegotiateLayer<'keytab> {
 
 #[cfg(feature = "tower")]
 impl<'keytab> NegotiateLayer<'keytab> {
+    /// Apply one runtime enctype policy to every validator built by this layer.
+    #[inline]
+    #[must_use]
+    pub fn with_crypto_policy(mut self, policy: CryptoPolicy) -> Self {
+        self.validator.crypto_policy = policy;
+        self
+    }
     /// Apply missing security headers and strip fingerprints on inner responses (default: on).
     /// Library-generated challenge and rejection responses are always hardened.
     #[must_use]
@@ -1161,6 +1170,7 @@ impl NegotiateLayer<'static> {
     ///
     /// The configured `[libdefaults] clockskew` becomes the acceptance window;
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
+    /// Enctype permission is taken from the same configuration, including legacy opt-ins.
     ///
     /// # Errors
     ///
@@ -1168,7 +1178,10 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self> {
+        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
+            .map_err(|_invalid| Policy::InvalidConfiguration)?;
         Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
+            .with_crypto_policy(policy)
             .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
@@ -1181,6 +1194,7 @@ impl NegotiateLayer<'static> {
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_keytab_name`. The configured
     /// `[libdefaults] clockskew` becomes the acceptance window.
+    /// Enctype permission is taken from the same configuration, including legacy opt-ins.
     ///
     /// # Errors
     ///
@@ -1188,9 +1202,12 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self> {
+        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
+            .map_err(|_invalid| Policy::InvalidConfiguration)?;
         Self::from_keytab_name(keytab::default_keytab_name(
             &config.libdefaults.default_keytab_name,
         )?)?
+        .with_crypto_policy(policy)
         .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
@@ -1245,6 +1262,13 @@ pub struct NegotiateService<'keytab, S> {
 
 #[cfg(feature = "tower")]
 impl<'keytab, S> NegotiateService<'keytab, S> {
+    /// Apply runtime enctype permission without clearing replay evidence.
+    #[inline]
+    #[must_use]
+    pub fn with_crypto_policy(self, policy: CryptoPolicy) -> Self {
+        self.configure_validator(|validator| validator.with_crypto_policy(policy));
+        self
+    }
     /// Apply a consuming validator builder without discarding admitted replay records.
     /// A poisoned validator stays poisoned and refuses subsequent requests.
     fn configure_validator<F>(&self, configure: F)
@@ -1625,6 +1649,8 @@ where
 #[derive(Clone, Debug)]
 /// Validator settings a layer applies to every service it builds.
 struct ValidatorOptions {
+    /// Runtime enctype permission, independent of replay and transit settings.
+    crypto_policy: CryptoPolicy,
     /// Explicit policy for unchecked cross-realm transit.
     transit_validator: Option<Arc<dyn TransitValidator>>,
     /// The accepted clock skew; `None` keeps the validator default.
@@ -1647,6 +1673,7 @@ struct ValidatorOptions {
 impl Default for ValidatorOptions {
     fn default() -> Self {
         Self {
+            crypto_policy: CryptoPolicy::default(),
             transit_validator: None,
             max_clock_skew: None,
             now: None,
@@ -1663,7 +1690,8 @@ impl Default for ValidatorOptions {
 impl ValidatorOptions {
     /// Build a validator over `keytab` with these settings.
     fn build<'keytab>(&self, keytab: Cow<'keytab, Keytab>) -> Validator<'keytab> {
-        let mut validator = Validator::from_keytab_cow(keytab);
+        let mut validator =
+            Validator::from_keytab_cow(keytab).with_crypto_policy(self.crypto_policy.clone());
         if let Some(policy) = &self.transit_validator {
             validator = validator.with_transit_validator(Arc::clone(policy));
         }

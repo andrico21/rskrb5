@@ -1559,6 +1559,8 @@ impl Default for InitiatorContextOptions {
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InitiatorContext {
+    /// Runtime policy retained for reply keys and server-selected subkeys.
+    pub crypto_policy: CryptoPolicy,
     /// ASN.1 AP-REQ message.
     pub ap_req: rasn_kerberos::ApReq,
     /// DER-encoded AP-REQ bytes.
@@ -1593,6 +1595,7 @@ impl fmt::Debug for InitiatorContext {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
+            crypto_policy: _,
             ap_req: _,
             ap_req_der,
             krb5_token: _,
@@ -1717,8 +1720,16 @@ impl InitiatorContext {
     /// echo the authenticator timestamp.
     #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
+        self.crypto_policy
+            .check_use(self.session_key.etype, Use::SessionKey)?;
         let ap_rep = decode_ap_rep(bytes).map_err(ap_rep_error)?;
+        self.crypto_policy
+            .check_use(ap_rep.enc_part.etype, Use::SessionKey)?;
         let enc_part = decrypt_ap_rep_enc_part(&ap_rep, &self.session_key).map_err(ap_rep_error)?;
+        if let Some(subkey) = &enc_part.subkey {
+            self.crypto_policy
+                .check_use(subkey.r#type, Use::SessionKey)?;
+        }
         let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
         let cusec = integer_to_u32("ap-rep.cusec", &enc_part.cusec)?;
         let authenticator_time = ctime
@@ -1943,7 +1954,8 @@ pub fn init_sec_context_with_confounder(
         }))
         .with_subkey(options.subkey.clone())
         .with_sequence_number(Some(sequence_number));
-    ap_req_options.crypto_policy = options.crypto_policy;
+    let crypto_policy = options.crypto_policy.unwrap_or_default();
+    ap_req_options.crypto_policy = Some(crypto_policy.clone());
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;
@@ -1954,6 +1966,7 @@ pub fn init_sec_context_with_confounder(
     let header = negotiate_header(&spnego_token)?;
 
     Ok(InitiatorContext {
+        crypto_policy,
         ap_req: built_ap_req.message,
         ap_req_der,
         krb5_token,
