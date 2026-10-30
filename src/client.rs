@@ -1275,12 +1275,6 @@ impl Tokio {
                     &self.config.libdefaults.default_tkt_enctype_ids(),
                     "default_tkt_enctypes",
                 );
-                record_keytab_enctype_diagnostics(
-                    &mut errors,
-                    &enctypes,
-                    &self.config.libdefaults.preferred_preauth_types,
-                    "preferred_preauth_types",
-                );
                 enctypes
             }
             _ => Vec::new(),
