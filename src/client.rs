@@ -42,6 +42,9 @@ use crate::{
 /// In-memory credential-cache replacement.
 #[cfg(feature = "tokio")]
 mod cache_update;
+/// Identity-bound cache insertion.
+#[cfg(feature = "tokio")]
+mod cache_insert;
 /// TGT refresh scheduling.
 #[cfg(feature = "tokio")]
 mod refresh_schedule;
@@ -1459,10 +1462,7 @@ impl Tokio {
     /// Insert or replace a service ticket in the cache.
     #[inline]
     pub fn cache_service_ticket(&mut self, ticket: TgsRepSession) {
-        let key = service_cache_key(&ticket.service);
-        let selected =
-            preferred_session_at(self.service_tickets.remove(&key), ticket, SystemTime::now());
-        drop(self.service_tickets.insert(key, selected));
+        cache_insert::service_ticket(self, ticket);
     }
     /// Insert or replace a TGT session in the realm-keyed session cache.
     /// # Errors
@@ -1481,18 +1481,7 @@ impl Tokio {
     /// Returns [`Error::InvalidTgtSession`] when the session's service is not a
     /// `krbtgt/<realm>` principal.
     fn cache_tgt_session_at(&mut self, tgt: AsRepSession, now: SystemTime) -> Result<(), Error> {
-        let realm = tgt_realm(&tgt).ok_or_else(|| Error::InvalidTgtSession {
-            service: tgt.service.name(),
-        })?;
-        let selected = preferred_session_at(self.tgt_sessions.remove(&realm), tgt, now);
-        if realm == self.client.realm {
-            let primary = preferred_session_at(self.tgt.take(), selected, now);
-            self.tgt = Some(primary.clone());
-            drop(self.tgt_sessions.insert(realm, primary));
-        } else {
-            drop(self.tgt_sessions.insert(realm, selected));
-        }
-        Ok(())
+        cache_insert::tgt_session_at(self, tgt, now)
     }
     /// Ensure this client has a valid TGT, reusing an existing TGT when possible.
     ///
