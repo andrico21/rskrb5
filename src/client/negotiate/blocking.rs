@@ -1,9 +1,7 @@
 //! Synchronous Negotiate operations.
 
-use tokio::runtime::{Builder, Runtime};
-
 use super::{
-    BlockingClient, ChangePasswordResult, Client, Config, Error, InitiatorContext,
+    BlockingClient, BlockingRuntime, ChangePasswordResult, Client, Config, Error, InitiatorContext,
     InitiatorContextOptions, Keytab, Principal, RequestOptions,
 };
 
@@ -12,11 +10,12 @@ impl BlockingClient {
     ///
     /// # Errors
     ///
-    /// Returns an I/O error when the blocking runtime cannot be created.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime,
+    /// or an I/O error when the blocking runtime cannot be created.
     #[inline]
     pub fn new(client: Client) -> Result<Self, Error> {
         Ok(Self {
-            runtime: blocking_runtime()?,
+            runtime: BlockingRuntime::new()?,
             client,
         })
     }
@@ -25,7 +24,7 @@ impl BlockingClient {
     ///
     /// # Errors
     ///
-    /// Returns an I/O error when the blocking runtime cannot be created.
+    /// Returns the runtime errors of [`Self::new`].
     #[inline]
     pub fn with_password<P>(config: Config, client: Principal, password: P) -> Result<Self, Error>
     where
@@ -38,7 +37,7 @@ impl BlockingClient {
     ///
     /// # Errors
     ///
-    /// Returns an I/O error when the blocking runtime cannot be created.
+    /// Returns the runtime errors of [`Self::new`].
     #[inline]
     pub fn with_keytab(config: Config, client: Principal, keytab: Keytab) -> Result<Self, Error> {
         Self::new(Client::with_keytab(config, client, keytab))
@@ -50,7 +49,7 @@ impl BlockingClient {
     ///
     /// Returns an error when the keytab name selects an unsupported keytab store
     /// or the keytab file cannot be read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
+    /// Returns the runtime errors of [`Self::new`].
     #[inline]
     pub fn with_keytab_name<P>(
         config: Config,
@@ -69,7 +68,7 @@ impl BlockingClient {
     ///
     /// Returns an error when the cache name selects an unsupported credential
     /// cache store or the cache cannot be read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
+    /// Returns the runtime errors of [`Self::new`].
     #[inline]
     pub fn from_ccache_name<P>(config: Config, cache_name: P) -> Result<Self, Error>
     where
@@ -85,7 +84,7 @@ impl BlockingClient {
     /// Returns an error when `KRB5CCNAME` is set but not valid Unicode, when no
     /// default cache name is configured, or when the selected cache cannot be
     /// read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
+    /// Returns the runtime errors of [`Self::new`].
     #[inline]
     pub fn from_default_ccache(config: Config) -> Result<Self, Error> {
         Self::new(Client::from_default_ccache(config)?)
@@ -97,7 +96,7 @@ impl BlockingClient {
     ///
     /// Returns an error when `KRB5CCNAME` is unset or not valid Unicode, or when
     /// the cache it names cannot be read or parsed.
-    /// Returns an I/O error when the blocking runtime cannot be created.
+    /// Returns the runtime errors of [`Self::new`].
     #[inline]
     pub fn from_ccache_env(config: Config) -> Result<Self, Error> {
         Self::new(Client::from_ccache_env(config)?)
@@ -122,6 +121,7 @@ impl BlockingClient {
     /// Returns an error when a TGT or service ticket for `service` cannot be
     /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
     /// cannot be built.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn authorization_header(&mut self, service: Principal) -> Result<String, Error> {
         Ok(self.authorization_context(service)?.header)
@@ -134,6 +134,7 @@ impl BlockingClient {
     /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
     /// empty, and otherwise the errors of obtaining a service ticket for the
     /// host-based principal or building its token.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn authorization_header_for_host<P, Q>(
         &mut self,
@@ -154,6 +155,7 @@ impl BlockingClient {
     /// Returns an error when a TGT or service ticket for `service` cannot be
     /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
     /// cannot be built.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn authorization_context(&mut self, service: Principal) -> Result<InitiatorContext, Error> {
         self.runtime
@@ -167,6 +169,7 @@ impl BlockingClient {
     /// Returns an error when a TGT or service ticket for `service` cannot be
     /// obtained from the cache or the KDC, or when the AP-REQ or SPNEGO token
     /// cannot be built.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn authorization_context_with_options(
         &mut self,
@@ -186,6 +189,7 @@ impl BlockingClient {
     /// Returns [`Error::InvalidPrincipalName`] when the service or host name is
     /// empty, and otherwise the errors of obtaining a service ticket for the
     /// host-based principal or building its token.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn authorization_context_for_host<P, Q>(
         &mut self,
@@ -209,6 +213,7 @@ impl BlockingClient {
     /// cannot be built or exchanged with a kpasswd server, when the reply fails
     /// verification or decryption, or when the server reports a non-success
     /// result code.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn change_password<P>(
         &mut self,
@@ -232,6 +237,7 @@ impl BlockingClient {
     /// cannot be built or exchanged with a kpasswd server, when the reply fails
     /// verification or decryption, or when the server reports a non-success
     /// result code.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn change_password_for<P>(
         &mut self,
@@ -256,6 +262,7 @@ impl BlockingClient {
     /// obtained, when the request cannot be built or exchanged with a kpasswd
     /// server, when the reply fails verification or decryption, or when the
     /// server reports a non-success result code.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn change_password_with_options<P>(
         &mut self,
@@ -280,6 +287,7 @@ impl BlockingClient {
     /// obtained, when the request cannot be built or exchanged with a kpasswd
     /// server, when the reply fails verification or decryption, or when the
     /// server reports a non-success result code.
+    /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn change_password_for_with_options<P>(
         &mut self,
@@ -296,17 +304,4 @@ impl BlockingClient {
                     .change_password_for_with_options(target, new_password, options),
             )
     }
-}
-
-/// Build the current-thread runtime that drives a [`BlockingClient`].
-///
-/// # Errors
-///
-/// Returns an I/O error when the runtime's I/O or timer driver cannot be
-/// created.
-fn blocking_runtime() -> Result<Runtime, Error> {
-    Ok(Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()?)
 }

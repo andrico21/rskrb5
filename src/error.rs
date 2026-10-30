@@ -452,6 +452,12 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("cached ticket is not eligible for renewal")]
     TicketNotRenewable,
+    /// Blocking Negotiate requires a live runtime outside an entered Tokio context.
+    #[cfg(all(feature = "tokio", feature = "spnego"))]
+    #[error(
+        "blocking Negotiate runtime is unavailable; use the async Negotiate client inside Tokio"
+    )]
+    BlockingRuntimeUnavailable,
     /// A high-level client operation needs password/keytab credentials.
     #[cfg(feature = "tokio")]
     #[error("no password or keytab credentials are configured")]

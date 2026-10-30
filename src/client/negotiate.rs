@@ -1,9 +1,11 @@
 use alloc::fmt;
 
-use tokio::runtime::Runtime;
-
 /// Synchronous constructors and operations for the blocking wrapper.
 mod blocking;
+/// Guarded execution and nonblocking destruction of the owned runtime.
+mod runtime;
+
+use runtime::BlockingRuntime;
 
 use super::{Error, KdcProtocol, Principal, RequestOptions, Tokio};
 use crate::{
@@ -404,9 +406,19 @@ impl Client {
 /// Async applications should use [`Client`] directly. This type owns a
 /// small current-thread Tokio runtime so callers can generate headers without
 /// managing a runtime.
+///
+/// Runtime construction and blocking operations return
+/// [`Error::BlockingRuntimeUnavailable`] whenever a Tokio runtime is entered
+/// on the calling thread, including `spawn_blocking` and an explicit enter guard.
+/// Use [`Client`] in async applications. Borrowing the wrapped client is unrestricted.
+///
+/// Dropping this wrapper is safe inside Tokio: it shuts down its runtime without
+/// waiting for blocking jobs. Pending async tasks are cancelled; already-running
+/// blocking jobs (including system DNS lookups) retain their resources until they
+/// return. The owned runtime is private and is never handed out to callers.
 pub struct BlockingClient {
     /// Current-thread runtime that drives the async client.
-    runtime: Runtime,
+    runtime: BlockingRuntime,
     /// Async client whose futures `runtime` blocks on.
     client: Client,
 }
