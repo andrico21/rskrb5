@@ -254,11 +254,13 @@ mod tests {
         Ok(())
     }
 
-    /// Reads a repository file that the package excludes, relative to the manifest directory.
+    /// Reads a repository file that the package excludes, relative to the manifest directory,
+    /// with `\n` line endings whatever the checkout converted them to (`\r\n` on Windows).
     fn repository_file(relative: &str) -> Result<String, TestError> {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
         Ok(fs::read_to_string(&path)
-            .map_err(|error| format!("read {}: {error}", path.display()))?)
+            .map_err(|error| format!("read {}: {error}", path.display()))?
+            .replace("\r\n", "\n"))
     }
 
     /// Splits the `jobs:` section of a workflow into (job id, job body) pairs in file order.
