@@ -1,9 +1,19 @@
 use core::fmt;
 
+use crate::crypto::Use;
+
 /// Permanent security-policy failures, independent of protocol and transport.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Policy {
+    /// A known or unknown wire enctype is outside runtime permission.
+    #[error("enctype {etype} is not permitted for {usage}")]
+    EnctypeNotPermitted {
+        /// Wire encryption type identifier.
+        etype: i32,
+        /// Consumer boundary that refused it.
+        usage: Use,
+    },
     /// A caller selected an insecure feature that cannot be enabled.
     #[error("rejected feature {feature}: {reason}")]
     RejectedFeature {

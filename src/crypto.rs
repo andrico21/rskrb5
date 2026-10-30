@@ -11,10 +11,24 @@
 //! zeroization on ordinary drop. Returned `Vec<u8>` keys/plaintext transfer
 //! cleanup responsibility to the caller. Abort skips destructors; dependency
 //! cipher/hash state and compiler-created register/spill copies are not covered.
+//!
+//! # Runtime policy
+//! Raw RFC-vector primitives and `KerberosEtype` dispatch are policy-free.
+//! Algorithm availability is not permission. Use [`CryptoPolicy::check_use`]
+//! before a checked operation; no Cargo feature alone enables legacy use.
 
 use core::mem;
 
+/// Shared runtime encryption policy and consumer-use categories.
+#[path = "crypto/policy.rs"]
+pub mod policy;
+/// Validated runtime enctype policy; default permission is AES only.
+pub type CryptoPolicy = policy::Policy;
+/// Intended consumer use checked against runtime policy.
+pub type Use = policy::Use;
+
 /// Internal zeroizing scratch ownership.
+#[path = "crypto/scratch.rs"]
 mod scratch;
 use aes::cipher::{
     BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength, Key, KeyInit, consts::U16,
@@ -2221,6 +2235,7 @@ fn hmac_sha384(key: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 /// MAC verification boundary.
+#[path = "crypto/verification.rs"]
 mod verification;
 
 /// Rotate `bytes`, read as one big-endian bit string, right by `steps` bits.

@@ -26,3 +26,25 @@ mod expressions;
 #[cfg(test)]
 #[path = "policy/ordering.rs"]
 mod ordering;
+
+/// Profile and common runtime policy integration.
+#[cfg(test)]
+#[path = "policy/profile.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod profile;
+
+/// Repeated-relation security constraints.
+#[cfg(test)]
+#[path = "policy/repeated.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod repeated;
