@@ -3,7 +3,8 @@
 use rasn::{der, types::Integer};
 
 use crate::{
-    der::decode_complete, error::Ticket as TicketError, ticket::validate as validate_ticket,
+    crypto::selection, der::decode_complete, error::Ticket as TicketError,
+    ticket::validate as validate_ticket,
 };
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
@@ -86,6 +87,9 @@ pub fn validate_as_req(as_req: &rasn_kerberos::AsReq) -> Result<(), Error> {
 /// Returns [`Error::Encode`] when the DER encoder fails.
 #[inline]
 pub fn encode_as_req(as_req: &rasn_kerberos::AsReq) -> Result<Vec<u8>, Error> {
+    for data in as_req.0.padata.as_deref().unwrap_or_default() {
+        selection::preauth(data.r#type)?;
+    }
     encode("AS-REQ", as_req)
 }
 
@@ -148,6 +152,9 @@ pub fn validate_tgs_req(tgs_req: &rasn_kerberos::TgsReq) -> Result<(), Error> {
 /// Returns [`Error::Encode`] when the DER encoder fails.
 #[inline]
 pub fn encode_tgs_req(tgs_req: &rasn_kerberos::TgsReq) -> Result<Vec<u8>, Error> {
+    for data in tgs_req.0.padata.as_deref().unwrap_or_default() {
+        selection::preauth(data.r#type)?;
+    }
     encode("TGS-REQ", tgs_req)
 }
 
