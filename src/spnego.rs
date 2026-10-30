@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
     client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
-    crypto::{CryptoPolicy, KerberosEtype, Use},
+    crypto::{CryptoPolicy, KerberosEtype, Use, selection},
     error,
     keytab::EncryptionKey,
     service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
@@ -299,6 +299,7 @@ impl MicToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        selection::reject_enctype(key.etype)?;
         let mut token = Self {
             flags: 0,
             snd_seq_num: 0,
@@ -316,6 +317,7 @@ impl MicToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
+        selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = scratch::Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
@@ -324,8 +326,7 @@ impl MicToken {
         data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
 
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         etype
             .checksum(&key.value, &data, key_usage)
             .map_err(Error::Crypto)
@@ -661,9 +662,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut token = Self {
             flags: 0,
             ec: u16::try_from(etype.hmac_len()).map_err(|_overflow| {
@@ -693,9 +693,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];
         getrandom::fill(&mut confounder)?;
         Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
@@ -752,8 +751,7 @@ impl WrapToken {
 
         let flags = self.flags | GSS_TOKEN_FLAG_SEALED;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let ec = match etype {
             KerberosEtype::Des3CbcSha1Kd(_) => {
                 // DES3's 8-byte confounder and the 16-byte header are already block-aligned.
@@ -807,9 +805,8 @@ impl WrapToken {
             .encrypted_body
             .as_ref()
             .ok_or(Error::MissingGssEncryptedBody)?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let encrypted = rotate_left(encrypted_body, usize::from(self.rrc));
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut plaintext = scratch::Scratch::new(
             etype.decrypt_message(&key.value, &encrypted, key_usage)?,
             "wrap-decrypt",
@@ -865,6 +862,7 @@ impl WrapToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
+        selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = scratch::Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
@@ -873,8 +871,7 @@ impl WrapToken {
         data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
 
-        let etype =
-            KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         etype
             .checksum(&key.value, &data, key_usage)
             .map_err(Error::Crypto)
