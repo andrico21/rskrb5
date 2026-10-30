@@ -245,6 +245,13 @@ pub struct VerifiedApRep {
 }
 
 /// In-memory AP-REQ replay cache.
+///
+/// Size total capacity for peak admission rate times three times the maximum
+/// clock skew, with headroom for bursts and replay refreshes. Each live record
+/// occupies paired key, digest and expiry indexes. Capacity exhaustion rejects
+/// new records, never evicts live replay evidence. The default total is 65,536;
+/// each client realm/components identity gets one eighth (minimum one), tunable
+/// with [`Self::with_principal_capacity`]. Size both limits for expected traffic.
 #[derive(Debug)]
 pub struct ReplayCache {
     /// Immutable skew ceiling for every validator using this cache.
@@ -284,6 +291,9 @@ mod replay_quota;
 ///
 /// This is useful when a service framework clones middleware or builds several
 /// service instances from the same acceptor state.
+/// Size the underlying [`ReplayCache`] for aggregate peak admission rate across
+/// all clones over the three-skew retention window, including burst headroom.
+/// Principal quotas and the global limit fail closed without evicting evidence.
 #[derive(Clone, Debug, Default)]
 pub struct SharedReplayCache {
     /// The cache shared by every clone.
