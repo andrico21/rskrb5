@@ -39,7 +39,11 @@ mod tests {
             self.calls = self.calls.checked_add(1).context("count")?;
             assert!(self.calls <= 2, "optimistic recovery must never loop");
             let request: rasn_kerberos::AsReq = der::decode(bytes)?;
-            let padata = request.0.padata.as_ref().context("encrypted preauth")?;
+            let padata = request.0.padata.as_deref().unwrap_or_default();
+            if self.calls == 2 && !padata.iter().any(|pa| pa.r#type == PA_ENC_TIMESTAMP) {
+                assert!(padata.iter().all(|pa| pa.r#type == PA_FX_COOKIE));
+                return Ok(self.challenge.clone());
+            }
             let encrypted = padata
                 .iter()
                 .find(|pa| pa.r#type == PA_ENC_TIMESTAMP)
@@ -188,9 +192,9 @@ mod tests {
         Ok(())
     }
 
-    /// Missing or unsupported key hints must not cause another guessed-password request.
+    /// Missing or unsupported hints allow discovery but never another guessed-password request.
     #[test]
-    fn unusable_error24_hints_are_terminal() -> Result<(), TestError> {
+    fn unusable_error24_hints_stop_after_failed_discovery() -> Result<(), TestError> {
         // Given optimistic password/keytab requests and unusable METHOD-DATA.
         for keytab in [false, true] {
             for unsupported in [false, true] {
@@ -214,7 +218,7 @@ mod tests {
                 };
                 kdc.challenge = der::encode(&error)?;
                 let principal = Principal::user("TEST.GOKRB5", "testuser1");
-                // When no permitted key hint exists, then recovery terminates without fallback.
+                // When discovery repeats error24, then recovery terminates without fallback.
                 let result = if keytab {
                     login_tgt_with_keytab(&mut kdc, principal, &keytab_with_reply_key(3)?, options)
                 } else {
@@ -223,7 +227,7 @@ mod tests {
                 assert!(
                     matches!(result, Err(Error::Kdc(rejection)) if rejection.error_code == 24_i32)
                 );
-                assert_eq!(kdc.calls, 1);
+                assert_eq!(kdc.calls, 2);
             }
         }
         Ok(())

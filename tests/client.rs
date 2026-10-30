@@ -113,6 +113,8 @@ mod review_canonical;
 mod review_cookie;
 #[path = "client/review_optimistic.rs"]
 mod review_optimistic;
+#[path = "client/review_discovery.rs"]
+mod review_discovery;
 #[cfg(feature = "tokio")]
 #[path = "client/review_diagnostics.rs"]
 mod review_diagnostics;

@@ -3466,11 +3466,16 @@ where
 {
     let initial_request =
         password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
-    let initial_response = transport.send(&client.realm, &initial_request.der)?;
+    let mut initial_response = transport.send(&client.realm, &initial_request.der)?;
     if let Some(session) =
         password_initial_as_rep_session(&initial_request, &initial_response, &client, password)?
     {
         return Ok(session);
+    }
+    if let Some(probe) = preauth::discovery_request(&initial_request, &options, &initial_response)?
+    {
+        initial_response = transport.send(&client.realm, &probe.der)?;
+        preauth::validate_discovery(&initial_response, &options)?;
     }
     let (request, reply_key) =
         password_preauth_request(client, service, password, options, &initial_response)?;
@@ -3515,11 +3520,16 @@ where
 {
     let initial_request =
         keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
-    let initial_response = transport.send(&client.realm, &initial_request.der)?;
+    let mut initial_response = transport.send(&client.realm, &initial_request.der)?;
     if let Some(session) =
         keytab_initial_as_rep_session(&initial_request, &initial_response, &client, keytab)?
     {
         return Ok(session);
+    }
+    if let Some(probe) = preauth::discovery_request(&initial_request, &options, &initial_response)?
+    {
+        initial_response = transport.send(&client.realm, &probe.der)?;
+        preauth::validate_discovery(&initial_response, &options)?;
     }
     let (request, reply_key) =
         keytab_preauth_request(client, service, keytab, options, &initial_response)?;
