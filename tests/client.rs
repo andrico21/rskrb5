@@ -89,6 +89,8 @@ mod as_exchange;
 mod login_preauth;
 #[path = "client/password_change.rs"]
 mod password_change;
+#[path = "client/preauth_errors.rs"]
+mod preauth_errors;
 #[path = "client/review.rs"]
 mod review;
 #[cfg(feature = "tokio")]

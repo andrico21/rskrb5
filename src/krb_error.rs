@@ -94,23 +94,23 @@ pub fn encode_method_data(method_data: &rasn_kerberos::MethodData) -> Result<Vec
     encode_der("METHOD-DATA", method_data)
 }
 
-/// Decode preauthentication METHOD-DATA when the KRB-ERROR has the supplied code.
+/// Decode preauthentication METHOD-DATA for a challenge or failed attempt.
 ///
-/// RFC 4120 uses `KDC_ERR_PREAUTH_REQUIRED` for this path. The code is supplied
-/// by the caller so this module stays independent from the higher-level client
-/// constants.
+/// The caller supplies `KDC_ERR_PREAUTH_REQUIRED`; RFC 6113 section 2 also
+/// defines METHOD-DATA on `KDC_ERR_PREAUTH_FAILED` (24). Unrelated error data
+/// stays opaque. Missing data returns an empty hint list.
 ///
 /// # Errors
 ///
 /// Returns the errors of [`info`], and [`Error::Decode`] when the
-/// error code matches but `e-data` is not DER METHOD-DATA.
+/// error is a preauthentication error but `e-data` is not DER METHOD-DATA.
 #[inline]
 pub fn preauth_method_data(
     krb_error: &rasn_kerberos::KrbError,
     preauth_required_error_code: i32,
 ) -> Result<rasn_kerberos::MethodData, Error> {
     let info = info(krb_error)?;
-    if info.error_code != preauth_required_error_code {
+    if info.error_code != preauth_required_error_code && info.error_code != 24_i32 {
         return Ok(Vec::new());
     }
     info.e_data
