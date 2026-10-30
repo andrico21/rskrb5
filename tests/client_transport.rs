@@ -55,6 +55,9 @@ mod tests {
     /// Checked password result regressions.
     #[path = "../client_transport/client_transport_password_results.rs"]
     mod password_results;
+    /// Unsigned outcomes through both public checked helpers.
+    #[path = "../client_transport/unsigned.rs"]
+    mod unsigned;
     use core::{fmt, net::SocketAddr};
     use std::{
         env,
