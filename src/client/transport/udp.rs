@@ -52,10 +52,44 @@ where
 pub(super) async fn receive(socket: &UdpSocket, max: usize) -> Result<Vec<u8>, Error> {
     let capacity = max.min(usize::from(u16::MAX)).saturating_add(1);
     let mut response = vec![0; capacity];
-    let length = socket.recv(&mut response).await?;
+    let length = socket
+        .recv(&mut response)
+        .await
+        .map_err(|error| receive_error(error, max, cfg!(windows)))?;
     if length > max {
         return Err(Error::UdpResponseTooLarge { limit: max });
     }
     response.truncate(length);
     Ok(response)
+}
+
+/// Map Windows WSAEMSGSIZE without reclassifying unrelated platform errors.
+fn receive_error(error: io::Error, max: usize, windows: bool) -> Error {
+    if windows && error.raw_os_error() == Some(10_040) {
+        Error::UdpResponseTooLarge { limit: max }
+    } else {
+        Error::Io(error)
+    }
+}
+
+/// Platform receive-error classification.
+#[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod tests {
+    use std::io;
+
+    use super::{Error, receive_error};
+
+    /// Windows WSAEMSGSIZE must retain the advertised size-error taxonomy.
+    #[test]
+    fn windows_message_size_is_typed() {
+        // Given an oversized Windows datagram, when mapped, then preserve the cap.
+        assert!(matches!(
+            receive_error(io::Error::from_raw_os_error(10_040), 16, true),
+            Error::UdpResponseTooLarge { limit: 16 }
+        ));
+    }
 }

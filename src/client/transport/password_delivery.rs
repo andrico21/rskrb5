@@ -1,12 +1,10 @@
 //! Single-delivery password mutation transport.
 
-use std::io;
-
-use tokio::net::{ToSocketAddrs, UdpSocket, lookup_host};
+use tokio::net::ToSocketAddrs;
 
 use super::{
     Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, non_empty_kdc_response,
-    tcp_request_length,
+    tcp_request_length, udp,
 };
 
 /// Try password endpoints only while delivery is definitely unattempted.
@@ -83,46 +81,11 @@ where
                     limit: MAX_UDP_DATAGRAM,
                 });
             }
-            let socket = transport
-                .with_transport_timeout(async {
-                    let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
-                    for candidate in lookup_host(addr).await? {
-                        let wildcard = if candidate.is_ipv4() {
-                            "0.0.0.0:0"
-                        } else {
-                            "[::]:0"
-                        };
-                        let result = async {
-                            let socket = UdpSocket::bind(wildcard).await?;
-                            socket.connect(candidate).await?;
-                            Ok::<_, io::Error>(socket)
-                        }
-                        .await;
-                        match result {
-                            Ok(socket) => return Ok(socket),
-                            Err(error) => last_error = error,
-                        }
-                    }
-                    Err(Error::Io(last_error))
-                })
-                .await?;
+            let socket = transport.with_transport_timeout(udp::connect(addr)).await?;
             transport
                 .with_transport_timeout(async {
                     let _: usize = socket.send(request).await?;
-                    let mut response = vec![
-                        0;
-                        transport
-                            .udp_response_limit
-                            .min(usize::from(u16::MAX))
-                            .saturating_add(1)
-                    ];
-                    let length = socket.recv(&mut response).await?;
-                    if length > transport.udp_response_limit {
-                        return Err(Error::UdpResponseTooLarge {
-                            limit: transport.udp_response_limit,
-                        });
-                    }
-                    response.truncate(length);
+                    let response = udp::receive(&socket, transport.udp_response_limit).await?;
                     non_empty_kdc_response(response)
                 })
                 .await
