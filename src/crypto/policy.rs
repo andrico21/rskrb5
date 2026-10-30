@@ -5,7 +5,7 @@ use core::fmt;
 use crate::{
     config::{EnctypeDefaults as _, EnctypeExpr, LibDefaults, ParseMode, ResolvedEnctypes, Toggle},
     crypto::{AesSha1Etype, AesSha2Etype, KerberosEtype},
-    error::{self, RejectedFeature, RejectionReason},
+    error,
 };
 
 /// Consumer boundary at which an encryption type is used.
@@ -96,7 +96,18 @@ impl Policy {
     /// Rejects weak crypto and invalid, disabled, forbidden or empty permitted lists.
     #[inline]
     pub fn from_libdefaults(defaults: &LibDefaults) -> Result<Self, error::Config> {
+        super::selection::reject_checksum(defaults.safe_checksum_type)?;
         let resolved = defaults.resolve_names(&defaults.permitted_enctypes)?;
+        for names in [
+            &defaults.default_tkt_enctypes,
+            &defaults.default_tgs_enctypes,
+        ] {
+            drop(EnctypeExpr::parse(&names.join(" "))?.resolve(
+                Toggle::Enabled,
+                Toggle::Enabled,
+                ParseMode::Compatible,
+            )?);
+        }
         Ok(Self {
             minima: defaults.min_s2k_iterations,
             permitted: resolved.enctypes().to_vec(),
@@ -113,17 +124,7 @@ impl Policy {
     /// `EnctypeNotPermitted` for unavailable, disabled or excluded encryption types.
     #[inline]
     pub fn check_use(&self, etype: i32, usage: Use) -> Result<(), error::Policy> {
-        let rejected = match etype {
-            1..=3 => Some(RejectedFeature::SingleDes),
-            24_i32 => Some(RejectedFeature::Rc4Export),
-            _ => None,
-        };
-        if let Some(feature) = rejected {
-            return Err(error::Policy::RejectedFeature {
-                feature,
-                reason: RejectionReason::InsecureByDesign,
-            });
-        }
+        super::selection::reject_enctype(etype)?;
         let enabled = match etype {
             16_i32 => self.allow_des3.is_enabled(),
             23_i32 => self.allow_rc4.is_enabled(),

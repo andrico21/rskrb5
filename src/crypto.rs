@@ -33,6 +33,9 @@ pub mod checked;
 /// Trusted per-family string-to-key work-factor policy.
 #[path = "crypto/s2k.rs"]
 pub mod s2k;
+/// Fallible algorithm selection with permanent D2 rejection.
+#[path = "crypto/selection.rs"]
+pub mod selection;
 
 /// Test-only observation of actual PBKDF2 entry, isolated per test thread.
 #[cfg(test)]
@@ -1446,7 +1449,8 @@ pub enum KerberosEtype {
 }
 
 impl KerberosEtype {
-    /// Return a supported encryption type for a Kerberos etype id.
+    /// Probe implemented capability without selecting use (for peer advertisements).
+    /// Use `TryFrom<i32>` or [`selection::enctype`] when selecting an algorithm.
     #[inline]
     pub fn from_etype_id(etype_id: i32) -> Option<Self> {
         AesSha1Etype::from_etype_id(etype_id)
@@ -1456,7 +1460,8 @@ impl KerberosEtype {
             .or_else(|| Rc4HmacEtype::from_etype_id(etype_id).map(Self::Rc4Hmac))
     }
 
-    /// Return a supported encryption type for a Kerberos checksum type id.
+    /// Probe checksum capability without selecting use (for opaque metadata).
+    /// Use [`selection::checksum`] at an integrity verification boundary.
     #[inline]
     pub fn from_checksum_type_id(checksum_type_id: i32) -> Option<Self> {
         match checksum_type_id {

@@ -166,3 +166,26 @@ mod acceptor_http;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod s2k;
+
+/// Permanent algorithm-selection rejection across F1 boundaries.
+#[cfg(test)]
+#[path = "policy/selection.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod selection;
+
+/// Raw algorithm selection and pre-effect refusal regressions.
+#[cfg(feature = "messages")]
+#[cfg(test)]
+#[path = "policy/raw_selection.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod raw_selection;

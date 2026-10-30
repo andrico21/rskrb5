@@ -15,7 +15,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::crypto::s2k::{Family, Minima};
+use crate::crypto::{
+    s2k::{Family, Minima},
+    selection,
+};
+/// Reject forbidden serde configuration selections.
+#[cfg(feature = "serde")]
+#[path = "config/serde_policy.rs"]
+mod serde_policy;
 
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
@@ -512,6 +519,7 @@ pub struct LibDefaults {
     #[cfg_attr(feature = "serde", serde(default))]
     pub allow_des3: Toggle,
     /// Blanket weakening is permanently rejected when enabled.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::weak"))]
     pub allow_weak_crypto: Toggle,
     /// Whether clients should request canonicalization.
     pub canonicalize: Toggle,
@@ -528,8 +536,10 @@ pub struct LibDefaults {
     /// Default realm.
     pub default_realm: String,
     /// Preferred TGS enctype names.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub default_tgs_enctypes: Vec<String>,
     /// Preferred ticket enctype names.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub default_tkt_enctypes: Vec<String>,
     /// Whether hostnames should be DNS-canonicalized.
     pub dns_canonicalize_hostname: Toggle,
@@ -554,6 +564,7 @@ pub struct LibDefaults {
     /// Whether addresses should be omitted from tickets.
     pub no_addresses: Toggle,
     /// Permitted enctype names.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub permitted_enctypes: Vec<String>,
     /// Whether `[libdefaults] permitted_enctypes` was explicitly configured.
     ///
@@ -580,6 +591,7 @@ pub struct LibDefaults {
     /// Renewable ticket lifetime.
     pub renew_lifetime: Duration,
     /// Safe checksum type.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::checksum"))]
     pub safe_checksum_type: i32,
     /// Ticket lifetime.
     pub ticket_lifetime: Duration,
@@ -621,7 +633,7 @@ impl LibDefaults {
     pub const fn parse_mode(&self) -> ParseMode {
         self.enctype_parse_mode
     }
-    /// Sets `allow_weak_crypto`, preserving the other fields.
+    /// Stage `allow_weak_crypto`; enabled values are rejected by runtime policy construction.
     #[must_use]
     #[inline]
     pub const fn with_allow_weak_crypto(mut self, value: Toggle) -> Self {
@@ -835,7 +847,7 @@ impl LibDefaults {
         self.renew_lifetime = value;
         self
     }
-    /// Sets `safe_checksum_type`, preserving the other fields.
+    /// Stage `safe_checksum_type`; forbidden values are rejected by runtime policy construction.
     #[must_use]
     #[inline]
     pub const fn with_safe_checksum_type(mut self, value: i32) -> Self {
@@ -921,7 +933,7 @@ impl LibDefaults {
             rdns: Toggle::Enabled,
             realm_try_domains: -1,
             renew_lifetime: Duration::ZERO,
-            safe_checksum_type: 8,
+            safe_checksum_type: 15,
             ticket_lifetime: Duration::from_hours(24),
             udp_preference_limit: 1465,
             verify_ap_req_nofail: Toggle::Disabled,
@@ -1014,7 +1026,12 @@ impl LibDefaults {
                 "rdns" => self.rdns = Toggle::from_bool(parse_boolean(value)?),
                 "realm_try_domains" => self.realm_try_domains = parse_i32(value, line, key)?,
                 "renew_lifetime" => self.renew_lifetime = parse_duration(value)?,
-                "safe_checksum_type" => self.safe_checksum_type = parse_i32(value, line, key)?,
+                "safe_checksum_type" => {
+                    let id = selection::checksum_name(value)
+                        .map_or_else(|| parse_i32(value, line, key), Ok)?;
+                    selection::reject_checksum(id)?;
+                    self.safe_checksum_type = id;
+                }
                 "ticket_lifetime" => self.ticket_lifetime = parse_duration(value)?,
                 "udp_preference_limit" => {
                     self.udp_preference_limit = parse_i32(value, line, key)?;

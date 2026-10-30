@@ -6,6 +6,12 @@ use crate::crypto::Use;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Policy {
+    /// A caller selected an enctype with no implemented profile.
+    #[error("unknown encryption type: {etype}")]
+    UnknownEnctype {
+        /// Selected wire ID.
+        etype: i32,
+    },
     /// A peer requested cheaper password derivation than the trusted minimum.
     #[error("s2k iterations {actual} below minimum {minimum} for enctype {etype}")]
     S2kIterationsTooLow {
