@@ -479,7 +479,7 @@ jobs:
         with:
           components: clippy
       - name: Run every lint gate self-test
-        run: for s in scripts/lint-gates/*.py; do python3 "$s" --self-test || exit 1; done
+        run: for s in scripts/lint-gates/*.py scripts/check-error-constructions.py; do python3 "$s" --self-test || exit 1; done
       - name: Allow gate
         run: python3 scripts/lint-gates/allow_gate.py --enforce
       - name: Exception gate
@@ -503,6 +503,8 @@ jobs:
         run: python3 scripts/lint-gates/gate_hygiene.py --enforce
       - name: Gate wiring and action pins
         run: python3 scripts/lint-gates/workflow_gate.py --enforce
+      - name: Every public error variant has a construction site
+        run: python3 scripts/check-error-constructions.py
       # The offline regression suites of the helper scripts.
       - name: AD dispatch helper self-test
         run: python3 scripts/check-github-ad-gate.py --self-test

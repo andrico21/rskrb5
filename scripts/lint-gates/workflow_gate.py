@@ -8,7 +8,8 @@
 
 * The `lint-gates` job of `ci.yml` and the `lint-gates` hook of `prek.toml`
   each run every command in `REQUIRED`: the gate self-tests and enforcements,
-  and the offline self-tests of the AD dispatch helper, the AD preflight, the
+  the error-variant construction audit with its self-test, and the offline
+  self-tests of the AD dispatch helper, the AD preflight, the
   fixture runner and the release script. The job may not be skipped or allowed
   to fail.
 * Every action is pinned to a full commit SHA, each `dtolnay/rust-toolchain`
@@ -31,7 +32,7 @@ from typing import Final
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 REQUIRED: Final = (
-    'for s in scripts/lint-gates/*.py; do python3 "$s" --self-test',
+    'for s in scripts/lint-gates/*.py scripts/check-error-constructions.py; do python3 "$s" --self-test',
     "python3 scripts/lint-gates/allow_gate.py --enforce",
     "python3 scripts/lint-gates/exception_gate.py --enforce",
     "python3 scripts/lint-gates/profile_eq.py --clippy-toml",
@@ -43,6 +44,7 @@ REQUIRED: Final = (
     "python3 scripts/lint-gates/fuzz_coverage.py --enforce",
     "python3 scripts/lint-gates/gate_hygiene.py --enforce",
     "python3 scripts/lint-gates/workflow_gate.py --enforce",
+    "python3 scripts/check-error-constructions.py",
     "python3 scripts/check-github-ad-gate.py --self-test",
     "python3 scripts/check-ad-integration-env-smoke.py",
     "bash scripts/run-gated-integration.sh self-test",
