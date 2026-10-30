@@ -2,7 +2,12 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{crypto::KerberosEtype, der::decode_complete, keytab::EncryptionKey};
+use crate::{
+    crypto::KerberosEtype,
+    der::{decode_complete, trim_zero_padded_der},
+    keytab::EncryptionKey,
+    messages::secret_der::SecretDer,
+};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -79,12 +84,21 @@ pub fn decrypt_ap_rep_enc_part(
     }
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let plaintext = etype.decrypt_message(
-        &key.value,
-        ap_rep.enc_part.cipher.as_ref(),
-        AP_REP_ENCPART_USAGE,
-    )?;
-    decode_enc_ap_rep_part(&plaintext)
+    let plaintext = SecretDer::new(
+        etype.decrypt_message(
+            &key.value,
+            ap_rep.enc_part.cipher.as_ref(),
+            AP_REP_ENCPART_USAGE,
+        )?,
+        "ap-rep decrypt",
+    );
+    let trimmed = trim_zero_padded_der(&plaintext);
+    let der = if key.etype == 16_i32 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
+        trimmed
+    } else {
+        &plaintext
+    };
+    decode_enc_ap_rep_part(der)
 }
 
 /// Build an AP-REP message using a random confounder.
@@ -121,7 +135,7 @@ pub fn build_ap_rep_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::ApRep, Error> {
-    let plaintext = encode_der("EncApRepPart", enc_part)?;
+    let plaintext = SecretDer::new(encode_der("EncApRepPart", enc_part)?, "ap-rep encode");
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(

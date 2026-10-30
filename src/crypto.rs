@@ -12,11 +12,10 @@
 //! cleanup responsibility to the caller. Abort skips destructors; dependency
 //! cipher/hash state and compiler-created register/spill copies are not covered.
 
-use core::{
-    mem,
-    ops::{Deref, DerefMut},
-};
+use core::mem;
 
+/// Internal zeroizing scratch ownership.
+mod scratch;
 use aes::cipher::{
     BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength, Key, KeyInit, consts::U16,
 };
@@ -25,56 +24,10 @@ use hmac::{Hmac, Mac};
 use md4::{Digest, Md4};
 use md5::Md5;
 use rc4::{Rc4, StreamCipher as _};
+use scratch::{Purpose, SecretScratch};
 use sha1::Sha1;
 use sha2::{Sha256, Sha384};
 use zeroize::{Zeroize as _, Zeroizing};
-
-/// Internal byte-buffer owner, erased on ordinary drop.
-struct SecretScratch(Zeroizing<Vec<u8>>);
-
-impl SecretScratch {
-    /// Adopt scratch storage without copying it.
-    fn new(value: Vec<u8>) -> Self {
-        Self(Zeroizing::new(value))
-    }
-
-    /// Transfer the allocation to a caller that assumes cleanup responsibility.
-    fn into_vec(mut self) -> Vec<u8> {
-        mem::take(&mut *self.0)
-    }
-}
-
-impl Deref for SecretScratch {
-    type Target = Vec<u8>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for SecretScratch {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-// Drop audit: zeroing a heap buffer in place never blocks, allocates or panics
-// (the erasure assertion and counter exist only under `cfg(test)`).
-impl Drop for SecretScratch {
-    /// Erase live bytes; the Zeroizing field also erases spare capacity on drop.
-    fn drop(&mut self) {
-        let bytes = self.0.as_mut_slice();
-        bytes.zeroize();
-        #[cfg(test)]
-        {
-            assert!(
-                bytes.iter().all(|byte| *byte == 0),
-                "scratch erasure failed"
-            );
-            tests::ERASED_SCRATCH_BYTES
-                .with(|count| count.set(count.get().saturating_add(bytes.len())));
-        }
-    }
-}
 
 /// AES block size in bytes.
 const AES_BLOCK_SIZE: usize = 16;
@@ -223,7 +176,10 @@ impl AesSha1Etype {
         s2kparams: &str,
     ) -> Result<Vec<u8>, Error> {
         let iterations = s2kparams_to_iterations(s2kparams)?;
-        let tkey = SecretScratch::new(self.string_to_pbkdf2(secret, salt, iterations));
+        let tkey = SecretScratch::for_purpose(
+            self.string_to_pbkdf2(secret, salt, iterations),
+            Purpose::Pbkdf2,
+        );
         self.derive_key(&tkey, KERBEROS_CONSTANT)
     }
 
@@ -303,8 +259,13 @@ impl AesSha1Etype {
         checksum: &[u8],
         usage: u32,
     ) -> bool {
-        self.checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Sha1(self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with RFC3962 AES-CTS and a zero initial IV.
@@ -394,14 +355,16 @@ impl AesSha1Etype {
         )?;
         let encryption_key =
             SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
-        let plain = SecretScratch::new(self.decrypt_data(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            self.decrypt_data(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
         let integrity_key =
             SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x55))?);
-        let expected = SecretScratch::new(hmac_sha1_96(&integrity_key, &plain));
-        if !constant_time_eq(&expected, mac) {
+        if !verification::sha1(&integrity_key, &plain, mac, Self::hmac_len()) {
             return Err(Error::IntegrityCheckFailed);
         }
 
@@ -560,7 +523,10 @@ impl AesSha2Etype {
     ) -> Result<Vec<u8>, Error> {
         let iterations = s2kparams_to_iterations(s2kparams)?;
         let saltp = self.saltp(salt);
-        let tkey = SecretScratch::new(self.string_to_pbkdf2(secret, &saltp, iterations));
+        let tkey = SecretScratch::for_purpose(
+            self.string_to_pbkdf2(secret, &saltp, iterations),
+            Purpose::Pbkdf2,
+        );
         self.derive_key(&tkey, KERBEROS_CONSTANT)
     }
 
@@ -616,8 +582,13 @@ impl AesSha2Etype {
         checksum: &[u8],
         usage: u32,
     ) -> bool {
-        self.checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Sha2(self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with RFC8009 AES-CTS and a zero initial IV.
@@ -703,14 +674,18 @@ impl AesSha2Etype {
             self.hmac_len(),
             self.hmac_len().saturating_add(Self::confounder_len()),
         )?;
-        let expected = SecretScratch::new(self.integrity_hash(protocol_key, usage, encrypted)?);
-        if !constant_time_eq(&expected, mac) {
+        let integrity_key =
+            SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0x55))?);
+        if !verification::sha2(self, &integrity_key, &[&ZERO_AES_IV, encrypted], mac) {
             return Err(Error::IntegrityCheckFailed);
         }
 
         let encryption_key =
             SecretScratch::new(self.derive_key(protocol_key, &usage_constant(usage, 0xaa))?);
-        let plain = SecretScratch::new(self.decrypt_data(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            self.decrypt_data(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
         Ok(message.to_vec())
@@ -1014,8 +989,13 @@ impl Des3CbcSha1KdEtype {
     /// Verify a keyed checksum.
     #[inline]
     pub fn verify_checksum(protocol_key: &[u8], data: &[u8], checksum: &[u8], usage: u32) -> bool {
-        Self::checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Des3CbcSha1Kd(Self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with DES3-CBC and a zero initial IV.
@@ -1113,7 +1093,10 @@ impl Des3CbcSha1KdEtype {
             protocol_key,
             &usage_constant(usage, 0xaa),
         )?);
-        let plain = SecretScratch::new(Self::decrypt_data(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            Self::decrypt_data(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
@@ -1121,8 +1104,7 @@ impl Des3CbcSha1KdEtype {
             protocol_key,
             &usage_constant(usage, 0x55),
         )?);
-        let expected = SecretScratch::new(hmac_sha1(&integrity_key, &plain));
-        if !constant_time_eq(&expected, mac) {
+        if !verification::sha1(&integrity_key, &plain, mac, Self::hmac_len()) {
             return Err(Error::IntegrityCheckFailed);
         }
 
@@ -1290,8 +1272,13 @@ impl Rc4HmacEtype {
     /// Verify an RFC4757 keyed checksum.
     #[inline]
     pub fn verify_checksum(protocol_key: &[u8], data: &[u8], checksum: &[u8], usage: u32) -> bool {
-        Self::checksum(protocol_key, data, usage)
-            .is_ok_and(|expected| constant_time_eq(&expected, checksum))
+        verification::verify_checksum(
+            KerberosEtype::Rc4Hmac(Self),
+            protocol_key,
+            data,
+            checksum,
+            usage,
+        )
     }
 
     /// Encrypt raw bytes with RC4.
@@ -1384,12 +1371,14 @@ impl Rc4HmacEtype {
             &rc4_hmac_usage_to_ms_msg_type(usage),
         ));
         let encryption_key = SecretScratch::new(hmac_md5(&usage_key, checksum));
-        let plain = SecretScratch::new(rc4_hmac_crypt(&encryption_key, encrypted)?);
+        let plain = SecretScratch::for_purpose(
+            rc4_hmac_crypt(&encryption_key, encrypted)?,
+            Purpose::Plaintext,
+        );
 
         let message = strip_confounder(&plain, Self::confounder_len())?;
 
-        let expected = SecretScratch::new(hmac_md5(&usage_key, &plain));
-        if !constant_time_eq(&expected, checksum) {
+        if !verification::md5(&usage_key, &plain, checksum) {
             return Err(Error::IntegrityCheckFailed);
         }
 
@@ -1889,11 +1878,10 @@ where
 
     let last_plain = SecretScratch::new(cbc_decrypt(cipher, &chain_iv, &*completed_last_cipher));
     plaintext.extend_from_slice(&last_plain);
-    let tail_plain = SecretScratch::new(cbc_decrypt(
-        cipher,
-        &completed_last_cipher,
-        penultimate_cipher,
-    ));
+    let tail_plain = SecretScratch::for_purpose(
+        cbc_decrypt(cipher, &completed_last_cipher, penultimate_cipher),
+        Purpose::CtsTail,
+    );
     plaintext.extend_from_slice(&tail_plain);
     if let Some(discarded) = plaintext.get_mut(ciphertext.len()..) {
         discarded.zeroize();
@@ -2232,18 +2220,8 @@ fn hmac_sha384(key: &[u8], data: &[u8]) -> Vec<u8> {
     hmac_any_key::<Hmac<Sha384>, Sha384>(key, data)
 }
 
-/// Compare two byte strings without stopping at the first difference.
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-
-    let mut diff = 0;
-    for (left_byte, right_byte) in left.iter().zip(right) {
-        diff |= left_byte ^ right_byte;
-    }
-    diff == 0
-}
+/// MAC verification boundary.
+mod verification;
 
 /// Rotate `bytes`, read as one big-endian bit string, right by `steps` bits.
 fn rotate_right(bytes: &[u8], steps: usize) -> Vec<u8> {

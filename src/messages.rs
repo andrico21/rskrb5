@@ -1,5 +1,10 @@
 //! Kerberos message/type wrappers that need gokrb5-compatible DER behavior.
 
+/// Signed key-version conversion for encrypted data.
+mod encrypted_data;
+/// Owning boundary for secret-bearing message DER staging.
+pub(crate) mod secret_der;
+
 use core::{
     str::{self},
     time::Duration,
@@ -82,7 +87,7 @@ impl PaForUser {
     /// Returns [`Error::Decode`] when `bytes` is not a DER `PA-FOR-USER`.
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        decode_der("PA-FOR-USER", bytes)
+        decode_named("PA-FOR-USER", bytes)
     }
 
     /// Encode the value as DER.
@@ -126,7 +131,7 @@ impl PaPacOptions {
     /// Returns [`Error::Decode`] when `bytes` is not a DER `PA-PAC-OPTIONS`.
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        decode_der("PA-PAC-OPTIONS", bytes)
+        decode_named("PA-PAC-OPTIONS", bytes)
     }
 
     /// Encode the value as DER.
@@ -176,7 +181,7 @@ impl PaReqEncPaRep {
     /// Returns [`Error::Decode`] when `bytes` is not a DER `PA-REQ-ENC-PA-REP`.
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        decode_der("PA-REQ-ENC-PA-REP", bytes)
+        decode_named("PA-REQ-ENC-PA-REP", bytes)
     }
 
     /// Encode the value as DER.
@@ -187,92 +192,6 @@ impl PaReqEncPaRep {
     #[inline]
     pub fn encode_der(&self) -> Result<Vec<u8>, Error> {
         encode_der("PA-REQ-ENC-PA-REP", self)
-    }
-}
-
-impl EncryptedData {
-    /// Creates a `EncryptedData` from its required fields.
-    #[must_use]
-    #[inline]
-    pub const fn new(etype: i32, cipher: OctetString) -> Self {
-        Self {
-            etype,
-            kvno: None,
-            cipher,
-        }
-    }
-    /// Sets `kvno`, preserving the other fields.
-    #[must_use]
-    #[inline]
-    pub fn with_kvno(mut self, value: Option<Integer>) -> Self {
-        self.kvno = value;
-        self
-    }
-
-    /// Build the preserving wrapper from the upstream rasn Kerberos type.
-    #[inline]
-    pub fn from_rasn(value: rasn_kerberos::EncryptedData) -> Self {
-        Self {
-            etype: value.etype,
-            kvno: value.kvno.map(Integer::from),
-            cipher: value.cipher,
-        }
-    }
-
-    /// Convert to the upstream rasn Kerberos type when `kvno` is a valid `u32`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KvnoOutOfRange`] when `kvno` is negative or does not fit
-    /// a `u32`.
-    #[inline]
-    pub fn try_to_rasn(&self) -> Result<rasn_kerberos::EncryptedData, Error> {
-        Ok(rasn_kerberos::EncryptedData {
-            etype: self.etype,
-            kvno: self.kvno_u32()?,
-            cipher: self.cipher.clone(),
-        })
-    }
-
-    /// Return `kvno` as a signed 32-bit value, matching gokrb5's `int` tests.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KvnoOutOfRange`] when `kvno` does not fit an `i32`.
-    #[inline]
-    pub fn kvno_i32(&self) -> Result<Option<i32>, Error> {
-        self.kvno
-            .as_ref()
-            .map(|kvno| {
-                i32::try_from(kvno)
-                    .ok()
-                    .ok_or_else(|| Error::KvnoOutOfRange {
-                        target: "i32",
-                        kvno: kvno.clone(),
-                    })
-            })
-            .transpose()
-    }
-
-    /// Return `kvno` as the normal non-negative Kerberos `u32` representation.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KvnoOutOfRange`] when `kvno` is negative or does not fit
-    /// a `u32`.
-    #[inline]
-    pub fn kvno_u32(&self) -> Result<Option<u32>, Error> {
-        self.kvno
-            .as_ref()
-            .map(|kvno| {
-                u32::try_from(kvno)
-                    .ok()
-                    .ok_or_else(|| Error::KvnoOutOfRange {
-                        target: "u32",
-                        kvno: kvno.clone(),
-                    })
-            })
-            .transpose()
     }
 }
 
@@ -330,7 +249,7 @@ impl KrbErrorInfo {
     /// errors of [`Self::from_rasn`].
     #[inline]
     pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
-        Self::from_rasn(&decode_der("KRB-ERROR", bytes)?)
+        Self::from_rasn(&decode_named("KRB-ERROR", bytes)?)
     }
 
     /// Build a diagnostic summary from a decoded KRB-ERROR.
@@ -338,8 +257,9 @@ impl KrbErrorInfo {
     /// # Errors
     ///
     /// Returns [`Error::InvalidMessage`] when the protocol version or message type
-    /// is wrong, [`Error::IntegerOutOfRange`] when `cusec` or `susec` does not fit
-    /// a `u32`, [`Error::InvalidString`] when a name, realm or `e-text` is not
+    /// is wrong or a Kerberos time is fractional, [`Error::IntegerOutOfRange`]
+    /// when `cusec` or `susec` is outside `0..=999_999`, [`Error::InvalidString`]
+    /// when a name, realm or `e-text` is not
     /// UTF-8, and [`Error::TimeOverflow`] when `ctime` or `stime` does not fit a
     /// `SystemTime`.
     #[inline]
@@ -376,7 +296,10 @@ impl KrbErrorInfo {
     }
 }
 
-/// Decode a DER value with a typed error.
+/// Decode the first DER value with a typed error, leaving any suffix unchecked.
+///
+/// This raw prefix codec is for fixture and framing work. Named message decoders
+/// require the entire input to contain exactly one value instead.
 ///
 /// # Errors
 ///
@@ -409,7 +332,18 @@ where
     })
 }
 
-use crate::error::Messages as Error;
+use crate::{der::decode_complete, error::Messages as Error};
+
+/// Decode one complete value at a named message boundary.
+///
+/// # Errors
+/// Returns [`Error::Decode`] when decoding fails or trailing bytes remain.
+fn decode_named<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
+where
+    T: Decode,
+{
+    decode_complete(bytes).map_err(|message| Error::Decode { target, message })
+}
 
 /// Check that a decoded protocol integer such as `pvno` equals `expected`.
 ///
@@ -478,7 +412,7 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 /// # Errors
 ///
 /// Returns [`Error::TimeOverflow`] when the time is outside the `SystemTime`
-/// range.
+/// range, or [`Error::InvalidMessage`] when the time is fractional.
 fn system_time_from_kerberos_time(time: &rasn_kerberos::KerberosTime) -> Result<SystemTime, Error> {
     whole_seconds(time)?;
     let seconds = time.0.timestamp();

@@ -116,6 +116,27 @@ mod tests {
         Ok(())
     }
 
+    /// Named semantic decoders reject a second DER value.
+    #[test]
+    fn named_decoders_reject_trailing_value() -> Result<(), TestError> {
+        // Given complete typed values followed by a DER NULL.
+        let suffix = |fixture| -> Result<Vec<u8>, TestError> {
+            let mut bytes = hex::decode(fixture)?;
+            bytes.extend_from_slice(&[0x05, 0]);
+            Ok(bytes)
+        };
+        // When each named decoding boundary receives the concatenation.
+        let rejected = [
+            KrbErrorInfo::decode_der(&suffix(KRB_ERROR)?).is_err(),
+            PaForUser::decode_der(&suffix(PA_FOR_USER)?).is_err(),
+            PaPacOptions::decode_der(&suffix(PA_PAC_OPTIONS_CLAIMS_AND_RBCD)?).is_err(),
+            PaReqEncPaRep::decode_der(&suffix(PA_REQ_ENC_PA_REP)?).is_err(),
+        ];
+        // Then every boundary rejects the unaudited remainder.
+        assert_eq!(rejected, [true; 4]);
+        Ok(())
+    }
+
     /// Preserves the explicitly raw generic prefix decoder's existing contract.
     #[test]
     fn raw_codec_retains_prefix_contract() -> Result<(), TestError> {

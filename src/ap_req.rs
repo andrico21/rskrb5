@@ -6,6 +6,7 @@ use crate::{
     crypto::KerberosEtype,
     der::{decode_complete, trim_zero_padded_der},
     keytab::EncryptionKey,
+    messages::secret_der::SecretDer,
 };
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
@@ -106,8 +107,10 @@ pub fn decrypt_ap_req_authenticator(
     }
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let plaintext =
-        etype.decrypt_message(&key.value, ap_req.authenticator.cipher.as_ref(), usage)?;
+    let plaintext = SecretDer::new(
+        etype.decrypt_message(&key.value, ap_req.authenticator.cipher.as_ref(), usage)?,
+        "ap-req decrypt",
+    );
     decode_authenticator(trim_zero_padded_der(&plaintext))
 }
 
@@ -196,7 +199,7 @@ pub fn build_ap_req_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::ApReq, Error> {
-    let plaintext = encode_authenticator(authenticator)?;
+    let plaintext = SecretDer::new(encode_authenticator(authenticator)?, "ap-req encode");
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher =

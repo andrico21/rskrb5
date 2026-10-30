@@ -6,6 +6,7 @@ use crate::{
     crypto::KerberosEtype,
     der::{decode_complete, trim_zero_padded_der},
     keytab::EncryptionKey,
+    messages::secret_der::SecretDer,
 };
 
 /// Kerberos ticket version.
@@ -80,11 +81,14 @@ pub fn decrypt_ticket_enc_part(
     }
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
-    let plaintext = etype.decrypt_message(
-        &key.value,
-        ticket.enc_part.cipher.as_ref(),
-        KDC_REP_TICKET_USAGE,
-    )?;
+    let plaintext = SecretDer::new(
+        etype.decrypt_message(
+            &key.value,
+            ticket.enc_part.cipher.as_ref(),
+            KDC_REP_TICKET_USAGE,
+        )?,
+        "ticket decrypt",
+    );
     decode_enc_ticket_part(trim_zero_padded_der(&plaintext))
 }
 
@@ -126,7 +130,7 @@ pub fn build_ticket_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::Ticket, Error> {
-    let plaintext = encode_der("EncTicketPart", enc_part)?;
+    let plaintext = SecretDer::new(encode_der("EncTicketPart", enc_part)?, "ticket encode");
     let etype =
         KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(

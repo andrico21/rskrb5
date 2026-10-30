@@ -204,7 +204,8 @@ where
 /// # Errors
 ///
 /// Returns [`Error::Encode`] when the encrypted part cannot be encoded, and the
-/// errors of [`encrypt_krb_priv_enc_part`].
+/// errors of [`encrypt_krb_priv_enc_part`]. Returns [`Error::InvalidMessage`]
+/// for fractional timestamps or microseconds outside `0..=999_999`.
 #[inline]
 pub fn build_krb_priv_with_confounder<P>(
     user_data: P,
@@ -216,6 +217,24 @@ pub fn build_krb_priv_with_confounder<P>(
 where
     P: AsRef<[u8]>,
 {
+    if let Some(timestamp) = &options.timestamp
+        && timestamp.0.timestamp_subsec_nanos() != 0
+    {
+        return Err(Error::InvalidMessage {
+            field: "KerberosTime fraction",
+            expected: 0,
+            actual: timestamp.0.timestamp_subsec_nanos().to_string(),
+        });
+    }
+    if let Some(usec) = &options.usec
+        && !u32::try_from(usec).is_ok_and(|value| value <= 999_999)
+    {
+        return Err(Error::InvalidMessage {
+            field: "usec upper bound (minimum 0)",
+            expected: 999_999,
+            actual: usec.to_string(),
+        });
+    }
     let enc_part = build_enc_krb_priv_part(user_data, options);
     let plaintext = Zeroizing::new(encode_enc_krb_priv_part(&enc_part)?);
     let encrypted_data = encrypt_krb_priv_enc_part(&plaintext, key, kvno, confounder)?;

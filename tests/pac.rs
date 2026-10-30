@@ -655,7 +655,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that the PAC is found inside AD-IF-RELEVANT authorization data.
+    /// Pins rejection of an underdeclared NDR object extent.
     #[test]
     fn ndr_rejects_underdeclared_object_length() -> Result<(), TestError> {
         // Given: a complete device object with its declared extent reduced to zero.
