@@ -414,8 +414,9 @@ pub struct BlockingClient {
 impl fmt::Debug for BlockingClient {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { runtime: _, client } = self;
         f.debug_struct("BlockingNegotiateClient")
-            .field("client", &self.client)
+            .field("client", client)
             .finish_non_exhaustive()
     }
 }

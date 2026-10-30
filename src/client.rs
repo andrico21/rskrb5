@@ -279,13 +279,15 @@ pub struct TgsFastRequestParts {
 impl fmt::Debug for TgsFastRequestParts {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            request,
+            ap_req_der,
+            authenticator_subkey,
+        } = self;
         f.debug_struct("TgsFastRequestParts")
-            .field("request", &self.request)
-            .field("ap_req_der_len", &self.ap_req_der.len())
-            .field(
-                "authenticator_subkey_etype",
-                &self.authenticator_subkey.etype,
-            )
+            .field("request", request)
+            .field("ap_req_der_len", &ap_req_der.len())
+            .field("authenticator_subkey_etype", &authenticator_subkey.etype)
             .finish_non_exhaustive()
     }
 }
@@ -726,17 +728,29 @@ pub struct Tokio {
 impl fmt::Debug for Tokio {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            config,
+            protocol,
+            transport,
+            client,
+            credentials,
+            tgt,
+            tgt_sessions,
+            service_tickets,
+            assume_preauthentication,
+            fast_negotiation,
+        } = self;
         f.debug_struct("TokioClient")
-            .field("config", &self.config)
-            .field("protocol", &self.protocol)
-            .field("transport", &self.transport)
-            .field("client", &self.client)
-            .field("credentials", &self.credentials)
-            .field("has_tgt", &self.tgt.is_some())
-            .field("tgt_sessions", &self.tgt_sessions.len())
-            .field("cached_service_tickets", &self.service_tickets.len())
-            .field("assume_preauthentication", &self.assume_preauthentication)
-            .field("fast_negotiation", &self.fast_negotiation)
+            .field("config", config)
+            .field("protocol", protocol)
+            .field("transport", transport)
+            .field("client", client)
+            .field("credentials", credentials)
+            .field("has_tgt", &tgt.is_some())
+            .field("tgt_sessions", &tgt_sessions.len())
+            .field("cached_service_tickets", &service_tickets.len())
+            .field("assume_preauthentication", assume_preauthentication)
+            .field("fast_negotiation", fast_negotiation)
             .finish()
     }
 }

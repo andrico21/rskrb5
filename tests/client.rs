@@ -111,6 +111,9 @@ mod review_cookie;
 #[cfg(feature = "tokio")]
 #[path = "client/review_diagnostics.rs"]
 mod review_diagnostics;
+#[cfg(feature = "tokio")]
+#[path = "client/review_debug_audit.rs"]
+mod review_debug_audit;
 #[path = "client/review_integrity.rs"]
 mod review_integrity;
 #[cfg(feature = "tokio")]
