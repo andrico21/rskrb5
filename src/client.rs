@@ -51,6 +51,9 @@ pub mod principal;
 #[cfg(feature = "tokio")]
 /// KDC endpoint discovery and asynchronous transport.
 pub mod transport;
+/// In-memory credential-cache replacement.
+#[cfg(feature = "tokio")]
+mod cache_update;
 #[cfg(feature = "tokio")]
 use self::kpasswd::{RequestOptions, build_kpasswd_request, validated_result};
 #[cfg(feature = "tokio")]
@@ -977,24 +980,6 @@ impl Tokio {
             drop(cache.upsert_credential(credential));
         }
         Ok(cache)
-    }
-    /// Replace this client's non-configuration entries in an existing ccache.
-    ///
-    /// X-CACHECONF metadata and entries for other clients are preserved. The
-    /// ccache default principal is set to this client's principal.
-    /// # Errors
-    ///
-    /// Returns [`Error::TimeOverflow`] when a session time does not fit the ccache
-    /// time format.
-    #[inline]
-    pub fn update_ccache(&self, cache: &mut ccache::CCache) -> Result<(), Error> {
-        let client = ccache_principal(&self.client);
-        *cache.default_principal_mut() = client.clone();
-        drop(cache.remove_entries_for_client(&client));
-        for credential in self.ccache_credentials()? {
-            drop(cache.upsert_credential(credential));
-        }
-        Ok(())
     }
     /// Save current TGT and service-ticket state to a fresh ccache file.
     /// # Errors
