@@ -45,6 +45,10 @@ mod cache_insert;
 /// In-memory credential-cache replacement.
 #[cfg(feature = "tokio")]
 mod cache_update;
+/// Owning password input and erasure.
+pub mod password;
+/// Owning password input, erased on drop; see its explicit constructors.
+pub type Password = password::Secret;
 /// Password credential rotation eligibility.
 #[cfg(feature = "tokio")]
 mod password_rotation;
