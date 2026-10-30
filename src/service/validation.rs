@@ -6,13 +6,37 @@ use sha2::{Digest as _, Sha256};
 
 use super::{
     EncryptionKey, Error, Principal, ReplayKey, ValidatedApReq, Validator, abs_duration,
-    ap_req_error, encryption_key_from_rasn, microseconds_to_u32, principal_from_parts,
-    system_time_from_kerberos_time, ticket_error, ticket_start_time, validate_authorization_data,
-    verified_ticket_pac,
+    ap_req_error, encryption_key_from_rasn, kerberos_string_to_string, microseconds_to_u32,
+    principal_from_parts, system_time_from_kerberos_time, ticket_error, ticket_start_time,
+    validate_authorization_data, verified_ticket_pac,
 };
 use crate::{ap_req, ticket};
 
 impl Validator<'_> {
+    /// Enforce RFC 4120 section 2.7 before replay admission.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TransitPolicyRejected`] for unchecked cross-realm or
+    /// nonempty paths without explicit approval, or [`Error::InvalidString`]
+    /// for invalid realms.
+    pub(super) fn validate_transit(
+        &self,
+        service: &Principal,
+        ticket: &rasn_kerberos::EncTicketPart,
+    ) -> Result<(), Error> {
+        let client_realm = kerberos_string_to_string(&ticket.crealm)?;
+        if (client_realm != service.realm || !ticket.transited.contents.is_empty())
+            && !ticket.flags.0.get(12).is_some_and(|bit| *bit)
+            && !self.transit_policy.as_ref().is_some_and(|policy| {
+                policy.accepts(&client_realm, &service.realm, &ticket.transited)
+            })
+        {
+            return Err(Error::TransitPolicyRejected);
+        }
+        Ok(())
+    }
+
     /// Apply a protocol-specific authenticator check before committing replay state.
     ///
     /// # Errors
@@ -129,7 +153,11 @@ impl Validator<'_> {
         };
         let validated = ValidatedApReq {
             client: ticket_client,
-            service: ticket_service,
+            service: Principal {
+                realm: ticket_service.realm,
+                name_type: ticket_service.name_type,
+                components: keytab_components,
+            },
             session_key,
             subkey: authenticator.subkey.as_ref().map(encryption_key_from_rasn),
             sequence_number: authenticator.seq_number,

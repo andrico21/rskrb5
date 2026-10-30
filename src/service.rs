@@ -90,7 +90,8 @@ impl HostAddress {
 pub struct ValidatedApReq {
     /// Client identity from the KDC-authenticated ticket.
     pub client: Principal,
-    /// Service identity from the ticket.
+    /// Realm and components matched by the keytab lookup that decrypted the ticket.
+    /// The name type remains advisory ticket metadata, not an authenticated identity.
     pub service: Principal,
     /// Ticket session key used to decrypt the authenticator.
     pub session_key: EncryptionKey,
@@ -284,7 +285,6 @@ struct DigestRecord {
 
 mod replay;
 mod replay_quota;
-mod transit;
 mod validation;
 
 /// Shareable in-memory AP-REQ replay cache.

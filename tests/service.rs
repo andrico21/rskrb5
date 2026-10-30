@@ -22,6 +22,7 @@ mod pac_ad_win2k;
 mod tests {
     mod configured_skew;
     mod mandatory_pac;
+    mod service_identity;
     mod transit;
 
     use alloc::sync::Arc;
