@@ -215,14 +215,11 @@ impl BlockingClient {
     /// result code.
     /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
-    pub fn change_password<P>(
+    pub fn change_password(
         &mut self,
-        new_password: P,
+        new_password: super::Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime
             .block_on(self.client.change_password(new_password, sender_address))
     }
@@ -239,15 +236,12 @@ impl BlockingClient {
     /// result code.
     /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
-    pub fn change_password_for<P>(
+    pub fn change_password_for(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: super::Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime.block_on(
             self.client
                 .change_password_for(target, new_password, sender_address),
@@ -264,14 +258,11 @@ impl BlockingClient {
     /// server reports a non-success result code.
     /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
-    pub fn change_password_with_options<P>(
+    pub fn change_password_with_options(
         &mut self,
-        new_password: P,
+        new_password: super::Password,
         options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime.block_on(
             self.client
                 .change_password_with_options(new_password, options),
@@ -289,15 +280,12 @@ impl BlockingClient {
     /// server reports a non-success result code.
     /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
-    pub fn change_password_for_with_options<P>(
+    pub fn change_password_for_with_options(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: super::Password,
         options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.runtime
             .block_on(
                 self.client

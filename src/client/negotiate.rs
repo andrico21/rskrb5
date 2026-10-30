@@ -7,7 +7,7 @@ mod runtime;
 
 use runtime::BlockingRuntime;
 
-use super::{Error, KdcProtocol, Principal, RequestOptions, Tokio};
+use super::{Error, KdcProtocol, Password, Principal, RequestOptions, Tokio};
 use crate::{
     config::Config,
     kadmin::ChangePasswordResult,
@@ -295,14 +295,11 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password<P>(
+    pub async fn change_password(
         &mut self,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password(new_password, sender_address)
             .await
@@ -326,15 +323,12 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for<P>(
+    pub async fn change_password_for(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_for(target, new_password, sender_address)
             .await
@@ -356,14 +350,11 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_with_options<P>(
+    pub async fn change_password_with_options(
         &mut self,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_with_options(new_password, options)
             .await
@@ -386,15 +377,12 @@ impl Client {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for_with_options<P>(
+    pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<ChangePasswordResult, Error> {
         self.inner
             .change_password_for_with_options(target, new_password, options)
             .await

@@ -2108,14 +2108,11 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password<P>(
+    pub async fn change_password(
         &mut self,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let (timestamp, cusec) = current_preauth_time()?;
         let sequence_number = random_nonce()?;
         self.change_password_for_with_options(
@@ -2145,15 +2142,12 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for<P>(
+    pub async fn change_password_for(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         sender_address: rasn_kerberos::HostAddress,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let (timestamp, cusec) = current_preauth_time()?;
         let sequence_number = random_nonce()?;
         self.change_password_for_with_options(
@@ -2182,19 +2176,20 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_with_options<P>(
+    pub async fn change_password_with_options(
         &mut self,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         self.change_password_for_with_options(self.client.clone(), new_password, options)
             .await
     }
 
     /// Change the given target principal's password using explicit request metadata.
+    ///
+    /// Takes ownership of the original password allocation and erases it on
+    /// completion, failure, or cancellation. A confirmed change to this client's
+    /// own password retains a separate zeroizing credential for future logins.
     ///
     /// # Errors
     ///
@@ -2212,16 +2207,12 @@ impl Tokio {
     /// password may or may not have changed; treat the outcome as unknown and
     /// verify it (for example with a fresh login) before retrying.
     #[inline]
-    pub async fn change_password_for_with_options<P>(
+    pub async fn change_password_for_with_options(
         &mut self,
         target: Principal,
-        new_password: P,
+        new_password: Password,
         options: RequestOptions,
-    ) -> Result<kadmin::ChangePasswordResult, Error>
-    where
-        P: AsRef<[u8]>,
-    {
-        let new_password_bytes = Zeroizing::new(new_password.as_ref().to_vec());
+    ) -> Result<kadmin::ChangePasswordResult, Error> {
         let client = self.client.clone();
         let service = Principal::new(
             target.realm.clone(),
@@ -2257,7 +2248,7 @@ impl Tokio {
             None => self.get_service_ticket(service).await?,
         };
         let change_data = kadmin::ChangePasswdData::for_target(
-            Password::from_vec(new_password_bytes.to_vec()),
+            Password::from_vec(new_password.as_bytes().to_vec()),
             target.name_type,
             target.components.iter().map(String::as_str),
             &target.realm,
@@ -2277,9 +2268,11 @@ impl Tokio {
         result.ensure_success()?;
 
         if update_password_credential {
-            self.credentials = Some(TokioClientCredentials::Password(new_password_bytes));
+            self.credentials = Some(TokioClientCredentials::Password(Zeroizing::new(
+                new_password.as_bytes().to_vec(),
+            )));
         }
-
+        drop(new_password);
         Ok(result)
     }
 }

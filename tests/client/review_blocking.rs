@@ -101,20 +101,30 @@ mod tests {
                             )
                             .map(drop),
                         client
-                            .change_password(b"new", ipv4_host_address([127, 0, 0, 1]))
-                            .map(drop),
-                        client
-                            .change_password_for(
-                                target.clone(),
-                                b"new",
+                            .change_password(
+                                Password::copy_from_str("new"),
                                 ipv4_host_address([127, 0, 0, 1]),
                             )
                             .map(drop),
                         client
-                            .change_password_with_options(b"new", options.clone())
+                            .change_password_for(
+                                target.clone(),
+                                Password::copy_from_str("new"),
+                                ipv4_host_address([127, 0, 0, 1]),
+                            )
                             .map(drop),
                         client
-                            .change_password_for_with_options(target, b"new", options)
+                            .change_password_with_options(
+                                Password::copy_from_str("new"),
+                                options.clone(),
+                            )
+                            .map(drop),
+                        client
+                            .change_password_for_with_options(
+                                target,
+                                Password::copy_from_str("new"),
+                                options,
+                            )
                             .map(drop),
                     ];
                     results

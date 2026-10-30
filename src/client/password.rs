@@ -1,8 +1,17 @@
 //! Owning password input and erasure.
 
+#[cfg(test)]
+use alloc::sync::Arc;
 use core::fmt;
+#[cfg(test)]
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use zeroize::{Zeroize as _, Zeroizing};
+
+/// Real mutation lifecycle erasure regressions.
+#[cfg(all(test, feature = "tokio"))]
+#[path = "password_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 /// A password allocation erased on drop, with no implicit copying or display.
 ///
@@ -14,7 +23,7 @@ pub struct Secret {
     bytes: Zeroizing<Vec<u8>>,
     /// Observes live bytes after erasure and before deallocation, in unit tests only.
     #[cfg(test)]
-    erased: Option<alloc::sync::Arc<core::sync::atomic::AtomicBool>>,
+    erased: Option<Arc<AtomicBool>>,
 }
 
 impl Secret {
@@ -79,10 +88,7 @@ impl Drop for Secret {
         bytes.as_mut_slice().zeroize();
         #[cfg(test)]
         if let Some(observation) = erased {
-            observation.store(
-                bytes.iter().all(|byte| *byte == 0),
-                core::sync::atomic::Ordering::SeqCst,
-            );
+            observation.store(bytes.iter().all(|byte| *byte == 0), Ordering::SeqCst);
         }
         // Zeroizing also erases spare capacity when the field is dropped.
     }
@@ -99,7 +105,7 @@ impl Drop for Secret {
 mod tests {
     use alloc::sync::Arc;
     use core::{
-        convert::Infallible,
+        error::Error,
         sync::atomic::{AtomicBool, Ordering},
     };
 
@@ -107,9 +113,10 @@ mod tests {
 
     /// The moved Vec allocation, rather than a duplicate, is erased at legitimate Drop.
     #[test]
-    fn original_allocation_is_erased_on_drop() -> Result<(), Infallible> {
+    fn original_allocation_is_erased_on_drop() -> Result<(), Box<dyn Error>> {
         // Given a nonempty Vec with spare capacity and its original allocation identity.
-        let mut original = Vec::with_capacity(128);
+        let mut original = Vec::new();
+        original.try_reserve_exact(128)?;
         original.extend_from_slice(b"original-allocation-canary");
         let address = original.as_ptr().addr();
         let erased = Arc::new(AtomicBool::new(false));
@@ -129,9 +136,9 @@ mod tests {
 
     /// String conversion preserves the allocation and exact UTF-8 bytes.
     #[test]
-    fn string_allocation_is_preserved() -> Result<(), Infallible> {
+    fn string_allocation_is_preserved() -> Result<(), Box<dyn Error>> {
         // Given owned UTF-8 input.
-        let original = String::from("password-\u{e9}");
+        let original = String::from_utf8("password-\u{e9}".as_bytes().to_vec())?;
         let address = original.as_ptr().addr();
         // When ownership is transferred.
         let password = Secret::from_string(original);
@@ -143,9 +150,9 @@ mod tests {
 
     /// Borrowed construction copies bytes and Debug never discloses them.
     #[test]
-    fn borrowed_input_and_debug_are_explicit() -> Result<(), Infallible> {
+    fn borrowed_input_and_debug_are_explicit() -> Result<(), Box<dyn Error>> {
         // Given a distinctive borrowed password.
-        let input = "redaction-canary";
+        let input = core::str::from_utf8(b"redaction-canary")?;
         // When an owning copy is constructed.
         let password = Secret::copy_from_str(input);
         // Then the borrowed input remains unchanged and both Debug forms redact it.

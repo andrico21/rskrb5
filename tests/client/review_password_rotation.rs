@@ -54,7 +54,7 @@ mod tests {
             // When: the server authenticates and confirms a single explicit-target change.
             let changed = client.change_password_for_with_options(
                 target,
-                b"new-passwordvalue",
+                Password::copy_from_str("new-passwordvalue"),
                 RequestOptions::new(timestamp(1_893_553_452)?, 456_789, 42, ipv4_host_address([127, 0, 0, 1])),
             ).await?;
             assert_eq!(changed.code, KPASSWD_SUCCESS);

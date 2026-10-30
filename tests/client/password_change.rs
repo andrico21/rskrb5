@@ -340,7 +340,7 @@ TEST.GOKRB5 = {{
 
             let result = client
                 .change_password_with_options(
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -400,7 +400,7 @@ TEST.GOKRB5 = {{
 
             let result = client
                 .change_password_with_options(
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -477,7 +477,7 @@ TEST.GOKRB5 = {{
                 // When the high-level mutation consumes the response.
                 let result = client
                     .change_password_with_options(
-                        b"newpassword",
+                        Password::copy_from_str("newpassword"),
                         RequestOptions::new(
                             timestamp(1_893_553_452)?,
                             456_789,
@@ -515,7 +515,7 @@ TEST.GOKRB5 = {{
             // When connection establishment fails before sending anything.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -566,7 +566,7 @@ client.cache_service_ticket(ticket)?;
             // When the reply deadline expires after delivery.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -612,7 +612,7 @@ client.cache_service_ticket(ticket)?;
             // When the response is lost, then callers receive an explicit unknown class.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -653,7 +653,7 @@ client.cache_service_ticket(ticket)?;
             // When response parsing fails after delivery.
             let error = client
                 .change_password_with_options(
-                    b"dummy-password",
+                    Password::copy_from_str("dummy-password"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -727,7 +727,7 @@ client.cache_service_ticket(ticket)?;
             let result = client
                 .change_password_for_with_options(
                     target.clone(),
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -778,7 +778,7 @@ client.cache_service_ticket(ticket)?;
 
             let result = client
                 .change_password_with_options(
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -854,7 +854,7 @@ client.cache_service_ticket(ticket)?;
             let result = client
                 .change_password_for_with_options(
                     target,
-                    b"newpassword",
+                    Password::copy_from_str("newpassword"),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -919,7 +919,7 @@ client.cache_service_ticket(ticket)?;
 
         let result = client
             .change_password_with_options(
-                b"newpassword",
+                Password::copy_from_str("newpassword"),
                 RequestOptions::new(
                     timestamp(1_893_553_452)?,
                     456_789,
@@ -1007,12 +1007,16 @@ client.cache_service_ticket(ticket)?;
                 ipv4_host_address([127, 0, 0, 1]),
             );
             let change_target = client
-                .change_password_for_with_options(explicit_target, new_password, options)
+                .change_password_for_with_options(
+                    explicit_target,
+                    Password::from_vec(new_password.to_vec()),
+                    options,
+                )
                 .await
                 .context("change target password succeeds")?;
             let change_self = client
                 .change_password_with_options(
-                    old_password,
+                    Password::from_vec(old_password.to_vec()),
                     RequestOptions::new(
                         timestamp(1_893_553_453)?,
                         456_790,
@@ -1075,7 +1079,7 @@ client.cache_service_ticket(ticket)?;
 
             let change_self_with_new = client
                 .change_password_with_options(
-                    new_password,
+                    Password::from_vec(new_password.to_vec()),
                     RequestOptions::new(
                         timestamp(1_893_553_452)?,
                         456_789,
@@ -1087,7 +1091,7 @@ client.cache_service_ticket(ticket)?;
                 .context("change own password succeeds")?;
             let change_self_with_updated = client
                 .change_password_with_options(
-                    new_password,
+                    Password::from_vec(new_password.to_vec()),
                     RequestOptions::new(
                         timestamp(1_893_553_453)?,
                         456_790,
@@ -1181,7 +1185,7 @@ TEST.GOKRB5 = {{
             for attempt in 0_u64..2 {
                 let Err(error) = client
                     .change_password_with_options(
-                        new_password,
+                        Password::from_vec(new_password.to_vec()),
                         RequestOptions::new(
                             timestamp(1_893_553_452 + attempt)?,
                             456_789,
