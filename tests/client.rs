@@ -119,6 +119,9 @@ mod review_password_rotation;
 #[cfg(feature = "tokio")]
 #[path = "client/review_refresh.rs"]
 mod review_refresh;
+#[cfg(feature = "tokio")]
+#[path = "client/review_renewal_eligibility.rs"]
+mod review_renewal_eligibility;
 #[path = "client/review_reply_constraints.rs"]
 mod review_reply_constraints;
 #[path = "client/review_s4u.rs"]

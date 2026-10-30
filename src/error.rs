@@ -448,6 +448,10 @@ pub enum Client {
         /// Actual session service name.
         service: String,
     },
+    /// Explicit renewal requires a valid renewable ticket with a live renewal horizon.
+    #[cfg(feature = "tokio")]
+    #[error("cached ticket is not eligible for renewal")]
+    TicketNotRenewable,
     /// A high-level client operation needs password/keytab credentials.
     #[cfg(feature = "tokio")]
     #[error("no password or keytab credentials are configured")]

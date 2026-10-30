@@ -1420,7 +1420,7 @@ impl Tokio {
         let key = service_cache_key(&resolved);
         self.service_tickets.remove(&key)
     }
-    /// Drop expired, non-renewable TGT and service-ticket sessions from local caches.
+    /// Drop unusable TGT and service-ticket sessions, including expired renewable tickets.
     #[inline]
     pub fn prune_unusable_sessions(&mut self) -> PrunedSessions {
         self.prune_unusable_sessions_at(SystemTime::now())
@@ -1624,6 +1624,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::NoTgtSession`] when no TGT is cached for `realm`,
+    /// [`Error::TicketNotRenewable`] for an unflagged, invalid, expired or future ticket,
     /// [`Error::InvalidTgtSession`] when the renewed ticket is not a TGT,
     /// [`Error::Random`] when the nonce cannot be generated, and any TGS exchange,
     /// transport or validation error.
@@ -1645,6 +1646,7 @@ impl Tokio {
             self.tgt_sessions.get(realm).cloned()
         }
         .ok_or(Error::NoTgtSession)?;
+        session_renewable_at(&tgt, SystemTime::now()).ok_or(Error::TicketNotRenewable)?;
         let renewed = self
             .transport
             .renew_tgt_with_config(&self.config, self.protocol, &tgt, self.tgs_req_options()?)
