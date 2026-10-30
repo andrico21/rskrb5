@@ -2,6 +2,8 @@
 
 use core::fmt;
 
+#[cfg(feature = "serde")]
+use crate::config::protocol;
 use crate::{
     config::{EnctypeDefaults as _, EnctypeExpr, LibDefaults, ParseMode, ResolvedEnctypes, Toggle},
     crypto::{AesSha1Etype, AesSha2Etype, KerberosEtype},
@@ -96,6 +98,10 @@ impl Policy {
     /// Rejects weak crypto and invalid, disabled, forbidden or empty permitted lists.
     #[inline]
     pub fn from_libdefaults(defaults: &LibDefaults) -> Result<Self, error::Config> {
+        #[cfg(feature = "serde")]
+        for (key, value) in &defaults.protocol_relations {
+            protocol::relation(key, value)?;
+        }
         super::selection::reject_checksum(defaults.safe_checksum_type)?;
         let resolved = defaults.resolve_names(&defaults.permitted_enctypes)?;
         for names in [
