@@ -18,6 +18,15 @@ mod framing;
 pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
     framing::kdc_record_length(header, max)
 }
+/// DNS server literal boundary tests.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod dns_literal_tests;
 /// Single-delivery password mutation transport.
 mod password_delivery;
 /// Configured password endpoint selection.
@@ -223,6 +232,8 @@ impl Tokio {
     /// Select an explicit DNS server using an IP literal and optional port.
     ///
     /// Blank input selects the system resolver. Bare IP literals use port 53.
+    /// An explicit IPv6 port requires brackets, for example `[fd00::1]:5353`.
+    /// Bare `fd00::1:5353` is an IPv6 address using the default port 53.
     ///
     /// # Errors
     ///
@@ -2351,6 +2362,9 @@ async fn resolve_dns_endpoint_host(
 }
 
 /// Parse an `ip` or `ip:port` DNS server literal, defaulting to port 53.
+///
+/// Explicit IPv6 ports require `[address]:port`; an unbracketed IPv6 literal
+/// always uses port 53, even if its last component looks like a port.
 ///
 /// # Errors
 ///
