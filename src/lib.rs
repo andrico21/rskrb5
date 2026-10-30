@@ -71,7 +71,8 @@ pub mod ap_req;
 pub mod ccache;
 #[cfg(feature = "messages")]
 pub mod client;
-pub mod config;
+#[path = "config.rs"]
+pub mod configuration;
 pub mod crypto;
 #[cfg(feature = "messages")]
 /// DER helpers: trimming zero padding after a top-level DER value.
@@ -113,6 +114,7 @@ pub use client::negotiate::{BlockingClient as BlockingNegotiateClient, Client as
 #[cfg(feature = "messages")]
 pub use client::principal::Principal;
 pub use config::Config;
+pub use configuration as config;
 #[cfg(feature = "messages")]
 pub use service::Validator as ServiceValidator;
 

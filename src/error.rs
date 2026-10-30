@@ -562,6 +562,43 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// An enctype expression contains a name or operator outside MIT's vocabulary.
+    #[error("unknown enctype expression token: {token}")]
+    UnknownEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+    },
+    /// An explicit positive legacy term lacks its family's runtime permission.
+    #[error("disabled enctype expression token: {token}")]
+    DisabledEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+    },
+    /// An explicit positive insecure term is permanently forbidden.
+    #[error("enctype expression token {token}: {source}")]
+    RejectedEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+        /// Permanent typed policy refusal, retained as a causal error.
+        source: Policy,
+    },
+    /// Strict mode rejects a secure encryption type that is not implemented yet.
+    #[error("unsupported secure enctype expression token {token}; unavailable until {until}")]
+    UnsupportedSecureEnctype {
+        /// Original token with its prefix and spelling intact.
+        token: String,
+        /// Work package implementing this encryption type.
+        until: &'static str,
+    },
+    /// The resolved expression cannot permit any encryption type.
+    #[error("enctype expression resolves to an empty list")]
+    EmptyEnctypeExpression,
+    /// Input exceeds the expression parser's allocation budget.
+    #[error("enctype expression exceeds {maximum} bytes")]
+    EnctypeExpressionTooLarge {
+        /// Maximum accepted UTF-8 byte length.
+        maximum: usize,
+    },
     /// A requested cryptographic feature violates permanent policy.
     #[error("policy error: {0}")]
     Policy(#[from] Policy),

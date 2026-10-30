@@ -469,6 +469,10 @@ where
 }
 
 include!("config/toggle.rs");
+/// Configuration parsing modes and diagnostics.
+#[path = "config/diagnostic.rs"]
+pub mod diagnostic;
+include!("config/enctype_expr.rs");
 
 /// `[libdefaults]` configuration values.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2440,7 +2444,7 @@ mod fork_tests {
     /// harness's own output.
     const PROBE_PREFIX: &str = "rskrb5-probe:";
     /// This probe test's name in this binary, for the child's `--exact`.
-    const PROBE_TEST: &str = "config::fork_tests::env_free_fields_probe_child";
+    const PROBE_TEST: &str = "configuration::fork_tests::env_free_fields_probe_child";
     /// The hostile `UID` the parent gives the child.
     const HOSTILE_UID: &str = "4242";
     /// The hostile `HOME` the parent gives the child.
