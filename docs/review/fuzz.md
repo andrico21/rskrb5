@@ -154,6 +154,8 @@ does.
 
 | Function | Source | Fuzz target | Reason |
 | --- | --- | --- | --- |
+| `rskrb5_ng::client::crypto_policy::ready` | `src/client/crypto_policy.rs` | - | Runtime policy readiness check, not a byte parser. |
+| `rskrb5_ng::krb_cred::import::decode_decrypt` | `src/krb_cred/import.rs` | `krb_messages` | |
 | `rskrb5_ng::ap_rep::decode` | `src/ap_rep.rs` | `krb_messages` |  |
 | `rskrb5_ng::ap_rep::decode_der` | `src/ap_rep.rs` | `krb_messages` |  |
 | `rskrb5_ng::ap_rep::decode_enc_ap_rep_part` | `src/ap_rep.rs` | `krb_messages` |  |
