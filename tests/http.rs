@@ -1,7 +1,7 @@
 //! HTTP Negotiate helper, client wrapper and Tower layer tests against the gokrb5 vectors.
 #![cfg(feature = "http")]
 
-#[cfg(any(feature = "tokio", feature = "tower"))]
+#[cfg(feature = "tokio")]
 extern crate alloc;
 #[path = "support/context.rs"]
 mod context;
