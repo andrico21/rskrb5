@@ -1498,7 +1498,14 @@ impl Tokio {
             .collect::<Vec<_>>();
         serde_json::to_string_pretty(&tickets)
     }
-    /// Insert or replace a service ticket in the cache.
+    /// Cache a service ticket, retaining the better entry for the same service.
+    ///
+    /// A currently valid session wins over an invalid one. If both have the same
+    /// validity, the later end time wins; ties retain the cached session. Thus a
+    /// shorter-lived valid candidate does not replace a longer-lived valid entry.
+    /// To force replacement, first call [`Self::remove_cached_service_ticket`]
+    /// for the service, then insert the candidate. Removal and insertion are
+    /// separate operations; a rejected insertion does not restore a removed ticket.
     ///
     /// Client realm and ordered components must match; advisory name type is ignored.
     /// Rejection leaves the cache unchanged.
@@ -1508,7 +1515,15 @@ impl Tokio {
     pub fn cache_service_ticket(&mut self, ticket: TgsRepSession) -> Result<(), Error> {
         cache_insert::service_ticket(self, ticket)
     }
-    /// Insert or replace a TGT session in the realm-keyed session cache.
+    /// Cache a TGT session, retaining the better entry for the same target realm.
+    ///
+    /// A currently valid session wins over an invalid one. If both have the same
+    /// validity, the later end time wins; ties retain the cached session. Thus a
+    /// shorter-lived valid candidate does not replace a longer-lived valid entry.
+    /// To force replacement, first call [`Self::remove_tgt_session_for_realm`],
+    /// then insert the candidate. For the client's home realm, removal clears
+    /// both the realm-keyed entry and primary TGT. These are separate operations;
+    /// a rejected insertion does not restore a removed TGT.
     ///
     /// Client realm and ordered components must match; advisory name type is ignored.
     /// Rejection leaves both the primary and realm-keyed caches unchanged.

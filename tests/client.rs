@@ -104,6 +104,9 @@ mod review_cache_identity;
 #[cfg(feature = "tokio")]
 #[path = "client/review_cache_update.rs"]
 mod review_cache_update;
+#[cfg(feature = "tokio")]
+#[path = "client/review_cache_replacement.rs"]
+mod review_cache_replacement;
 #[path = "client/review_canonical.rs"]
 mod review_canonical;
 #[path = "client/review_cookie.rs"]
