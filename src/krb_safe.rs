@@ -2,7 +2,7 @@
 
 use rasn::{der, types::Integer};
 
-use crate::{crypto::KerberosEtype, der::decode_complete, keytab::EncryptionKey};
+use crate::{crypto::selection, der::decode_complete, keytab::EncryptionKey};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -68,8 +68,7 @@ pub fn checksum(
     body: &rasn_kerberos::KrbSafeBody,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::Checksum, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let input = checksum_input(
         body,
         &Integer::from(KRB5_PVNO),
@@ -96,7 +95,7 @@ pub fn verify_krb_safe_checksum(
     krb_safe: &rasn_kerberos::KrbSafe,
     key: &EncryptionKey,
 ) -> Result<(), Error> {
-    let etype = KerberosEtype::from_checksum_type_id(krb_safe.cksum.r#type)
+    let etype = selection::checksum(krb_safe.cksum.r#type)?
         .ok_or(Error::UnsupportedChecksumType(krb_safe.cksum.r#type))?;
     if etype.etype_id() != key.etype {
         return Err(Error::KeyChecksumTypeMismatch {

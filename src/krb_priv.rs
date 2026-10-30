@@ -4,7 +4,7 @@ use rasn::{der, types::Integer};
 use zeroize::Zeroizing;
 
 use crate::{
-    crypto::KerberosEtype,
+    crypto::selection,
     der::{decode_complete, trim_zero_padded_der},
     keytab::EncryptionKey,
 };
@@ -192,8 +192,7 @@ pub fn build<P>(
 where
     P: AsRef<[u8]>,
 {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     build_krb_priv_with_confounder(user_data, options, key, kvno, &confounder)
@@ -217,6 +216,7 @@ pub fn build_krb_priv_with_confounder<P>(
 where
     P: AsRef<[u8]>,
 {
+    selection::reject_enctype(key.etype)?;
     if let Some(timestamp) = &options.timestamp
         && timestamp.0.timestamp_subsec_nanos() != 0
     {
@@ -259,8 +259,7 @@ pub fn encrypt_krb_priv_enc_part(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(
         &key.value,
         plaintext,
@@ -294,7 +293,7 @@ pub fn decrypt_krb_priv_enc_part(
         });
     }
 
-    let etype = KerberosEtype::from_etype_id(krb_priv.enc_part.etype)
+    let etype = selection::enctype(krb_priv.enc_part.etype)?
         .ok_or(Error::UnsupportedEtype(krb_priv.enc_part.etype))?;
     let plaintext = Zeroizing::new(etype.decrypt_message(
         &key.value,
