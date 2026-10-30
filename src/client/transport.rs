@@ -46,6 +46,7 @@ use super::{
     service_realm, tgt_realm,
 };
 use crate::{
+    client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
     config::Config,
     error::Config as ConfigError,
     kadmin,
@@ -933,6 +934,11 @@ impl Tokio {
 
     /// Send a framed kpasswd request through Tokio transport and parse the reply.
     ///
+    /// # Security
+    /// This raw API does not authenticate AP-REP or validate protected reply
+    /// controls. Use [`Self::exchange_kpasswd_result`] for a checked outcome.
+    /// An unsigned result is diagnostic data, never confirmation of rejection.
+    ///
     /// # Errors
     ///
     /// Returns an error when the request cannot be encoded, the errors of
@@ -962,6 +968,11 @@ impl Tokio {
     }
 
     /// Send a framed kpasswd request to a configured kpasswd server and parse the reply.
+    ///
+    /// # Security
+    /// This raw API only parses the response. Use
+    /// [`Self::exchange_kpasswd_result_with_config`] to authenticate its context
+    /// before treating its result as a confirmed password-change outcome.
     ///
     /// # Errors
     ///
@@ -995,9 +1006,12 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Self::exchange_kpasswd_request`], an error when
-    /// the result cannot be decrypted with `reply_key`, and an error when the
-    /// server reports a non-success result code.
+    /// Returns the pre-delivery errors of [`Self::exchange_kpasswd_request`].
+    /// After possible delivery, decryption, AP-REP, freshness, sequence,
+    /// address, reflection and unsigned-result failures are wrapped exactly
+    /// once in [`Error::KpasswdOutcomeUnknown`]. Only an authenticated,
+    /// contextually valid rejection returns `Kadmin::PasswordChangeFailed`.
+    /// Server-selected AP-REP subkeys are honored.
     ///
     /// # Cancel safety
     ///
@@ -1010,25 +1024,27 @@ impl Tokio {
         &self,
         protocol: KdcProtocol,
         addr: A,
-        request: &kadmin::Request,
-        reply_key: &EncryptionKey,
+        request: &BuiltKpasswdRequest,
+        options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error>
     where
         A: ToSocketAddrs + Clone,
     {
         let reply = self
-            .exchange_kpasswd_request(protocol, addr, request)
+            .exchange_kpasswd_request(protocol, addr, &request.request)
             .await?;
-        password_result::checked(&reply, reply_key)
+        password_result::checked(&reply, request, options)
     }
 
     /// Send a framed kpasswd request to a configured server and return a checked result.
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Self::exchange_kpasswd_request_with_config`], an
-    /// error when the result cannot be decrypted with `reply_key`, and an error
-    /// when the server reports a non-success result code.
+    /// Returns the pre-delivery errors of [`Self::exchange_kpasswd_request_with_config`]
+    /// and the same authenticated outcome classification as
+    /// [`Self::exchange_kpasswd_result`]. Invalid or unauthenticated replies
+    /// after delivery return exactly one [`Error::KpasswdOutcomeUnknown`];
+    /// only a contextually valid authenticated rejection is definite.
     ///
     /// # Cancel safety
     ///
@@ -1042,13 +1058,13 @@ impl Tokio {
         config: &Config,
         protocol: KdcProtocol,
         realm: &str,
-        request: &kadmin::Request,
-        reply_key: &EncryptionKey,
+        request: &BuiltKpasswdRequest,
+        options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
         let reply = self
-            .exchange_kpasswd_request_with_config(config, protocol, realm, request)
+            .exchange_kpasswd_request_with_config(config, protocol, realm, &request.request)
             .await?;
-        password_result::checked(&reply, reply_key)
+        password_result::checked(&reply, request, options)
     }
 
     /// Send an AS-REQ through Tokio transport and process the returned AS-REP.

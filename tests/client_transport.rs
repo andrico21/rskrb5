@@ -18,7 +18,6 @@ use rskrb5_ng::{
     config::Config,
     error::{Client as ClientError, Kadmin as KadminError},
     kadmin::{KPASSWD_AUTHERROR, KPASSWD_SUCCESS, Request as KpasswdRequest},
-    keytab::EncryptionKey,
 };
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
@@ -40,8 +39,11 @@ const KPASSWD_HEADER_LEN: usize = 6;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    /// Real-key kpasswd request and response fixtures.
+    #[path = "../client_transport/kpasswd_context.rs"]
+    mod kpasswd_context;
     /// Checked password result regressions.
-    #[path = "client_transport_password_results.rs"]
+    #[path = "../client_transport/client_transport_password_results.rs"]
     mod password_results;
     use core::{fmt, net::SocketAddr};
     use std::{
@@ -699,7 +701,6 @@ mod tests {
         })
     }
 
-
     /// Pins that a realm send over TCP moves on to the next configured KDC when the first refuses.
     #[test]
     fn tokio_transport_tries_next_configured_kdc_after_tcp_failure() -> Result<(), TestError> {
@@ -972,11 +973,6 @@ mod tests {
             e_data: Some(e_data.into()),
         };
         Ok(der::encode(&error).map_err(|cause| format!("KRB-ERROR encodes: {cause}"))?)
-    }
-
-    /// Returns an all-zero AES256 reply key; the stub replies are never decrypted with it.
-    fn reply_key() -> EncryptionKey {
-        EncryptionKey::new(18, vec![0; 32])
     }
 
     /// Frames `body` as a kpasswd reply with the given AP-REP length.
