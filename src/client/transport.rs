@@ -19,6 +19,8 @@ mod framing;
 pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
     framing::kdc_record_length(header, max)
 }
+/// Single-delivery password mutation transport.
+mod password_delivery;
 /// Configured password endpoint selection.
 mod password_discovery;
 /// Password result consumption after a transport exchange.
@@ -768,69 +770,7 @@ impl Tokio {
     where
         A: ToSocketAddrs + Clone,
     {
-        match protocol {
-            KdcProtocol::Tcp => {
-                let _length = tcp_request_length(request.len(), TcpFraming::Kpasswd)?;
-                let mut stream = self.with_transport_timeout(Self::connect_tcp(addr)).await?;
-                self.with_transport_timeout(self.exchange_tcp_framed(
-                    &mut stream,
-                    request,
-                    TcpFraming::Kpasswd,
-                ))
-                .await
-                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
-            }
-            KdcProtocol::Udp | KdcProtocol::Auto => {
-                if request.len() > MAX_UDP_DATAGRAM {
-                    return Err(Error::UdpRequestTooLarge {
-                        actual: request.len(),
-                        limit: MAX_UDP_DATAGRAM,
-                    });
-                }
-                let socket = self
-                    .with_transport_timeout(async {
-                        let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
-                        for candidate in lookup_host(addr).await? {
-                            let wildcard = if candidate.is_ipv4() {
-                                "0.0.0.0:0"
-                            } else {
-                                "[::]:0"
-                            };
-                            let result = async {
-                                let socket = UdpSocket::bind(wildcard).await?;
-                                socket.connect(candidate).await?;
-                                Ok::<_, io::Error>(socket)
-                            }
-                            .await;
-                            match result {
-                                Ok(socket) => return Ok(socket),
-                                Err(error) => last_error = error,
-                            }
-                        }
-                        Err(Error::Io(last_error))
-                    })
-                    .await?;
-                self.with_transport_timeout(async {
-                    let _: usize = socket.send(request).await?;
-                    let mut response = vec![
-                        0;
-                        self.udp_response_limit
-                            .min(usize::from(u16::MAX))
-                            .saturating_add(1)
-                    ];
-                    let length = socket.recv(&mut response).await?;
-                    if length > self.udp_response_limit {
-                        return Err(Error::UdpResponseTooLarge {
-                            limit: self.udp_response_limit,
-                        });
-                    }
-                    response.truncate(length);
-                    non_empty_kdc_response(response)
-                })
-                .await
-                .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
-            }
-        }
+        password_delivery::send(self, protocol, addr, request).await
     }
 
     /// Send to configured KDC endpoints using KDC framing.

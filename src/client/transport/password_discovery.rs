@@ -47,9 +47,10 @@ pub(super) async fn discover(
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use core::error::Error as StdError;
+
     use super::{Config, Error, KdcProtocol, Tokio};
     use crate::error::Config as ConfigError;
-    use core::error::Error as StdError;
 
     /// Missing realms and emptied lists preserve exact configuration errors.
     #[tokio::test]
