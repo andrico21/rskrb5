@@ -610,16 +610,6 @@ pub enum Config {
         /// Config value.
         value: String,
     },
-    /// An IP address was invalid.
-    #[error("invalid IP address for {key} on line {line}: {value}")]
-    InvalidIpAddress {
-        /// Line number.
-        line: usize,
-        /// Config key.
-        key: String,
-        /// Config value.
-        value: String,
-    },
     /// The realms section has invalid brace structure.
     #[error("invalid realms section: {0}")]
     InvalidRealmsSection(String),

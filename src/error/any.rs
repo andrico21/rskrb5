@@ -6,9 +6,6 @@ pub enum Any {
     #[cfg(feature = "evaluation")]
     #[error("fixture hex decode failed: {0}")]
     Hex(#[from] hex::FromHexError),
-    /// A candidate ASN.1/DER decoder failed.
-    #[error("candidate decode failed: {0}")]
-    Decode(String),
     /// Keytab parsing or serialization failed.
     #[error("keytab error: {0}")]
     Keytab(#[from] Keytab),
