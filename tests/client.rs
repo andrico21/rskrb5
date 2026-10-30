@@ -124,6 +124,8 @@ mod review_diagnostics;
 mod review_discovery;
 #[path = "client/review_integrity.rs"]
 mod review_integrity;
+#[path = "client/review_keytab_selection.rs"]
+mod review_keytab_selection;
 #[path = "client/review_optimistic.rs"]
 mod review_optimistic;
 #[cfg(feature = "tokio")]

@@ -2,10 +2,49 @@
 
 use super::{
     AsReq, BuiltAsReq, EncryptionKey, Error, KDC_ERR_PREAUTH_REQUIRED, KdcError, KerberosEtype,
-    Keytab, PA_FX_COOKIE, Principal, build_as_req, build_preauthenticated_as_req,
+    Keytab, PA_FX_COOKIE, PreauthKeyInfo, Principal, build_as_req, build_preauthenticated_as_req,
     derive_password_reply_key, preauth_retry_options, process_kdc_error, select_keytab_reply_key,
     select_preauth_key_info,
 };
+use crate::error::Keytab as KeytabError;
+
+/// Choose the first requested/offered enctype with a key for the exact client identity.
+///
+/// # Errors
+/// Returns [`Error::NoSupportedPreauthEtype`] for an empty intersection; other keytab errors propagate.
+fn challenge_key(
+    keytab: &Keytab,
+    client: &Principal,
+    error: &KdcError,
+    requested: &[i32],
+) -> Result<(EncryptionKey, u32), Error> {
+    for etype in requested {
+        if KerberosEtype::from_etype_id(*etype).is_none() {
+            continue;
+        }
+        let info = error
+            .preauth_key_info
+            .iter()
+            .find(|info| info.etype == *etype);
+        if !error.preauth_key_info.is_empty() && info.is_none() {
+            continue;
+        }
+        let fallback = PreauthKeyInfo::new(*etype);
+        match select_keytab_reply_key(keytab, client, info.unwrap_or(&fallback)) {
+            Ok(selected) => return Ok(selected),
+            Err(Error::Keytab(KeytabError::NoMatchingKey {
+                principal: _,
+                realm: _,
+                kvno: _,
+                etype: _,
+            })) => {}
+            Err(source) => return Err(source),
+        }
+    }
+    Err(Error::NoSupportedPreauthEtype {
+        requested: requested.to_vec(),
+    })
+}
 
 /// RFC 4120 `KDC_ERR_PREAUTH_FAILED`.
 const PREAUTH_FAILED: i32 = 24;
@@ -112,8 +151,7 @@ pub(super) fn keytab_preauth_request(
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
     let error = challenge(kdc_error_bytes, &requested)?;
-    let key_info = select_preauth_key_info(&error, &requested.etypes)?;
-    let (reply_key, kvno) = select_keytab_reply_key(keytab, &client, &key_info)?;
+    let (reply_key, kvno) = challenge_key(keytab, &client, &error, &requested.etypes)?;
     let options = preauth_retry_options(requested, &error.method_data);
     let request = build_preauthenticated_as_req(client, service, options, &reply_key, Some(kvno))?;
     Ok((request, reply_key))
