@@ -35,7 +35,7 @@ pub(super) async fn send_to_endpoints(
         match result {
             Ok(response) => return Ok(response),
             Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
-            Err(error) => failures.push(error.to_string()),
+            Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),
         }
     }
     Err(Error::KdcEndpointFailures {
@@ -128,5 +128,66 @@ where
                 .await
                 .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))
         }
+    }
+}
+
+/// Endpoint attribution before any request can be delivered.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::error::Error as StdError;
+
+    use tokio::net::TcpListener;
+
+    use super::{Error, KdcEndpoint, KdcProtocol, Tokio, send_to_endpoints};
+
+    /// Every pre-delivery failure identifies the endpoint that failed.
+    #[tokio::test]
+    async fn password_failures_name_each_endpoint() -> Result<(), Box<dyn StdError>> {
+        // Given two distinct closed loopback endpoints.
+        let first = TcpListener::bind("127.0.0.1:0").await?;
+        let second = TcpListener::bind("127.0.0.1:0").await?;
+        let addresses = [
+            first.local_addr()?.to_string(),
+            second.local_addr()?.to_string(),
+        ];
+        drop(first);
+        drop(second);
+        let endpoints = addresses
+            .iter()
+            .map(|address| KdcEndpoint::configured(KdcProtocol::Tcp, address))
+            .collect::<Result<Vec<_>, _>>()?;
+        // When failover exhausts both without sending a mutation.
+        let outcome = send_to_endpoints(
+            &Tokio::new(),
+            "TEST.GOKRB5",
+            KdcProtocol::Tcp,
+            endpoints,
+            b"request",
+        )
+        .await;
+        // Then each diagnostic is attributed to its original authority.
+        match outcome {
+            Err(Error::KdcEndpointFailures {
+                realm: _,
+                protocol: _,
+                failures,
+            }) => {
+                assert_eq!(failures.len(), 2);
+                for (failure, address) in failures.iter().zip(addresses) {
+                    assert!(
+                        failure.starts_with(&format!("{address}: ")),
+                        "missing endpoint attribution"
+                    );
+                }
+            }
+            other => return Err(format!("unexpected outcome: {other:?}").into()),
+        }
+        Ok(())
     }
 }
