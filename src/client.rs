@@ -48,6 +48,9 @@ mod cache_update;
 /// Password credential rotation eligibility.
 #[cfg(feature = "tokio")]
 mod password_rotation;
+/// TGT session metadata serialization.
+#[cfg(all(feature = "tokio", feature = "serde"))]
+mod session_json;
 /// TGT refresh scheduling.
 #[cfg(feature = "tokio")]
 mod refresh_schedule;
@@ -1442,12 +1445,7 @@ impl Tokio {
     #[cfg(feature = "serde")]
     #[inline]
     pub fn sessions_json(&self) -> Result<String, serde_json::Error> {
-        let sessions = self
-            .tgt_sessions
-            .values()
-            .map(session_json_entry)
-            .collect::<Vec<_>>();
-        serde_json::to_string_pretty(&sessions)
+        session_json::render(self)
     }
     /// Return public service-ticket cache metadata as pretty-printed JSON.
     /// # Errors
@@ -2263,23 +2261,6 @@ impl Tokio {
     }
 }
 
-/// JSON shape of one TGT session in [`Tokio::sessions_json`].
-#[cfg(all(feature = "tokio", feature = "serde"))]
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct SessionJsonEntry {
-    /// Realm the TGT is issued for.
-    realm: String,
-    /// Initial authentication time (RFC 3339).
-    auth_time: String,
-    /// Ticket end time (RFC 3339).
-    end_time: String,
-    /// Renewable-until time, or the end time when not renewable (RFC 3339).
-    renew_till: String,
-    /// Session key expiration, or the end time when absent (RFC 3339).
-    session_key_expiration: String,
-}
-
 /// JSON shape of one service ticket in [`Tokio::service_ticket_cache_json`].
 #[cfg(all(feature = "tokio", feature = "serde"))]
 #[derive(Debug, serde::Serialize)]
@@ -2296,18 +2277,6 @@ struct ServiceTicketJsonEntry {
     end_time: String,
     /// Renewable-until time, or the end time when not renewable (RFC 3339).
     renew_till: String,
-}
-
-/// JSON entry for one TGT session.
-#[cfg(all(feature = "tokio", feature = "serde"))]
-fn session_json_entry(session: &AsRepSession) -> SessionJsonEntry {
-    SessionJsonEntry {
-        realm: session.service.realm.clone(),
-        auth_time: json_time(session.auth_time),
-        end_time: json_time(session.end_time),
-        renew_till: json_time(session.renew_till.unwrap_or(session.end_time)),
-        session_key_expiration: json_time(session.key_expiration.unwrap_or(session.end_time)),
-    }
 }
 
 /// JSON entry for one service ticket.
