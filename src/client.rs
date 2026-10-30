@@ -2010,8 +2010,9 @@ impl Tokio {
     pub async fn spnego_context_with_options(
         &mut self,
         service: Principal,
-        options: spnego::InitiatorContextOptions,
+        mut options: spnego::InitiatorContextOptions,
     ) -> Result<spnego::InitiatorContext, Error> {
+        options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
         let ticket = self.get_service_ticket(service).await?;
         Ok(spnego::init_sec_context(&ticket, options)?)
     }

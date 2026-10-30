@@ -95,3 +95,38 @@ mod client;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod client_effects;
+
+/// Independently encrypted reply policy isolation fixtures.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/reply_isolation.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod reply_isolation;
+
+/// Explicit legacy permission propagation through SPNEGO.
+#[cfg(test)]
+#[cfg(all(feature = "tokio", feature = "spnego"))]
+#[path = "policy/legacy_context.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod legacy_context;
+
+/// Checked import must not call public policy-free conversion entry points.
+#[cfg(test)]
+#[path = "policy/import_guard.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod import_guard;

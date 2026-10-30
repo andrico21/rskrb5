@@ -7,10 +7,86 @@ use rasn_kerberos::{
 use rskrb5_ng::{
     Config,
     crypto::{CryptoPolicy, Use},
-    error::{Crypto, Policy},
+    error::{Crypto, Policy, RejectedFeature},
     keytab::EncryptionKey,
     krb_cred::import,
 };
+
+/// Raw conversion preserves legacy wire records while checked import refuses admission.
+#[test]
+fn raw_conversion_preserves_records_without_granting_permission() -> Result<(), Box<dyn Error>> {
+    use rasn::types::GeneralString;
+    use rasn_kerberos::{PrincipalName, Ticket};
+    use rskrb5_ng::krb_cred::decrypted_krb_cred_to_ccache_credentials;
+    // Given a historical single-DES record with representable identities and times.
+    let realm = GeneralString::try_from("EXAMPLE.COM")?;
+    let name = PrincipalName {
+        r#type: 1,
+        string: vec![GeneralString::try_from("alice")?],
+    };
+    let info = KrbCredInfo {
+        key: WireKey {
+            r#type: 1,
+            value: vec![0_u8; 8].into(),
+        },
+        prealm: Some(realm.clone()),
+        pname: Some(name.clone()),
+        flags: None,
+        auth_time: None,
+        start_time: None,
+        end_time: None,
+        renew_till: None,
+        srealm: Some(realm.clone()),
+        sname: Some(name.clone()),
+        caddr: None,
+    };
+    let part = EncKrbCredPart {
+        ticket_info: vec![info],
+        nonce: None,
+        timestamp: None,
+        usec: None,
+        sender_address: None,
+        recipient_address: None,
+    };
+    let ticket = Ticket {
+        tkt_vno: Integer::from(5_i32),
+        realm,
+        sname: name,
+        enc_part: EncryptedData {
+            etype: 1,
+            kvno: None,
+            cipher: vec![0_u8; 8].into(),
+        },
+    };
+    let cred = KrbCred {
+        pvno: Integer::from(5_i32),
+        msg_type: Integer::from(22_i32),
+        tickets: vec![ticket],
+        enc_part: EncryptedData {
+            etype: 0,
+            kvno: None,
+            cipher: Vec::new().into(),
+        },
+    };
+    // When using explicit representation conversion versus checked import.
+    let raw = decrypted_krb_cred_to_ccache_credentials(&cred, &part)?;
+    let failure = import::decrypted(&CryptoPolicy::default(), &cred, &part)
+        .err()
+        .ok_or("insecure import admitted")?;
+    // Then preservation grants no permission; checked import retains the D2 cause.
+    assert_eq!(raw.first().ok_or("raw record")?.key.etype, 1_i32);
+    let crypto = failure.source().ok_or("crypto cause")?;
+    assert!(matches!(
+        crypto
+            .source()
+            .and_then(|source| source.downcast_ref::<Policy>()),
+        Some(Policy::RejectedFeature {
+            feature: RejectedFeature::SingleDes,
+            reason: _
+        })
+    ));
+    Ok(())
+}
 
 /// Semantic import refuses an excluded wrapping key before ciphertext processing.
 #[test]

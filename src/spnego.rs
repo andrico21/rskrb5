@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
     client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
-    crypto::KerberosEtype,
+    crypto::{CryptoPolicy, KerberosEtype, Use},
     error,
     keytab::EncryptionKey,
     service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
@@ -1475,6 +1475,8 @@ impl Token {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InitiatorContextOptions {
+    /// Runtime policy passed to AP construction; secure defaults when absent.
+    pub crypto_policy: Option<CryptoPolicy>,
     /// GSS-API context flags to place in the authenticator checksum.
     pub context_flags: Vec<u32>,
     /// AP-REQ option bit string.
@@ -1490,11 +1492,19 @@ pub struct InitiatorContextOptions {
 }
 
 impl InitiatorContextOptions {
+    /// Set explicit enctype permission for this initiator context.
+    #[inline]
+    #[must_use]
+    pub fn with_crypto_policy(mut self, policy: CryptoPolicy) -> Self {
+        self.crypto_policy = Some(policy);
+        self
+    }
     #[must_use]
     /// Construct options matching gokrb5's default HTTP SPNEGO flags.
     #[inline]
     pub fn new() -> Self {
         Self {
+            crypto_policy: None,
             context_flags: vec![CONTEXT_FLAG_INTEG, CONTEXT_FLAG_CONF],
             ap_option_bits: 0,
             subkey: None,
@@ -1883,6 +1893,11 @@ pub fn init_sec_context(
     service_ticket: &TgsRepSession,
     mut options: InitiatorContextOptions,
 ) -> Result<InitiatorContext, Error> {
+    let policy = options.crypto_policy.clone().unwrap_or_default();
+    policy.check_use(service_ticket.session_key.etype, Use::SessionKey)?;
+    if let Some(subkey) = &options.subkey {
+        policy.check_use(subkey.etype, Use::SessionKey)?;
+    }
     let (timestamp, cusec) = current_time()?;
     if options.sequence_number.is_none() {
         options.sequence_number = Some(random_sequence_number()?);
@@ -1920,7 +1935,7 @@ pub fn init_sec_context_with_confounder(
     let sequence_number = options
         .sequence_number
         .ok_or(Error::MissingAuthenticatorSequence)?;
-    let ap_req_options = ApReq::new()
+    let mut ap_req_options = ApReq::new()
         .with_ap_option_bits(options.ap_option_bits)
         .with_checksum(Some(rasn_kerberos::Checksum {
             r#type: GSSAPI_CHECKSUM_TYPE,
@@ -1928,6 +1943,7 @@ pub fn init_sec_context_with_confounder(
         }))
         .with_subkey(options.subkey.clone())
         .with_sequence_number(Some(sequence_number));
+    ap_req_options.crypto_policy = options.crypto_policy;
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;

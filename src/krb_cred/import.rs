@@ -1,6 +1,6 @@
 //! Policy-checked semantic import, separate from raw ASN.1 conversion.
 
-use super::{decode, decrypt_krb_cred_enc_part, decrypted_krb_cred_to_ccache_credentials};
+use super::{convert_credentials, decode, decrypt_part};
 use crate::{
     ccache::Credential,
     crypto::{CryptoPolicy, Use},
@@ -24,7 +24,7 @@ pub fn decrypted(
     for ticket in &credential.tickets {
         policy.check_use(ticket.enc_part.etype, Use::ImportedCredential)?;
     }
-    decrypted_krb_cred_to_ccache_credentials(credential, part)
+    convert_credentials(credential, part)
 }
 
 /// Decrypt and import credentials with explicit runtime permission.
@@ -43,7 +43,7 @@ pub fn decrypt(
     for ticket in &credential.tickets {
         policy.check_use(ticket.enc_part.etype, Use::ImportedCredential)?;
     }
-    let part = decrypt_krb_cred_enc_part(credential, key)?;
+    let part = decrypt_part(credential, key)?;
     decrypted(policy, credential, &part)
 }
 

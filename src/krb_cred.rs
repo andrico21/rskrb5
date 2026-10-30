@@ -2,6 +2,12 @@
 //!
 //! The codec/conversion functions here are raw RFC-vector operations. Use
 //! [`import`] for policy-checked semantic import before admitting credentials.
+//!
+//! # Security
+//! Raw conversion preserves opaque enctype IDs and historical records for tools
+//! and RFC fixtures; it does not authorize credential use. Raw encrypt/decrypt
+//! helpers require caller-authorized keys. Checked import calls private shared
+//! machinery only after `ImportedCredential` checks, never these public raw wrappers.
 
 /// Policy-checked semantic credential import.
 pub mod import;
@@ -65,6 +71,16 @@ pub fn decode_enc_krb_cred_part(bytes: &[u8]) -> Result<rasn_kerberos::EncKrbCre
 /// when the plaintext is not a DER `EncKrbCredPart`.
 #[inline]
 pub fn decrypt_krb_cred_enc_part(
+    krb_cred: &rasn_kerberos::KrbCred,
+    key: &EncryptionKey,
+) -> Result<rasn_kerberos::EncKrbCredPart, Error> {
+    decrypt_part(krb_cred, key)
+}
+
+/// Shared decryption machinery; checked import authorizes inputs before entry.
+/// # Errors
+/// Returns key mismatch, cryptographic integrity or DER errors.
+fn decrypt_part(
     krb_cred: &rasn_kerberos::KrbCred,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::EncKrbCredPart, Error> {
@@ -267,6 +283,16 @@ pub fn encode_encrypt_ccache_credentials_to_krb_cred_with_confounder(
 /// and [`Error::Encode`] when a ticket cannot be re-encoded.
 #[inline]
 pub fn decrypted_krb_cred_to_ccache_credentials(
+    krb_cred: &rasn_kerberos::KrbCred,
+    enc_part: &rasn_kerberos::EncKrbCredPart,
+) -> Result<Vec<ccache::Credential>, Error> {
+    convert_credentials(krb_cred, enc_part)
+}
+
+/// Shared representation conversion, never a credential-admission decision.
+/// # Errors
+/// Returns count mismatch or credential-field conversion errors.
+fn convert_credentials(
     krb_cred: &rasn_kerberos::KrbCred,
     enc_part: &rasn_kerberos::EncKrbCredPart,
 ) -> Result<Vec<ccache::Credential>, Error> {
