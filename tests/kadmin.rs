@@ -18,6 +18,7 @@ mod tests {
     use rasn_kerberos::{KerberosString, KerberosTime, KrbError, PrincipalName};
     use rskrb5_ng::{
         ap_req,
+        client::Password,
         crypto::KerberosEtype,
         error::Kadmin as KadminError,
         kadmin::{
@@ -92,8 +93,13 @@ mod tests {
     /// Pins that a targeted `ChangePasswdData` encodes to and decodes from the gokrb5 fixture.
     #[test]
     fn change_passwd_data_matches_gokrb5_fixture() -> Result<(), TestError> {
-        let value = ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
-            .context("targeted ChangePasswdData builds")?;
+        let value = ChangePasswdData::for_target(
+            Password::copy_from_str("newpassword"),
+            1,
+            ["testuser1"],
+            "TEST.GOKRB5",
+        )
+        .context("targeted ChangePasswdData builds")?;
         let expected = decode_hex(MARSHALLED_CHANGE_PASSWD_DATA)?;
 
         let encoded = value.encode_der().context("ChangePasswdData encodes")?;
@@ -114,7 +120,7 @@ mod tests {
     /// Pins that a password-only `ChangePasswdData` round-trips without a target.
     #[test]
     fn change_passwd_data_builds_password_only_payload() -> Result<(), TestError> {
-        let value = ChangePasswdData::new(b"newpassword");
+        let value = ChangePasswdData::new(Password::copy_from_str("newpassword"));
         let encoded = value.encode_der().context("ChangePasswdData encodes")?;
         let decoded = ChangePasswdData::decode_der(&encoded).context("ChangePasswdData decodes")?;
 
@@ -130,9 +136,13 @@ mod tests {
     fn change_passwd_data_decodes_and_encodes_target_payload() -> Result<(), TestError> {
         let value = ChangePasswdData::decode_der(&decode_hex(MARSHALLED_CHANGE_PASSWD_DATA)?)
             .context("targeted ChangePasswdData decodes")?;
-        let expected =
-            ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
-                .context("targeted ChangePasswdData builds")?;
+        let expected = ChangePasswdData::for_target(
+            Password::copy_from_str("newpassword"),
+            1,
+            ["testuser1"],
+            "TEST.GOKRB5",
+        )
+        .context("targeted ChangePasswdData builds")?;
 
         assert_eq!(value, expected);
         assert_eq!(
@@ -219,7 +229,7 @@ mod tests {
     /// Pins that a KRB-PRIV built with a fixed confounder decrypts to its payload, addresses and sequence number.
     #[test]
     fn krb_priv_builder_encrypts_change_password_payload() -> Result<(), TestError> {
-        let data = ChangePasswdData::new(b"newpassword")
+        let data = ChangePasswdData::new(Password::copy_from_str("newpassword"))
             .encode_der()
             .context("ChangePasswdData encodes")?;
         let key = EncryptionKey::new(18, vec![0x11; 32]);
@@ -244,7 +254,10 @@ mod tests {
         let decoded_data =
             ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
 
-        assert_eq!(decoded_data, ChangePasswdData::new(b"newpassword"));
+        assert_eq!(
+            decoded_data,
+            ChangePasswdData::new(Password::copy_from_str("newpassword"))
+        );
         assert_eq!(enc_part.sender_address, sender_address);
         assert_eq!(enc_part.recipient_address, Some(recipient_address));
         assert_eq!(enc_part.seq_number, Some(7));
@@ -255,7 +268,7 @@ mod tests {
     #[test]
     fn krb_priv_builder_generates_confounder_for_change_password_payload() -> Result<(), TestError>
     {
-        let data = ChangePasswdData::new(b"newpassword")
+        let data = ChangePasswdData::new(Password::copy_from_str("newpassword"))
             .encode_der()
             .context("ChangePasswdData encodes")?;
         let key = EncryptionKey::new(18, vec![0x11; 32]);
@@ -271,7 +284,10 @@ mod tests {
         let decoded_data =
             ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
 
-        assert_eq!(decoded_data, ChangePasswdData::new(b"newpassword"));
+        assert_eq!(
+            decoded_data,
+            ChangePasswdData::new(Password::copy_from_str("newpassword"))
+        );
         assert_eq!(enc_part.sender_address, sender_address);
         assert_eq!(enc_part.seq_number, Some(8));
         Ok(())
@@ -312,7 +328,7 @@ mod tests {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("fixture request parses")?;
         let change_data = ChangePasswdData::for_target(
-            b"replacement-password",
+            Password::copy_from_str("replacement-password"),
             1,
             ["target-user"],
             "TEST.GOKRB5",
@@ -359,7 +375,7 @@ mod tests {
     fn kpasswd_request_builder_generates_krb_priv_confounder() -> Result<(), TestError> {
         let fixture_request = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)
             .context("fixture request parses")?;
-        let change_data = ChangePasswdData::new(b"replacement-password");
+        let change_data = ChangePasswdData::new(Password::copy_from_str("replacement-password"));
         let reply_key = EncryptionKey::new(18, vec![0x66; 32]);
         let sender_address = ipv4_host_address([127, 0, 0, 1]);
         let options = EncKrbPrivPartOptions::new(sender_address.clone()).with_sequence_number(101);
@@ -405,7 +421,7 @@ mod tests {
             ipv4_host_address([127, 0, 0, 1]),
         )
         .with_recipient_address(ipv4_host_address([127, 0, 0, 2]));
-        let change_data = ChangePasswdData::new(b"newpassword");
+        let change_data = ChangePasswdData::new(Password::copy_from_str("newpassword"));
 
         let built = build_change_password_message_with_confounders(
             rasn_principal_name(1, ["testuser1"])?,
@@ -478,7 +494,7 @@ mod tests {
             let _error = build_change_password_message(
                 rasn_principal_name(1, ["testuser1"])?,
                 "TEST.GOKRB5",
-                &ChangePasswdData::new(b"dummy-password"),
+                &ChangePasswdData::new(Password::copy_from_str("dummy-password")),
                 request.ap_req.ticket,
                 &key,
                 options,
@@ -493,8 +509,12 @@ mod tests {
     #[test]
     fn password_plaintext_debug_is_redacted() -> Result<(), TestError> {
         // Given a recognizable password, when rendered, then only its marker survives.
-        let data =
-            ChangePasswdData::for_target(b"password-secret-canary", 1, ["dummy"], "TEST.GOKRB5")?;
+        let data = ChangePasswdData::for_target(
+            Password::copy_from_str("password-secret-canary"),
+            1,
+            ["dummy"],
+            "TEST.GOKRB5",
+        )?;
         let rendered = format!("{data:?}");
         assert!(!rendered.contains("password-secret-canary"));
         assert!(!rendered.contains("112, 97, 115, 115"));
@@ -517,9 +537,13 @@ mod tests {
             7,
             ipv4_host_address([127, 0, 0, 1]),
         );
-        let change_data =
-            ChangePasswdData::for_target(b"updated-password", 1, ["target-user"], "TEST.GOKRB5")
-                .context("targeted ChangePasswdData builds")?;
+        let change_data = ChangePasswdData::for_target(
+            Password::copy_from_str("updated-password"),
+            1,
+            ["target-user"],
+            "TEST.GOKRB5",
+        )
+        .context("targeted ChangePasswdData builds")?;
 
         let built = build_change_password_message(
             rasn_principal_name(1, ["testuser1"])?,
@@ -551,7 +575,7 @@ mod tests {
         let service_session_key =
             EncryptionKey::new(fixture_request.ap_req.authenticator.etype, vec![0x44; 32]);
         let change_data = ChangePasswdData::for_target(
-            b"default-style-password",
+            Password::copy_from_str("default-style-password"),
             1,
             ["testuser1"],
             "TEST.GOKRB5",
@@ -605,7 +629,7 @@ mod tests {
         )
         .with_recipient_address(ipv4_host_address([127, 0, 0, 2]));
         let change_data = ChangePasswdData::for_target(
-            b"alias-with-confounders",
+            Password::copy_from_str("alias-with-confounders"),
             1,
             ["target-user"],
             "TEST.GOKRB5",
@@ -654,7 +678,7 @@ mod tests {
             13,
             ipv4_host_address([127, 0, 0, 1]),
         );
-        let change_data = ChangePasswdData::new(b"randomized-reply-key");
+        let change_data = ChangePasswdData::new(Password::copy_from_str("randomized-reply-key"));
 
         let built = build_change_password_message(
             rasn_principal_name(1, ["testuser1"])?,

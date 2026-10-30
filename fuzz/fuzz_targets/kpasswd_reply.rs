@@ -14,7 +14,7 @@ use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     Principal,
     client::{
-        AsRepSession,
+        AsRepSession, Password,
         kpasswd::{self, BuiltKpasswdRequest, RequestOptions},
     },
     kadmin::{ChangePasswdData, ChangePasswordResult, Reply, Request},
@@ -54,7 +54,7 @@ fn request() -> Option<BuiltKpasswdRequest> {
     let options = RequestOptions::new(now, 0, 1, krb_priv::ipv4_host_address([127, 0, 0, 1]));
     kpasswd::build_kpasswd_request_with_confounders(
         &session,
-        &ChangePasswdData::new("new password"),
+        &ChangePasswdData::new(Password::copy_from_str("new password")),
         key,
         &options,
         &[0; 16],

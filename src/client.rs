@@ -2257,7 +2257,7 @@ impl Tokio {
             None => self.get_service_ticket(service).await?,
         };
         let change_data = kadmin::ChangePasswdData::for_target(
-            &new_password_bytes,
+            Password::from_vec(new_password_bytes.to_vec()),
             target.name_type,
             target.components.iter().map(String::as_str),
             &target.realm,

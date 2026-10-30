@@ -25,7 +25,7 @@ use rskrb5_ng::{
         KDC_ERR_PREAUTH_REQUIRED, KDC_OPTION_CANONICALIZE, KDC_OPTION_CNAME_IN_ADDL_TKT,
         KDC_OPTION_RENEW, KDC_OPTION_RENEWABLE, KdcError, KdcTransport, PA_ENC_TIMESTAMP,
         PA_ETYPE_INFO2, PA_FOR_USER, PA_FOR_USER_CHECKSUM_USAGE, PA_FX_FAST, PA_PAC_OPTIONS,
-        PA_REQ_ENC_PA_REP, PA_TGS_REQ, PAC_OPTION_RESOURCE_BASED_CONSTRAINED_DELEGATION,
+        PA_REQ_ENC_PA_REP, PA_TGS_REQ, PAC_OPTION_RESOURCE_BASED_CONSTRAINED_DELEGATION, Password,
         PreauthKeyInfo, TGS_REP_ENCPART_SESSION_KEY_USAGE, TGS_REQ_AUTHENTICATOR_CHECKSUM_USAGE,
         TGS_REQ_AUTHENTICATOR_USAGE, TICKET_FLAG_ENC_PA_REP, build_ap_req_with_confounder,
         build_preauthenticated_as_req, build_s4u2proxy_req_with_confounder,
@@ -644,9 +644,13 @@ mod harness {
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
         let reply_key = EncryptionKey::new(18, vec![0x55; 32]);
-        let change_data =
-            ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
-                .context("ChangePasswdData builds")?;
+        let change_data = ChangePasswdData::for_target(
+            Password::copy_from_str("newpassword"),
+            1,
+            ["testuser1"],
+            "TEST.GOKRB5",
+        )
+        .context("ChangePasswdData builds")?;
 
         build_kpasswd_request_with_confounders(
             &service_ticket,

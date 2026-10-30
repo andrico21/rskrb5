@@ -150,9 +150,13 @@ TEST.GOKRB5 = {{
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
         let reply_key = EncryptionKey::new(18, vec![0x55; 32]);
-        let change_data =
-            ChangePasswdData::for_target(b"newpassword", 1, ["testuser1"], "TEST.GOKRB5")
-                .context("ChangePasswdData builds")?;
+        let change_data = ChangePasswdData::for_target(
+            Password::copy_from_str("newpassword"),
+            1,
+            ["testuser1"],
+            "TEST.GOKRB5",
+        )
+        .context("ChangePasswdData builds")?;
 
         let built = build_kpasswd_request_with_confounders(
             &service_ticket,
@@ -232,7 +236,7 @@ TEST.GOKRB5 = {{
         let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
         let service_ticket =
             process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
-        let change_data = ChangePasswdData::new(b"newpassword");
+        let change_data = ChangePasswdData::new(Password::copy_from_str("newpassword"));
 
         let built = build_kpasswd_request(
             &service_ticket,

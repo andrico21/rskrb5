@@ -9,7 +9,10 @@ use super::{
     codec::{decode, kerberos_string, principal_name},
     secret_der,
 };
-use crate::{crypto::KerberosEtype, keytab::EncryptionKey, krb_priv::KRB_PRIV_ENCPART_USAGE};
+use crate::{
+    client::Password, crypto::KerberosEtype, keytab::EncryptionKey,
+    krb_priv::KRB_PRIV_ENCPART_USAGE,
+};
 
 impl fmt::Debug for ChangePasswdData {
     #[inline]
@@ -29,16 +32,16 @@ impl fmt::Debug for ChangePasswdData {
 
 impl ChangePasswdData {
     /// Create password-change data for the authenticated principal.
+    #[must_use]
     #[inline]
-    pub fn new<P>(new_passwd: P) -> Self
-    where
-        P: AsRef<[u8]>,
-    {
-        Self {
-            new_passwd: new_passwd.as_ref().to_vec().into(),
+    pub fn new(new_passwd: Password) -> Self {
+        let payload = Self {
+            new_passwd: new_passwd.as_bytes().to_vec().into(),
             targ_name: None,
             targ_realm: None,
-        }
+        };
+        drop(new_passwd);
+        payload
     }
 
     /// Create password-change data for an explicit target principal.
@@ -48,8 +51,8 @@ impl ChangePasswdData {
     /// Returns [`Error::InvalidKerberosString`] when a name component or the
     /// realm is not a valid Kerberos string.
     #[inline]
-    pub fn for_target<I, S, P>(
-        new_passwd: P,
+    pub fn for_target<I, S>(
+        new_passwd: Password,
         name_type: i32,
         components: I,
         realm: &str,
@@ -57,12 +60,13 @@ impl ChangePasswdData {
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
-        P: AsRef<[u8]>,
     {
+        let targ_name = Some(principal_name(name_type, components)?);
+        let targ_realm = Some(kerberos_string(realm)?);
         Ok(Self {
-            new_passwd: new_passwd.as_ref().to_vec().into(),
-            targ_name: Some(principal_name(name_type, components)?),
-            targ_realm: Some(kerberos_string(realm)?),
+            targ_name,
+            targ_realm,
+            ..Self::new(new_passwd)
         })
     }
 
@@ -129,7 +133,7 @@ pub(super) fn encrypt(
 mod tests {
     use zeroize::{Zeroize, ZeroizeOnDrop};
 
-    use super::ChangePasswdData;
+    use super::{ChangePasswdData, Password};
 
     /// Compile-time proof that the password owner erases itself on drop.
     fn erase<T>(value: &mut T)
@@ -143,8 +147,12 @@ mod tests {
     #[test]
     fn password_storage_is_zeroizing() -> Result<(), super::Error> {
         // Given a password owned by the protocol payload.
-        let mut payload =
-            ChangePasswdData::for_target(b"erasure-canary", 1, ["testuser"], "TEST.GOKRB5")?;
+        let mut payload = ChangePasswdData::for_target(
+            Password::copy_from_str("erasure-canary"),
+            1,
+            ["testuser"],
+            "TEST.GOKRB5",
+        )?;
         // When the same erasure primitive used at drop is invoked.
         erase(&mut payload.new_passwd);
         // Then no password bytes remain accessible through the owner.

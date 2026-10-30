@@ -8,7 +8,7 @@ use rasn::types::Integer;
 use super::{RequestOptions, build_kpasswd_request_with_confounders, validated_result};
 use crate::{
     ap_rep,
-    client::{TgsRepSession, kerberos_time_from_system_time, principal::Principal},
+    client::{Password, TgsRepSession, kerberos_time_from_system_time, principal::Principal},
     error::Client,
     kadmin::{ChangePasswdData, Reply, Request},
     keytab::EncryptionKey,
@@ -36,7 +36,7 @@ fn reflected_reply(ap_rep_valid: bool) -> Result<Client, Box<dyn StdError>> {
     let options = RequestOptions::new(time, 456_789, 42, ipv4_host_address([127, 0, 0, 1]));
     let built = build_kpasswd_request_with_confounders(
         &session,
-        &ChangePasswdData::new(b"reflection-password-canary"),
+        &ChangePasswdData::new(Password::copy_from_str("reflection-password-canary")),
         EncryptionKey::new(18, vec![0x22; 32]),
         &options,
         &[0x33; 16],

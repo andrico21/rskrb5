@@ -126,7 +126,7 @@ mod tests {
         // When the request is built synchronously, no send is possible.
         let result = build_kpasswd_request_with_confounders(
             &session,
-            &ChangePasswdData::new(b"dummy-password"),
+            &ChangePasswdData::new(crate::client::Password::copy_from_str("dummy-password")),
             EncryptionKey::new(18, vec![0x22; 32]),
             &options,
             &[0x33; 16],

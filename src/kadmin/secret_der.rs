@@ -128,6 +128,7 @@ mod tests {
 
     use super::{change_data, private_part};
     use crate::{
+        client::Password,
         kadmin::ChangePasswdData,
         krb_priv::{self, EncKrbPrivPartOptions, ipv4_host_address},
     };
@@ -140,9 +141,14 @@ mod tests {
             for targeted in [false, true] {
                 let bytes = vec![0x61; length];
                 let value = if targeted {
-                    ChangePasswdData::for_target(&bytes, 1, ["testuser"], "TEST.GOKRB5")?
+                    ChangePasswdData::for_target(
+                        Password::from_vec(bytes),
+                        1,
+                        ["testuser"],
+                        "TEST.GOKRB5",
+                    )?
                 } else {
-                    ChangePasswdData::new(&bytes)
+                    ChangePasswdData::new(Password::from_vec(bytes))
                 };
                 // When the dedicated writer encodes the payload.
                 let actual = change_data(&value)?;
