@@ -18,6 +18,24 @@ pub(crate) mod tests {
     /// Path, qualified owner, variable and accepted argument spelling.
     const READERS: &[(&str, &str, &str, &str)] = &[
         (
+            "src/config/credential_names.rs",
+            "resolve_credential_template",
+            "TMPDIR",
+            "TMPDIR",
+        ),
+        (
+            "src/config/credential_names.rs",
+            "resolve_credential_template",
+            "TEMP",
+            "TEMP",
+        ),
+        (
+            "src/config/credential_names.rs",
+            "resolve_credential_template",
+            "APPDATA",
+            "APPDATA",
+        ),
+        (
             "src/config.rs",
             "Config::load_from_env",
             "KRB5_CONFIG",
@@ -671,6 +689,16 @@ pub(crate) mod tests {
             ],
             "KRB5_CLIENT_KTNAME" => &["with_keytab_name", "with_client_keytab_from_config"],
             "HOME" => &["new", "with_home"],
+            "TMPDIR" | "TEMP" | "APPDATA" => &[
+                "expand",
+                "load",
+                "save",
+                "from_ccache_name",
+                "from_keytab_name",
+                "with_keytab_name",
+                "save_ccache",
+                "update_ccache_file",
+            ],
             _ => &[],
         }
     }

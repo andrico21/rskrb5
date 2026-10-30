@@ -19,7 +19,7 @@ use rasn::{der, types::Integer};
 
 use crate::{
     ap_rep,
-    config::Config,
+    config::{Config, parameters::DefaultName},
     crypto::CryptoPolicy,
     error,
     keytab::{self, EncryptionKey, Keytab},
@@ -904,6 +904,10 @@ impl Validator<'static> {
 
     /// Create a validator from `config.libdefaults.default_keytab_name`.
     ///
+    /// # Ambient input
+    /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
+    /// Use `from_keytab_name` with a literal name to avoid this discovery.
+    ///
     /// The configured `[libdefaults] clockskew` becomes the acceptance window;
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
     /// The configured permitted list and legacy flags become the runtime policy.
@@ -916,15 +920,20 @@ impl Validator<'static> {
     pub fn from_default_keytab_name(config: &Config) -> Result<Self, Error> {
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
             .map_err(|_invalid| error::Policy::InvalidConfiguration)?;
-        Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
-            .with_crypto_policy(policy)
-            .with_max_clock_skew(config.libdefaults.clockskew)
+        Self::from_keytab(keytab::configured_keytab(
+            &config.libdefaults,
+            DefaultName::Keytab,
+        )?)
+        .with_crypto_policy(policy)
+        .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a validator from the default keytab.
     ///
     /// # Ambient input
     /// Reads `KRB5_KTNAME` before the configured fallback; invalid Unicode is an
+    /// expansion error when `TMPDIR`, `TEMP` or `APPDATA` supplies invalid text;
+    /// process identity is read for identity tokens. An invalid `KRB5_KTNAME` is an
     /// error. Use [`Self::from_keytab_name`] for an explicit keytab name.
     ///
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
@@ -940,11 +949,9 @@ impl Validator<'static> {
     pub fn from_default_keytab(config: &Config) -> Result<Self, Error> {
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
             .map_err(|_invalid| error::Policy::InvalidConfiguration)?;
-        Self::from_keytab_name(keytab::default_keytab_name(
-            &config.libdefaults.default_keytab_name,
-        )?)?
-        .with_crypto_policy(policy)
-        .with_max_clock_skew(config.libdefaults.clockskew)
+        Self::from_keytab(keytab::default_keytab_name(&config.libdefaults)?)
+            .with_crypto_policy(policy)
+            .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a validator by loading the file keytab named by `KRB5_KTNAME`.

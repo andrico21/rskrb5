@@ -12,6 +12,12 @@ mod profile_limits;
 #[path = "config/expansion.rs"]
 mod expansion;
 
+#[path = "config/readers.rs"]
+mod readers;
+
+#[path = "config/consumers.rs"]
+mod consumers;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(

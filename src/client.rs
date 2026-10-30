@@ -20,6 +20,13 @@ use std::env;
 use std::io;
 #[cfg(feature = "tokio")]
 use std::path::Path;
+
+#[cfg(feature = "tokio")]
+use crate::{
+    config::{credential_names, parameters::DefaultName},
+    file_name,
+    keytab::configured_keytab,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::{der, types::Integer};
@@ -846,6 +853,9 @@ impl Tokio {
         ))
     }
     /// Create a keytab-backed client from `config.libdefaults.default_client_keytab_name`.
+    /// # Ambient input
+    /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
+    /// Use `with_keytab_name` with a literal name to avoid this discovery.
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the configured keytab cannot be loaded.
@@ -855,13 +865,15 @@ impl Tokio {
         protocol: KdcProtocol,
         client: Principal,
     ) -> Result<Self, Error> {
-        let keytab_name = config.libdefaults.default_client_keytab_name.clone();
-        Self::with_keytab_name(config, protocol, client, keytab_name)
+        let keytab = configured_keytab(&config.libdefaults, DefaultName::ClientKeytab)?;
+        Ok(Self::with_keytab(config, protocol, client, keytab))
     }
     /// Create a keytab-backed client from the default client keytab.
     ///
     /// # Ambient input
     /// Reads `KRB5_CLIENT_KTNAME`; use `with_client_keytab_from_config` to avoid discovery.
+    /// The configured fallback expands `TMPDIR`, `TEMP`, `APPDATA` and process identity;
+    /// use `with_keytab_name` with a literal name to avoid expansion discovery.
     ///
     /// `KRB5_CLIENT_KTNAME` takes precedence when set. Otherwise this falls
     /// back to `config.libdefaults.default_client_keytab_name`.
@@ -875,8 +887,8 @@ impl Tokio {
         protocol: KdcProtocol,
         client: Principal,
     ) -> Result<Self, Error> {
-        let keytab_name = default_client_keytab_name(&config)?;
-        Self::with_keytab_name(config, protocol, client, keytab_name)
+        let keytab = default_client_keytab_name(&config)?;
+        Ok(Self::with_keytab(config, protocol, client, keytab))
     }
     /// Create a keytab-backed client by loading the file keytab named by `KRB5_CLIENT_KTNAME`.
     ///
@@ -1011,6 +1023,9 @@ impl Tokio {
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from `config.libdefaults.default_ccache_name`.
+    /// # Ambient input
+    /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
+    /// Use `from_ccache_name` with a literal name to avoid this discovery.
     /// # Errors
     ///
     /// Returns [`Error::NoDefaultCCacheName`] when `default_ccache_name` is empty
@@ -1018,12 +1033,15 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache_name(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = configured_default_ccache_name(&config)?;
-        Self::from_ccache_name(config, protocol, cache_name)
+        let cache = ccache::CCache::load(ccache::CCache::resolved_file_path(&cache_name)?)?;
+        Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from the default credential cache.
     ///
     /// # Ambient input
     /// Reads `KRB5CCNAME`; use `from_default_ccache_name` to use only configuration.
+    /// The configured fallback expands `TMPDIR`, `TEMP`, `APPDATA` and process identity;
+    /// use `from_ccache_name` with a literal name to avoid expansion discovery.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
@@ -1034,7 +1052,8 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = default_ccache_name(&config)?;
-        Self::from_ccache_name(config, protocol, cache_name)
+        let cache = ccache::CCache::load(ccache::CCache::resolved_file_path(&cache_name)?)?;
+        Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client by loading the file ccache named by `KRB5CCNAME`.
     ///
@@ -1116,13 +1135,18 @@ impl Tokio {
         Ok(())
     }
     /// Save current TGT and service-ticket state to `config.libdefaults.default_ccache_name`.
+    /// # Ambient input
+    /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
+    /// Use `save_ccache` with a literal path to avoid this discovery.
     /// # Errors
     ///
     /// Returns [`Error::NoDefaultCCacheName`] when `default_ccache_name` is empty,
     /// and the errors of [`Self::save_ccache_name`].
     #[inline]
     pub fn save_default_ccache_name(&self) -> Result<(), Error> {
-        self.save_ccache_name(configured_default_ccache_name(&self.config)?)
+        self.to_ccache()?
+            .save_resolved_name(&configured_default_ccache_name(&self.config)?)?;
+        Ok(())
     }
     /// Save current TGT and service-ticket state to the default credential cache.
     ///
@@ -1130,6 +1154,8 @@ impl Tokio {
     /// Reads `KRB5CCNAME`, which overrides the configured name when set; invalid
     /// Unicode is an error. Use [`Self::save_ccache_name`] for an explicit name
     /// or [`Self::save_default_ccache_name`] to use only configuration.
+    /// Configured templates read `TMPDIR`, `TEMP`, `APPDATA` and process identity;
+    /// use `save_ccache` with a literal path to avoid expansion discovery.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
@@ -1140,7 +1166,9 @@ impl Tokio {
     /// [`Self::save_ccache_name`].
     #[inline]
     pub fn save_default_ccache(&self) -> Result<(), Error> {
-        self.save_ccache_name(default_ccache_name(&self.config)?)
+        self.to_ccache()?
+            .save_resolved_name(&default_ccache_name(&self.config)?)?;
+        Ok(())
     }
     /// Load an existing ccache when present, update this client's entries, and save it.
     ///
@@ -1185,13 +1213,18 @@ impl Tokio {
         self.update_ccache_file(path)
     }
     /// Update the ccache named by `config.libdefaults.default_ccache_name`.
+    /// # Ambient input
+    /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
+    /// Use `update_ccache_file` with a literal path to avoid this discovery.
     /// # Errors
     ///
     /// Returns [`Error::NoDefaultCCacheName`] when `default_ccache_name` is empty,
     /// and the errors of [`Self::update_ccache_name`].
     #[inline]
     pub fn update_default_ccache_name(&self) -> Result<(), Error> {
-        self.update_ccache_name(configured_default_ccache_name(&self.config)?)
+        self.update_ccache_file(ccache::CCache::resolved_file_path(
+            &configured_default_ccache_name(&self.config)?,
+        )?)
     }
     /// Update the default credential cache.
     ///
@@ -1199,6 +1232,8 @@ impl Tokio {
     /// Reads `KRB5CCNAME`, which overrides the configured name when set; invalid
     /// Unicode is an error. Use [`Self::update_ccache_name`] for an explicit name
     /// or [`Self::update_default_ccache_name`] to use only configuration.
+    /// Configured templates read `TMPDIR`, `TEMP`, `APPDATA` and process identity;
+    /// use `update_ccache_file` with a literal path to avoid expansion discovery.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
@@ -1209,7 +1244,9 @@ impl Tokio {
     /// [`Self::update_ccache_name`].
     #[inline]
     pub fn update_default_ccache(&self) -> Result<(), Error> {
-        self.update_ccache_name(default_ccache_name(&self.config)?)
+        self.update_ccache_file(ccache::CCache::resolved_file_path(&default_ccache_name(
+            &self.config,
+        )?)?)
     }
     /// Build a client with empty caches, the default transport and FAST
     /// negotiation enabled.
@@ -4789,7 +4826,9 @@ fn ccache_principal(value: &Principal) -> ccache::Principal {
 /// Returns [`Error::NoDefaultCCacheName`] when it is empty.
 #[cfg(feature = "tokio")]
 fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
-    let cache_name = config.libdefaults.default_ccache_name.clone();
+    let cache_name =
+        credential_names::resolve_credential_template(&config.libdefaults, DefaultName::Ccache)
+            .map_err(error::Ccache::from)?;
     if cache_name.is_empty() {
         return Err(Error::NoDefaultCCacheName);
     }
@@ -4809,7 +4848,8 @@ fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
 #[cfg(feature = "tokio")]
 fn default_ccache_name(config: &Config) -> Result<String, Error> {
     match env::var(KRB5CCNAME_ENV) {
-        Ok(cache_name) => Ok(cache_name),
+        Ok(cache_name) => file_name::expand_path_tokens(&cache_name)
+            .map_err(|_source| error::Ccache::IdentityUnavailable.into()),
         Err(env::VarError::NotPresent) => configured_default_ccache_name(config),
         Err(error) => Err(error::Ccache::DefaultCacheName(error).into()),
     }
@@ -4826,10 +4866,13 @@ fn default_ccache_name(config: &Config) -> Result<String, Error> {
 /// Returns [`Error::DefaultClientKeytabName`] when `KRB5_CLIENT_KTNAME` is not
 /// valid Unicode.
 #[cfg(feature = "tokio")]
-fn default_client_keytab_name(config: &Config) -> Result<String, Error> {
+fn default_client_keytab_name(config: &Config) -> Result<Keytab, Error> {
     match env::var(KRB5_CLIENT_KTNAME_ENV) {
-        Ok(keytab_name) => Ok(keytab_name),
-        Err(env::VarError::NotPresent) => Ok(config.libdefaults.default_client_keytab_name.clone()),
+        Ok(keytab_name) => Ok(Keytab::load_name(keytab_name)?),
+        Err(env::VarError::NotPresent) => Ok(configured_keytab(
+            &config.libdefaults,
+            DefaultName::ClientKeytab,
+        )?),
         Err(error) => Err(Error::DefaultClientKeytabName(error)),
     }
 }

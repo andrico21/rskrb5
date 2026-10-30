@@ -58,6 +58,9 @@ impl State {
             return Err(invalid(line));
         }
         let (tag, tag_final) = marker(raw_tag.trim());
+        if tag.eq_ignore_ascii_case("module") {
+            return Err(Error::UnsupportedDynamicModule);
+        }
         if tag.is_empty() {
             return Err(invalid(line));
         }

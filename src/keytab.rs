@@ -16,6 +16,9 @@ use std::{
 
 use crate::{crypto::selection, file_name};
 
+#[cfg(feature = "messages")]
+use crate::config::{LibDefaults, credential_names, parameters::DefaultName};
+
 /// First byte of every keytab file.
 const KEYTAB_FIRST_BYTE: u8 = 5;
 /// Environment variable naming the default keytab.
@@ -519,12 +522,37 @@ impl Keytab {
 /// Returns [`Error::DefaultKeytabName`] when `KRB5_KTNAME` is set but not
 /// valid Unicode.
 #[cfg(feature = "messages")]
-pub(crate) fn default_keytab_name(configured_name: &str) -> Result<String, Error> {
+pub(crate) fn default_keytab_name(defaults: &LibDefaults) -> Result<Keytab, Error> {
     match env::var(KRB5_KTNAME_ENV) {
-        Ok(keytab_name) => Ok(keytab_name),
-        Err(env::VarError::NotPresent) => Ok(configured_name.to_owned()),
+        Ok(keytab_name) => Keytab::load_name(keytab_name),
+        Err(env::VarError::NotPresent) => configured_keytab(defaults, DefaultName::Keytab),
         Err(error) => Err(Error::DefaultKeytabName(error)),
     }
+}
+
+/// Load a configured keytab after one explicit-context substitution.
+///
+/// # Ambient input
+/// Reads `TMPDIR`, `TEMP`, `APPDATA` and process identity through the default
+/// resolver. Use `Keytab::load` with an explicit path to avoid discovery.
+///
+/// # Errors
+/// Returns typed expansion, store and file errors.
+#[cfg(feature = "messages")]
+pub(crate) fn configured_keytab(
+    defaults: &LibDefaults,
+    selection: DefaultName,
+) -> Result<Keytab, Error> {
+    let name = credential_names::resolve_credential_template(defaults, selection)?;
+    let path =
+        file_name::literal_file_path(&name, &["FILE", "WRFILE"]).map_err(|error| match error {
+            file_name::Error::Empty => Error::InvalidKeytabName,
+            file_name::Error::IdentityUnavailable => Error::IdentityUnavailable,
+            file_name::Error::UnsupportedType { name_type } => Error::UnsupportedKeytabType {
+                keytab_type: name_type,
+            },
+        })?;
+    Keytab::load(path)
 }
 
 impl Default for Keytab {

@@ -1,4 +1,5 @@
 //! Typed errors grouped by Kerberos domain.
+use crate::config::parameters::Failure as ExpansionFailure;
 use core::str::Utf8Error;
 #[cfg(feature = "messages")]
 use core::time::Duration;
@@ -125,6 +126,9 @@ pub enum ApReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Ccache {
+    /// A configured name could not be expanded from available facts.
+    #[error("credential name expansion failed: {0}")]
+    Expansion(#[from] ExpansionFailure),
     /// A requested cryptographic feature violates permanent policy.
     #[error("policy error: {0}")]
     Policy(#[from] Policy),
@@ -562,6 +566,9 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// Dynamic profile and plugin providers are not loaded by this crate.
+    #[error("dynamic configuration modules are unsupported")]
+    UnsupportedDynamicModule,
     /// An enctype expression contains a name or operator outside MIT's vocabulary.
     #[error("unknown enctype expression token: {token}")]
     UnknownEnctype {
@@ -1123,6 +1130,9 @@ pub enum KdcReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Keytab {
+    /// A configured name could not be expanded from available facts.
+    #[error("keytab name expansion failed: {0}")]
+    Expansion(#[from] ExpansionFailure),
     /// UID tokens require Linux procfs process identities.
     #[error("credential path process identity is unavailable (UID tokens require Linux procfs)")]
     IdentityUnavailable,

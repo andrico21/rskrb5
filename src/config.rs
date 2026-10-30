@@ -8,6 +8,11 @@
 #[path = "config/expansion.rs"]
 pub mod parameters;
 
+/// Ambient credential-name resolution, separate from profile parsing.
+#[cfg(feature = "messages")]
+#[path = "config/credential_names.rs"]
+pub(crate) mod credential_names;
+
 use alloc::{borrow::Cow, collections::BTreeMap};
 use core::{
     net::{IpAddr, SocketAddr},
@@ -299,6 +304,52 @@ impl Config {
     #[inline]
     pub fn parse(input: &str) -> Result<Self, Error> {
         Self::parse_with_roots(input, [])
+    }
+
+    /// Parse caller text, equivalent to gokrb5's `NewFromString`.
+    ///
+    /// # Errors
+    /// Returns the bounded profile-composition errors of [`Self::parse`].
+    #[inline]
+    pub fn from_string(input: &str) -> Result<Self, Error> {
+        Self::parse(input)
+    }
+
+    /// Load an explicit path, equivalent to gokrb5's `Load`.
+    ///
+    /// # Errors
+    /// Returns the pathful I/O and composition errors of [`Self::load`].
+    #[inline]
+    pub fn from_path<P>(path: P) -> Result<Self, Error>
+    where
+        P: AsRef<Path>,
+    {
+        Self::load(path)
+    }
+
+    /// Parse a reader, including buffered readers, through profile composition.
+    ///
+    /// # Errors
+    /// Returns typed I/O, UTF-8, size and include-composition failures.
+    #[inline]
+    pub fn from_reader<R>(reader: R) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
+        let mut bytes = Vec::new();
+        let limit = u64::try_from(MAX_INCLUDE_BYTES)
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
+        let _: usize = reader.take(limit).read_to_end(&mut bytes)?;
+        if bytes.len() > MAX_INCLUDE_BYTES {
+            return Err(Error::IncludeTooLarge {
+                bytes: bytes.len(),
+                limit: MAX_INCLUDE_BYTES,
+            });
+        }
+        let text = String::from_utf8(bytes)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
+        Self::parse(&text)
     }
 
     /// Parse a profile with explicit secure-unsupported handling.
@@ -1873,6 +1924,13 @@ impl IncludeExpansion {
             let cleaned = profile_syntax::comments(line).trim();
             if cleaned.is_empty() {
                 continue;
+            }
+            if cleaned
+                .split_whitespace()
+                .next()
+                .is_some_and(|word| word.eq_ignore_ascii_case("module"))
+            {
+                return Err(Error::UnsupportedDynamicModule);
             }
             if let Some(directive) = IncludeDirective::parse(cleaned) {
                 self.splice(directive, depth)?;
