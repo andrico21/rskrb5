@@ -1,5 +1,6 @@
 /// Treatment of secure configuration features that are not implemented yet.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub enum ParseMode {
     /// Skip only explicitly classified secure unsupported features with diagnostics.

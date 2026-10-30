@@ -279,12 +279,12 @@ impl Config {
     /// on the final values after every `[libdefaults]` section of the expanded
     /// input (included files included) is applied.
     ///
-    /// Unsupported and policy-disabled enctype names are skipped, retaining
-    /// usable names in order. Family names, `DEFAULT` and `-name` tokens are
-    /// not expanded, matching 0.2.2's concrete-name interpretation. An explicit
-    /// list with no usable entry fails with [`Error::NoUsableEnctypes`] for
-    /// requests or [`Error::NoPermittedEnctypes`] for the allowlist, never
-    /// falling back to defaults or unrestricted policy.
+    /// Enctype lists use [`EnctypeExpr`], including ordered families, `DEFAULT`
+    /// and subtraction. Forbidden, disabled and unknown positive selections fail
+    /// by name. Compatible mode skips only secure unsupported Camellia, recorded
+    /// by [`LibDefaults::diagnostics`]; use [`Self::parse_with_mode`] for strict mode.
+    /// Empty resolved lists fail closed. Implicit request lists inherit the
+    /// permitted list. Family permissions apply after all sections are read.
     ///
     /// # Errors
     ///
@@ -296,6 +296,15 @@ impl Config {
     #[inline]
     pub fn parse(input: &str) -> Result<Self, Error> {
         Self::parse_with_roots(input, [])
+    }
+
+    /// Parse a profile with explicit secure-unsupported handling.
+    ///
+    /// # Errors
+    /// Returns the errors of [`Self::parse`], including Camellia errors in strict mode.
+    #[inline]
+    pub fn parse_with_mode(input: &str, mode: ParseMode) -> Result<Self, Error> {
+        Self::parse_with_roots_mode(input, [], mode)
     }
 
     /// The parser the string entry point and the two file loaders share: they
@@ -315,10 +324,22 @@ impl Config {
     where
         I: IntoIterator<Item = PathBuf>,
     {
+        Self::parse_with_roots_mode(text, roots, ParseMode::Compatible)
+    }
+
+    /// Expand sources and apply the requested enctype parsing mode.
+    ///
+    /// # Errors
+    /// Returns include, profile and expression-policy errors without fallback.
+    fn parse_with_roots_mode<I>(text: &str, roots: I, mode: ParseMode) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = PathBuf>,
+    {
         let input = IncludeExpansion::default()
             .with_roots(roots)
             .expand(text, 0)?;
         let mut config = Self::new();
+        config.libdefaults.enctype_parse_mode = mode;
         let mut enctypes = EnctypeParseState::default();
         let mut realm_lines = Vec::new();
         let mut current = SectionKind::Unknown;
@@ -479,14 +500,13 @@ include!("config/enctype_expr.rs");
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct LibDefaults {
-    /// Permit explicitly configured RC4 (23/24); disabled by default.
+    /// Permit explicitly configured RC4-HMAC (23); export RC4 (24) is forbidden.
     #[cfg_attr(feature = "serde", serde(default))]
     pub allow_rc4: Toggle,
     /// Permit explicitly configured DES3 (16); disabled by default.
     #[cfg_attr(feature = "serde", serde(default))]
     pub allow_des3: Toggle,
-    /// Whether weak crypto names are retained before supported enctype
-    /// filtering.
+    /// Blanket weakening is permanently rejected when enabled.
     pub allow_weak_crypto: Toggle,
     /// Whether clients should request canonicalization.
     pub canonicalize: Toggle,
@@ -533,17 +553,15 @@ pub struct LibDefaults {
     /// Whether `[libdefaults] permitted_enctypes` was explicitly configured.
     ///
     /// Parsing a `[libdefaults] permitted_enctypes` line sets this flag. The
-    /// seeded default name list is gokrb5-derived and narrower than MIT's
-    /// default (it has no SHA2 enctypes), so the allowlist is only enforced
-    /// when this flag is set.
+    /// seeded default list is SHA2-first AES `[20, 19, 18, 17]`.
+    /// Explicit request lists outside an explicit permitted list are rejected.
+    /// `CryptoPolicy` always enforces permitted membership, regardless of this flag.
     ///
     /// The flag round-trips through serde. Serialized `LibDefaults` that lack
     /// this field deserialize it as `false`.
     ///
-    /// Code that builds `LibDefaults` programmatically (a struct literal or
-    /// `Default`) and wants the allowlist enforced must set this flag to
-    /// `true` together with `permitted_enctypes`.
-    /// With the flag set, an empty derived list permits no enctype.
+    /// Use [`Self::new`] and builders for programmatic construction; policy
+    /// construction revalidates public fields and rejects an empty permitted list.
     #[cfg_attr(feature = "serde", serde(default))]
     pub permitted_enctypes_explicit: Toggle,
     /// Preferred preauthentication type IDs.
@@ -564,9 +582,28 @@ pub struct LibDefaults {
     pub udp_preference_limit: i32,
     /// Whether AP-REQ verification failure should be fatal.
     pub verify_ap_req_nofail: Toggle,
+    /// Mode applied to secure unsupported enctype selections.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub enctype_parse_mode: ParseMode,
+    /// Diagnostics accumulated while resolving profile enctype expressions.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub enctype_diagnostics: Vec<ConfigDiagnostic>,
 }
 
 impl LibDefaults {
+    /// Diagnostics for secure unsupported selections encountered while parsing.
+    #[inline]
+    #[must_use]
+    pub fn diagnostics(&self) -> &[ConfigDiagnostic] {
+        &self.enctype_diagnostics
+    }
+
+    /// Parsing mode used for subsequent expression resolution.
+    #[inline]
+    #[must_use]
+    pub const fn parse_mode(&self) -> ParseMode {
+        self.enctype_parse_mode
+    }
     /// Sets `allow_weak_crypto`, preserving the other fields.
     #[must_use]
     #[inline]
@@ -870,6 +907,8 @@ impl LibDefaults {
             ticket_lifetime: Duration::from_hours(24),
             udp_preference_limit: 1465,
             verify_ap_req_nofail: Toggle::Disabled,
+            enctype_parse_mode: ParseMode::Compatible,
+            enctype_diagnostics: Vec::new(),
         }
     }
 
@@ -901,6 +940,7 @@ impl LibDefaults {
                 "allow_des3" => self.allow_des3 = Toggle::from_bool(parse_boolean(value)?),
                 "allow_weak_crypto" => {
                     self.allow_weak_crypto = Toggle::from_bool(parse_boolean(value)?);
+                    self.reject_weak_crypto()?;
                 }
                 "canonicalize" => self.canonicalize = Toggle::from_bool(parse_boolean(value)?),
                 "ccache_type" => self.ccache_type = parse_i32(value, line, key)?,
@@ -912,11 +952,13 @@ impl LibDefaults {
                 "default_keytab_name" => value.clone_into(&mut self.default_keytab_name),
                 "default_realm" => value.clone_into(&mut self.default_realm),
                 "default_tgs_enctypes" => {
-                    self.default_tgs_enctypes = parse_words(value);
+                    enctypes.expressions.push(EnctypeExpr::parse(value)?);
+                    self.default_tgs_enctypes = vec![value.to_owned()];
                     enctypes.tgs_explicit = true;
                 }
                 "default_tkt_enctypes" => {
-                    self.default_tkt_enctypes = parse_words(value);
+                    enctypes.expressions.push(EnctypeExpr::parse(value)?);
+                    self.default_tkt_enctypes = vec![value.to_owned()];
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
@@ -943,7 +985,8 @@ impl LibDefaults {
                     self.no_addresses = Toggle::from_bool(parse_boolean(value)?);
                 }
                 "permitted_enctypes" => {
-                    self.permitted_enctypes = parse_words(value);
+                    enctypes.expressions.push(EnctypeExpr::parse(value)?);
+                    self.permitted_enctypes = vec![value.to_owned()];
                     self.permitted_enctypes_explicit = Toggle::Enabled;
                 }
                 "preferred_preauth_types" => {
@@ -1096,8 +1139,10 @@ use crate::error::Config as Error;
 /// The state spans every `[libdefaults]` section of the parse, so a request
 /// list from an earlier section is still validated against a
 /// `permitted_enctypes` line from a later one.
-#[derive(Clone, Copy, Debug, Default)]
-struct EnctypeParseState {
+#[derive(Clone, Debug, Default)]
+pub(crate) struct EnctypeParseState {
+    /// Every explicit expression, including values overwritten later.
+    expressions: Vec<EnctypeExpr>,
     /// A `default_tkt_enctypes` line was parsed.
     tkt_explicit: bool,
     /// A `default_tgs_enctypes` line was parsed.
@@ -1351,13 +1396,21 @@ pub fn parse_boolean(value: &str) -> Result<bool, Error> {
 #[inline]
 pub(crate) fn parse_supported_enctype_ids(
     enctypes: &[String],
-    allow_weak_crypto: bool,
+    _allow_weak_crypto: bool,
 ) -> Vec<i32> {
-    enctypes
-        .iter()
-        .filter(|name| allow_weak_crypto || !is_weak_enctype(name))
-        .filter_map(|name| supported_enctype_id(name))
-        .collect()
+    EnctypeExpr::parse(&enctypes.join(" "))
+        .and_then(|expr| expr.resolve(Toggle::Enabled, Toggle::Enabled, ParseMode::Compatible))
+        .map_or_else(
+            |_| Vec::new(),
+            |resolved| {
+                resolved
+                    .enctypes()
+                    .iter()
+                    .copied()
+                    .map(KerberosEtype::etype_id)
+                    .collect()
+            },
+        )
 }
 
 /// The gokrb5 JSON snapshot of a [`Config`], borrowing from it.
@@ -1814,11 +1867,6 @@ fn parse_ip_addresses(value: &str) -> Vec<IpAddr> {
         .collect()
 }
 
-/// The whitespace-separated words of `value`.
-fn parse_words(value: &str) -> Vec<String> {
-    value.split_whitespace().map(str::to_owned).collect()
-}
-
 /// `value` with `:port` appended when it names no port, keeping a trailing
 /// `*` final marker last.
 fn add_default_port(value: &str, port: u16) -> String {
@@ -1851,37 +1899,6 @@ fn append_until_final(values: &mut Vec<String>, value: &str, final_seen: &mut bo
         trimmed = stripped.trim_end();
     }
     values.push(trimmed.to_owned());
-}
-
-/// The enctype ID of a supported enctype name, case-insensitively.
-fn supported_enctype_id(value: &str) -> Option<i32> {
-    Some(match value.to_ascii_lowercase().as_str() {
-        "aes128-cts-hmac-sha1-96" | "aes128-cts" | "aes128-sha1" => 17,
-        "aes256-cts-hmac-sha1-96" | "aes256-cts" | "aes256-sha1" => 18,
-        "aes128-cts-hmac-sha256-128" | "aes128-sha2" => 19,
-        "aes256-cts-hmac-sha384-192" | "aes256-sha2" => 20,
-        "des3-cbc-sha1" | "des3-hmac-sha1" | "des3-cbc-sha1-kd" => 16,
-        "arcfour-hmac" | "rc4-hmac" | "arcfour-hmac-md5" => 23,
-        "arcfour-hmac-exp" | "rc4-hmac-exp" | "arcfour-hmac-md5-exp" => 24,
-        _ => return None,
-    })
-}
-
-/// Whether `value` names a weak enctype that `allow_weak_crypto` gates.
-fn is_weak_enctype(value: &str) -> bool {
-    matches!(
-        value.to_ascii_lowercase().as_str(),
-        "des-cbc-crc"
-            | "des-cbc-md4"
-            | "des-cbc-md5"
-            | "des-cbc-raw"
-            | "des3-cbc-raw"
-            | "des-hmac-sha1"
-            | "arcfour-hmac-exp"
-            | "rc4-hmac-exp"
-            | "arcfour-hmac-md5-exp"
-            | "des"
-    )
 }
 
 /// One `include`/`includedir` directive, split from its argument.

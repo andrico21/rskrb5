@@ -724,23 +724,6 @@ pub enum Config {
         /// The configured enctype name.
         enctype: String,
     },
-    /// An explicit request list has no implemented, policy-enabled entry.
-    #[error("[libdefaults] {key} = {} has no usable enctype", names.join(" "))]
-    NoUsableEnctypes {
-        /// The configured request-list key.
-        key: &'static str,
-        /// The original configured names, before filtering.
-        names: Vec<String>,
-    },
-    /// An explicit `permitted_enctypes` allowlist names no usable enctype.
-    #[error(
-        "[libdefaults] permitted_enctypes = {} has no usable enctype",
-        names.join(" ")
-    )]
-    NoPermittedEnctypes {
-        /// The configured enctype names.
-        names: Vec<String>,
-    },
 }
 /// Errors produced by Kerberos cryptographic operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

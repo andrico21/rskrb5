@@ -121,3 +121,15 @@ const NAMES: &[(&[&str], Selector)] = &[
         Selector::Rejected(RejectedFeature::WeakCrypto),
     ),
 ];
+
+/// Canonical MIT name for each implemented enctype.
+pub(super) const fn canonical_name(etype: KerberosEtype) -> &'static str {
+    match etype {
+        KerberosEtype::Sha1(AesSha1Etype::Aes128) => "aes128-cts-hmac-sha1-96",
+        KerberosEtype::Sha1(AesSha1Etype::Aes256) => "aes256-cts-hmac-sha1-96",
+        KerberosEtype::Sha2(AesSha2Etype::Aes128) => "aes128-cts-hmac-sha256-128",
+        KerberosEtype::Sha2(AesSha2Etype::Aes256) => "aes256-cts-hmac-sha384-192",
+        KerberosEtype::Des3CbcSha1Kd(_) => "des3-cbc-sha1",
+        KerberosEtype::Rc4Hmac(_) => "arcfour-hmac",
+    }
+}

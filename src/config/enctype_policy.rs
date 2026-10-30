@@ -1,120 +1,127 @@
-impl LibDefaults {
-    /// Reject an explicit request list that names an enctype the explicit
-    /// `permitted_enctypes` allowlist does not permit.
-    ///
-    /// Dropping the enctype instead would silently send a narrower request
-    /// list than the operator configured. Seeded (implicit) request lists are
-    /// not checked here; `AsReq::from_libdefaults` and
-    /// `TgsReq::from_libdefaults` narrow them to the allowlist.
-    ///
-    /// Unsupported and policy-disabled names are skipped after all sections
-    /// are read. Every explicit list must retain at least one usable entry;
-    /// treating an empty allowlist as "no policy" would permit every enctype.
+use crate::error::RejectedFeature;
+
+/// Internal checked expression operations shared by parsing and runtime policy.
+pub(crate) trait EnctypeDefaults {
+    /// Resolve final profile lists or return a named expression error.
+    /// # Errors
+    /// Rejects invalid expressions or out-of-policy explicit requests.
+    fn validate_explicit_enctypes(&mut self, enctypes: EnctypeParseState) -> Result<(), Error>;
+    /// Reject blanket weakening with a typed policy error.
+    /// # Errors
+    /// Rejects enabled weak crypto.
+    fn reject_weak_crypto(&self) -> Result<(), Error>;
+    /// Resolve names or return a named expression error.
+    /// # Errors
+    /// Rejects invalid, disabled or forbidden selections and empty results.
+    fn resolve_names(&self, names: &[String]) -> Result<ResolvedEnctypes, Error>;
+    /// Legacy accessor returns no usable IDs for invalid public mutation.
+    fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32>;
+}
+
+impl EnctypeDefaults for LibDefaults {
+    /// Resolve all three relations after the final family permissions are known.
     ///
     /// # Errors
-    ///
-    /// Returns [`Error::NoUsableEnctypes`] for an unusable request list,
-    /// [`Error::NoPermittedEnctypes`] when the explicit allowlist
-    /// resolves to no usable enctype, and [`Error::EnctypeNotPermitted`]
-    /// naming the first explicit request list and enctype outside the
-    /// allowlist.
+    /// Rejects forbidden, disabled, unknown, empty or explicitly out-of-policy lists.
     fn validate_explicit_enctypes(&mut self, enctypes: EnctypeParseState) -> Result<(), Error> {
+        self.reject_weak_crypto()?;
+        for expression in &enctypes.expressions {
+            drop(expression.resolve(self.allow_rc4, self.allow_des3, self.enctype_parse_mode)?);
+        }
+        let permitted = self.resolve_names(&self.permitted_enctypes)?;
+        let ticket = if enctypes.tkt_explicit {
+            self.resolve_names(&self.default_tkt_enctypes)?
+        } else {
+            permitted.clone()
+        };
+        let service = if enctypes.tgs_explicit {
+            self.resolve_names(&self.default_tgs_enctypes)?
+        } else {
+            permitted.clone()
+        };
+        for (explicit, key, resolved) in [
+            (enctypes.tkt_explicit, "default_tkt_enctypes", &ticket),
+            (enctypes.tgs_explicit, "default_tgs_enctypes", &service),
+        ] {
+            if explicit && self.permitted_enctypes_explicit.is_enabled() {
+                for &etype in resolved.enctypes() {
+                    if !permitted.enctypes().contains(&etype) {
+                        return Err(Error::EnctypeNotPermitted {
+                            key,
+                            enctype: enctype_names::canonical_name(etype).to_owned(),
+                        });
+                    }
+                }
+            }
+        }
+        self.enctype_diagnostics = permitted.diagnostics().to_vec();
         if enctypes.tkt_explicit {
-            self.default_tkt_enctypes =
-                self.usable_explicit_enctypes(&self.default_tkt_enctypes, "default_tkt_enctypes")?;
+            self.enctype_diagnostics
+                .extend_from_slice(ticket.diagnostics());
         }
         if enctypes.tgs_explicit {
-            self.default_tgs_enctypes =
-                self.usable_explicit_enctypes(&self.default_tgs_enctypes, "default_tgs_enctypes")?;
+            self.enctype_diagnostics
+                .extend_from_slice(service.diagnostics());
         }
-        if self.permitted_enctypes_explicit.is_enabled() {
-            self.permitted_enctypes =
-                self.usable_explicit_enctypes(&self.permitted_enctypes, "permitted_enctypes")?;
-        }
-        if !self.permitted_enctypes_explicit.is_enabled() {
-            return Ok(());
-        }
-        let permitted = self.permitted_enctype_ids();
-        if permitted.is_empty() {
-            return Err(Error::NoPermittedEnctypes {
-                names: self.permitted_enctypes.clone(),
-            });
-        }
-        let request_lists = [
-            (
-                enctypes.tkt_explicit,
-                "default_tkt_enctypes",
-                &self.default_tkt_enctypes,
-            ),
-            (
-                enctypes.tgs_explicit,
-                "default_tgs_enctypes",
-                &self.default_tgs_enctypes,
-            ),
-        ];
-        for (explicit, key, names) in request_lists {
-            if !explicit {
-                continue;
+        self.permitted_enctypes = permitted
+            .enctypes()
+            .iter()
+            .map(|&etype| enctype_names::canonical_name(etype).to_owned())
+            .collect();
+        self.default_tkt_enctypes = ticket
+            .enctypes()
+            .iter()
+            .map(|&etype| enctype_names::canonical_name(etype).to_owned())
+            .collect();
+        self.default_tgs_enctypes = service
+            .enctypes()
+            .iter()
+            .map(|&etype| enctype_names::canonical_name(etype).to_owned())
+            .collect();
+        Ok(())
+    }
+
+    /// Reject blanket weakening even for programmatically modified defaults.
+    ///
+    /// # Errors
+    /// Returns the permanent weak-crypto policy rejection if enabled.
+    fn reject_weak_crypto(&self) -> Result<(), Error> {
+        if self.allow_weak_crypto.is_enabled() {
+            return Err(Policy::RejectedFeature {
+                feature: RejectedFeature::WeakCrypto,
+                reason: RejectionReason::InsecureByDesign,
             }
-            // Names without a supported ID are never requested, so only
-            // supported IDs can be narrowed away.
-            let not_permitted = names
-                .iter()
-                .find(|name| supported_enctype_id(name).is_some_and(|id| !permitted.contains(&id)));
-            if let Some(name) = not_permitted {
-                return Err(Error::EnctypeNotPermitted {
-                    key,
-                    enctype: name.clone(),
-                });
-            }
+            .into());
         }
         Ok(())
     }
 
-    /// Skip unsupported or disabled names under the final section's policy.
+    /// Resolve names without silently dropping forbidden entries.
     ///
     /// # Errors
-    /// Returns a named error with the original input when no usable name remains.
-    fn usable_explicit_enctypes(
-        &self,
-        names: &[String],
-        key: &'static str,
-    ) -> Result<Vec<String>, Error> {
-        let usable: Vec<String> = names
-            .iter()
-            .filter(|name| supported_enctype_id(name).is_some() && self.enctype_enabled(name))
-            .cloned()
-            .collect();
-        if usable.is_empty() {
-            return Err(if key == "permitted_enctypes" {
-                Error::NoPermittedEnctypes {
-                    names: names.to_vec(),
-                }
-            } else {
-                Error::NoUsableEnctypes {
-                    key,
-                    names: names.to_vec(),
-                }
-            });
-        }
-        Ok(usable)
-    }
-    /// Whether both family policy and weak-crypto policy permit this name.
-    fn enctype_enabled(&self, name: &str) -> bool {
-        let family_enabled = match supported_enctype_id(name) {
-            Some(23_i32 | 24_i32) => self.allow_rc4.is_enabled(),
-            Some(16_i32) => self.allow_des3.is_enabled(),
-            Some(_) | None => true,
-        };
-        family_enabled && (self.allow_weak_crypto.is_enabled() || !is_weak_enctype(name))
+    /// Returns expression errors under the current mode and legacy permissions.
+    fn resolve_names(&self, names: &[String]) -> Result<ResolvedEnctypes, Error> {
+        self.reject_weak_crypto()?;
+        EnctypeExpr::parse(&names.join(" "))?.resolve(
+            self.allow_rc4,
+            self.allow_des3,
+            self.enctype_parse_mode,
+        )
     }
 
-    /// Derives implemented IDs with the current independent policy switches.
+    /// Legacy infallible accessors fail closed as an empty list on invalid mutation.
+    /// Checked callers use `CryptoPolicy::from_libdefaults` for the typed cause.
     fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32> {
-        names
-            .iter()
-            .filter(|name| self.enctype_enabled(name))
-            .filter_map(|name| supported_enctype_id(name))
-            .collect()
+        self.resolve_names(names).map_or_else(
+            |_| Vec::new(),
+            |resolved| {
+                resolved
+                    .enctypes()
+                    .iter()
+                    .copied()
+                    .map(KerberosEtype::etype_id)
+                    .collect()
+            },
+        )
     }
 }
