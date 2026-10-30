@@ -321,7 +321,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(changepw_ticket);
+            client.cache_service_ticket(changepw_ticket)?;
             let task = tokio::spawn(async move {
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
@@ -372,7 +372,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(changepw_ticket);
+            client.cache_service_ticket(changepw_ticket)?;
             let task = tokio::spawn(async move {
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
@@ -432,7 +432,7 @@ TEST.GOKRB5 = {{
                     KdcProtocol::Tcp,
                     tgt,
                 );
-                client.cache_service_ticket(ticket);
+                client.cache_service_ticket(ticket)?;
                 let task = tokio::spawn(async move {
                     let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                     let parsed = KpasswdRequest::parse(&request)?;
@@ -507,7 +507,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(ticket);
+            client.cache_service_ticket(ticket)?;
             // When connection establishment fails before sending anything.
             let error = client
                 .change_password_with_options(
@@ -551,7 +551,7 @@ TEST.GOKRB5 = {{
                 tgt,
             )
             .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(1)));
-            client.cache_service_ticket(ticket);
+client.cache_service_ticket(ticket)?;
             let (release, wait) = oneshot::channel();
             let task = tokio::spawn(async move {
                 let (_request, socket) = read_tcp_kdc_request(&listener).await?;
@@ -599,7 +599,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(ticket);
+            client.cache_service_ticket(ticket)?;
             let task = tokio::spawn(async move {
                 let (_request, socket) = read_tcp_kdc_request(&listener).await?;
                 drop(socket);
@@ -640,7 +640,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(ticket);
+            client.cache_service_ticket(ticket)?;
             let task = tokio::spawn(async move {
                 let (_request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 write_tcp_kdc_response(&mut socket, b"invalid").await?;
@@ -689,7 +689,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(changepw_ticket);
+            client.cache_service_ticket(changepw_ticket)?;
             let task = tokio::spawn(async move {
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
@@ -759,7 +759,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            tokio_client.cache_service_ticket(changepw_ticket);
+            tokio_client.cache_service_ticket(changepw_ticket)?;
             let mut client = NegotiateClient::from_tokio_client(tokio_client);
 
             let task = tokio::spawn(async move {
@@ -813,7 +813,7 @@ TEST.GOKRB5 = {{
                 KdcProtocol::Tcp,
                 tgt,
             );
-            tokio_client.cache_service_ticket(changepw_ticket);
+            tokio_client.cache_service_ticket(changepw_ticket)?;
             let mut client = NegotiateClient::from_tokio_client(tokio_client);
 
             let task = tokio::spawn(async move {
@@ -886,7 +886,7 @@ TEST.GOKRB5 = {{
             KdcProtocol::Tcp,
             tgt,
         );
-        tokio_client.cache_service_ticket(changepw_ticket);
+        tokio_client.cache_service_ticket(changepw_ticket)?;
         let mut client =
             BlockingNegotiateClient::new(NegotiateClient::from_tokio_client(tokio_client))
                 .map_err(|cause| {

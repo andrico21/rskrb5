@@ -100,7 +100,7 @@ mod tests {
             .checked_add(Duration::from_hours(1))
             .context("end time")?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket.clone());
+        client.cache_service_ticket(service_ticket.clone())?;
 
         let cached = client
             .cached_service_ticket(sample_service_principal())
@@ -145,8 +145,8 @@ mod tests {
         };
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
 
-        client.cache_service_ticket(service_session(120, b"service-long")?);
-        client.cache_service_ticket(service_session(30, b"service-short")?);
+        client.cache_service_ticket(service_session(120, b"service-long")?)?;
+        client.cache_service_ticket(service_session(30, b"service-short")?)?;
         assert_eq!(
             client
                 .cached_service_ticket(sample_service_principal())
@@ -156,7 +156,7 @@ mod tests {
             b"service-long"
         );
 
-        client.cache_service_ticket(service_session(180, b"service-longer")?);
+        client.cache_service_ticket(service_session(180, b"service-longer")?)?;
         assert_eq!(
             client
                 .cached_service_ticket(sample_service_principal())
@@ -176,7 +176,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         assert_eq!(client.cached_service_ticket_count(), 1);
         client.clear_service_ticket_cache();
@@ -213,7 +213,7 @@ mod tests {
                 .insert("host.test.gokrb5".to_owned(), "TEST.GOKRB5".to_owned()),
         );
         let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         assert!(
             client
@@ -263,7 +263,7 @@ mod tests {
         expired_service_ticket.start_time = expired_start;
         expired_service_ticket.end_time = expired_end;
         expired_service_ticket.renew_till = None;
-        client.cache_service_ticket(expired_service_ticket);
+        client.cache_service_ticket(expired_service_ticket)?;
 
         let mut renewable_service_ticket = sample_service_ticket_session(&tgt)?;
         renewable_service_ticket.service =
@@ -271,7 +271,7 @@ mod tests {
         renewable_service_ticket.start_time = expired_start;
         renewable_service_ticket.end_time = expired_end;
         renewable_service_ticket.renew_till = Some(future_renew_till);
-        client.cache_service_ticket(renewable_service_ticket.clone());
+        client.cache_service_ticket(renewable_service_ticket.clone())?;
 
         let pruned = client.prune_unusable_sessions();
 
@@ -338,7 +338,7 @@ mod tests {
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt)
             .with_password_credential(TESTUSER_PASSWORD);
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         client.destroy();
 
@@ -968,7 +968,7 @@ mod tests {
                 KdcProtocol::Tcp,
                 tgt,
             );
-            client.cache_service_ticket(service_ticket.clone());
+            client.cache_service_ticket(service_ticket.clone())?;
             assert_eq!(client.cached_service_ticket_count(), 1);
 
             let task = tokio::spawn(async move {
@@ -1286,7 +1286,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         let cache = client.to_ccache().context("client exports ccache")?;
         assert_eq!(cache.default_principal().realm, "TEST.GOKRB5");
@@ -1323,7 +1323,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         let cache = client.to_ccache().context("client exports ccache")?;
         let path = temp_client_ccache_file("load-name")?;
         let name = format!("FILE:{}", path.display());
@@ -1407,7 +1407,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         let cache = client
             .to_ccache()
             .map_err(|cause| format!("client exports ccache: {cause}"))?;
@@ -1432,7 +1432,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         let directory = temp_client_ccache_dir("dir-collection-name")?;
         fs::create_dir_all(&directory).context("temp DIR collection is created")?;
         let name = format!("DIR:{}", directory.display());
@@ -1466,7 +1466,7 @@ mod tests {
             KdcProtocol::Tcp,
             tgt.clone(),
         );
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         client
             .save_default_ccache_name()
             .context("client saves configured ccache")?;
@@ -1507,7 +1507,7 @@ mod tests {
             KdcProtocol::Tcp,
             tgt.clone(),
         );
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         client
             .save_default_ccache()
             .map_err(|cause| format!("client saves default ccache: {cause}"))?;
@@ -1549,7 +1549,7 @@ mod tests {
             KdcProtocol::Tcp,
             tgt.clone(),
         );
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
         client
             .save_default_ccache()
             .map_err(|cause| format!("client saves default ccache from env: {cause}"))?;
@@ -1971,7 +1971,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket);
+        client.cache_service_ticket(service_ticket)?;
 
         let sessions = client.sessions_json().context("sessions JSON renders")?;
         assert_eq!(
@@ -2012,7 +2012,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(service_ticket.clone());
+        client.cache_service_ticket(service_ticket.clone())?;
 
         let mut old_tgt = tgt.to_ccache_credential().context("TGT converts")?;
         old_tgt.client.name_type = 0_i32;
@@ -2124,7 +2124,7 @@ mod tests {
             Ok(ticket)
         };
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
-        client.cache_service_ticket(session_for("auth.cern.ch")?);
+        client.cache_service_ticket(session_for("auth.cern.ch")?)?;
 
         assert!(
             client
@@ -2135,7 +2135,7 @@ mod tests {
                 )?)
                 .is_some()
         );
-        client.cache_service_ticket(session_for("Auth.Cern.CH")?);
+        client.cache_service_ticket(session_for("Auth.Cern.CH")?)?;
         assert_eq!(client.cached_service_ticket_count(), 1);
         Ok(())
     }
@@ -2717,7 +2717,7 @@ mod tests {
         service_ticket.service = Principal::new("PARTNER.REALM", 2, ["HTTP", "Host.Example.COM"]);
 
         let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(service_ticket.clone());
+        client.cache_service_ticket(service_ticket.clone())?;
 
         let lookup = Principal::new("", 2, ["HTTP", "Host.Example.COM"]);
         let cached = client

@@ -432,6 +432,10 @@ pub enum Client {
         /// Referral ticket service name.
         service: String,
     },
+    /// An inserted session belongs to a different client realm or component sequence.
+    #[cfg(feature = "tokio")]
+    #[error("cached session client does not match the configured client identity")]
+    CacheClientMismatch,
     /// A renewal helper expected a `krbtgt/<realm>` TGT session.
     #[error("expected a TGT session, got service {service}")]
     InvalidTgtSession {

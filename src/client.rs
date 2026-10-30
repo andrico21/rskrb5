@@ -39,12 +39,12 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
 };
-/// In-memory credential-cache replacement.
-#[cfg(feature = "tokio")]
-mod cache_update;
 /// Identity-bound cache insertion.
 #[cfg(feature = "tokio")]
 mod cache_insert;
+/// In-memory credential-cache replacement.
+#[cfg(feature = "tokio")]
+mod cache_update;
 /// TGT refresh scheduling.
 #[cfg(feature = "tokio")]
 mod refresh_schedule;
@@ -889,14 +889,15 @@ impl Tokio {
                 continue;
             }
             let session = ccache_credential_session(credential);
-            if is_tgt_principal(&session.service) {
+            let insertion = if is_tgt_principal(&session.service) {
                 // A TGT whose service names no realm cannot be cached; it is
                 // skipped like the other unusable entries.
-                if let Err(skipped) = kerberos.cache_tgt_session_at(session, now) {
-                    drop(skipped);
-                }
+                kerberos.cache_tgt_session_at(session, now)
             } else {
-                kerberos.cache_service_ticket(session);
+                kerberos.cache_service_ticket(session)
+            };
+            if let Err(skipped) = insertion {
+                drop(skipped);
             }
         }
         kerberos
@@ -1460,15 +1461,23 @@ impl Tokio {
         serde_json::to_string_pretty(&tickets)
     }
     /// Insert or replace a service ticket in the cache.
+    ///
+    /// Client realm and ordered components must match; advisory name type is ignored.
+    /// Rejection leaves the cache unchanged.
+    /// # Errors
+    /// Returns [`Error::CacheClientMismatch`] for another client identity.
     #[inline]
-    pub fn cache_service_ticket(&mut self, ticket: TgsRepSession) {
-        cache_insert::service_ticket(self, ticket);
+    pub fn cache_service_ticket(&mut self, ticket: TgsRepSession) -> Result<(), Error> {
+        cache_insert::service_ticket(self, ticket)
     }
     /// Insert or replace a TGT session in the realm-keyed session cache.
+    ///
+    /// Client realm and ordered components must match; advisory name type is ignored.
+    /// Rejection leaves both the primary and realm-keyed caches unchanged.
     /// # Errors
     ///
     /// Returns [`Error::InvalidTgtSession`] when the session's service is not a
-    /// `krbtgt/<realm>` principal.
+    /// `krbtgt/<realm>` principal, or [`Error::CacheClientMismatch`] for another client identity.
     #[inline]
     pub fn cache_tgt_session(&mut self, tgt: AsRepSession) -> Result<(), Error> {
         self.cache_tgt_session_at(tgt, SystemTime::now())
@@ -1684,7 +1693,7 @@ impl Tokio {
                     .await
             {
                 renewed.service = service;
-                self.cache_service_ticket(renewed.clone());
+                self.cache_service_ticket(renewed.clone())?;
                 return Ok(renewed);
             }
         }
@@ -1713,7 +1722,7 @@ impl Tokio {
             self.cache_tgt_session(referral_tgt)?;
         }
         let ticket = result.ticket;
-        self.cache_service_ticket(ticket.clone());
+        self.cache_service_ticket(ticket.clone())?;
         Ok(ticket)
     }
     /// Acquire an `S4U2Self` ticket for an impersonated user using the current service TGT.

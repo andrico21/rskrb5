@@ -20,7 +20,7 @@ mod tests {
         ticket.ticket_flags =
             (u32::from_be_bytes(ticket.ticket_flags) | 0x0100_0000_u32).to_be_bytes();
         let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
-        client.cache_service_ticket(ticket.clone());
+        client.cache_service_ticket(ticket.clone())?;
         assert!(client.cached_service_ticket(ticket.service).is_none());
         Ok(())
     }
