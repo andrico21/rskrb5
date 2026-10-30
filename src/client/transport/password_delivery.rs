@@ -5,9 +5,45 @@ use std::io;
 use tokio::net::{ToSocketAddrs, UdpSocket, lookup_host};
 
 use super::{
-    Error, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, non_empty_kdc_response,
+    Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, non_empty_kdc_response,
     tcp_request_length,
 };
+
+/// Try password endpoints only while delivery is definitely unattempted.
+///
+/// # Errors
+/// Returns endpoint failures or the first uncertain mutation outcome.
+///
+/// # Cancel safety
+/// NOT cancel-safe: a delivered password request may already have committed.
+pub(super) async fn send_to_endpoints(
+    transport: &Tokio,
+    realm: &str,
+    protocol: KdcProtocol,
+    endpoints: Vec<KdcEndpoint>,
+    request: &[u8],
+) -> Result<Vec<u8>, Error> {
+    let mut failures = Vec::new();
+    for endpoint in endpoints {
+        let result = transport
+            .send_password_once(
+                endpoint.protocol,
+                (endpoint.host.as_str(), endpoint.port),
+                request,
+            )
+            .await;
+        match result {
+            Ok(response) => return Ok(response),
+            Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
+            Err(error) => failures.push(error.to_string()),
+        }
+    }
+    Err(Error::KdcEndpointFailures {
+        realm: realm.to_owned(),
+        protocol,
+        failures,
+    })
+}
 
 /// Send one password mutation with separate preparation and delivery budgets.
 ///

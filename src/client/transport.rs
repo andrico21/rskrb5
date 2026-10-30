@@ -732,26 +732,7 @@ impl Tokio {
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let mut failures = Vec::new();
-        for endpoint in endpoints {
-            let result = self
-                .send_password_once(
-                    endpoint.protocol,
-                    (endpoint.host.as_str(), endpoint.port),
-                    request,
-                )
-                .await;
-            match result {
-                Ok(response) => return Ok(response),
-                Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
-                Err(error) => failures.push(error.to_string()),
-            }
-        }
-        Err(Error::KdcEndpointFailures {
-            realm: realm.to_owned(),
-            protocol,
-            failures,
-        })
+        password_delivery::send_to_endpoints(self, realm, protocol, endpoints, request).await
     }
 
     /// Send one password mutation, marking the outcome unknown before possible delivery.
