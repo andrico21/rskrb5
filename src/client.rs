@@ -51,6 +51,11 @@ mod password_rotation;
 /// TGT refresh scheduling.
 #[cfg(feature = "tokio")]
 mod refresh_schedule;
+/// Cached-session renewal eligibility.
+#[cfg(feature = "tokio")]
+mod renewal_eligibility;
+#[cfg(feature = "tokio")]
+use renewal_eligibility::session_renewable_at;
 /// Authenticated KDC reply time and flag constraints.
 mod reply_constraints;
 /// TGT session metadata serialization.
@@ -4842,15 +4847,6 @@ fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
 #[cfg(feature = "tokio")]
 fn session_usable_at(session: &AsRepSession, now: SystemTime) -> bool {
     session_valid_at(session, now) || session_renewable_at(session, now)
-}
-
-/// Whether a session can still be renewed at `now`.
-#[cfg(feature = "tokio")]
-fn session_renewable_at(session: &AsRepSession, now: SystemTime) -> bool {
-    u32::from_be_bytes(session.ticket_flags) & TICKET_FLAG_INVALID == 0
-        && session
-            .renew_till
-            .is_some_and(|renew_till| now < renew_till)
 }
 
 /// Convert a Kerberos time to a `SystemTime`.
