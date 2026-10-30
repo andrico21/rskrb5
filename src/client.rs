@@ -45,6 +45,9 @@ mod cache_insert;
 /// In-memory credential-cache replacement.
 #[cfg(feature = "tokio")]
 mod cache_update;
+/// Password credential rotation eligibility.
+#[cfg(feature = "tokio")]
+mod password_rotation;
 /// TGT refresh scheduling.
 #[cfg(feature = "tokio")]
 mod refresh_schedule;
@@ -2204,8 +2207,7 @@ impl Tokio {
             KRB_NT_PRINCIPAL,
             ["kadmin".to_owned(), "changepw".to_owned()],
         );
-        let update_password_credential = target == self.client
-            && matches!(self.credentials, Some(TokioClientCredentials::Password(_)));
+        let update_password_credential = password_rotation::should_rotate(self, &target);
         let ticket = match self.credentials.clone() {
             Some(TokioClientCredentials::Password(password)) => {
                 self.transport
