@@ -1,5 +1,25 @@
 //! Downstream API tests for crate-wide domain error propagation (no external services).
 
+/// Causal-chain coverage for every retained error payload.
+#[cfg(test)]
+#[path = "error_api/sources.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[cfg_attr(
+    feature = "tokio",
+    expect(
+        clippy::missing_panics_doc,
+        reason = "test code is not rendered API documentation"
+    )
+)]
+#[cfg_attr(
+    feature = "tokio",
+    expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")
+)]
+mod sources;
+
 /// Domain failures retain their concrete cause through the crate-wide result alias.
 #[cfg(test)]
 #[expect(

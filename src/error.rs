@@ -132,7 +132,7 @@ pub enum Ccache {
     Io(#[from] io::Error),
     /// The default cache name could not be read from `KRB5CCNAME`.
     #[error("default credential cache name could not be read from KRB5CCNAME: {0}")]
-    DefaultCacheName(env::VarError),
+    DefaultCacheName(#[source] env::VarError),
     /// A cache name was empty or did not include a path.
     #[error("invalid credential cache name")]
     InvalidCacheName,
@@ -300,7 +300,7 @@ pub enum Client {
     KpasswdReplyControl(&'static str),
     /// Delivery or reply validation failed after entering a mutation exchange.
     #[error("password mutation outcome is unknown: {0}")]
-    KpasswdOutcomeUnknown(Box<Self>),
+    KpasswdOutcomeUnknown(#[source] Box<Self>),
     /// A kpasswd AP-REP did not echo the AP-REQ authenticator timestamp.
     #[error("kpasswd AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
     KpasswdApRepTimestampMismatch {
@@ -391,7 +391,7 @@ pub enum Client {
     /// The default client keytab name could not be read from `KRB5_CLIENT_KTNAME`.
     #[cfg(feature = "tokio")]
     #[error("default client keytab name could not be read from KRB5_CLIENT_KTNAME: {0}")]
-    DefaultClientKeytabName(env::VarError),
+    DefaultClientKeytabName(#[source] env::VarError),
     /// A high-level client operation needs a non-empty client principal name.
     #[cfg(feature = "tokio")]
     #[error("client principal name is not configured")]
@@ -1111,7 +1111,7 @@ pub enum Keytab {
     Io(#[from] io::Error),
     /// The default keytab name could not be read from `KRB5_KTNAME`.
     #[error("default keytab name could not be read from KRB5_KTNAME: {0}")]
-    DefaultKeytabName(env::VarError),
+    DefaultKeytabName(#[source] env::VarError),
     /// A keytab name was empty or did not include a path.
     #[error("invalid keytab name")]
     InvalidKeytabName,
@@ -2131,7 +2131,7 @@ pub enum Spnego {
     },
     /// Base64 decoding failed.
     #[error("base64 decode error: {0}")]
-    Base64(base64::DecodeError),
+    Base64(#[source] base64::DecodeError),
     /// ASN.1 DER decode failed.
     #[error("failed to decode {target}: {message}")]
     Decode {
