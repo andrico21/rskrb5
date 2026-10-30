@@ -27,6 +27,8 @@ mod password_discovery;
 mod password_dns;
 /// Password result consumption after a transport exchange.
 mod password_result;
+/// Ordered SRV target address resolution.
+mod srv_targets;
 use framing::tcp_request_length;
 #[cfg(test)]
 use framing::validate_tcp_length;
@@ -1965,23 +1967,14 @@ impl Tokio {
             .collect::<Vec<_>>();
         order_srv_records(&mut records, srv_draw)?;
 
-        let resolve_targets = self.dns_server.is_some();
-        let mut endpoints = Vec::with_capacity(records.len());
-        for (_, _, target, port) in records {
-            let hosts = if resolve_targets {
-                resolve_dns_endpoint_host(&resolver, realm, protocol, &target).await?
-            } else {
-                vec![target]
-            };
-            endpoints.extend(hosts.into_iter().map(|host| KdcEndpoint {
-                protocol,
-                host,
-                port,
-                source: KdcEndpointSource::DnsSrv,
-            }));
-        }
-
-        Ok(endpoints)
+        srv_targets::resolve(
+            &resolver,
+            realm,
+            protocol,
+            records,
+            self.dns_server.is_some(),
+        )
+        .await
     }
 
     /// Try each endpoint in turn and return the first response.
