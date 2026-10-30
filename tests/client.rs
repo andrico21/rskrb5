@@ -121,6 +121,9 @@ mod review_refresh;
 mod review_s4u;
 #[path = "client/review_salt.rs"]
 mod review_salt;
+#[cfg(all(feature = "tokio", feature = "serde"))]
+#[path = "client/review_session_json.rs"]
+mod review_session_json;
 #[cfg(feature = "tokio")]
 #[path = "client/review_validity.rs"]
 mod review_validity;

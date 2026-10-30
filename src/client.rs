@@ -48,12 +48,12 @@ mod cache_update;
 /// Password credential rotation eligibility.
 #[cfg(feature = "tokio")]
 mod password_rotation;
-/// TGT session metadata serialization.
-#[cfg(all(feature = "tokio", feature = "serde"))]
-mod session_json;
 /// TGT refresh scheduling.
 #[cfg(feature = "tokio")]
 mod refresh_schedule;
+/// TGT session metadata serialization.
+#[cfg(all(feature = "tokio", feature = "serde"))]
+mod session_json;
 #[cfg(feature = "tokio")]
 use refresh_schedule::{session_refresh_delay_at, session_refresh_due_at};
 /// Password-change request construction and verification.

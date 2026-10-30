@@ -6,7 +6,7 @@ use super::{AsRepSession, Tokio, json_time};
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct SessionJsonEntry {
-    /// Realm the TGT is issued for.
+    /// Destination realm named by the TGT, not its issuing realm.
     realm: String,
     /// Initial authentication time (RFC 3339).
     auth_time: String,
@@ -25,16 +25,16 @@ struct SessionJsonEntry {
 pub(super) fn render(client: &Tokio) -> Result<String, serde_json::Error> {
     let sessions = client
         .tgt_sessions
-        .values()
-        .map(session_json_entry)
+        .iter()
+        .map(|(destination, session)| session_json_entry(destination, session))
         .collect::<Vec<_>>();
     serde_json::to_string_pretty(&sessions)
 }
 
 /// JSON entry for one TGT session.
-fn session_json_entry(session: &AsRepSession) -> SessionJsonEntry {
+fn session_json_entry(destination: &str, session: &AsRepSession) -> SessionJsonEntry {
     SessionJsonEntry {
-        realm: session.service.realm.clone(),
+        realm: destination.to_owned(),
         auth_time: json_time(session.auth_time),
         end_time: json_time(session.end_time),
         renew_till: json_time(session.renew_till.unwrap_or(session.end_time)),
