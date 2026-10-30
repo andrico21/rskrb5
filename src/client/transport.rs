@@ -23,6 +23,8 @@ pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error
 mod password_delivery;
 /// Configured password endpoint selection.
 mod password_discovery;
+/// DNS password-service fallback.
+mod password_dns;
 /// Password result consumption after a transport exchange.
 mod password_result;
 use framing::tcp_request_length;
@@ -1891,34 +1893,7 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        match self
-            .discover_srv_endpoints("_kpasswd", realm, protocol)
-            .await
-        {
-            Ok(endpoints) if !endpoints.is_empty() => return Ok(endpoints),
-            Err(
-                error @ Error::DnsServiceUnavailable {
-                    service: _,
-                    realm: _,
-                },
-            ) => return Err(error),
-            Ok(_) | Err(_) => {}
-        }
-
-        let mut endpoints = self
-            .discover_srv_endpoints("_kerberos-adm", realm, protocol)
-            .await?;
-        for endpoint in &mut endpoints {
-            endpoint.port = 464;
-        }
-        if endpoints.is_empty() {
-            Err(Error::NoKdcEndpoints {
-                realm: realm.to_owned(),
-                protocol,
-            })
-        } else {
-            Ok(endpoints)
-        }
+        password_dns::discover(self, realm, protocol).await
     }
 
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
