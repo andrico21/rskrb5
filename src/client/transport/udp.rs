@@ -75,13 +75,65 @@ fn receive_error(error: io::Error, max: usize, windows: bool) -> Error {
 /// Platform receive-error classification.
 #[cfg(test)]
 #[expect(
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
 mod tests {
+    use core::error::Error as StdError;
     use std::io;
 
+    use tokio::net::UdpSocket;
+
     use super::{Error, receive_error};
+    use crate::client::transport::{KdcProtocol, Tokio};
+
+    /// Both services enforce the common receive cap while preserving mutation uncertainty.
+    async fn oversized(password: bool) -> Result<(), Box<dyn StdError>> {
+        // Given a peer sending more bytes than the configured receive cap.
+        let peer = UdpSocket::bind("127.0.0.1:0").await?;
+        let addr = peer.local_addr()?;
+        let transport = Tokio::new().with_udp_response_limit(4);
+        let server = async {
+            let mut request = [0; 32];
+            let (_, client) = peer.recv_from(&mut request).await?;
+            let _: usize = peer.send_to(&[42; 16], client).await?;
+            Ok::<_, io::Error>(())
+        };
+        // When the service receives the oversized datagram.
+        let client = async {
+            if password {
+                transport
+                    .send_password_once(KdcProtocol::Udp, addr, &[1])
+                    .await
+            } else {
+                transport.send_udp(addr, &[1]).await
+            }
+        };
+        let (sent, outcome) = tokio::join!(server, client);
+        sent?;
+        // Then the shared size error remains definite only for the non-mutating service.
+        match outcome {
+            Err(Error::KpasswdOutcomeUnknown(source)) if password => {
+                assert!(matches!(*source, Error::UdpResponseTooLarge { limit: 4 }));
+            }
+            Err(Error::UdpResponseTooLarge { limit: 4 }) if !password => {}
+            other => return Err(format!("unexpected UDP outcome: {other:?}").into()),
+        }
+        Ok(())
+    }
+
+    /// KDC UDP rejects truncated responses through the common primitive.
+    #[tokio::test]
+    async fn common_bound_rejects_kdc_datagram() -> Result<(), Box<dyn StdError>> {
+        oversized(false).await
+    }
+
+    /// Password UDP rejects truncated responses as uncertain outcomes.
+    #[tokio::test]
+    async fn common_bound_rejects_password_datagram() -> Result<(), Box<dyn StdError>> {
+        oversized(true).await
+    }
 
     /// Windows WSAEMSGSIZE must retain the advertised size-error taxonomy.
     #[test]
