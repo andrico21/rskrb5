@@ -1,6 +1,84 @@
 //! DNS protocol and target failover regressions.
 
+use hickory_resolver::proto::op::ResponseCode;
+
 use super::*;
+
+/// A failed SRV target does not suppress another usable target in either service.
+#[test]
+fn srv_target_failure_keeps_usable_peers() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        for bad_first in [false, true] {
+            for password in [false, true] {
+                // Given ordered SRV records with one NXDOMAIN target and one usable literal.
+                let socket = UdpSocket::bind("127.0.0.1:0").await?;
+                let server = socket.local_addr()?;
+                let fixture = tokio::spawn(async move {
+                    for _ in 0_u8..16 {
+                        let mut buffer = [0; 4096];
+                        let (length, peer) = socket.recv_from(&mut buffer).await?;
+                        let request = Message::from_vec(buffer.get(..length).ok_or("DNS length")?)?;
+                        let query = request.queries.first().ok_or("DNS question")?;
+                        let mut response =
+                            Message::response(request.metadata.id, request.metadata.op_code);
+                        response.metadata.authoritative = true;
+                        response.queries = request.queries.clone();
+                        if query.query_type() == RecordType::SRV {
+                            for (priority, target) in [
+                                (u16::from(!bad_first), "missing.test.gokrb5."),
+                                (u16::from(bad_first), "127.0.0.1."),
+                            ] {
+                                response.answers.push(Record::from_rdata(
+                                    query.name().clone(),
+                                    60,
+                                    RData::SRV(SRV::new(
+                                        priority,
+                                        0,
+                                        1464,
+                                        Name::from_ascii(target)?,
+                                    )),
+                                ));
+                            }
+                        } else {
+                            response.metadata.response_code = ResponseCode::NXDomain;
+                        }
+                        let _: usize = socket.send_to(&response.to_vec()?, peer).await?;
+                    }
+                    Ok::<(), TestError>(())
+                });
+                let config = Config::parse("[libdefaults]\ndns_lookup_kdc = true\n")?;
+                let transport = Tokio::new().with_dns_server(&server.to_string())?;
+                // When discovery resolves the ordered targets for either service.
+                let operation = async {
+                    if password {
+                        transport
+                            .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                            .await
+                    } else {
+                        transport
+                            .discover_kdcs(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                            .await
+                    }
+                };
+                let result = timeout(Duration::from_secs(2), operation).await;
+                fixture.abort();
+                match fixture.await {
+                    Ok(completion) => completion?,
+                    Err(error) if error.is_cancelled() => {}
+                    Err(error) => return Err(error.into()),
+                }
+                // Then the usable target remains available regardless of selected order.
+                let endpoints = result??;
+                assert_eq!(endpoints.len(), 1);
+                assert_eq!(
+                    endpoints.first().ok_or("usable endpoint")?.authority(),
+                    "127.0.0.1:1464"
+                );
+            }
+        }
+        Ok(())
+    })
+}
 
 /// UDP password discovery uses the administrative service's TCP SRV record.
 #[test]

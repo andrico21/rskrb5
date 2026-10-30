@@ -19,9 +19,16 @@ pub(super) async fn resolve(
     resolve_targets: bool,
 ) -> Result<Vec<KdcEndpoint>, Error> {
     let mut endpoints = Vec::with_capacity(records.len());
+    let mut failures = Vec::new();
     for (_, _, target, port) in records {
         let hosts = if resolve_targets {
-            resolve_dns_endpoint_host(resolver, realm, protocol, &target).await?
+            match resolve_dns_endpoint_host(resolver, realm, protocol, &target).await {
+                Ok(hosts) => hosts,
+                Err(error) => {
+                    failures.push(error.to_string());
+                    continue;
+                }
+            }
         } else {
             vec![target]
         };
@@ -31,6 +38,13 @@ pub(super) async fn resolve(
             port,
             source: KdcEndpointSource::DnsSrv,
         }));
+    }
+    if endpoints.is_empty() && !failures.is_empty() {
+        return Err(Error::DnsSrvLookup {
+            realm: realm.to_owned(),
+            protocol,
+            message: failures.join("; "),
+        });
     }
     Ok(endpoints)
 }
