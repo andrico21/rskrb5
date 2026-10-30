@@ -6,10 +6,11 @@ use super::*;
 
 /// Pins that the Auto protocol goes straight to TCP under `udp_preference_limit = 1`.
 #[test]
-fn tokio_transport_auto_honors_tcp_only_udp_preference_limit() -> Result<(), TestError> {
+fn tokio_transport_auto_honors_tcp_first_udp_preference_limit() -> Result<(), TestError> {
     runtime()?.block_on(async {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
+        let udp = UdpSocket::bind(addr).await?;
         let config = config_with_kdcs_and_udp_limit([addr.to_string()], 1)?;
         let task = tokio::spawn(async move {
             let (request, mut socket) = read_tcp_request(&listener).await?;
@@ -29,6 +30,13 @@ fn tokio_transport_auto_honors_tcp_only_udp_preference_limit() -> Result<(), Tes
 
         task.await??;
         assert_eq!(response, b"auto-config-tcp-as-rep");
+        let mut datagram = [0; 64];
+        assert!(
+            timeout(Duration::from_millis(20), udp.recv(&mut datagram))
+                .await
+                .is_err(),
+            "TCP-first request unexpectedly probed UDP"
+        );
         Ok::<_, TestError>(())
     })
 }
