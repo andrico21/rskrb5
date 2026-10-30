@@ -27,6 +27,10 @@ pub type CryptoPolicy = policy::Policy;
 /// Intended consumer use checked against runtime policy.
 pub type Use = policy::Use;
 
+/// Policy-authorized low-level cryptographic operations.
+#[path = "crypto/checked.rs"]
+pub mod checked;
+
 /// Internal zeroizing scratch ownership.
 #[path = "crypto/scratch.rs"]
 mod scratch;
