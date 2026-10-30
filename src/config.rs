@@ -10,7 +10,7 @@ use core::{
     time::Duration,
 };
 use std::{
-    env,
+    env, fs,
     io::{self, Read as _},
     path::{Path, PathBuf},
 };
@@ -26,6 +26,13 @@ pub mod protocol;
 #[cfg(feature = "serde")]
 #[path = "config/serde_policy.rs"]
 mod serde_policy;
+
+/// Ordered profile composition.
+#[path = "config/profile.rs"]
+mod profile;
+/// Independent source syntax state.
+#[path = "config/profile_syntax.rs"]
+mod profile_syntax;
 
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
@@ -59,12 +66,12 @@ pub const MAX_INCLUDE_DEPTH: usize = 8;
 
 /// The most files one configuration may pull in through `include` and
 /// `includedir` before parsing fails with [`Error::IncludeTooMany`].
-pub const MAX_INCLUDE_FILES: usize = 64;
+pub const MAX_INCLUDE_FILES: usize = 256;
 
 /// The most bytes one configuration may pull in through `include` and
 /// `includedir` - counted across every included file - before parsing fails with
-/// [`Error::IncludeTooLarge`] (1 MiB).
-pub const MAX_INCLUDE_BYTES: usize = 1024 * 1024;
+/// [`Error::IncludeTooLarge`] (4 MiB, including root sources).
+pub const MAX_INCLUDE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Parsed Kerberos configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -107,18 +114,7 @@ impl Config {
     where
         P: AsRef<Path>,
     {
-        use std::fs;
-
-        let file = path.as_ref();
-        let canonical = fs::canonicalize(file).map_err(|source| Error::File {
-            path: file.to_path_buf(),
-            source,
-        })?;
-        let input = fs::read_to_string(file).map_err(|source| Error::File {
-            path: file.to_path_buf(),
-            source,
-        })?;
-        Self::parse_with_roots(&input, [canonical])
+        Self::load_paths([path])
     }
 
     /// Load and parse the `krb5.conf` path list named by `KRB5_CONFIG`.
@@ -189,52 +185,44 @@ impl Config {
 
     /// Load and parse one or more `krb5.conf` files.
     ///
-    /// Files are concatenated in iterator order before parsing, preserving the
-    /// same section semantics as a single file with repeated sections. Each
-    /// file's canonical path is on the open chain before any of that text
-    /// expands, so a file the list names that one of its own children includes
-    /// is [`Error::IncludeCycle`] rather than a second read of the same file.
+    /// Sources compose in iterator order. Directory entries use MIT's filename
+    /// filter and bytewise order. Each file has independent syntax state; scalar
+    /// relations select their first value and endpoint relations accumulate.
+    /// Missing explicitly named sources fail closed rather than being skipped.
     ///
     /// # Errors
     ///
     /// Returns [`Error::EmptyConfigPathList`] when the list names no non-empty
     /// path, [`Error::File`] when a named file cannot be resolved or read, and
-    /// the [`Config::parse`] errors for the concatenated text.
+    /// the [`Config::parse`] errors for each independent source.
     #[inline]
     pub fn load_paths<I, P>(paths: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = P>,
         P: AsRef<Path>,
     {
-        use std::fs::{canonicalize, read_to_string};
-
-        let mut input = String::new();
-        // Every loaded file contributes exactly one root, so `roots` doubles as
-        // the count of files loaded so far.
-        let mut roots = Vec::new();
+        let mut loader = IncludeExpansion::default();
+        let mut found = false;
         for entry in paths {
             let path = entry.as_ref();
             if path.as_os_str().is_empty() {
                 continue;
             }
-            if !roots.is_empty() {
-                input.push('\n');
-            }
-            let canonical = canonicalize(path).map_err(|source| Error::File {
+            found = true;
+            let metadata = fs::metadata(path).map_err(|source| Error::File {
                 path: path.to_path_buf(),
                 source,
             })?;
-            input.push_str(&read_to_string(path).map_err(|source| Error::File {
-                path: path.to_path_buf(),
-                source,
-            })?);
-            input.push('\n');
-            roots.push(canonical);
+            if metadata.is_dir() {
+                loader.include_dir(path, 0)?;
+            } else {
+                loader.include_file(path, 0)?;
+            }
         }
-        if roots.is_empty() {
+        if !found {
             return Err(Error::EmptyConfigPathList);
         }
-        Self::parse_with_roots(&input, roots)
+        loader.profile.finish(ParseMode::Compatible)
     }
 
     /// Load the platform default files of `paths` that exist.
@@ -276,11 +264,10 @@ impl Config {
 
     /// Parse a `krb5.conf` string.
     ///
-    /// A line beginning with `include <file>` or `includedir <dir>` outside a
-    /// `{ ... }` group is expanded before the sections are parsed: the named file
-    /// is spliced at the directive site (MIT's `parse_include_file`), or every
-    /// file the directory holds whose name MIT's `valid_name` accepts is spliced
-    /// in alphanumeric order (`parse_include_dir`). The expansion is bounded by
+    /// A line beginning with `include <absolute-file>` or
+    /// `includedir <absolute-dir>` loads independent sources at the directive
+    /// site, then resumes the parent's section and nesting state. Directory
+    /// entries use MIT's eligibility filter and bytewise order. Loading is bounded by
     /// [`MAX_INCLUDE_DEPTH`], [`MAX_INCLUDE_FILES`] and [`MAX_INCLUDE_BYTES`], and
     /// a cycle, an unreadable file or directory, or a bound that is passed is a
     /// named [`Error`] rather than a skipped directive.
@@ -319,13 +306,7 @@ impl Config {
         Self::parse_with_roots_mode(input, [], mode)
     }
 
-    /// The parser the string entry point and the two file loaders share: they
-    /// differ in nothing but the canonical paths the text came from.
-    ///
-    /// Those paths go on the open chain before the text they contributed is
-    /// expanded, which is what makes the configuration's own files cycle
-    /// members: a root that includes itself, and a path-list root a child
-    /// includes, are [`Error::IncludeCycle`] like any other re-entered file.
+    /// Parse caller-provided text with an optional active source chain.
     ///
     /// # Errors
     ///
@@ -347,56 +328,16 @@ impl Config {
     where
         I: IntoIterator<Item = PathBuf>,
     {
-        let input = IncludeExpansion::default()
-            .with_roots(roots)
-            .expand(text, 0)?;
-        let mut config = Self::new();
-        config.libdefaults.enctype_parse_mode = mode;
-        let mut enctypes = EnctypeParseState::default();
-        let mut realm_lines = Vec::new();
-        let mut current = SectionKind::Unknown;
-        let mut lines = Vec::new();
-
-        for (index, raw) in input.lines().enumerate() {
-            // Saturating: an enumerate index is below `usize::MAX`, so the
-            // one-based line number cannot overflow.
-            let line_number = index.saturating_add(1);
-            let cleaned = strip_comments(raw).trim();
-            if cleaned.is_empty() {
-                continue;
-            }
-
-            if let Some(section) = SectionKind::parse(cleaned) {
-                if current == SectionKind::Realms {
-                    realm_lines.append(&mut lines);
-                }
-                apply_section(&mut config, current, &lines, &mut enctypes)?;
-                current = section;
-                lines.clear();
-                continue;
-            }
-
-            if current != SectionKind::DomainRealm
-                && let Some((key, value)) = cleaned.split_once('=')
-            {
-                protocol::relation(key.trim(), value.trim())?;
-            }
-
-            if current != SectionKind::Unknown {
-                lines.push(Line {
-                    number: line_number,
-                    text: cleaned.to_owned(),
-                });
-            }
+        let mut loader = IncludeExpansion::default().with_roots(roots);
+        if text.len() > MAX_INCLUDE_BYTES {
+            return Err(Error::IncludeTooLarge {
+                bytes: text.len(),
+                limit: MAX_INCLUDE_BYTES,
+            });
         }
-
-        if current == SectionKind::Realms {
-            realm_lines.append(&mut lines);
-        }
-        apply_section(&mut config, current, &lines, &mut enctypes)?;
-        config.realms = parse_realms(&realm_lines)?;
-        config.libdefaults.validate_explicit_enctypes(enctypes)?;
-        Ok(config)
+        loader.bytes = text.len();
+        loader.expand(text, 0)?;
+        loader.profile.finish(mode)
     }
 
     /// Render a gokrb5-style JSON snapshot of the parsed configuration.
@@ -1221,7 +1162,7 @@ use crate::error::Config as Error;
 /// `permitted_enctypes` line from a later one.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EnctypeParseState {
-    /// Every explicit expression, including values overwritten later.
+    /// Selected explicit expressions, before family-permission resolution.
     expressions: Vec<EnctypeExpr>,
     /// A `default_tkt_enctypes` line was parsed.
     tkt_explicit: bool,
@@ -1232,7 +1173,7 @@ pub(crate) struct EnctypeParseState {
 /// One non-empty, comment-stripped line of a section.
 #[derive(Clone, Debug)]
 struct Line {
-    /// One-based line number in the expanded input.
+    /// One-based line number in its independent source.
     number: usize,
     /// The line text after comment stripping and trimming.
     text: String,
@@ -1881,6 +1822,8 @@ fn includedir_name_is_valid(name: &[u8]) -> bool {
 /// and the cycle check on canonical paths are a deliberate divergence from MIT.
 #[derive(Default)]
 struct IncludeExpansion {
+    /// Ordered shared tree; syntax state belongs to each `expand` invocation.
+    profile: profile::Profile,
     /// Canonical paths of the files and directories being expanded, outermost
     /// first: the cycle check is a membership test on this chain, so a file - or
     /// a directory reached again through a symlink - that is re-entered by one
@@ -1920,24 +1863,26 @@ impl IncludeExpansion {
     ///
     /// Returns the [`Self::include_file`] or [`Self::include_dir`] error of the
     /// first directive whose target cannot be read or breaks a limit.
-    fn expand(&mut self, input: &str, depth: usize) -> Result<String, Error> {
-        let mut expanded = String::with_capacity(input.len());
-        let mut group_level = 0_i32;
-        for line in input.lines() {
-            let cleaned = strip_comments(line).trim();
-            if group_level == 0_i32
-                && let Some(directive) = IncludeDirective::parse(cleaned)
-            {
-                expanded.push_str(&self.splice(directive, depth)?);
+    fn expand(&mut self, input: &str, depth: usize) -> Result<(), Error> {
+        let mut state = profile_syntax::State::default();
+        for (index, line) in input.lines().enumerate() {
+            let cleaned = profile_syntax::comments(line).trim();
+            if cleaned.is_empty() {
                 continue;
             }
-            expanded.push_str(line);
-            expanded.push('\n');
-            // Saturating: a nesting count past `i32` is no real configuration,
-            // and it still reads as "inside a group".
-            group_level = group_level.saturating_add(brace_delta(cleaned));
+            if let Some(directive) = IncludeDirective::parse(cleaned) {
+                self.splice(directive, depth)?;
+                continue;
+            }
+            state.line(
+                &Line {
+                    number: index.saturating_add(1),
+                    text: cleaned.to_owned(),
+                },
+                &mut self.profile,
+            )?;
         }
-        Ok(expanded)
+        state.finish(&mut self.profile)
     }
 
     /// What one directive contributes to the expanded text.
@@ -1946,10 +1891,23 @@ impl IncludeExpansion {
     ///
     /// Returns the [`Self::include_file`] or [`Self::include_dir`] error for
     /// the directive's target.
-    fn splice(&mut self, directive: IncludeDirective<'_>, depth: usize) -> Result<String, Error> {
+    fn splice(&mut self, directive: IncludeDirective<'_>, depth: usize) -> Result<(), Error> {
+        let argument = match directive {
+            IncludeDirective::File(value) | IncludeDirective::Directory(value) => value,
+        };
+        if !Path::new(argument).is_absolute() {
+            return Err(Error::IncludeFile {
+                path: PathBuf::from(argument),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "include path must be absolute",
+                ),
+            });
+        }
+        let next_depth = depth.saturating_add(1);
         match directive {
-            IncludeDirective::File(argument) => self.include_file(Path::new(argument), depth),
-            IncludeDirective::Directory(argument) => self.include_dir(Path::new(argument), depth),
+            IncludeDirective::File(value) => self.include_file(Path::new(value), next_depth),
+            IncludeDirective::Directory(value) => self.include_dir(Path::new(value), next_depth),
         }
     }
 
@@ -1966,12 +1924,10 @@ impl IncludeExpansion {
     /// [`Error::IncludeCycle`] for a file already being expanded, the
     /// [`Self::read_include`] limit errors, and the errors of its own
     /// directives.
-    fn include_file(&mut self, path: &Path, depth: usize) -> Result<String, Error> {
-        use std::fs;
-
+    fn include_file(&mut self, path: &Path, depth: usize) -> Result<(), Error> {
         // Saturating: `MAX_INCLUDE_DEPTH` refuses the chain long before
         // `usize::MAX`.
-        let file_depth = depth.saturating_add(1);
+        let file_depth = depth;
         if file_depth > MAX_INCLUDE_DEPTH {
             return Err(Error::IncludeTooDeep {
                 depth: file_depth,
@@ -1980,16 +1936,14 @@ impl IncludeExpansion {
         }
         // Resolving the path is how a file that does not exist is named rather
         // than skipped; it also gives the cycle check its canonical key.
-        let canonical = fs::canonicalize(path).map_err(|source| Error::IncludeFile {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let canonical =
+            fs::canonicalize(path).map_err(|source| profile_file_error(path, depth, source))?;
         if self.open.contains(&canonical) {
             return Err(Error::IncludeCycle {
                 path: path.to_path_buf(),
             });
         }
-        let content = self.read_include(path)?;
+        let content = self.read_include(path, depth)?;
         self.open.push(canonical);
         let expanded = self.expand(&content, file_depth);
         drop(self.open.pop());
@@ -2004,7 +1958,7 @@ impl IncludeExpansion {
     /// [`Error::IncludeTooLarge`] past [`MAX_INCLUDE_BYTES`], and
     /// [`Error::IncludeFile`] for a file that cannot be opened or read, or that
     /// is not UTF-8 text.
-    fn read_include(&mut self, path: &Path) -> Result<String, Error> {
+    fn read_include(&mut self, path: &Path, depth: usize) -> Result<String, Error> {
         use std::fs::File;
 
         // Saturating: `MAX_INCLUDE_FILES` refuses long before `usize::MAX`.
@@ -2018,23 +1972,17 @@ impl IncludeExpansion {
         // Read at most one byte past what is left of the budget, so an oversize
         // file is refused without reading it into memory first.
         let remaining = MAX_INCLUDE_BYTES.saturating_sub(self.bytes);
-        let file = File::open(path).map_err(|source| Error::IncludeFile {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let file = File::open(path).map_err(|source| profile_file_error(path, depth, source))?;
         // Saturating: the limit plus one is what is read, and a `usize` budget
         // past `u64` is clamped rather than wrapped.
         let limit = u64::try_from(remaining)
             .unwrap_or(u64::MAX)
             .saturating_add(1);
         let mut bytes = Vec::new();
-        let _: usize =
-            file.take(limit)
-                .read_to_end(&mut bytes)
-                .map_err(|source| Error::IncludeFile {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
+        let _: usize = file
+            .take(limit)
+            .read_to_end(&mut bytes)
+            .map_err(|source| profile_file_error(path, depth, source))?;
         if bytes.len() > remaining {
             return Err(Error::IncludeTooLarge {
                 bytes: self.bytes.saturating_add(bytes.len()),
@@ -2076,9 +2024,7 @@ impl IncludeExpansion {
     /// [`Error::IncludeTooMany`] once its accepted names pass
     /// [`MAX_INCLUDE_FILES`], and the [`Self::include_file`] error of any
     /// accepted file.
-    fn include_dir(&mut self, dir: &Path, depth: usize) -> Result<String, Error> {
-        use std::fs;
-
+    fn include_dir(&mut self, dir: &Path, depth: usize) -> Result<(), Error> {
         let canonical = fs::canonicalize(dir).map_err(|source| Error::IncludeDir {
             path: dir.to_path_buf(),
             source,
@@ -2117,14 +2063,13 @@ impl IncludeExpansion {
         }
         // Byte order, which is `strcmp` order: MIT reads the directory's accepted
         // files in alphanumeric order.
-        names.sort();
+        names.sort_by(|left, right| left.as_encoded_bytes().cmp(right.as_encoded_bytes()));
         self.open.push(canonical);
-        let mut expanded = String::new();
         for name in names {
-            expanded.push_str(&self.include_file(&dir.join(name), depth)?);
+            self.include_file(&dir.join(name), depth)?;
         }
         drop(self.open.pop());
-        Ok(expanded)
+        Ok(())
     }
 }
 
@@ -2447,10 +2392,7 @@ mod fork_tests {
         loaded.err().ok_or_else(|| expected.into())
     }
 
-    /// `include` splices the named file at the directive site, so a
-    /// fragment's settings are in the configuration and a setting the parent
-    /// writes *after* the directive still wins - the splice is positional, not a
-    /// merge of two independently parsed files.
+    /// Included scalar values precede values written after the directive site.
     #[test]
     fn include_file_splices_settings_at_directive_site() -> Result<(), Box<dyn error::Error>> {
         let dir = fixture_dir("splice")?;
@@ -2477,8 +2419,8 @@ mod fork_tests {
             "the fragment's realm is spliced into the configuration"
         );
         assert_eq!(
-            config.libdefaults.default_realm, "PARENT.EXAMPLE",
-            "a setting after the directive site still wins, so the splice is positional"
+            config.libdefaults.default_realm, "FRAGMENT.EXAMPLE",
+            "the first setting is in the included fragment"
         );
         Ok(())
     }
@@ -2488,7 +2430,7 @@ mod fork_tests {
     /// and reads the accepted names in alphanumeric order.
     ///
     /// The order assertion is the `default_realm` one: two accepted names set it,
-    /// and the one that sorts last wins. The filter assertion is the empty realm
+    /// and the one that sorts first wins. The filter assertion is the empty realm
     /// list: only the two rejected names carry a `[realms]` section, so a realm
     /// appearing at all would mean one of them was read.
     #[test]
@@ -2532,8 +2474,8 @@ mod fork_tests {
         remove_fixture(&dir);
 
         assert_eq!(
-            config.libdefaults.default_realm, "LAST.EXAMPLE",
-            "the accepted names are read in alphanumeric order, so the last one wins"
+            config.libdefaults.default_realm, "FIRST.EXAMPLE",
+            "the accepted names are read in byte order, so the first one wins"
         );
         assert_eq!(config.libdefaults.udp_preference_limit, 1_i32);
         assert!(
@@ -2627,11 +2569,11 @@ mod fork_tests {
             matches!(
                 error,
                 Error::IncludeTooMany {
-                    count: 65,
+                    count: 257,
                     limit: MAX_INCLUDE_FILES
                 }
             ),
-            "the 65th file is past the limit of {MAX_INCLUDE_FILES}: {error:?}"
+            "the 257th file is past the limit of {MAX_INCLUDE_FILES}: {error:?}"
         );
         Ok(())
     }
@@ -2725,8 +2667,7 @@ mod fork_tests {
             matches!(
                 error,
                 Error::IncludeTooLarge {
-                    // `MAX_INCLUDE_BYTES` (1 MiB) plus one: 1_048_577.
-                    bytes: 0x0010_0001,
+                    bytes: 0x0040_0001,
                     limit: MAX_INCLUDE_BYTES
                 }
             ),
@@ -2781,7 +2722,7 @@ mod fork_tests {
 
     /// A `KRB5_CONFIG` path list keeps MIT's order with an include in it -
     /// files are read in list order, each file's includes are expanded where the
-    /// directive sits, and a later file's settings still win.
+    /// directive sits, and the first scalar value wins.
     #[test]
     fn krb5_config_path_list_preserves_mit_order_with_includes() -> Result<(), Box<dyn error::Error>>
     {
@@ -2810,12 +2751,12 @@ mod fork_tests {
         remove_fixture(&dir);
 
         assert_eq!(
-            config.libdefaults.default_realm, "SECOND.EXAMPLE",
-            "the later file in the list wins over the included fragment"
+            config.libdefaults.default_realm, "INCLUDE.EXAMPLE",
+            "the included fragment provides the first value"
         );
         assert_eq!(
-            config.libdefaults.udp_preference_limit, 2_i32,
-            "and over the file that carried the include"
+            config.libdefaults.udp_preference_limit, 1_i32,
+            "the first root provides the first preference value"
         );
         assert!(
             config.realm("INCLUDE.EXAMPLE").is_some(),
@@ -2859,10 +2800,7 @@ mod fork_tests {
         Ok(())
     }
 
-    /// A path-list root that a child includes is the same cycle. Every
-    /// top-level file is on the open stack before the text it contributed is
-    /// expanded, so a child's `include` of the root is named rather than the
-    /// root being read a second time.
+    /// Re-including a completed root is not an active-chain cycle.
     #[test]
     fn a_path_list_root_included_by_a_child_is_a_cycle() -> Result<(), Box<dyn error::Error>> {
         let dir = fixture_dir("path-list-root")?;
@@ -2877,16 +2815,10 @@ mod fork_tests {
             &format!("include {}\n", first.display()),
         )?;
 
-        let error = refusal(
-            Config::load_paths([&first, &second]),
-            "a path-list root a child includes is refused",
-        )?;
+        let config = Config::load_paths([&first, &second])?;
         remove_fixture(&dir);
 
-        assert!(
-            matches!(&error, Error::IncludeCycle { path } if path == &first),
-            "the root of the path list is already being read: {error:?}"
-        );
+        assert_eq!(config.libdefaults.default_realm, "FIRST.EXAMPLE");
         Ok(())
     }
 

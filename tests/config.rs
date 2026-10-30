@@ -3,6 +3,12 @@
 #[path = "support/env.rs"]
 mod env;
 
+#[path = "config/profile.rs"]
+mod profile;
+
+#[path = "config/profile_limits.rs"]
+mod profile_limits;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(
@@ -573,7 +579,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that a path list loads in order, skipping empty paths, with the later file winning.
+    /// Pins first-value precedence across an ordered path list, skipping empty paths.
     #[test]
     fn loads_config_path_list_in_order() -> Result<(), TestError> {
         let first = temp_file("load-list-first")?;
@@ -606,7 +612,7 @@ mod tests {
         fs::remove_file(&first).context("the test config is removed")?;
         fs::remove_file(&second).context("the test config is removed")?;
 
-        assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
+        assert_eq!(config.libdefaults.default_realm, "FIRST.GOKRB5");
         assert_eq!(
             config.resolve_realm("host.first.gokrb5"),
             Some("FIRST.GOKRB5")
@@ -618,7 +624,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that `KRB5_CONFIG` path lists load with the later file winning.
+    /// Pins first-value precedence across `KRB5_CONFIG` entries.
     #[test]
     fn loads_config_path_list_from_env() -> Result<(), TestError> {
         const TEST_PATH: &str = "tests::loads_config_path_list_from_env";
@@ -655,7 +661,7 @@ mod tests {
         fs::remove_file(&first).context("the test config is removed")?;
         fs::remove_file(&second).context("the test config is removed")?;
 
-        assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
+        assert_eq!(config.libdefaults.default_realm, "FIRST.GOKRB5");
         Ok(())
     }
 
@@ -1011,7 +1017,7 @@ mod tests {
         // When the sections compose.
         let config = Config::parse(input)?;
 
-        // Then unrelated realms, final relations and later scalar values survive.
+        // Then unrelated realms, final relations and first scalar values survive.
         assert_eq!(config.configured_kdcs("A")?, ["first.example:88"]);
         assert_eq!(config.configured_kdcs("B")?, ["other.example:88"]);
         assert_eq!(
@@ -1020,7 +1026,7 @@ mod tests {
         );
         assert_eq!(
             config.realm("A").context("realm A exists")?.default_domain,
-            "new.example"
+            "old.example"
         );
         Ok(())
     }
@@ -1526,10 +1532,10 @@ mod tests {
         );
         Ok(())
     }
-    /// Pins that a later `[libdefaults]` section can repair an earlier conflict.
+    /// Pins that later sections cannot replace a conflicting first request list.
     #[test]
     fn a_later_section_can_repair_an_earlier_conflict() -> Result<(), TestError> {
-        let config = Config::parse(
+        let result = Config::parse(
             "
 [libdefaults]
  default_tkt_enctypes = aes128-cts-hmac-sha1-96
@@ -1538,12 +1544,9 @@ mod tests {
 [libdefaults]
  default_tkt_enctypes = aes256-cts-hmac-sha1-96
 ",
-        )
-        .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
-
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
-        #[cfg(feature = "messages")]
-        assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
+        );
+        let failure = result.err().ok_or("first conflicting list was replaced")?;
+        assert!(matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96"));
         Ok(())
     }
     /// Pins that an explicit request list from an included file is validated.
@@ -1580,7 +1583,7 @@ mod tests {
         );
         Ok(())
     }
-    /// Pins that a later included file can repair an earlier conflict.
+    /// Pins that a later included file cannot replace the first request list.
     #[test]
     fn a_later_included_file_can_repair_an_earlier_conflict() -> Result<(), TestError> {
         let dir = include_fixture_dir(
@@ -1606,10 +1609,8 @@ mod tests {
 
         let loaded = Config::load(&main_path);
         fs::remove_dir_all(&dir)?;
-        let config = loaded
-            .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
-
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
+        let failure = loaded.err().ok_or("first included request list was replaced")?;
+        assert!(matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96"));
         Ok(())
     }
     /// Pins that a bare tag does not match a host that merely ends with its text.
