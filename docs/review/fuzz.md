@@ -231,7 +231,9 @@ does.
 | `rskrb5_ng::config::Config::load_from_env` | `src/config.rs` | - | reads `KRB5_CONFIG`, then `load_paths` |
 | `rskrb5_ng::config::Config::load_paths` | `src/config.rs` | - | reads each file, then `parse_with_roots` |
 | `rskrb5_ng::config::Config::parse` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::Config::parse_with_mode` | `src/config.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::Config::parse_with_roots` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::Config::parse_with_roots_mode` | `src/config.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::IncludeDirective::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::IncludeExpansion::expand` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::IncludeExpansion::include_dir` | `src/config.rs` | `krb5_conf` |  |
@@ -239,12 +241,13 @@ does.
 | `rskrb5_ng::config::IncludeExpansion::read_include` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::IncludeExpansion::splice` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::LibDefaults::parse_lines` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::LibDefaults::usable_explicit_enctypes` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::LibDefaults::validate_explicit_enctypes` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::LibDefaults::parse_mode` | `src/config.rs` | - | Typed mode accessor, not a parser. |
 | `rskrb5_ng::config::Realm::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::SectionKind::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::brace_delta` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::fork_tests::parse_does_not_read_uid_or_home` | `src/config.rs` | - | unit test, not a parser |
+| `rskrb5_ng::config::enctype_expr::EnctypeExpr::parse` | `src/config/enctype_expr.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::enctype_names::Selector::parse` | `src/config/enctype_names.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::parse_assignment` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_boolean` | `src/config.rs` | `name_parse` |  |
 | `rskrb5_ng::config::parse_colon_duration` | `src/config.rs` | `krb5_conf` |  |
@@ -257,7 +260,6 @@ does.
 | `rskrb5_ng::config::parse_realms` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_supported_enctype_ids` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_unit_duration` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::parse_words` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::strip_comments` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::crypto::AesSha1Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::AesSha2Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |

@@ -7,10 +7,20 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rskrb5_ng::Config;
+use rskrb5_ng::{
+    Config,
+    config::{EnctypeExpr, ParseMode, Toggle},
+};
 
 fuzz_target!(|data: &[u8]| {
     let text = String::from_utf8_lossy(data);
+    for mode in [ParseMode::Compatible, ParseMode::Strict] {
+        drop(Config::parse_with_mode(&text, mode));
+        if let Ok(expression) = EnctypeExpr::parse(&text) {
+            drop(expression.resolve(Toggle::Disabled, Toggle::Disabled, mode));
+            drop(expression.resolve(Toggle::Enabled, Toggle::Enabled, mode));
+        }
+    }
     if let Ok(config) = Config::parse(&text) {
         let defaults = &config.libdefaults;
         drop(defaults.default_tkt_enctype_ids());
