@@ -23,7 +23,7 @@ pub(super) async fn send<A>(
     request: &[u8],
 ) -> Result<Vec<u8>, Error>
 where
-    A: ToSocketAddrs + Clone,
+    A: ToSocketAddrs,
 {
     match protocol {
         KdcProtocol::Tcp => {

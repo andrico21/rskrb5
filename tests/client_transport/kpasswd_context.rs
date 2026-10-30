@@ -16,8 +16,21 @@ use rskrb5_ng::{
     krb_priv::{EncKrbPrivPartOptions, ipv4_host_address},
     ticket,
 };
+use tokio::net::ToSocketAddrs;
 
 use super::{TestError, kerberos_time};
+
+/// Compile both password address APIs with only their actual resolver bound.
+pub(super) fn address_contract<A>(addr: A) -> Result<(), TestError>
+where
+    A: ToSocketAddrs,
+{
+    let (built, options) = request()?;
+    let transport = super::Tokio::new();
+    drop(transport.exchange_kpasswd_request(super::KdcProtocol::Tcp, &addr, &built.request));
+    drop(transport.exchange_kpasswd_result(super::KdcProtocol::Tcp, addr, &built, &options));
+    Ok(())
+}
 
 /// Build a request with known service and reply keys.
 pub(super) fn request() -> Result<(BuiltKpasswdRequest, RequestOptions), TestError> {

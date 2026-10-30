@@ -768,7 +768,7 @@ impl Tokio {
         request: &[u8],
     ) -> Result<Vec<u8>, Error>
     where
-        A: ToSocketAddrs + Clone,
+        A: ToSocketAddrs,
     {
         password_delivery::send(self, protocol, addr, request).await
     }
@@ -881,7 +881,7 @@ impl Tokio {
         request: &kadmin::Request,
     ) -> Result<kadmin::Reply, Error>
     where
-        A: ToSocketAddrs + Clone,
+        A: ToSocketAddrs,
     {
         let frame = request.encode()?;
         let response = self.send_password_once(protocol, addr, &frame).await?;
@@ -950,7 +950,7 @@ impl Tokio {
         options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error>
     where
-        A: ToSocketAddrs + Clone,
+        A: ToSocketAddrs,
     {
         let reply = self
             .exchange_kpasswd_request(protocol, addr, &request.request)

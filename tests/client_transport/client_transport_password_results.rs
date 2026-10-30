@@ -2,6 +2,13 @@
 
 use super::*;
 
+/// A generic resolver input does not need the obsolete Clone bound.
+#[test]
+fn password_address_bound_is_resolver_only() -> Result<(), TestError> {
+    // Given an address constrained only by ToSocketAddrs, compile both APIs without sending.
+    kpasswd_context::address_contract("127.0.0.1:464")
+}
+
 /// Both checked transport helpers must reject invalid contexts after one delivery.
 #[test]
 fn checked_helpers_reject_invalid_contexts() -> Result<(), TestError> {
