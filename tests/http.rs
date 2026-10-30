@@ -1165,8 +1165,6 @@ mod tests {
 
     /// Pins that `NegotiateService::from_keytab_env` loads the `KRB5_KTNAME` keytab.
     #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[test]
     fn tower_service_loads_keytab_env() -> Result<(), TestError> {
         const TEST_PATH: &str = "tests::tower_service_loads_keytab_env";
@@ -1207,8 +1205,6 @@ mod tests {
     }
 
     /// Pins that `NegotiateLayer::from_keytab_env` loads the `KRB5_KTNAME` keytab.
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[cfg(feature = "tower")]
     #[test]
     fn tower_layer_loads_keytab_env() -> Result<(), TestError> {
@@ -1282,8 +1278,6 @@ mod tests {
 
     /// Pins that the layer falls back to the config default keytab without `KRB5_KTNAME`.
     #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[test]
     fn tower_layer_loads_default_keytab_when_env_is_absent() -> Result<(), TestError> {
         const TEST_PATH: &str = "tests::tower_layer_loads_default_keytab_when_env_is_absent";
@@ -1321,8 +1315,6 @@ mod tests {
     }
 
     /// Pins that the service prefers `KRB5_KTNAME` over the config default keytab.
-    #[cfg(feature = "tower")]
-    #[cfg(feature = "tower")]
     #[cfg(feature = "tower")]
     #[test]
     fn tower_service_prefers_env_keytab_over_config_default() -> Result<(), TestError> {
@@ -1551,10 +1543,6 @@ mod tests {
     }
 
     /// Builds the fixture initiator context with `options`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the fixture context cannot be built.
     fn initiator_context_with_options(
         options: InitiatorContextOptions,
     ) -> Result<spnego::InitiatorContext, TestError> {

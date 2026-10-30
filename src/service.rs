@@ -1327,10 +1327,6 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 }
 
 /// Convert a wire encryption key to the keytab key type.
-///
-/// # Errors
-///
-/// Never fails today; the `Result` is kept for the callers' `?` chains.
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
     EncryptionKey {
         etype: value.r#type,
