@@ -60,7 +60,7 @@ limits are recorded under FU-OPS-03.
 | FU-CLI-10 | major | Cross-realm TGT renewal changes server and routes to destination | open | - | - | - |
 | FU-CLI-11 | major | Optimistic preauth cannot recover from error 24 | open | - | - | - |
 | FU-CLI-12 | minor | AS/TGS reply validation omits requested time/flag constraints | open | - | - | - |
-| FU-CLI-13 | minor | PREAUTH_FAILED METHOD-DATA is discarded | open | - | - | - |
+| FU-CLI-13 | minor | PREAUTH_FAILED METHOD-DATA is discarded | fixed | `preauth_errors::tests::{failed_preauth_preserves_info2_and_cookie,failed_preauth_rejects_malformed_method_data,failed_preauth_accepts_absent_method_data,unrelated_error_preserves_opaque_data}`; commit `client: preserve PREAUTH_FAILED method data (FU-CLI-13)` | Error24 now exposes INFO2 and binary cookies; malformed error24 METHOD-DATA returns Decode, absent hints remain empty; unrelated e-data stays opaque. No signature change or automatic retry change | task-10-rskrb5-ng-zero-open-items.log: red2 failed/2 passed; green preauth suite18 passed; strict client-target clippy and LSP clean |
 | FU-CLI-14 | minor | INVALID flag and PA-PW-SALT remain duplicated bare constants | open | - | - | - |
 | FU-CLI-15 | major | Keytab challenge selects offered enctype without available key | open | - | - | - |
 | FU-CLI-16 | minor | Renewal predicate ignores renewable flag and valid time window | open | - | - | - |
