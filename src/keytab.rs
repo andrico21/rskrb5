@@ -14,7 +14,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{crypto::KerberosEtype, file_name};
+use crate::{crypto::selection, file_name};
 
 /// First byte of every keytab file.
 const KEYTAB_FIRST_BYTE: u8 = 5;
@@ -408,8 +408,7 @@ impl Keytab {
     where
         P: AsRef<[u8]>,
     {
-        let etype_impl =
-            KerberosEtype::from_etype_id(etype).ok_or(Error::UnsupportedEtype(etype))?;
+        let etype_impl = selection::enctype(etype)?.ok_or(Error::UnsupportedEtype(etype))?;
         let salt = principal.default_password_salt();
         let seconds = system_time_to_u32_seconds(timestamp)?;
         let key = EncryptionKey::new(
