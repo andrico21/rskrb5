@@ -20,8 +20,6 @@ mod env;
 mod tests {
     #[cfg(feature = "tokio")]
     use alloc::rc::Rc;
-    #[cfg(feature = "tower")]
-    use alloc::sync::Arc;
     #[cfg(feature = "tokio")]
     use core::cell::{Cell, RefCell};
     #[cfg(feature = "tokio")]
@@ -209,22 +207,39 @@ mod tests {
     #[derive(Clone)]
     struct PolicyService;
 
-    /// Replay-cache configuration faults are server failures, not credential rejection.
+    /// Replay-cache incompatibility is rejected before serving requests.
     #[cfg(feature = "tower")]
     #[test]
     fn internal_validation_failure_returns_500() -> Result<(), TestError> {
         let keytab = keytab()?;
+        let service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_max_clock_skew(Duration::from_secs(301))?
+            .with_shared_replay_cache(SharedReplayCache::new());
+        assert!(matches!(
+            service,
+            Err(HttpError::Spnego(SpnegoError::Service(
+                rskrb5_ng::error::Service::ReplayCacheSkewExceeded {
+                    maximum: _,
+                    requested: _
+                }
+            )))
+        ));
+        Ok(())
+    }
+
+    /// An owned layer cache follows a configured 301-second acceptance window.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn configured_skew_accepts_fresh_http_request() -> Result<(), TestError> {
+        let keytab = keytab()?;
         let mut service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(Duration::from_secs(301))
-            .with_shared_replay_cache(SharedReplayCache::new())
+            .with_max_clock_skew(Duration::from_secs(301))?
             .layer(PolicyService);
         let mut request = Request::new(());
         krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
-        let response = run_ready(service.call(request))??;
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        assert!(response.extensions().get::<Arc<HttpError>>().is_some());
-        assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
+        assert_eq!(run_ready(service.call(request))??.status(), StatusCode::OK);
         Ok(())
     }
 
@@ -1435,12 +1450,12 @@ mod tests {
         let cache = SharedReplayCache::new();
         let mut first_service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(cache.clone())
+            .with_shared_replay_cache(cache.clone())?
             .with_ap_rep(false)
             .layer(AssertAcceptedService);
         let mut second_service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(cache)
+            .with_shared_replay_cache(cache)?
             .with_ap_rep(false)
             .layer(AssertAcceptedService);
         let header = valid_authorization_header()?;
@@ -2226,10 +2241,10 @@ mod tests {
         let wide_skew = Duration::from_hours(100 * 365 * 24);
         let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(wide_skew)
+            .with_max_clock_skew(wide_skew)?
             .with_shared_replay_cache(SharedReplayCache::from_cache(ReplayCache::with_limits(
                 wide_skew, 16,
-            )));
+            )))?;
         let accepted = spnego::accept_sec_context_header(&mut validator, authorization)
             .map_err(|cause| format!("wrapper Authorization header validates: {cause}"))?;
         Ok(accepted

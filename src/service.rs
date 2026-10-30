@@ -301,6 +301,24 @@ pub struct SharedReplayCache {
 }
 
 impl SharedReplayCache {
+    /// Verify a validator's window under the cache lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns a poisoned-lock or incompatible-skew error.
+    pub(crate) fn ensure_skew(&self, requested: Duration) -> Result<(), Error> {
+        self.with_cache(|cache| cache.ensure_skew(requested))?
+    }
+
+    /// Configure an internally owned shared cache before its first admission.
+    ///
+    /// # Errors
+    ///
+    /// Returns a poisoned-lock error or refuses an increase after admission.
+    #[cfg(feature = "tower")]
+    pub(crate) fn configure_owned_skew(&self, requested: Duration) -> Result<(), Error> {
+        self.with_cache_mut(|cache| cache.configure_owned_skew(requested))?
+    }
     /// Safely prune expired pairs while holding the shared admission lock.
     ///
     /// # Errors
@@ -571,6 +589,36 @@ pub struct Validator<'keytab> {
 }
 
 impl<'keytab> Validator<'keytab> {
+    /// Change the window without consuming replay evidence on failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns a retention-policy error for an incompatible window.
+    pub(crate) fn set_max_clock_skew(&mut self, requested: Duration) -> Result<(), Error> {
+        if let Some(cache) = &self.shared_replay_cache {
+            cache.ensure_skew(requested)?;
+        }
+        self.replay_cache.configure_owned_skew(requested)?;
+        self.max_clock_skew = requested;
+        Ok(())
+    }
+
+    /// Attach shared state already checked by the HTTP construction boundary.
+    #[cfg(feature = "tower")]
+    pub(crate) fn attach_replay_cache(&mut self, cache: SharedReplayCache) {
+        self.shared_replay_cache = Some(cache);
+    }
+    /// Apply replay settings already checked by the HTTP construction boundary.
+    #[cfg(feature = "tower")]
+    pub(crate) fn apply_replay_settings(
+        &mut self,
+        skew: Duration,
+        cache: Option<SharedReplayCache>,
+    ) {
+        self.max_clock_skew = skew;
+        self.replay_cache.max_clock_skew = skew;
+        self.shared_replay_cache = cache;
+    }
     /// Create a validator with gokrb5-compatible defaults.
     #[must_use]
     #[inline]
@@ -603,11 +651,15 @@ impl<'keytab> Validator<'keytab> {
     }
 
     /// Override the maximum accepted clock skew.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a cache policy error for incompatible retention. Increasing the
+    /// window after admission begins is rejected rather than losing evidence.
     #[inline]
-    pub const fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
-        self.max_clock_skew = max_clock_skew;
-        self
+    pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Result<Self, Error> {
+        self.set_max_clock_skew(max_clock_skew)?;
+        Ok(self)
     }
 
     /// Override the principal used for keytab lookup.
@@ -654,11 +706,18 @@ impl<'keytab> Validator<'keytab> {
     }
 
     /// Share replay detection state with other validators.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a cache policy error when the retention ceiling is incompatible.
     #[inline]
-    pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Self {
+    pub fn with_shared_replay_cache(
+        mut self,
+        replay_cache: SharedReplayCache,
+    ) -> Result<Self, Error> {
+        replay_cache.ensure_skew(self.max_clock_skew)?;
         self.shared_replay_cache = Some(replay_cache);
-        self
+        Ok(self)
     }
 
     /// Remove any shared replay cache and use this validator's local cache.
@@ -1004,10 +1063,8 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self, Error> {
-        Ok(
-            Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
-                .with_max_clock_skew(config.libdefaults.clockskew),
-        )
+        Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
+            .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a validator from the default keytab.
@@ -1022,10 +1079,10 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self, Error> {
-        Ok(Self::from_keytab_name(keytab::default_keytab_name(
+        Self::from_keytab_name(keytab::default_keytab_name(
             &config.libdefaults.default_keytab_name,
         )?)?
-        .with_max_clock_skew(config.libdefaults.clockskew))
+        .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a validator by loading the file keytab named by `KRB5_KTNAME`.

@@ -20,6 +20,7 @@ mod pac_ad_win2k;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "service"]
 mod tests {
+    mod configured_skew;
     mod mandatory_pac;
 
     use alloc::sync::Arc;
@@ -528,10 +529,10 @@ mod tests {
         let replay_cache = SharedReplayCache::new();
         let mut first = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
         let mut second = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
 
         assert!(
             replay_cache
@@ -570,7 +571,7 @@ mod tests {
 
         let mut local = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(replay_cache)
+            .with_shared_replay_cache(replay_cache)?
             .without_shared_replay_cache();
         drop(
             local
@@ -1005,10 +1006,10 @@ mod tests {
         let replay_cache = SharedReplayCache::new();
         let mut first = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
         let mut second = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(replay_cache.clone());
+            .with_shared_replay_cache(replay_cache.clone())?;
         drop(
             first
                 .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
@@ -1871,8 +1872,8 @@ mod tests {
         let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
         let captured = replay_request_at(1_893_553_447)?;
         let mut validator = Validator::new(&keytab)
-            .with_max_clock_skew(skew)
-            .with_shared_replay_cache(cache)
+            .with_max_clock_skew(skew)?
+            .with_shared_replay_cache(cache)?
             .with_now(timestamp(1_893_553_438)?);
         drop(validator.validate_ap_req(&captured)?);
         validator = validator.with_now(timestamp(1_893_553_459)?);
@@ -1899,8 +1900,8 @@ mod tests {
         let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
         let captured = replay_request_at(1_893_553_447)?;
         let mut validator = Validator::new(&keytab)
-            .with_max_clock_skew(skew)
-            .with_shared_replay_cache(cache.clone())
+            .with_max_clock_skew(skew)?
+            .with_shared_replay_cache(cache.clone())?
             .with_now(timestamp(1_893_553_447)?);
         drop(validator.validate_ap_req(&captured)?);
         validator = validator.with_now(timestamp(1_893_553_452)?);
@@ -1927,8 +1928,8 @@ mod tests {
         let skew = Duration::from_secs(10);
         let cache = SharedReplayCache::from_cache(ReplayCache::with_limits(skew, 1024));
         let mut validator = Validator::new(&keytab)
-            .with_max_clock_skew(skew)
-            .with_shared_replay_cache(cache.clone())
+            .with_max_clock_skew(skew)?
+            .with_shared_replay_cache(cache.clone())?
             .with_now(timestamp(1_893_553_478)?);
         drop(validator.validate_ap_req(&replay_request_at(1_893_553_478)?)?);
         // Given a later admission from a sample one tolerated second older.
@@ -1969,14 +1970,14 @@ mod tests {
         let now = timestamp(1_893_553_447)?;
         let mut first = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(cache.clone());
+            .with_shared_replay_cache(cache.clone())?;
         drop(first.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
         let mut second = Validator::new(&keytab)
             .with_now(
                 now.checked_sub(Duration::from_micros(1))
                     .context("earlier clock")?,
             )
-            .with_shared_replay_cache(cache.clone());
+            .with_shared_replay_cache(cache.clone())?;
 
         // When the older sample reaches admission after the newer sample.
         drop(second.validate_ap_req(&replay_request_at(1_893_553_447)?)?);
@@ -2018,7 +2019,7 @@ mod tests {
         let now = timestamp(1_893_553_447)?;
         let mut first = Validator::new(&keytab)
             .with_now(now)
-            .with_shared_replay_cache(cache.clone());
+            .with_shared_replay_cache(cache.clone())?;
         drop(first.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
         let barrier = Arc::new(Barrier::new(8));
 
@@ -2032,7 +2033,7 @@ mod tests {
                         now.checked_sub(Duration::from_micros(offset))
                             .context("earlier clock")?,
                     )
-                    .with_shared_replay_cache(cache.clone());
+                    .with_shared_replay_cache(cache.clone())?;
                 let start = Arc::clone(&barrier);
                 handles.push(scope.spawn(move || {
                     let _wait = start.wait();
@@ -2060,7 +2061,7 @@ mod tests {
             SharedReplayCache::from_cache(ReplayCache::with_limits(Duration::from_secs(300), 1));
         let mut validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(cache);
+            .with_shared_replay_cache(cache)?;
         drop(validator.validate_ap_req(&decode_hex(VALID_AP_REQ)?)?);
         assert!(matches!(
             validator
@@ -2084,15 +2085,12 @@ mod tests {
     fn replay_lifecycle_rejects_wider_shared_skew() -> Result<(), TestError> {
         let keytab = http_keytab()?;
         let cache = SharedReplayCache::new();
-        let mut validator = Validator::new(&keytab)
+        let validator = Validator::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
-            .with_max_clock_skew(Duration::from_secs(301))
+            .with_max_clock_skew(Duration::from_secs(301))?
             .with_shared_replay_cache(cache.clone());
         assert!(matches!(
-            validator
-                .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
-                .err()
-                .context("wider skew rejected")?,
+            validator.err().context("wider skew rejected")?,
             Error::ReplayCacheSkewExceeded {
                 maximum: _,
                 requested: _

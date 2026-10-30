@@ -22,6 +22,34 @@ impl Default for ReplayCache {
 }
 
 impl ReplayCache {
+    /// Check that retention covers the requested validation window.
+    ///
+    /// # Errors
+    ///
+    /// Returns a skew policy error for an incompatible window.
+    pub(super) fn ensure_skew(&self, requested: Duration) -> Result<(), Error> {
+        if requested > self.max_clock_skew {
+            return Err(Error::ReplayCacheSkewExceeded {
+                maximum: self.max_clock_skew,
+                requested,
+            });
+        }
+        Ok(())
+    }
+
+    /// Configure an unused owned cache without discarding evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns a skew policy error for an increase after admission has begun.
+    pub(super) fn configure_owned_skew(&mut self, requested: Duration) -> Result<(), Error> {
+        if self.watermark.is_some() {
+            self.ensure_skew(requested)?;
+        } else {
+            self.max_clock_skew = requested;
+        }
+        Ok(())
+    }
     /// Set the maximum live records per authenticated client realm and components.
     ///
     /// Defaults to one eighth of total capacity (at least one for nonempty caches).

@@ -1016,11 +1016,22 @@ impl<'keytab> NegotiateLayer<'keytab> {
     }
 
     /// Override the maximum accepted clock skew.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a service policy error for incompatible replay retention.
     #[inline]
-    pub const fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
+    pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Result<Self> {
+        if let Some(cache) = &self.validator.shared_replay_cache {
+            let result = if self.validator.owned_replay_cache {
+                cache.configure_owned_skew(max_clock_skew)
+            } else {
+                cache.ensure_skew(max_clock_skew)
+            };
+            result.map_err(|error| Error::Spnego(SpnegoError::Service(error)))?;
+        }
         self.validator.max_clock_skew = Some(max_clock_skew);
-        self
+        Ok(self)
     }
 
     /// Override the principal used for keytab lookup.
@@ -1065,11 +1076,22 @@ impl<'keytab> NegotiateLayer<'keytab> {
     }
 
     /// Share replay detection state with validators built from this layer.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a service policy error for incompatible replay retention.
     #[inline]
-    pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Self {
+    pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Result<Self> {
+        replay_cache
+            .ensure_skew(
+                self.validator
+                    .max_clock_skew
+                    .unwrap_or(Duration::from_mins(5)),
+            )
+            .map_err(|error| Error::Spnego(SpnegoError::Service(error)))?;
         self.validator.shared_replay_cache = Some(replay_cache);
-        self
+        self.validator.owned_replay_cache = false;
+        Ok(self)
     }
 
     /// Disable shared replay state for validators built from this layer.
@@ -1146,10 +1168,8 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self> {
-        Ok(
-            Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
-                .with_max_clock_skew(config.libdefaults.clockskew),
-        )
+        Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
+            .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a Negotiate layer from the default keytab.
@@ -1164,10 +1184,10 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self> {
-        Ok(Self::from_keytab_name(keytab::default_keytab_name(
+        Self::from_keytab_name(keytab::default_keytab_name(
             &config.libdefaults.default_keytab_name,
         )?)?
-        .with_max_clock_skew(config.libdefaults.clockskew))
+        .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a Negotiate layer by loading the file keytab named by `KRB5_KTNAME`.
@@ -1260,12 +1280,21 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     }
 
     /// Override the maximum accepted clock skew.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a cache policy error for an incompatible window or poisoned lock.
     #[inline]
-    pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Self {
-        self.settings = self.settings.with_max_clock_skew(max_clock_skew);
-        self.configure_validator(|validator| validator.with_max_clock_skew(max_clock_skew));
-        self
+    pub fn with_max_clock_skew(mut self, max_clock_skew: Duration) -> Result<Self> {
+        self.settings = self.settings.with_max_clock_skew(max_clock_skew)?;
+        let mut guard = self.validator.lock().map_err(|_poisoned| {
+            Error::Spnego(SpnegoError::Service(ServiceError::ReplayCachePoisoned))
+        })?;
+        guard
+            .set_max_clock_skew(max_clock_skew)
+            .map_err(|error| Error::Spnego(SpnegoError::Service(error)))?;
+        drop(guard);
+        Ok(self)
     }
 
     /// Override the principal used for keytab lookup.
@@ -1308,12 +1337,21 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     }
 
     /// Share replay detection state with other validators.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns a cache policy error for incompatible retention or a poisoned lock.
     #[inline]
-    pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Self {
-        self.settings = self.settings.with_shared_replay_cache(replay_cache.clone());
-        self.configure_validator(|validator| validator.with_shared_replay_cache(replay_cache));
-        self
+    pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Result<Self> {
+        self.settings = self
+            .settings
+            .with_shared_replay_cache(replay_cache.clone())?;
+        let mut guard = self.validator.lock().map_err(|_poisoned| {
+            Error::Spnego(SpnegoError::Service(ServiceError::ReplayCachePoisoned))
+        })?;
+        guard.attach_replay_cache(replay_cache);
+        drop(guard);
+        Ok(self)
     }
 
     /// Disable shared replay state and use this service validator's local cache.
@@ -1585,6 +1623,8 @@ struct ValidatorOptions {
     require_client_address: bool,
     /// The replay cache shared by every service the layer builds.
     shared_replay_cache: Option<SharedReplayCache>,
+    /// Whether this layer owns the cache's skew configuration.
+    owned_replay_cache: bool,
 }
 
 #[cfg(feature = "tower")]
@@ -1598,6 +1638,7 @@ impl Default for ValidatorOptions {
             client_address: None,
             require_client_address: false,
             shared_replay_cache: Some(SharedReplayCache::new()),
+            owned_replay_cache: true,
         }
     }
 }
@@ -1613,17 +1654,15 @@ impl ValidatorOptions {
         if let Some(now) = self.now {
             validator = validator.with_now(now);
         }
-        if let Some(max_clock_skew) = self.max_clock_skew {
-            validator = validator.with_max_clock_skew(max_clock_skew);
-        }
+        validator.apply_replay_settings(
+            self.max_clock_skew.unwrap_or(Duration::from_mins(5)),
+            self.shared_replay_cache.clone(),
+        );
         if let Some(keytab_principal) = &self.keytab_principal {
             validator = validator.with_keytab_principal(keytab_principal.clone());
         }
         if let Some(client_address) = &self.client_address {
             validator = validator.with_client_address(client_address.clone());
-        }
-        if let Some(shared_replay_cache) = &self.shared_replay_cache {
-            validator = validator.with_shared_replay_cache(shared_replay_cache.clone());
         }
         validator.require_client_address(self.require_client_address)
     }
