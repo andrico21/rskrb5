@@ -661,7 +661,7 @@ impl PrunedSessions {
 pub mod auto_renewal;
 /// Handle for a background Tokio TGT auto-renewal task.
 #[cfg(feature = "tokio")]
-pub type TokioClientAutoRenewal = auto_renewal::TokioClientAutoRenewal;
+pub type TokioClientAutoRenewal = auto_renewal::Handle;
 /// High-level Tokio Kerberos client with TGT and service-ticket caching.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Eq, PartialEq)]
