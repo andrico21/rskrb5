@@ -15,7 +15,7 @@ mod tests {
     use core::{error, fmt::Display, time::Duration};
     use std::{
         env::{join_paths, split_paths, temp_dir, var_os},
-        fs,
+        fs, io,
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -35,7 +35,7 @@ mod tests {
         client::{build_tgt_as_req, options::AsReq},
     };
     use rskrb5_ng::{
-        config::{Config, parse_duration},
+        config::{Config, Realm, parse_duration},
         error::Config as Error,
     };
     #[cfg(feature = "serde")]
@@ -45,6 +45,19 @@ mod tests {
 
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
+
+    /// A realm has a public validating construction path without text or serde.
+    #[test]
+    fn constructs_validated_realm() -> Result<(), TestError> {
+        // Given an explicit realm name.
+        let name = "EXAMPLE.COM";
+        // When constructing without parsing a profile.
+        let realm = Realm::new(name.to_owned())?;
+        // Then its name is preserved and an empty name is rejected.
+        assert_eq!(realm.name, name);
+        assert!(Realm::new(String::new()).err().is_some());
+        Ok(())
+    }
 
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
@@ -882,10 +895,37 @@ mod tests {
         Ok(())
     }
 
+    /// Top-level path-list failures identify the requested file and retain their cause.
+    #[test]
+    fn load_paths_reports_failing_path_and_io_source() -> Result<(), TestError> {
+        // Given a readable first path and a missing second path.
+        let first = temp_file("path-error-first")?;
+        let missing = temp_file("path-error-missing")?;
+        fs::write(&first, "[libdefaults]\n default_realm = EXAMPLE.COM\n")?;
+        // When loading the explicit path list.
+        let failure = Config::load_paths([&first, &missing])
+            .err()
+            .context("missing path fails")?;
+        fs::remove_file(first)?;
+        // Then the requested path and original I/O error are available.
+        assert!(failure.to_string().contains(&missing.display().to_string()));
+        let cause = error::Error::source(&failure).context("I/O source retained")?;
+        assert_eq!(
+            cause
+                .downcast_ref::<io::Error>()
+                .context("I/O cause")?
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        Ok(())
+    }
+
     /// Pins the gokrb5 duration formats: seconds, `h:m`, `h:m:s` and `d`/`h`/`m`/`s` units.
     #[test]
     fn duration_formats_match_gokrb5() -> Result<(), TestError> {
         let cases = [
+            ("0", Duration::ZERO),
+            ("0s", Duration::ZERO),
             ("100", Duration::from_secs(100)),
             ("12:30", Duration::from_mins(750)),
             ("12:30:15", Duration::from_secs(45_015)),
@@ -897,6 +937,22 @@ mod tests {
 
         for (input, expected) in cases {
             assert_eq!(parse_duration(input).context("duration parses")?, expected);
+        }
+        Ok(())
+    }
+
+    /// Plain zero and unit zero configure the same supported duration values.
+    #[test]
+    fn zero_seconds_configure_renew_lifetime_and_clockskew() -> Result<(), TestError> {
+        // Given the two representations of zero seconds.
+        for value in ["0", "0s"] {
+            // When parsing explicit renewable lifetime and clock skew.
+            let config = Config::parse(&format!(
+                "[libdefaults]\n renew_lifetime = {value}\n clockskew = {value}\n"
+            ))?;
+            // Then both typed settings retain zero.
+            assert_eq!(config.libdefaults.renew_lifetime, Duration::ZERO);
+            assert_eq!(config.libdefaults.clockskew, Duration::ZERO);
         }
         Ok(())
     }

@@ -205,8 +205,8 @@ pub enum Ccache {
     /// UID tokens require Linux procfs process identities.
     #[error("credential path process identity is unavailable (UID tokens require Linux procfs)")]
     IdentityUnavailable,
-    /// File loading failed.
-    #[error("credential cache file could not be read: {0}")]
+    /// File loading or saving failed.
+    #[error("credential cache file could not be read or written: {0}")]
     Io(#[from] io::Error),
     /// The default cache name could not be read from `KRB5CCNAME`.
     #[error("default credential cache name could not be read from KRB5CCNAME: {0}")]
@@ -616,6 +616,14 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// A named top-level configuration file could not be resolved or read.
+    #[error("configuration file {path} could not be read: {source}")]
+    File {
+        /// The path requested by the caller.
+        path: PathBuf,
+        /// The causal filesystem error.
+        source: io::Error,
+    },
     /// File loading failed.
     #[error("configuration file could not be read: {0}")]
     Io(#[from] io::Error),

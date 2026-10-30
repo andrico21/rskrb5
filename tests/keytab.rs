@@ -16,11 +16,9 @@ mod tests {
         error,
         fmt::{Display, Write as _},
     };
-    #[cfg(target_os = "linux")]
-    use std::fs::read_to_string;
     use std::{
         env::{VarError, temp_dir, var},
-        fs::remove_file,
+        fs::{read_to_string, remove_file},
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -631,6 +629,21 @@ mod tests {
         Ok(())
     }
 
+    /// Construction makes the extended-zero fallback explicit before lookup or save.
+    #[test]
+    fn zero_extended_kvno_is_canonical_at_construction() -> Result<(), TestError> {
+        // Given a fixed KVNO of seven and the zero extended sentinel.
+        let principal = Principal::new("EXAMPLE.COM", 1, ["user"]);
+        // When constructing the entry.
+        let entry = Entry::new(principal, 100, 7, EncryptionKey::new(18, vec![7; 16]), 0);
+        // Then the effective lookup identity already matches the file interpretation.
+        assert_eq!(entry.kvno, 7);
+        let mut keytab = Keytab::new();
+        keytab.entries_mut().push(entry);
+        assert_eq!(Keytab::parse(&keytab.to_bytes()?)?, keytab);
+        Ok(())
+    }
+
     proptest! {
         /// Every admitted synthetic keytab survives serialization and parsing.
         #[test]
@@ -638,12 +651,12 @@ mod tests {
             realm in "[a-zA-Z.]{0,40}",
             components in collection::vec("[a-zA-Z/]{0,40}", 0..8),
             key in collection::vec(any::<u8>(), 0..128),
-            etype in 0_i32..=i32::from(i16::MAX),
+            etype in i32::from(i16::MIN)..=i32::from(i16::MAX),
             timestamp in any::<u32>(),
-            kvno in 1_u32..=u32::MAX,
+            kvno in any::<u32>(),
+            kvno8 in any::<u8>(),
             name_type in any::<i32>(),
         ) {
-            let [.., kvno8] = kvno.to_be_bytes();
             let mut keytab = Keytab::new();
             keytab.entries_mut().push(Entry::new(
                 Principal::new(realm, name_type, components),
@@ -652,6 +665,46 @@ mod tests {
             let parsed = Keytab::parse(&keytab.to_bytes()?)?;
             prop_assert_eq!(parsed, keytab);
         }
+    }
+
+    /// Manual key formatting explicitly accounts for every field before redaction.
+    #[test]
+    fn key_debug_has_exhaustive_field_audit() -> Result<(), TestError> {
+        // Given the actual manual formatting implementation.
+        let source = read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/keytab.rs"))?;
+        // When selecting its field-audit pattern.
+        let audited = source.contains("let Self { etype, value } = self;");
+        // Then no rest pattern can swallow future secret fields.
+        assert!(audited);
+        Ok(())
+    }
+
+    /// An interrupted next-entry size is not a clean end of file.
+    #[test]
+    fn rejects_partial_next_entry_sizes() -> Result<(), TestError> {
+        // Given empty and populated keytabs with incomplete next-record sizes.
+        let mut populated = Keytab::new();
+        populated
+            .entries_mut()
+            .push(synthetic_entry("user", 7, 18, 100));
+        for prefix in [vec![5, 2], populated.to_bytes()?] {
+            for fragment in [&[1_u8][..], &[0, 1][..], &[0, 0, 1][..]] {
+                let mut bytes = prefix.clone();
+                bytes.extend_from_slice(fragment);
+                // When parsing the interrupted file.
+                let result = Keytab::parse(&bytes);
+                // Then truncation is reported rather than silently discarding data.
+                assert!(matches!(
+                    result,
+                    Err(Error::Truncated {
+                        offset: _,
+                        needed: _,
+                        remaining: _
+                    })
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Pins that empty, misversioned and truncated keytabs are rejected.

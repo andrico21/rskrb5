@@ -1,9 +1,8 @@
 //! MIT credential cache parsing and serialization.
 //!
-//! This module handles the file credential cache format surface needed before
-//! client flows can persist and reload KDC-issued credentials. Ticket bodies
-//! remain opaque DER bytes until the crypto and ASN.1 message layers are wired
-//! together.
+//! FILE/WRFILE and DIR caches support credential lookup, metadata, persistence
+//! and X-CACHECONF entries. Ticket bytes are preserved without interpretation;
+//! the client and message modules handle their cryptographic contents.
 
 use alloc::fmt;
 use core::{
@@ -38,7 +37,7 @@ const X_CACHECONF_COMPONENT: &str = "krb5_ccache_conf_data";
 
 /// Parsed MIT-style credential cache name.
 ///
-/// `rskrb5` currently supports direct file-backed cache names, including
+/// `rskrb5-ng` supports direct file-backed cache names, including
 /// subsidiary `DIR::path` cache names which point directly at a FILE-format
 /// cache in a DIR collection. Keeping the parsed name explicit gives callers a
 /// stable validation point and leaves room for platform stores to grow into
@@ -79,7 +78,8 @@ impl CacheName {
     /// Returns [`Error::InvalidCacheName`] when the name or its path is empty
     /// or a `DIR::path` name is not a `tkt*` file inside a directory, and
     /// [`Error::UnsupportedCacheType`] for any other type prefix, `DIR:`
-    /// collections included.
+    /// collections included. [`Error::IdentityUnavailable`] means process identity
+    /// token expansion cannot read Linux procfs or is unsupported on this platform.
     #[inline]
     pub fn parse<P>(name: P) -> Result<Self, Error>
     where
@@ -244,7 +244,12 @@ impl CCache {
     where
         P: AsRef<str>,
     {
-        self.save(Self::file_path_from_cache_name(name.as_ref())?)
+        let cache_name = name.as_ref();
+        self.save(Self::file_path_from_cache_name(cache_name)?)?;
+        if dir_collection_path(cache_name).is_some() {
+            let _published = Self::file_path_from_cache_name(cache_name)?;
+        }
+        Ok(())
     }
 
     /// Resolve a MIT-style cache name to a file path.
@@ -260,7 +265,8 @@ impl CCache {
     /// collection's `primary` file does not name a `tkt*` cache on its first
     /// line; [`Error::UnsupportedCacheType`] for a type prefix other than
     /// `FILE`, `WRFILE` or `DIR`; and [`Error::Io`] when the `primary` file
-    /// cannot be read or created.
+    /// cannot be read or created. [`Error::IdentityUnavailable`] means identity
+    /// token expansion cannot read Linux procfs or is unsupported on this platform.
     #[inline]
     pub fn file_path_from_cache_name(name: &str) -> Result<PathBuf, Error> {
         if let Some(directory) = dir_collection_path(name) {
@@ -330,6 +336,9 @@ impl CCache {
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         validate_version(self.version)?;
+        if self.version < 4 && !self.header.fields.is_empty() {
+            return Err(Error::InvalidHeaderLength);
+        }
         let endian = Endian::for_version(self.version);
         let mut out = file_name::SecretBytes::new(vec![CCACHE_FIRST_BYTE, self.version]);
         if self.version == 4 {
@@ -648,11 +657,15 @@ fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     let primary = match fs::read_to_string(&primary_path) {
         Ok(contents) => parse_dir_primary_name(&contents)?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let cache = collection.join(DIR_DEFAULT_PRIMARY_CACHE);
+            if !cache.try_exists()? {
+                return Ok(cache);
+            }
             file_name::create_primary(
                 &primary_path,
                 format!("{DIR_DEFAULT_PRIMARY_CACHE}\n").as_bytes(),
             )?;
-            DIR_DEFAULT_PRIMARY_CACHE.to_owned()
+            parse_dir_primary_name(&fs::read_to_string(&primary_path)?)?
         }
         Err(error) => return Err(Error::Io(error)),
     };
@@ -774,6 +787,19 @@ pub struct HeaderField {
 }
 
 impl HeaderField {
+    /// Construct a header field with a representable, tag-valid value.
+    ///
+    /// # Errors
+    /// Returns [`Error::LengthOverflow`] for values larger than `u16::MAX`,
+    /// or [`Error::InvalidHeaderField`] for a malformed KDC offset.
+    #[inline]
+    pub fn new(tag: u16, value: Vec<u8>) -> Result<Self, Error> {
+        let _length = u16::try_from(value.len()).map_err(|_range| Error::LengthOverflow)?;
+        let field = Self { tag, value };
+        field.validate()?;
+        Ok(field)
+    }
+
     /// Check the field value length that its tag requires.
     ///
     /// # Errors
@@ -889,6 +915,9 @@ impl Principal {
     /// Returns [`Error::LengthOverflow`] when the component count or a string
     /// length does not fit an `i32`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
+        if version == 1 && self.name_type != 0_i32 {
+            return Err(Error::LengthOverflow);
+        }
         if version != 1 {
             write_i32(out, self.name_type, endian);
         }
@@ -1218,9 +1247,10 @@ impl EncryptionKey {
 impl fmt::Debug for EncryptionKey {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { etype, value } = self;
         f.debug_struct("EncryptionKey")
-            .field("etype", &self.etype)
-            .field("value_len", &self.value.len())
+            .field("etype", etype)
+            .field("value_len", &value.len())
             .finish()
     }
 }
@@ -1252,6 +1282,30 @@ pub struct HostAddress {
 }
 
 impl HostAddress {
+    /// Construct an opaque address, preserving its signed wire type.
+    #[must_use]
+    #[inline]
+    pub fn new(addr_type: i16, address: Vec<u8>) -> Self {
+        Self {
+            addr_type: i32::from(addr_type),
+            address,
+        }
+    }
+
+    /// Construct an IPv4 address (Kerberos address type 2).
+    #[must_use]
+    #[inline]
+    pub fn ipv4(address: [u8; 4]) -> Self {
+        Self::new(2, address.to_vec())
+    }
+
+    /// Construct an IPv6 address (Kerberos address type 24).
+    #[must_use]
+    #[inline]
+    pub fn ipv6(address: [u8; 16]) -> Self {
+        Self::new(24, address.to_vec())
+    }
+
     /// Parse a host address at `offset`, advancing it past the address.
     ///
     /// # Errors

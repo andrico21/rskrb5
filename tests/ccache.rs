@@ -19,6 +19,7 @@ mod tests {
     use std::{
         env::{VarError, temp_dir, var},
         fs::{create_dir_all, read_to_string, remove_dir, remove_file, write},
+        io,
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -33,7 +34,7 @@ mod tests {
     use rskrb5_ng::{
         ccache::{
             AuthorizationDataEntry, CCache, CacheName, Credential, CredentialTimes, EncryptionKey,
-            HostAddress, Principal,
+            HeaderField, HostAddress, Principal,
         },
         error::Ccache as Error,
     };
@@ -42,6 +43,59 @@ mod tests {
 
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
+
+    /// External callers can construct validated headers and both IP families without serde.
+    #[test]
+    fn constructs_header_and_ip_addresses() -> Result<(), TestError> {
+        // Given explicit metadata and IP addresses.
+        let value = vec![0; 8];
+        // When constructing through the public input API.
+        let field = HeaderField::new(1, value.clone())?;
+        let ipv4 = HostAddress::ipv4([192, 0, 2, 1]);
+        let ipv6 = HostAddress::ipv6([0x20, 1, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        // Then metadata is preserved and malformed offset headers are rejected.
+        assert_eq!(field.value, value);
+        assert_eq!((ipv4.addr_type, ipv4.address), (2_i32, vec![192, 0, 2, 1]));
+        assert_eq!(ipv6.addr_type, 24_i32);
+        assert_eq!(ipv6.address.len(), 16);
+        assert!(HeaderField::new(1, vec![0; 7]).err().is_some());
+        Ok(())
+    }
+
+    /// Manual key formatting explicitly accounts for every field before redaction.
+    #[test]
+    fn key_debug_has_exhaustive_field_audit() -> Result<(), TestError> {
+        // Given the actual manual formatting implementation.
+        let source = read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ccache.rs"))?;
+        // When selecting its field-audit pattern.
+        let audited = source.contains("let Self { etype, value } = self;");
+        // Then no rest pattern can swallow future secret fields.
+        assert!(audited);
+        Ok(())
+    }
+
+    /// Save failures have operation-neutral wording and preserve the I/O cause.
+    #[test]
+    fn io_display_covers_write_failures_and_retains_source() -> Result<(), TestError> {
+        // Given a representative failed rename or symlink rejection.
+        let failure = Error::Io(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "save denied",
+        ));
+        // When formatting and traversing the public error.
+        let display = failure.to_string();
+        let source = error::Error::source(&failure).context("I/O cause retained")?;
+        // Then writes are not described as read-only failures.
+        assert!(display.contains("read or written"));
+        assert_eq!(
+            source
+                .downcast_ref::<io::Error>()
+                .context("I/O error")?
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        Ok(())
+    }
 
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
@@ -862,6 +916,30 @@ mod tests {
         Ok(())
     }
 
+    /// Legacy output rejects fields that its version cannot represent.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn legacy_ccaches_reject_unrepresentable_fields() -> Result<(), TestError> {
+        // Given legacy versions with a nonempty v4 header or v1 name type.
+        let cache = CCache::new(Principal::new("EXAMPLE.ORG", 1, vec!["user".to_owned()]));
+        for version in 1_u8..=3 {
+            let mut value = serde_json::to_value(&cache)?;
+            *value.get_mut("version").context("version")? = version.into();
+            if version != 1 {
+                *value
+                    .get_mut("header")
+                    .and_then(|header| header.get_mut("fields"))
+                    .context("header fields")? = serde_json::json!([{"tag":2_u16,"value":[42_u8]}]);
+            }
+            let decoded: CCache = serde_json::from_value(value)?;
+            // When trying to serialize a value that would lose fields.
+            let result = decoded.to_bytes();
+            // Then reject instead of successfully writing a different object.
+            assert!(result.err().is_some());
+        }
+        Ok(())
+    }
+
     /// Pins the errors for empty, misversioned, truncated and negative-count ccaches.
     #[test]
     fn rejects_invalid_ccache_inputs() -> Result<(), TestError> {
@@ -1121,23 +1199,6 @@ mod tests {
         )
     }
 
-    /// A host address built through the serde form, the only public
-    /// constructor of the non-exhaustive address type.
-    #[cfg(feature = "serde")]
-    fn host_address(addr_type: i16, address: &[u8]) -> Option<HostAddress> {
-        serde_json::from_value(serde_json::json!({
-            "addr_type": addr_type,
-            "address": address,
-        }))
-        .ok()
-    }
-
-    /// Without serde no address can be built, so credentials carry none.
-    #[cfg(not(feature = "serde"))]
-    const fn host_address(_addr_type: i16, _address: &[u8]) -> Option<HostAddress> {
-        None
-    }
-
     /// Builds the credential `parts` describes.
     fn credential(parts: CredentialParts) -> Credential {
         let (
@@ -1165,7 +1226,7 @@ mod tests {
         .with_addresses(
             addresses
                 .into_iter()
-                .filter_map(|(addr_type, address)| host_address(addr_type, &address))
+                .map(|(addr_type, address)| HostAddress::new(addr_type, address))
                 .collect(),
         )
         .with_auth_data(

@@ -1,4 +1,4 @@
-# rskrb5 Compatibility Spike
+# rskrb5-ng Compatibility Report
 
 This report is generated from `rskrb5_ng::evaluation` and captures the dependency decision gate and ongoing candidate matrix for a gokrb5-equivalent Rust implementation.
 

@@ -1,7 +1,7 @@
 //! Kerberos keytab parsing and serialization.
 //!
-//! This module covers the MIT keytab file format surface needed before client
-//! and service flows can consume long-term keys.
+//! MIT keytabs support long-term key lookup, password-derived entry generation,
+//! file-name resolution, private persistence and redacted metadata.
 
 use alloc::fmt;
 use core::{
@@ -23,7 +23,7 @@ const KRB5_KTNAME_ENV: &str = "KRB5_KTNAME";
 
 /// Parsed MIT-style keytab name.
 ///
-/// `rskrb5` currently supports file-backed keytabs only. The explicit name
+/// `rskrb5-ng` supports file-backed keytabs only. The explicit name
 /// type gives callers a validation point before attempting filesystem access.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -180,7 +180,7 @@ impl Keytab {
         let mut offset = 2_usize;
         let mut entries = Vec::new();
 
-        while bytes.len().saturating_sub(offset) >= 4 {
+        while offset < bytes.len() {
             let entry_len = read_i32(bytes, &mut offset, endian)?;
             if entry_len == 0_i32 {
                 break;
@@ -284,14 +284,15 @@ impl Keytab {
 
     /// Resolve a MIT-style keytab name to a file path.
     ///
-    /// This does not touch the filesystem; it only validates that the name
+    /// Identity tokens read Linux procfs; otherwise this only validates that the name
     /// denotes a keytab format backed by this module.
     ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidKeytabName`] when the name or its path is
     /// empty, and [`Error::UnsupportedKeytabType`] for a type prefix other
-    /// than `FILE` or `WRFILE`.
+    /// than `FILE` or `WRFILE`. [`Error::IdentityUnavailable`] means identity
+    /// token expansion cannot read Linux procfs or is unsupported on this platform.
     #[inline]
     pub fn file_path_from_keytab_name(name: &str) -> Result<PathBuf, Error> {
         file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(|error| match error {
@@ -310,18 +311,25 @@ impl Keytab {
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when a component count, string or key
-    /// length, or encryption type exceeds `i16::MAX`, or an entry does not
-    /// fit an `i32` length.
+    /// length exceeds `i16::MAX`, an encryption type does not fit an `i16`,
+    /// or an entry does not fit an `i32` length.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let endian = Endian::for_version(self.version);
         let mut out = file_name::SecretBytes::new(vec![KEYTAB_FIRST_BYTE, self.version]);
         for entry in &self.entries {
+            if entry.kvno == 0 && entry.kvno8 != 0 {
+                return Err(Error::LengthOverflow);
+            }
             let mut body = file_name::SecretBytes::new(Vec::new());
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
             body.push(entry.kvno8);
-            write_u16_checked(&mut body, entry.key.etype, endian)?;
+            let etype = i16::try_from(entry.key.etype).map_err(|_range| Error::LengthOverflow)?;
+            body.extend_from_slice(&match endian {
+                Endian::Big => etype.to_be_bytes(),
+                Endian::Little => etype.to_le_bytes(),
+            });
             write_u16_checked(&mut body, entry.key.value.len(), endian)?;
             body.extend_from_slice(&entry.key.value);
             write_u32(&mut body, entry.kvno, endian);
@@ -547,7 +555,7 @@ impl Entry {
     /// Creates a `Entry` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         principal: Principal,
         timestamp: u32,
         kvno8: u8,
@@ -559,7 +567,7 @@ impl Entry {
             timestamp,
             kvno8,
             key,
-            kvno,
+            kvno: if kvno == 0 { u32::from(kvno8) } else { kvno },
         }
     }
 
@@ -738,9 +746,10 @@ impl EncryptionKey {
 impl fmt::Debug for EncryptionKey {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { etype, value } = self;
         f.debug_struct("EncryptionKey")
-            .field("etype", &self.etype)
-            .field("value_len", &self.value.len())
+            .field("etype", etype)
+            .field("value_len", &value.len())
             .finish()
     }
 }

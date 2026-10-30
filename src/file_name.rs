@@ -49,6 +49,7 @@ impl Drop for SecretBytes {
         {
             assert!(self.0.iter().all(|byte| *byte == 0));
             tests::ERASED_BYTES.with(|count| count.set(count.get().saturating_add(self.0.len())));
+            tests::ERASED_LENGTHS.with(|lengths| lengths.borrow_mut().push(self.0.len()));
         }
     }
 }
@@ -61,9 +62,15 @@ impl Drop for SecretBytes {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::{cell::Cell, error::Error as StdError};
+    use core::{
+        cell::{Cell, RefCell},
+        error::Error as StdError,
+    };
     use std::{
-        env, fs, io,
+        env, fs,
+        io::{self, Write as _},
+        sync::{Barrier, BarrierWaitResult},
+        thread,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -75,6 +82,7 @@ mod tests {
 
     std::thread_local! {
         pub(super) static ERASED_BYTES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static ERASED_LENGTHS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
     }
 
     /// File reads and save serialization erase internal credential allocations.
@@ -95,18 +103,25 @@ mod tests {
             1,
         ));
         let cache = CCache::new(CachePrincipal::new("REALM", 1, vec!["user".to_owned()]));
-        ERASED_BYTES.with(|count| count.set(0));
-
-        // When persisting and reading each real format.
-        keytab.save(directory.join("keytab"))?;
-        drop(Keytab::load(directory.join("keytab"))?);
-        cache.save(directory.join("cache"))?;
-        drop(CCache::load(directory.join("cache"))?);
-
-        // Then owned file/serialization copies passed through erasing owners.
-        let erased = ERASED_BYTES.with(Cell::get);
+        let keytab_len = keytab.to_bytes()?.len();
+        let cache_len = cache.to_bytes()?.len();
+        for operation in 0_u8..4 {
+            ERASED_LENGTHS.with(|lengths| lengths.borrow_mut().clear());
+            // When persisting or reading one real format in isolation.
+            match operation {
+                0 => keytab.save(directory.join("keytab"))?,
+                1 => drop(Keytab::load(directory.join("keytab"))?),
+                2 => cache.save(directory.join("cache"))?,
+                _ => drop(CCache::load(directory.join("cache"))?),
+            }
+            // Then that operation erases its complete file allocation.
+            let expected = if operation < 2 { keytab_len } else { cache_len };
+            assert!(
+                ERASED_LENGTHS.with(|lengths| lengths.borrow().contains(&expected)),
+                "operation {operation} did not erase its file buffer"
+            );
+        }
         fs::remove_dir_all(directory)?;
-        assert!(erased >= 32, "owned file buffers were not erased");
         Ok(())
     }
 
@@ -123,10 +138,12 @@ mod tests {
             1,
         );
         keytab.entries_mut().push(entry.clone());
+        let partial_len = keytab.to_bytes()?.len();
         let mut invalid = entry;
         invalid.key.etype = i32::MAX;
         keytab.entries_mut().push(invalid);
         ERASED_BYTES.with(|count| count.set(0));
+        ERASED_LENGTHS.with(|lengths| lengths.borrow_mut().clear());
 
         // When serialization fails after writing the first entry.
         let result = keytab.to_bytes();
@@ -134,7 +151,7 @@ mod tests {
         // Then the partial secret output is erased on the error path.
         assert!(matches!(result, Err(KeytabError::LengthOverflow)));
         assert!(
-            ERASED_BYTES.with(Cell::get) >= 16,
+            ERASED_LENGTHS.with(|lengths| lengths.borrow().contains(&partial_len)),
             "partial output was not erased"
         );
         Ok(())
@@ -181,6 +198,63 @@ mod tests {
         );
         Ok(())
     }
+
+    /// Concurrent initializers publish one complete primary without replacing it.
+    #[test]
+    fn concurrent_primary_initialization_agrees() -> Result<(), Box<dyn StdError>> {
+        // Given two initializers released together against one absent primary.
+        let directory = env::temp_dir().join(format!(
+            "primary-race-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let path = directory.join("primary");
+        let barrier = Barrier::new(2);
+        // When both try to publish a complete primary.
+        let results = thread::scope(|scope| {
+            let first = scope.spawn(|| {
+                let _: BarrierWaitResult = barrier.wait();
+                super::create_primary(&path, b"tkt\n")
+            });
+            let second = scope.spawn(|| {
+                let _: BarrierWaitResult = barrier.wait();
+                super::create_primary(&path, b"tkt\n")
+            });
+            (first.join(), second.join())
+        });
+        // Then neither fails because another initializer won, and contents are complete.
+        results.0.map_err(|_panic| "first initializer panicked")??;
+        results
+            .1
+            .map_err(|_panic| "second initializer panicked")??;
+        assert_eq!(fs::read(&path)?, b"tkt\n");
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// Interrupted staging never publishes a partial primary and removes the private stage.
+    #[test]
+    fn primary_partial_write_failure_cleans_stage() -> Result<(), Box<dyn StdError>> {
+        // Given an absent primary and a writer that fails after one byte.
+        let directory = env::temp_dir().join(format!(
+            "primary-failure-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        // When the real staged publication encounters the interrupted write.
+        let result = super::create_primary_with(&directory.join("primary"), |file| {
+            file.write_all(b"t")?;
+            Err(io::ErrorKind::Interrupted.into())
+        });
+        // Then the causal error is returned and no partial public or private file remains.
+        assert_eq!(
+            result.err().map(|error| error.kind()),
+            Some(io::ErrorKind::Interrupted)
+        );
+        assert_eq!(fs::read_dir(&directory)?.count(), 0);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
 }
 
 /// Why a credential file name could not be resolved to a path.
@@ -207,7 +281,8 @@ pub(crate) enum Error {
 ///
 /// Returns [`Error::Empty`] when `name` or its residual is empty, and
 /// [`Error::UnsupportedType`] when the prefix is not one of `allowed_types`
-/// (compared case-insensitively).
+/// (compared case-insensitively). [`Error::IdentityUnavailable`] means identity
+/// tokens cannot read Linux procfs or are unsupported on this platform.
 pub(crate) fn file_path_from_name(name: &str, allowed_types: &[&str]) -> Result<PathBuf, Error> {
     if name.is_empty() {
         return Err(Error::Empty);
@@ -380,12 +455,46 @@ pub(crate) fn reject_symlink(path: &Path) -> io::Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an open or write error, including `AlreadyExists` for any existing
-/// entry (dangling symlinks included).
+/// Returns stage/write/sync or publication errors. An existing regular primary
+/// wins without replacement; existing symlinks are rejected.
 pub(crate) fn create_primary(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    create_primary_with(path, |file| file.write_all(bytes))
+}
+
+/// Stage a primary using the same fallible write boundary as production.
+///
+/// # Errors
+/// Returns write, sync, publication or cleanup errors, preserving the write cause.
+fn create_primary_with<F>(path: &Path, write: F) -> io::Result<()>
+where
+    F: FnOnce(&mut fs::File) -> io::Result<()>,
+{
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut random = [0_u8; 16];
+    getrandom::fill(&mut random).map_err(io::Error::other)?;
+    let temporary = parent.join(format!(
+        ".rskrb5-primary-{:032x}.tmp",
+        u128::from_be_bytes(random)
+    ));
     let mut options = OpenOptions::new();
     let _: &mut OpenOptions = options.write(true).create_new(true);
     #[cfg(unix)]
     let _: &mut OpenOptions = options.mode(0o600);
-    options.open(path)?.write_all(bytes)
+    let mut file = options.open(&temporary)?;
+    let result = (|| {
+        write(&mut file)?;
+        file.sync_all()?;
+        drop(file);
+        match fs::hard_link(&temporary, path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => reject_symlink(path),
+            Err(error) => Err(error),
+        }
+    })();
+    let cleanup = fs::remove_file(&temporary);
+    result?;
+    cleanup?;
+    #[cfg(unix)]
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
 }
