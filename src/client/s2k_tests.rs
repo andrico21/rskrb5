@@ -12,6 +12,33 @@ use crate::{
     error,
 };
 
+/// Explicit prohibited profiles fail before the real password primitive seam.
+#[test]
+fn forbidden_profiles_never_enter_pbkdf2() -> Result<(), Box<dyn Error>> {
+    // Given a caller-selected prohibited enctype rather than a peer advertisement.
+    let principal = Principal::user("EXAMPLE.COM", "alice");
+    for (id, expected) in [
+        (1_i32, error::RejectedFeature::SingleDes),
+        (2_i32, error::RejectedFeature::SingleDes),
+        (3_i32, error::RejectedFeature::SingleDes),
+        (24_i32, error::RejectedFeature::Rc4Export),
+        (6_i32, error::RejectedFeature::WeakCrypto),
+    ] {
+        let info = PreauthKeyInfo::new(id);
+        let _prior = pbkdf2_observation::take();
+        // When explicit password derivation selects that profile.
+        let failure = derive_password_reply_key(&principal, b"password", &info)
+            .err()
+            .ok_or("prohibited derivation accepted")?;
+        // Then no primitive ran and the permanent feature identity survives.
+        assert_eq!(pbkdf2_observation::take(), 0);
+        assert!(
+            matches!(failure, error::Client::Crypto(error::Crypto::Policy(error::Policy::RejectedFeature { feature, reason: _ })) if feature == expected)
+        );
+    }
+    Ok(())
+}
+
 /// Unauthenticated low-work hints must fail before entering real PBKDF2.
 #[test]
 fn low_peer_counts_never_enter_pbkdf2() -> Result<(), Box<dyn Error>> {

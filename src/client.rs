@@ -34,7 +34,7 @@ use crate::config::Config;
 use crate::spnego;
 use crate::{
     ap_req, ccache,
-    crypto::{CryptoPolicy, KerberosEtype, Rc4HmacEtype, Use, kerb_checksum_hmac_md5},
+    crypto::{CryptoPolicy, KerberosEtype, Rc4HmacEtype, Use, kerb_checksum_hmac_md5, selection},
     error, kdc_rep, kdc_req,
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
@@ -2566,9 +2566,8 @@ pub fn pa_enc_timestamp_with_confounder(
         patimestamp: kerberos_time_from_system_time(timestamp)?,
         pausec: Some(Integer::from(cusec)),
     };
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let plaintext = encode("PA-ENC-TS-ENC", &enc_ts)?;
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
     let cipher = etype.encrypt_message_with_confounder(
         &key.value,
         &plaintext,
@@ -2678,8 +2677,7 @@ pub fn pa_enc_timestamp(
     cusec: u32,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::PaData, Error> {
-    let etype =
-        KerberosEtype::from_etype_id(key.etype).ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
     let mut confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut confounder)?;
     pa_enc_timestamp_with_confounder(key, timestamp, cusec, &confounder, kvno)
@@ -3773,7 +3771,7 @@ fn validate_reply_encrypted_padata(
         .find(|padata| padata.r#type == PA_REQ_ENC_PA_REP)
         .ok_or(Error::InvalidFastNegotiationResponse)?;
     let checksum = messages::PaReqEncPaRep::decode_der(pa_req_enc_pa_rep.value.as_ref())?;
-    let etype = KerberosEtype::from_checksum_type_id(checksum.checksum_type)
+    let etype = selection::checksum(checksum.checksum_type)?
         .ok_or(Error::UnsupportedChecksumType(checksum.checksum_type))?;
     if !etype.verify_checksum(
         &reply_key.value,
@@ -4071,6 +4069,7 @@ pub fn select_keytab_reply_key(
     client: &Principal,
     key_info: &PreauthKeyInfo,
 ) -> Result<(EncryptionKey, u32), Error> {
+    selection::reject_enctype(key_info.etype)?;
     let components = client
         .components
         .iter()

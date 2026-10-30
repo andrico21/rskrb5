@@ -1,9 +1,8 @@
 //! One boundary for all KDC-supplied password string-to-key parameters.
 use super::{
-    EncryptionKey, Error, KerberosEtype, PreauthKeyInfo, Principal, default_password_salt,
-    encode_hex_lower,
+    EncryptionKey, Error, PreauthKeyInfo, Principal, default_password_salt, encode_hex_lower,
 };
-use crate::crypto::CryptoPolicy;
+use crate::crypto::{CryptoPolicy, selection};
 
 /// Validate the selected family's work factor before salt allocation and PBKDF2.
 /// # Errors
@@ -14,8 +13,8 @@ pub(super) fn derive(
     password: &[u8],
     key_info: &PreauthKeyInfo,
 ) -> Result<EncryptionKey, Error> {
-    let etype = KerberosEtype::from_etype_id(key_info.etype)
-        .ok_or(Error::UnsupportedEtype(key_info.etype))?;
+    let etype =
+        selection::enctype(key_info.etype)?.ok_or(Error::UnsupportedEtype(key_info.etype))?;
     let params = key_info.s2kparams.as_ref().map_or_else(
         || etype.default_s2kparams().to_owned(),
         |bytes| encode_hex_lower(bytes),
