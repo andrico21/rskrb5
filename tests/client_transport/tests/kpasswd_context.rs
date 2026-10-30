@@ -35,7 +35,7 @@ where
 /// Build a request with known service and reply keys.
 pub(super) fn request() -> Result<(BuiltKpasswdRequest, RequestOptions), TestError> {
     let fixture = Request::parse(&hex::decode(
-        include_str!("../fixtures/kpasswd-request.hex").trim(),
+        include_str!("../../fixtures/kpasswd-request.hex").trim(),
     )?)?;
     let time = UNIX_EPOCH
         .checked_add(Duration::from_secs(1_893_553_452))
