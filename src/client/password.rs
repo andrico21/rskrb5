@@ -77,6 +77,8 @@ impl fmt::Debug for Secret {
     }
 }
 
+// Drop audit: the live password slice is zeroized synchronously; the Zeroizing
+// field then erases spare capacity before deallocation. No I/O or async work occurs.
 impl Drop for Secret {
     #[inline]
     fn drop(&mut self) {
@@ -106,6 +108,7 @@ mod tests {
     use alloc::sync::Arc;
     use core::{
         error::Error,
+        str,
         sync::atomic::{AtomicBool, Ordering},
     };
 
@@ -152,7 +155,7 @@ mod tests {
     #[test]
     fn borrowed_input_and_debug_are_explicit() -> Result<(), Box<dyn Error>> {
         // Given a distinctive borrowed password.
-        let input = core::str::from_utf8(b"redaction-canary")?;
+        let input = str::from_utf8(b"redaction-canary")?;
         // When an owning copy is constructed.
         let password = Secret::copy_from_str(input);
         // Then the borrowed input remains unchanged and both Debug forms redact it.

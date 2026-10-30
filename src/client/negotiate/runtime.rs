@@ -43,6 +43,8 @@ impl BlockingRuntime {
     }
 }
 
+// Drop audit: shutdown_background consumes the runtime without waiting for blocking
+// jobs; pending async tasks are cancelled and running DNS work finishes independently.
 impl Drop for BlockingRuntime {
     fn drop(&mut self) {
         let Self { inner } = self;
