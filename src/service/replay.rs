@@ -2,6 +2,9 @@
 
 #[cfg(test)]
 use super::replay_tests;
+
+#[cfg(test)]
+mod policy_tests;
 use super::{
     Arc, DEFAULT_MAX_CLOCK_SKEW, DigestRecord, Duration, Error, HashMap, ReplayCache, ReplayKey,
     SystemTime,
