@@ -1,0 +1,66 @@
+//! DNS protocol and target failover regressions.
+
+use super::*;
+
+/// UDP password discovery uses the administrative service's TCP SRV record.
+#[test]
+fn udp_password_discovers_admin_tcp_service() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a DNS peer that advertises only the administrative TCP service.
+        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let server = socket.local_addr()?;
+        let fixture = tokio::spawn(async move {
+            for _ in 0_u8..8 {
+                let mut buffer = [0; 4096];
+                let (length, peer) = socket.recv_from(&mut buffer).await?;
+                let request = Message::from_vec(buffer.get(..length).ok_or("DNS length")?)?;
+                let query = request.queries.first().ok_or("DNS question")?;
+                let mut response = Message::response(request.metadata.id, request.metadata.op_code);
+                response.metadata.authoritative = true;
+                response.queries = request.queries.clone();
+                assert!(
+                    !query
+                        .name()
+                        .to_utf8()
+                        .eq_ignore_ascii_case("_kerberos-adm._udp.TEST.GOKRB5."),
+                    "administration has no UDP service"
+                );
+                if query.query_type() == RecordType::SRV
+                    && query
+                        .name()
+                        .to_utf8()
+                        .eq_ignore_ascii_case("_kerberos-adm._tcp.TEST.GOKRB5.")
+                {
+                    response.answers.push(Record::from_rdata(
+                        query.name().clone(),
+                        60,
+                        RData::SRV(SRV::new(0, 0, 749, Name::from_ascii("127.0.0.1.")?)),
+                    ));
+                }
+                let _: usize = socket.send_to(&response.to_vec()?, peer).await?;
+            }
+            Ok::<(), TestError>(())
+        });
+        let config = Config::parse("[libdefaults]\ndns_lookup_kdc = true\n")?;
+        let transport = Tokio::new().with_dns_server(&server.to_string())?;
+        // When UDP password discovery falls back to administration SRV.
+        let result = timeout(
+            Duration::from_secs(2),
+            transport.discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Udp),
+        )
+        .await;
+        fixture.abort();
+        match fixture.await {
+            Ok(completion) => completion?,
+            Err(error) if error.is_cancelled() => {}
+            Err(error) => return Err(error.into()),
+        }
+        let outcome = result??;
+        // Then the host is retained but the password port and protocol are selected.
+        assert_eq!(outcome.len(), 1);
+        let endpoint = outcome.first().ok_or("password endpoint")?;
+        assert_eq!(endpoint.authority(), "127.0.0.1:464");
+        assert_eq!(endpoint.protocol, KdcProtocol::Udp);
+        Ok(())
+    })
+}

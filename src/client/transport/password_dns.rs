@@ -28,10 +28,11 @@ pub(super) async fn discover(
         Ok(_) | Err(_) => {}
     }
     let mut endpoints = transport
-        .discover_srv_endpoints("_kerberos-adm", realm, protocol)
+        .discover_srv_endpoints("_kerberos-adm", realm, KdcProtocol::Tcp)
         .await?;
     for endpoint in &mut endpoints {
         endpoint.port = 464;
+        endpoint.protocol = protocol;
     }
     if endpoints.is_empty() {
         Err(Error::NoKdcEndpoints {
