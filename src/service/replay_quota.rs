@@ -26,6 +26,9 @@ impl PrincipalQuota {
     ///
     /// Returns a capacity error when the client's share is full.
     pub(super) fn admit(&mut self, principal: &Principal) -> Result<(), Error> {
+        if self.limit == 0 {
+            return Err(Error::ReplayCacheCapacityExceeded { capacity: 0 });
+        }
         let count = self
             .counts
             .entry((principal.realm.clone(), principal.components.clone()))

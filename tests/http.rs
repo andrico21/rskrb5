@@ -33,6 +33,8 @@ mod tests {
     #[cfg(feature = "tower")]
     use core::task::{Context, Poll, Waker};
     use core::time::Duration;
+    #[cfg(feature = "tower")]
+    use rskrb5_ng::error::Service as ServiceError;
     use std::time::{SystemTime, UNIX_EPOCH};
     #[cfg(feature = "tower")]
     use std::{
@@ -219,7 +221,7 @@ mod tests {
         assert!(matches!(
             service,
             Err(HttpError::Spnego(SpnegoError::Service(
-                rskrb5_ng::error::Service::ReplayCacheSkewExceeded {
+                ServiceError::ReplayCacheSkewExceeded {
                     maximum: _,
                     requested: _
                 }
