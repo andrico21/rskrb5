@@ -4,7 +4,6 @@ use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use std::io;
 
 /// Service-specific TCP record length validation.
 mod framing;
@@ -29,6 +28,8 @@ mod password_dns;
 mod password_result;
 /// Ordered SRV target address resolution.
 mod srv_targets;
+/// Bounded UDP socket primitives.
+mod udp;
 use framing::tcp_request_length;
 #[cfg(test)]
 use framing::validate_tcp_length;
@@ -40,7 +41,7 @@ use hickory_resolver::{
 };
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::{TcpStream, ToSocketAddrs, UdpSocket, lookup_host},
+    net::{TcpStream, ToSocketAddrs},
     time::timeout,
 };
 
@@ -279,44 +280,9 @@ impl Tokio {
         }
 
         self.with_transport_timeout(async {
-            let mut last_error = io::Error::from(io::ErrorKind::AddrNotAvailable);
-            let mut connected = None;
-            for candidate in lookup_host(addr).await? {
-                let wildcard = if candidate.is_ipv4() {
-                    "0.0.0.0:0"
-                } else {
-                    "[::]:0"
-                };
-                let attempt = async {
-                    let socket = UdpSocket::bind(wildcard).await?;
-                    socket.connect(candidate).await?;
-                    Ok::<_, io::Error>(socket)
-                }
-                .await;
-                match attempt {
-                    Ok(socket) => {
-                        connected = Some(socket);
-                        break;
-                    }
-                    Err(error) => last_error = error,
-                }
-            }
-            let socket = connected.ok_or(last_error)?;
+            let socket = udp::connect(addr).await?;
             let _: usize = socket.send(request).await?;
-
-            let capacity = self
-                .udp_response_limit
-                .min(usize::from(u16::MAX))
-                .saturating_add(1);
-            let mut response = vec![0; capacity];
-            let len = socket.recv(&mut response).await?;
-            if len > self.udp_response_limit {
-                return Err(Error::UdpResponseTooLarge {
-                    limit: self.udp_response_limit,
-                });
-            }
-            response.truncate(len);
-            Ok(response)
+            udp::receive(&socket, self.udp_response_limit).await
         })
         .await
         .and_then(non_empty_kdc_response)
