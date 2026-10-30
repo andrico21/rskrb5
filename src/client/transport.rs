@@ -988,6 +988,7 @@ impl Tokio {
     where
         A: ToSocketAddrs + Clone,
     {
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
         super::crypto_policy::before_exchange(
             &request.crypto_policy,
             &request.message.0.req_body.etype,
@@ -1022,6 +1023,7 @@ impl Tokio {
         reply_key: &EncryptionKey,
     ) -> Result<AsRepSession, Error> {
         let policy = super::crypto_policy::configured(&config.libdefaults)?;
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
         super::crypto_policy::before_exchange(
             &policy,
             &request.message.0.req_body.etype,
@@ -1067,6 +1069,7 @@ impl Tokio {
     where
         A: ToSocketAddrs + Clone,
     {
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
         super::crypto_policy::before_exchange(
             &request.crypto_policy,
             &request.message.0.req_body.etype,
@@ -1101,6 +1104,7 @@ impl Tokio {
         tgs_session_key: &EncryptionKey,
     ) -> Result<TgsRepSession, Error> {
         let policy = super::crypto_policy::configured(&config.libdefaults)?;
+        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
         super::crypto_policy::before_exchange(
             &policy,
             &request.message.0.req_body.etype,
