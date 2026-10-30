@@ -122,8 +122,10 @@ pub(super) fn encrypt(
 #[cfg(test)]
 #[expect(
     clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -139,9 +141,10 @@ mod tests {
 
     /// The password value supports explicit erasure and owns its drop erasure.
     #[test]
-    fn password_storage_is_zeroizing() {
+    fn password_storage_is_zeroizing() -> Result<(), super::Error> {
         // Given a password owned by the protocol payload.
-        let mut payload = ChangePasswdData::new(b"erasure-canary");
+        let mut payload =
+            ChangePasswdData::for_target(b"erasure-canary", 1, ["testuser"], "TEST.GOKRB5")?;
         // When the same erasure primitive used at drop is invoked.
         erase(&mut payload.new_passwd);
         // Then no password bytes remain accessible through the owner.
@@ -149,5 +152,6 @@ mod tests {
             payload.new_passwd.as_ref().is_empty(),
             "password owner must be erased"
         );
+        Ok(())
     }
 }
