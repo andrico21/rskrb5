@@ -284,16 +284,25 @@ pub(crate) enum Error {
 /// (compared case-insensitively). [`Error::IdentityUnavailable`] means identity
 /// tokens cannot read Linux procfs or are unsupported on this platform.
 pub(crate) fn file_path_from_name(name: &str, allowed_types: &[&str]) -> Result<PathBuf, Error> {
+    let path = literal_file_path(name, allowed_types)?;
+    expand_path_tokens(&path.to_string_lossy()).map(PathBuf::from)
+}
+
+/// Interpret a resolved store name without rescanning replacement data.
+///
+/// # Errors
+/// Rejects empty names and unsupported store prefixes.
+pub(crate) fn literal_file_path(name: &str, allowed_types: &[&str]) -> Result<PathBuf, Error> {
     if name.is_empty() {
         return Err(Error::Empty);
     }
 
     let Some((prefix, path)) = name.split_once(':') else {
-        return expand_path_tokens(name).map(PathBuf::from);
+        return Ok(PathBuf::from(name));
     };
 
     if is_windows_drive_path(prefix, path) {
-        return expand_path_tokens(name).map(PathBuf::from);
+        return Ok(PathBuf::from(name));
     }
 
     if allowed_types
@@ -303,7 +312,7 @@ pub(crate) fn file_path_from_name(name: &str, allowed_types: &[&str]) -> Result<
         if path.is_empty() {
             return Err(Error::Empty);
         }
-        expand_path_tokens(path).map(PathBuf::from)
+        Ok(PathBuf::from(path))
     } else {
         Err(Error::UnsupportedType {
             name_type: prefix.to_owned(),
@@ -346,7 +355,7 @@ pub(crate) fn expand_path_tokens(value: &str) -> Result<String, Error> {
 ///
 /// Returns [`Error::IdentityUnavailable`] for unsupported or unavailable procfs.
 #[cfg(target_os = "linux")]
-fn process_identity() -> Result<(u32, u32), Error> {
+pub(crate) fn process_identity() -> Result<(u32, u32), Error> {
     let status =
         fs::read_to_string("/proc/self/status").map_err(|_io| Error::IdentityUnavailable)?;
     let mut ids = status
@@ -373,7 +382,7 @@ fn process_identity() -> Result<(u32, u32), Error> {
 ///
 /// Always returns [`Error::IdentityUnavailable`].
 #[cfg(not(target_os = "linux"))]
-const fn process_identity() -> Result<(u32, u32), Error> {
+pub(crate) const fn process_identity() -> Result<(u32, u32), Error> {
     Err(Error::IdentityUnavailable)
 }
 
