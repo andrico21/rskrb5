@@ -274,3 +274,74 @@ round-trip regression now compares all serialized fields and explicitly pins
 that diagnostic exclusion. The malformed-address regression retains the same
 bad input but changes partial acceptance to `InvalidAddress`; a valid uppercase
 fixture preserves the original case-folding and address-order assertions.
+
+## C2: complete 43-relation libdefaults catalogue
+
+`RELATIONS` now has **43 rows**, with the same six columns and the same
+production classifier. `relations_match_todo_15_item_2` compares its ordered
+names and count with an independent literal checklist copied from todo 15
+item 2. `tests/config/relations_c2.rs` provides one named table-driven test
+per additional relation. This completes the libdefaults catalogue, not the
+remaining realm/section/provider work or step F's generated documentation.
+
+MIT defaults and relation types are sourced from the pinned
+[1.22.2 krb5.conf documentation, lines 274–420](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L274-L420).
+The table records each default explicitly. `k5login_authoritative` now defaults
+true, matching MIT. No local-login authorization exists yet, so neither value
+grants login; k5login directory/authority remain diagnostic (WP-17).
+
+New typed public fields preserve KCM service/socket names, the inert plugin
+directory template, optional shortname suffix, total request duration, SPAKE
+group names, and channel-binding-aware signaling. Empty shortname suffix is
+distinct from unset. SPAKE words are case-insensitive and canonicalized to
+`edwards25519`, `P-256`, `P-384`, `P-521`; empty lists remain empty. Unknown
+names fail instead of MIT's trace-and-skip behavior. No SPAKE operation,
+KCM connection, DNS qualification, or executable plugin loading occurs.
+
+The remaining fail-closed rules apply in both modes:
+
+- `noaddresses=false` (including `no_addresses`) requires unavailable
+  address-bound requests and is rejected, even without extra addresses.
+- Any nonzero `request_timeout` requires a total deadline across discovery,
+  retries and password delivery; existing per-attempt timeouts do not satisfy
+  it. It is rejected rather than wrapped in a cancellation-unsafe timeout.
+- `verify_ap_req_nofail=true` requires unavailable initial-credential proof
+  orchestration and is rejected (WP-11).
+- `client_aware_channel_bindings=true` requires unavailable GSS signaling and
+  is rejected (WP-12).
+
+Zero/false values above are diagnostic; all explicitly selected deferred C2
+relations are errors in Strict mode. `rdns`, realm-domain probing, clock
+correction, shortname qualification, KCM and plugin settings cannot activate
+their missing behaviors. SPAKE group and preauth preference lists are not
+requirements to use a mechanism. `preferred_preauth_types` remains diagnostic
+for ordering; existing todo-14 removal of draft-9 IDs 14/15 and their individual
+diagnostics is preserved. `permitted_enctypes` remains an effective WP-02
+cryptographic policy, not a deferred relation.
+
+`proxiable` now reaches both AS/TGS option consumers and the encoded AS request;
+false clears a conflicting raw option bit, as for C1 forwardable. Existing
+ticket/renewable lifetime consumers now receive the bounded MIT interval
+parser used by C1 clockskew. Negative totals, overflow, malformed unit order,
+and trailing garbage fail closed; zero renewable lifetime remains disabled.
+
+[MIT init_ctx.c:265–270](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/krb/init_ctx.c#L265-L270)
+uses the decimal signed-integer profile getter for `kdc_default_options` and
+`kdc_timesync`. Bare option numbers now mean decimal; explicit `0x`/`0X`
+bitmasks remain a documented extension. Signed values preserve their 32-bit
+bit pattern. `kdc_timesync` accepts signed integers like the implementation
+(nonzero means enabled), despite the documentation recommending 0 or 1.
+Profile scalar first-wins remains unchanged, rather than claiming the old
+documentation's XOR wording describes the current getter.
+
+[sendto_kdc.c:474–494](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/sendto_kdc.c#L474-L494)
+defines effective Auto transport UDP preference: negative uses default 1465,
+large values cap at 32700, and request size equal to the limit uses UDP first.
+Explicit TCP/UDP still bypass Auto selection. Table-driven lib tests exercise
+this actual consumer, including limit 1 and cap boundaries.
+
+Three old fixture tests used `noaddresses=false`: each now asserts its typed
+WP-04 error on the same original input, then checks its existing loading,
+realm, and serialization behavior with an explicitly addressless copy. This
+is a deliberate policy change, not silently weakening those fixtures. The
+register remains unchanged at this substep.
