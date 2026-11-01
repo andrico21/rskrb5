@@ -618,11 +618,15 @@ jobs:
 
   mutants:
     name: mutants
-    # The whole crate, split deterministically into 16 shards (cargo-mutants
-    # shards are zero-indexed: `--shard k/16` takes k = 0..15; the 8-shard
+    # The whole crate, split deterministically into 32 shards (cargo-mutants
+    # shards are zero-indexed: `--shard k/32` takes k = 0..31; the 8-shard
     # campaign 7953988 needed 201-336 mutant-minutes per 413-mutant shard and
-    # two shards never finished). `--all-features` because cargo-mutants
-    # ignores `cfg`: without it every mutant in feature-gated code
+    # two shards never finished; in the 16-shard campaign 38970af (run
+    # 41325372774) finished 258-mutant shards took up to 147 of the 170
+    # minutes, three were cut off at 170 and five runners were lost mid-run,
+    # so each shard is halved again to about 129 mutants). `--all-features`
+    # because cargo-mutants ignores `cfg`: without it every mutant in
+    # feature-gated code
     # (`src/http.rs`, the tokio transport) is a false MISSED. No fixed
     # `--timeout`: cargo-mutants derives the per-run cap from the measured
     # baseline test time of each shard. `mutants-report` aggregates the shards.
@@ -635,19 +639,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
     # Mutation runs only need the build to compile. The deny-level profile
     # would make most mutants unviable (a mutant often leaves an unused
     # binding), so lints are capped and warnings let through for this job.
+    # Debug info is off: every mutant relinks the ~50 test binaries in each of
+    # the two build directories, and with full debug info five of the 16
+    # runners of run 41325372774 died mid-run ("lost communication",
+    # "received a shutdown signal", which GitHub attributes to a starved
+    # runner). Test behaviour does not depend on debug info; debug
+    # assertions stay on.
     env:
       CARGO_BUILD_WARNINGS: allow
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-mutants
         run: cargo install cargo-mutants --locked
-      - name: Run cargo mutants (shard ${{ matrix.shard }}/16, wall-capped at 170m)
+      - name: Run cargo mutants (shard ${{ matrix.shard }}/32, wall-capped at 170m)
         # `timeout` sends TERM at 170m and KILL 5m later if the run ignores
         # TERM, reporting 124 or 137: the untested tail is then absent from
         # outcomes.json, which the summary and `mutants-report` report as
@@ -655,7 +667,7 @@ jobs:
         # 3 = timeouts) are advisory findings.
         run: |
           set +e
-          timeout -k 5m 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/16 -j 2
+          timeout -k 5m 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/32 -j 2
           status=$?
           set -e
           echo "MUTANTS_STATUS=$status" >> "$GITHUB_ENV"
@@ -665,7 +677,7 @@ jobs:
             echo "TRUNCATED=0" >> "$GITHUB_ENV"
           fi
           exit "$status"
-      - name: Summarize mutation results (shard ${{ matrix.shard }}/16)
+      - name: Summarize mutation results (shard ${{ matrix.shard }}/32)
         if: always()
         shell: bash
         run: |
@@ -673,7 +685,7 @@ jobs:
           generated=$(jq 'length' "$out/mutants.json" 2>/dev/null || echo 0)
           total=$(jq '[.outcomes[]? | select(.scenario != "Baseline")] | length' "$out/outcomes.json" 2>/dev/null || echo 0)
           summary=$(jq -r '"caught=\(.caught) missed=\(.missed) unviable=\(.unviable) timeout=\(.timeout) success=\(.success)"' "$out/outcomes.json" 2>/dev/null || echo "no outcomes.json")
-          line="shard ${{ matrix.shard }}/16: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
+          line="shard ${{ matrix.shard }}/32: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
           echo "$line"
           echo "$line" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload mutants.out
@@ -705,7 +717,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          args=(--artifacts mutants-artifacts --expect-shards 16 --campaign "$GITHUB_SHA" --enforce)
+          args=(--artifacts mutants-artifacts --expect-shards 32 --campaign "$GITHUB_SHA" --enforce)
           if [ -f docs/review/mutants.md ]; then
             args+=(--register docs/review/mutants.md --allow-open)
           fi

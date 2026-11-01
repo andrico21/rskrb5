@@ -641,7 +641,7 @@ Gates, tests and CI:
 - docs.rs builds the `http` and `tower` features (FU-CI-01).
 - CI and the prek hook run the AD helper suites (FU-CI-02).
 - The advisory `geiger` job uploads a JSON report (FU-CI-03).
-- `mutants` runs in 16 shards under a kill deadline, aggregated by
+- `mutants` runs in 32 shards under a kill deadline, aggregated by
   `mutants-report` (FU-CI-04).
 - `publish.yml` uses CI's stable toolchain revision (FU-CI-05).
 - Releases use `N.N.N` tags: the secret-free `Release` coordinator dispatches
@@ -697,7 +697,7 @@ Documentation:
   `taplo`, an offline link check with the guideline checksums, the lint gates,
   a build of every fuzz target and `cargo package`. Advisory: `geiger`, a
   floating-nightly rustdoc canary, and on schedule or dispatch the
-  whole-crate mutants run in 16 shards and 300 s of fuzzing per target.
+  whole-crate mutants run in 32 shards and 300 s of fuzzing per target.
 - Publishing needs an `N.N.N` tag on a CI-green commit of `main` and the
   owner's approval of the `release` environment (`docs/RELEASING.md`).
 - The Docker MIT KDC and Active Directory integration gates run locally with

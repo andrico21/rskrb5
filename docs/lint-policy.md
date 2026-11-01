@@ -102,7 +102,7 @@ Two reports serve advisory jobs and are self-tested with the gates:
 `geiger_report.py` classifies the `geiger` job's JSON scan (complete unless a
 Rust source went unscanned outside build-script output) and prints the unsafe
 totals of the crate and of its dependencies; `mutants_report.py --artifacts
-DIR --expect-shards 16 [--register docs/review/mutants.md] [--allow-open]
+DIR --expect-shards 32 [--register docs/review/mutants.md] [--allow-open]
 --enforce` fails a mutation campaign with a missing or unfinished shard, or
 (with the register) with a missed or timed-out mutant that has no final
 status (`killed`, `equivalent`, or `hang` for a timeout only). Register rows
