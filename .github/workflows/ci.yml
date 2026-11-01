@@ -484,6 +484,9 @@ jobs:
         run: python3 scripts/check-config-relations.py --self-test
       - name: Generated configuration relation inventory
         run: python3 scripts/check-config-relations.py
+      # Its self-test runs in the loop above; this lists the package with Cargo.
+      - name: Packaged Markdown links stay inside the package
+        run: python3 scripts/lint-gates/package_links.py --enforce
       - name: Allow gate
         run: python3 scripts/lint-gates/allow_gate.py --enforce
       - name: Exception gate
