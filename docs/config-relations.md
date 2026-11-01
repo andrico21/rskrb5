@@ -1,0 +1,105 @@
+# Configuration relations
+
+Generated from the three Rust relation tables. Do not edit by hand.
+Regenerate with `python3 scripts/check-config-relations.py --write`.
+
+Reference: [MIT krb5 1.22 documentation](https://web.mit.edu/kerberos/krb5-1.22/doc/admin/conf_files/krb5_conf.html).
+Defaults below are MIT's; stricter library defaults and unavailable consumers
+are noted in the classification. See [profile semantics](config-profile.md)
+and [security policy](security-policy.md) for explicit divergences and limits.
+Compatible mode reports deferred or unknown policy; Strict rejects every
+diagnostic. Unsupported settings that would tighten current behavior fail in
+both modes. Parsed values do not imply an implemented mechanism.
+
+## libdefaults (43)
+
+| Section | Relation | Typed value | MIT default | Effective consumer / package | Fail-closed classification | Test |
+| --- | --- | --- | --- | --- | --- | --- |
+| libdefaults | allow_des3 | boolean | false | CryptoPolicy::from_libdefaults | Effective client-side too, stricter than MIT's KDC-only permission | allow_des3 |
+| libdefaults | allow_rc4 | boolean | false | CryptoPolicy::from_libdefaults | Effective client-side too, stricter than MIT's KDC-only permission | allow_rc4 |
+| libdefaults | allow_weak_crypto | boolean | false | LibDefaults::reject_weak_crypto | true permanently rejected by POL-01 | allow_weak_crypto |
+| libdefaults | canonicalize | boolean | false | plan 2 WP-04 | TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic | canonicalize |
+| libdefaults | ccache_type | signed decimal i32 | 4 | plan 2 WP-09 | New caches remain v4; version choice does not strengthen credential protection; diagnostic | ccache_type |
+| libdefaults | clockskew | duration | 300 seconds | AsReq::from_libdefaults; TgsReq::from_libdefaults; Validator::from_default_keytab_name | Effective; MIT init reads integer seconds, time syntax is an extension; negative tolerance rejected | clockskew |
+| libdefaults | default_ccache_name | parameter template | DEFCCNAME | TokioClient::from_default_ccache_name | Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback; crate default unset | default_ccache_name |
+| libdefaults | default_client_keytab_name | parameter template | DEFCKTNAME | TokioClient::with_client_keytab_from_config | Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback | default_client_keytab_name |
+| libdefaults | default_keytab_name | parameter template | DEFKTNAME | Validator::from_default_keytab_name | Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback | default_keytab_name |
+| libdefaults | default_rcache_name | parameter template | dfl: | plan 2 WP-20 | Any value except none: requires unavailable persistent/shared replay protection and errors; none: diagnostic because memory replay protection remains | default_rcache_name |
+| libdefaults | default_realm | string | unset | Config::realm_for_host; client::service_realm | Effective fallback after domain mapping; explicit service realm remains authoritative | default_realm |
+| libdefaults | default_tgs_enctypes | enctype expression | permitted_enctypes | TgsReq::from_libdefaults | Effective WP-02; AES SHA2-first default, forbidden positives error | default_tgs_enctypes |
+| libdefaults | default_tkt_enctypes | enctype expression | permitted_enctypes | AsReq::from_libdefaults | Effective WP-02; AES SHA2-first default, forbidden positives error | default_tkt_enctypes |
+| libdefaults | dns_canonicalize_hostname | boolean or fallback | true | plan 2 WP-10 | No DNS canonicalization occurs; all values diagnostic, including fallback per todo 15 | dns_canonicalize_hostname |
+| libdefaults | dns_lookup_kdc | boolean | true when built with DNS support | client::transport::discover_kdcs | Effective SRV switch; crate default false avoids ambient DNS | dns_lookup_kdc |
+| libdefaults | dns_lookup_realm | boolean | false | plan 2 WP-10 | No TXT realm discovery occurs; false satisfied, true cannot relax behavior; diagnostic | dns_lookup_realm |
+| libdefaults | dns_uri_lookup | boolean | true | plan 2 WP-10 | No URI discovery occurs; false satisfied, true cannot relax behavior; diagnostic; crate default false | dns_uri_lookup |
+| libdefaults | enforce_ok_as_delegate | boolean | false | plan 2 WP-12 | GSS credential forwarding is unavailable; no credentials delegated, so true already satisfied; diagnostic | enforce_ok_as_delegate |
+| libdefaults | err_fmt | string | unset | plan 2 WP-18 | Formatting does not alter typed errors or authentication policy; diagnostic | err_fmt |
+| libdefaults | extra_addresses | IP address list | unset | plan 2 WP-04 | Ignored when noaddresses=true; nonempty list with noaddresses=false requires unavailable address-bound requests and errors | extra_addresses |
+| libdefaults | forwardable | boolean | false | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective forwardable bit; explicit false overrides raw KDC option bit | forwardable |
+| libdefaults | ignore_acceptor_hostname | boolean | false | plan 2 WP-12 | No GSS acceptor-name relaxation; strict service/keytab identity checks retained; either value diagnostic | ignore_acceptor_hostname |
+| libdefaults | k5login_authoritative | boolean | true | plan 2 WP-17 | No local-login authorization exists; neither value grants login; diagnostic | k5login_authoritative |
+| libdefaults | k5login_directory | string | unset: user home/.k5login | plan 2 WP-17 | No local-login authorization or file lookup occurs; diagnostic | k5login_directory |
+| libdefaults | kcm_mach_service | string | org.h5l.kcm | plan 2 WP-09 | No KCM connection exists, including when - disables Mach RPC; diagnostic | kcm_mach_service |
+| libdefaults | kcm_socket | string | /var/run/.heim_org.h5l.kcm-socket | plan 2 WP-09 | No KCM connection exists, including when - disables Unix sockets; diagnostic | kcm_socket |
+| libdefaults | kdc_default_options | signed decimal i32 bits; explicit 0x extension | 16 (KDC_OPT_RENEWABLE_OK) | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective except security-preserving AS canonicalize suppression and boolean option overrides; scalar first-wins | kdc_default_options |
+| libdefaults | kdc_timesync | signed decimal i32 | 1 | plan 2 WP-04 | No clock correction occurs; zero satisfied, nonzero does not tighten authentication; diagnostic | kdc_timesync |
+| libdefaults | noaddresses | boolean | true | plan 2 WP-04 | Requests currently omit addresses; false requires unavailable address restriction and errors; true diagnostic | noaddresses |
+| libdefaults | permitted_enctypes | enctype expression | aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 aes256-cts-hmac-sha384-192 aes128-cts-hmac-sha256-128 des3-cbc-sha1 arcfour-hmac-md5 camellia256-cts-cmac camellia128-cts-cmac | CryptoPolicy::from_libdefaults | Effective everywhere via WP-02; crate AES SHA2-first default, explicit forbidden positives rejected | permitted_enctypes |
+| libdefaults | plugin_base_dir | parameter template | %{LIBDIR}/krb5/plugins | plan 2 WP-16 | Inert template, no expansion/discovery or executable code loading; diagnostic | plugin_base_dir |
+| libdefaults | preferred_preauth_types | signed decimal i32 list | 17,16,15,14 | plan 2 WP-04 | Preference ordering is not an allowlist; no new preauth selection, diagnostic; draft-9 IDs 14/15 removed with existing IgnoredPreauthType | preferred_preauth_types |
+| libdefaults | proxiable | boolean | false | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective proxiable bit; false clears conflicting raw bit | proxiable |
+| libdefaults | qualify_shortname | optional string | first system DNS search domain | plan 2 WP-10 | No automatic qualification exists; empty disables and nonempty requests unavailable name rewriting; diagnostic | qualify_shortname |
+| libdefaults | rdns | boolean | true | plan 2 WP-10 | No reverse DNS occurs; false satisfied, true cannot relax current behavior; diagnostic | rdns |
+| libdefaults | realm_try_domains | signed decimal i32 | -1 | plan 2 WP-10 | No domain realm probing occurs; negative disables, nonnegative does not tighten behavior; diagnostic | realm_try_domains |
+| libdefaults | renew_lifetime | duration | 0 | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective optional renewable lifetime, zero disables renewal; checked MIT intervals | renew_lifetime |
+| libdefaults | request_timeout | duration | 0 | plan 2 WP-10 | Existing per-attempt timeouts are not a total budget; every nonzero value errors; zero diagnostic | request_timeout |
+| libdefaults | spake_preauth_groups | SPAKE group name list | edwards25519 (client) | plan 2 WP-07 | No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped | spake_preauth_groups |
+| libdefaults | ticket_lifetime | duration | 1 day | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective request lifetime; checked MIT intervals | ticket_lifetime |
+| libdefaults | udp_preference_limit | signed decimal i32 | 1465 | client::transport::auto_uses_udp_first | Effective only in Auto transport; negative uses MIT default, large values capped at 32700 | udp_preference_limit |
+| libdefaults | verify_ap_req_nofail | boolean | false | plan 2 WP-11 | true requires unavailable verify-init-creds orchestration and errors; false diagnostic | verify_ap_req_nofail |
+| libdefaults | client_aware_channel_bindings | boolean | false | plan 2 WP-12 | true requires unavailable GSS channel-binding-aware signaling and errors; false diagnostic | client_aware_channel_bindings |
+
+## realms (28)
+
+| Section | Relation | Typed value | MIT default | Effective consumer / package | Fail-closed classification | Test |
+| --- | --- | --- | --- | --- | --- | --- |
+| realms | admin_server | endpoint list | unset | Realm::parse kpasswd fallback | Effective port-464 fallback; kadm5 administration remains WP-15 | admin_server |
+| realms | auth_to_local | rule list | DEFAULT | plan 2 WP-17 | No local authorization or mapping executes; diagnostic, rule expressions inert | auth_to_local |
+| realms | auth_to_local_names | case-sensitive string map | unset | plan 2 WP-17 | No local authorization executes; diagnostic | auth_to_local_names |
+| realms | default_domain | string | unset | plan 2 WP-17 | Legacy V4 mapping not performed; diagnostic | default_domain |
+| realms | disable_encrypted_timestamp | boolean | false | plan 2 WP-07 | true errors because current client may send encrypted timestamp; false diagnostic | disable_encrypted_timestamp |
+| realms | http_anchors | location list | system CA set | plan 2 WP-10 | No HTTPS proxy connection exists; trust restrictions cannot be bypassed; diagnostic | http_anchors |
+| realms | kdc | endpoint list | DNS discovery when enabled | Config::configured_kdcs; transport::Tokio::discover_kdcs | Existing network endpoint consumer; Unix sockets/proxies remain WP-10 | kdc |
+| realms | kpasswd_server | endpoint list | DNS then admin_server port 464 | Config::configured_kpasswd_servers | Effective configured password endpoint selection | kpasswd_server |
+| realms | master_kdc | endpoint list | unset | plan 2 WP-10 | Fallback only when primary_kdc absent; primary retry unavailable; diagnostic | master_kdc |
+| realms | primary_kdc | endpoint list | master_kdc | plan 2 WP-10 | Primary retry unavailable, no authentication restriction weakened; diagnostic | primary_kdc |
+| realms | sitename | string | unset | plan 2 WP-10 | Site DNS preference unavailable; diagnostic | sitename |
+| realms | v4_instance_convert | rejected subsection | unset | protocol::relation | Permanent V4 conversion rejection before composition | v4_instance_convert |
+| realms | v4_realm | rejected string | unset | protocol::relation | Permanent V4 conversion rejection before composition | v4_realm |
+| realms | pkinit_anchors | location list | unset | plan 2 WP-06 | No PKINIT trust acceptance occurs; diagnostic | pkinit_anchors |
+| realms | pkinit_cert_match | certificate rule list | unset | plan 2 WP-06 | No certificate selected; expressions retained without execution; diagnostic | pkinit_cert_match |
+| realms | pkinit_eku_checking | kpKDC&#124;kpServerAuth&#124;none | kpKDC | plan 2 WP-06 | No certificate accepted even when EKU relaxation requested; diagnostic | pkinit_eku_checking |
+| realms | pkinit_dh_min_bits | 1024&#124;2048&#124;4096&#124;P-256&#124;P-384&#124;P-521 | 2048 | plan 2 WP-06 | No DH or ECDH performed; diagnostic | pkinit_dh_min_bits |
+| realms | pkinit_identities | identity location list | unset | plan 2 WP-06 | No identity loaded or environment reference resolved; diagnostic | pkinit_identities |
+| realms | pkinit_kdc_hostname | hostname list | unset | plan 2 WP-06 | No certificate hostname acceptance occurs; diagnostic | pkinit_kdc_hostname |
+| realms | pkinit_pool | location list | unset | plan 2 WP-06 | No chain building or certificate acceptance; diagnostic | pkinit_pool |
+| realms | pkinit_require_crl_checking | boolean | false | plan 2 WP-06 | No certificate accepted, so CRL requirement cannot be bypassed; diagnostic | pkinit_require_crl_checking |
+| realms | pkinit_revoke | location list | unset | plan 2 WP-06 | No certificate accepted; diagnostic | pkinit_revoke |
+| realms | pkinit_identity | identity location | unset | plan 2 WP-06 | KDC identity remains inert; diagnostic | pkinit_identity |
+| realms | pkinit_allow_upn | boolean | false (KDC) | plan 2 WP-06 | No certificate authorization occurs; diagnostic | pkinit_allow_upn |
+| realms | pkinit_indicator | string list | unset | plan 2 WP-06 | No KDC issuance or PKINIT authentication; diagnostic | pkinit_indicator |
+| realms | pkinit_require_freshness | boolean | false (KDC) | plan 2 WP-06 | No PKINIT authentication accepted; diagnostic | pkinit_require_freshness |
+| realms | pkinit_win2k | rejected boolean | false | protocol::relation | Removed draft-9 PKINIT, enabled value permanently rejected | pkinit_win2k |
+| realms | pkinit_draft9 | rejected boolean | false | protocol::relation | Removed draft-9 PKINIT, enabled value permanently rejected | pkinit_draft9 |
+
+## sections (6)
+
+| Section | Relation | Typed value | MIT default | Effective consumer / package | Fail-closed classification | Test |
+| --- | --- | --- | --- | --- | --- | --- |
+| domain_realm | domain_realm | DNS-name -> realm map | unset | Config::resolve_realm | Exact then longest suffix; dotted suffix excludes apex | domain_realm |
+| capaths | capaths | client -> server -> direct/via graph | unset | plan 2 WP-11 | No profile-driven routing/validation; current acceptor denies cross-realm without explicit policy; diagnostic | capaths |
+| appdefaults | appdefaults | hierarchical string/boolean lookup | application-defined | Config::appdefault; Config::appdefault_boolean | Caller chooses type and consumes result; no implicit behavior | appdefaults |
+| plugins | disable | repeated module names | empty | plan 2 WP-16 | Restrictions affecting current timestamp preauth fail; nonexistent plugin behavior only diagnosed | disable |
+| plugins | enable_only | repeated module names | all built-ins | plan 2 WP-16 | Excluding current timestamp preauth fails; nonexistent plugin behavior only diagnosed | enable_only |
+| plugins | module | rejected module descriptor | empty | profile_syntax::State::line | Dynamic modules always rejected before composition | module |
+
