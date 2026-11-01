@@ -26,7 +26,7 @@ not as permission.
 ## Source and pin
 
 - **Upstream repository:** `andrico21/rust-guidelines` (private; readable through `gh api`).
-- **Pinned commit:** `08e5ba57719932007e92facd6732f5917076cd45` (2026-10-28).
+- **Pinned commit:** `80b5b6b149c0baea52d6d21e529918807c0bb9a8` (2026-11-01).
 - **Rule changes:** they are made upstream, by review, then re-vendored here. Errata found in the vendored text are reported upstream, never patched locally.
 
 ## Do not edit; re-vendor to update
@@ -42,7 +42,7 @@ and the next re-vendor would overwrite it. To update, follow the re-vendor proce
 | `RUST_GUIDELINES.md` | `4a13d83d85599b5fbeaf44a3db96ed9c4ac1e7d1` | `d8459547e7962dee69889a8b8d717ef50bb657ca681a519d636cfadfc9fd18a7` |
 | `overlays/domains/kerberos-credential-protocols.md` | `99da625eb44c51de0fb8d047edb6957319882bce` | `9f2d10141e4e576e0fdbe3873e633403454e4370a206c9dd0154b7bf9f9517d5` |
 | `overlays/domains/http-services.md` | `a80c843f7f8b69e1026cc8bf50e465b253e6ea19` | `120d64975591eb62801c5f83586cebebcfe4495e939ef1b7bd376eb476859d83` |
-| `overlays/projects/rskrb5-ng.md` | `aff70c9fdcc31d88fe0dbff7f79a86994671ed75` | `e34016ebb85a0577bd1dabb69831e3f7d4b28b2951eed90e6a056db5fe51e387` |
+| `overlays/projects/rskrb5-ng.md` | `b27c9aafac39347ffdc7117f226f4460493e3a57` | `875b1a36f8200048e3404d5b78d2daade1fe7ce276e4b5676d8c097cfdf635a1` |
 
 `docs/rust-guidelines/SHA256SUMS` holds the same hashes. CI checks them with
 `(cd docs/rust-guidelines && sha256sum -c SHA256SUMS)`.

@@ -48,27 +48,37 @@ https://github.com/andrico21/rskrb5-ng refs/heads/main`), the commit of CI run
   prints nothing (exit 1). The transition baseline, its generator and
   `scripts/lint-ratchet/` were deleted in `3c70076`; the CI `lint-gates` job fails on any
   `lint-migration` match.
-- **Gates** (`scripts/lint-gates/`, run by the CI `lint-gates` job): every
-  `scripts/lint-gates/*.py --self-test`, then `allow_gate.py --enforce`,
-  `exception_gate.py --enforce` (the six sanctioned `expect` forms), `profile_eq.py
-  --clippy-toml`, `completeness_check.py`, `facade_gate.py --enforce`, `prose_gate.py
-  --enforce` (whole tree), `feature_closures.py check-ci .github/workflows/ci.yml` and
-  `fuzz_lint.py --enforce`.
+- **Gates** (`scripts/lint-gates/`, run by the CI `lint-gates` job and the prek
+  `lint-gates` hook; `workflow_gate.py` holds both to its `REQUIRED` list; re-verified
+  2026-11-01 for the rskrb5-ng follow-up docs work, which adds `package_links.py`):
+  every `scripts/lint-gates/*.py --self-test` and
+  `scripts/check-error-constructions.py --self-test`, then
+  `scripts/check-config-relations.py --self-test` and `scripts/check-config-relations.py`,
+  `package_links.py --enforce` (relative links of packaged Markdown stay in the package),
+  `allow_gate.py --enforce`, `exception_gate.py --enforce` (the six sanctioned `expect`
+  forms), `profile_eq.py --clippy-toml`, `completeness_check.py`, `facade_gate.py
+  --enforce`, `prose_gate.py --enforce` (whole tree), `feature_closures.py check-ci
+  .github/workflows/ci.yml`, `fuzz_lint.py --enforce`, `fuzz_coverage.py --enforce`,
+  `gate_hygiene.py --enforce`, `workflow_gate.py --enforce`,
+  `scripts/check-error-constructions.py`, the offline self-tests of the AD helpers, the
+  fixture runner and the release script, and no `lint-migration` match.
 - **Feature closures:** 36 (`python3 scripts/lint-gates/feature_closures.py list | wc
   -l`), each a `closures` matrix entry in CI running `cargo clippy --all-targets <args>
   -- -D warnings` and `cargo test <args>`.
-- **CI jobs** (`yq '.jobs | keys' .github/workflows/ci.yml`, 25 jobs): `fmt`, `closures`,
-  `clippy-windows`, `lib-feature-sets`, `readme-commands`, `test`, `i686`, `docs`, `msrv`,
-  `semver-checks`, `publish-dryrun`, `consumer`, `deny`, `audit`, `vet`, `machete`,
-  `taplo`, `docs-validate`, `lint-gates`, `fuzz-build`, `package`; advisory
-  (`continue-on-error: true`): `geiger`, `rustdoc-nightly-canary`, and the scheduled
-  `mutants` (whole crate, 8 shards) and `fuzz`. CI run `40580987728` on `5761ba7`: 63
-  jobs `success`, 2 `skipped`, 1 `failure` (the advisory `geiger`).
+- **CI jobs** (`yq '.jobs | keys' .github/workflows/ci.yml`, 26 jobs, re-verified
+  2026-11-01): blocking `fmt`, `closures`, `clippy-windows`, `lib-feature-sets`,
+  `readme-commands`, `test`, `i686`, `docs`, `msrv`, `semver-checks`, `publish-dryrun`,
+  `consumer`, `deny`, `audit`, `vet`, `machete`, `taplo`, `docs-validate`, `lint-gates`,
+  `fuzz-build`, `package`; advisory (`continue-on-error: true`): `geiger`,
+  `rustdoc-nightly-canary`, and on schedule or dispatch `mutants` (whole crate, 16
+  shards), `mutants-report` and `fuzz`. CI run `40580987728` on `5761ba7` (then 25
+  jobs): 63 jobs `success`, 2 `skipped`, 1 `failure` (the advisory `geiger`).
 - **Tests:** `cargo test --all-features --no-fail-fast` passes 786 tests in 35
   `test result: ok` lines (measured on `5761ba7`).
-- **Fuzz targets:** 12 (`ls fuzz/fuzz_targets | wc -l`): `ccache_parse`, `der_oid`,
-  `gss_token`, `http_negotiate`, `kdc_reply`, `keytab_parse`, `kpasswd_reply`,
-  `krb5_conf`, `krb_messages`, `name_parse`, `pac_parse`, `spnego_token`.
+- **Fuzz targets:** 13 (`ls fuzz/fuzz_targets | wc -l`, 2026-11-01): `ccache_parse`,
+  `der_oid`, `gss_token`, `http_negotiate`, `kdc_reply`, `kdc_tcp_frame`, `keytab_parse`,
+  `kpasswd_reply`, `krb5_conf`, `krb_messages`, `name_parse`, `pac_parse`,
+  `spnego_token`.
 - **Review backlog:** closed. `docs/review/README.md` "Totals": 78 rows covering 100 keys;
   rows 75 fixed and 3 dismissed; keys 97 fixed and 3 dismissed.
 - **Ambient inputs:** 12 audited environment readers, listed in `READERS` of
@@ -115,19 +125,26 @@ https://github.com/andrico21/rskrb5-ng refs/heads/main`), the commit of CI run
    `rust-version` is the latest stable the crate was verified on, proven by an MSRV job.
 7. **Dependencies** are at their latest major versions, with no pre-release pins.
 8. **CI is the core Section 12 list plus `rmcp-server-kit`'s stricter practice,** all
-   blocking: `fmt`; `clippy` and tests in every feature closure; `lib-feature-sets`;
-   `readme-commands`; `test` on Linux, macOS and Windows; `i686`; `docs` (rustdoc
-   `-D warnings` on stable and the dated nightly); `msrv`; `semver-checks`;
-   `publish-dryrun`; `consumer` (the packaged crate as a path dependency with warnings
-   denied, in the consumer's feature set and with default features); `deny`; `audit`;
-   `vet`; `machete`; `taplo`; `docs-validate`; the lint gates; `package`. Advisory
-   (`continue-on-error`): `geiger`, `rustdoc-nightly-canary`, and the scheduled `mutants`
-   and `fuzz`.
-9. **Releases go only through the tag-gated workflow.** `release.yml` runs after a green CI
-   run, publishes only when a `vN.N.N` tag points at the commit, and publishes `--locked`.
-   The tag is cut on a commit of `main`. Once a prior `rskrb5-ng` release exists,
-   `cargo semver-checks` runs against it (`scripts/lint-ratchet/semver_baseline.py`; with
-   none, it prints a notice and passes).
+   blocking: `fmt`; `clippy` and tests in every feature closure (`closures`);
+   `clippy-windows`; `lib-feature-sets`; `readme-commands`; `test` on Linux, macOS and
+   Windows; `i686`; `docs` (rustdoc `-D warnings` on stable and the dated nightly);
+   `msrv`; `semver-checks`; `publish-dryrun`; `consumer` (the packaged crate as a path
+   dependency with warnings denied, in the consumer's feature set and with default
+   features); `deny`; `audit`; `vet`; `machete`; `taplo`; `docs-validate`; `lint-gates`
+   (every gate listed above, including `package_links.py`,
+   `scripts/check-error-constructions.py` and `scripts/check-config-relations.py`);
+   `fuzz-build`; `package`. Advisory (`continue-on-error`): `geiger`,
+   `rustdoc-nightly-canary`, and on schedule or dispatch `mutants`, `mutants-report` and
+   `fuzz`.
+9. **Releases go only through the tag-gated workflows.** Release tags are `N.N.N`, without
+   a `v`. The secret-free coordinator `release.yml` runs after a green CI run and, when an
+   `N.N.N` tag equal to the `Cargo.toml` version points at a commit of `main`, dispatches
+   `publish.yml` at the tag. Its token-free `verify` job builds and packages the crate
+   (`--locked`); its `publish` job, in the `release` environment, uploads that package
+   with `--no-verify` only if the sha256 matches (`docs/RELEASING.md`). Once a prior
+   `rskrb5-ng` release exists, `cargo semver-checks` runs against the highest published
+   version up to the candidate (`scripts/lint-gates/semver_baseline.py`; with none, it
+   prints a notice and passes).
 10. **Development files stay out of the published crate:** `RUST_GUIDELINES.md`,
     `docs/rust-guidelines/`, the lint scripts and `.cargo/` (`package.exclude`).
 11. **Kerberos specifics:**
