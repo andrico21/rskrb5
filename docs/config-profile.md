@@ -345,3 +345,90 @@ WP-04 error on the same original input, then checks its existing loading,
 realm, and serialization behavior with an explicitly addressless copy. This
 is a deliberate policy change, not silently weakening those fixtures. The
 register remains unchanged at this substep.
+
+## D: typed realm and other profile sections
+
+`REALM_RELATIONS` has **28 rows**: all 13 relations in the krb5.conf realms
+section, nine client PKINIT relations, four additional KDC PKINIT names shared
+by realm profiles, and two retained draft-9 rejection names. Each row has the
+same six columns as `RELATIONS` (still 43 rows). `SECTION_RELATIONS` has six
+rows: domain_realm, capaths, appdefaults, disable, enable_only, module.
+`realm_and_section_catalogues_are_complete` verifies the exact independent
+name lists. Every row has a named table-driven test.
+
+References are pinned to **krb5-1.22.2-final**:
+
+- [Realm relations](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L424-L577).
+- [Client PKINIT options](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L967-L1203).
+- [KDC PKINIT names/defaults](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/kdc_conf.rst#L766-L856).
+- [Application lookup implementation](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/krb/appdefault.c#L38-L138).
+- [Capaths/appdefaults/plugins examples and order](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L614-L779).
+
+### Realm values and classification
+
+`Realm::relations` exposes typed `section_values::Value` variants: Boolean,
+Text, List, Choice, Locations. Locations distinguish FILE, DIR, ENV, PKCS12,
+and PKCS11 references; the latter two are identity-only. No files, environment
+variables, native modules, certificates or credentials are loaded. PKINIT EKU
+and DH choices are case-insensitive finite vocabularies. Unknown choices are
+errors, not MIT's fallback-to-default behavior. The documented DH choices are
+accepted; MIT's additional numeric rounding/prefix parsing is not copied.
+
+Repeated endpoints, authorization rules, certificate rules, trust locations,
+identities and hostnames retain source order. Scalars select their first
+value. `primary_kdc` metadata takes precedence over the legacy master list;
+the primary retry consumer remains WP-10. Existing KDC and kpasswd endpoint
+consumers remain unchanged, including admin-server port-464 fallback.
+Endpoint strings preserve existing transport syntax; this does not add Unix
+socket or HTTPS proxy transport.
+
+`disable_encrypted_timestamp=true` errors in both modes with
+`NotYetEffective { relation: "disable_encrypted_timestamp", package:
+"plan 2 WP-07" }`. False is diagnostic. PKINIT trust, EKU, CRL, freshness and
+identity policies are diagnostic because no PKINIT certificate is accepted
+today; no requested restriction is bypassed by a PKINIT exchange. Authorization
+rules/names are diagnostic because no local-login grant is performed.
+V4 and enabled draft-9 selectors keep todo-14's permanent typed rejection.
+Every deferred diagnostic becomes an error in Strict mode.
+
+Rule languages are retained as inert strings in typed lists. `auth_to_local`
+checks its DEFAULT/RULE discriminator; certificate matching checks the initial
+MIT component discriminator. **Full regex/rule-language compilation and
+evaluation are not implemented** (WP-17/WP-06); no claim of complete semantic
+validation of those languages is made. Rule-valued relations preserve trailing
+`*` as regex syntax instead of treating it as the legacy value-final extension;
+MIT's `tag*` final marker remains supported.
+
+### Application, graph and plugin APIs
+
+`Config::appdefault(app, realm, relation)` returns a borrowed string using
+app+realm, app, realm, global precedence. It selects the first scalar at the
+winning path, even if empty. `appdefault_boolean` uses the same lookup and
+returns `Result<Option<bool>>`: missing is None; malformed is an error rather
+than MIT's silent false coercion. Application and realm keys preserve case.
+The generic API follows the actual four-level `appdefault_get` implementation;
+it does not add an undocumented fifth lookup in `[realms]`.
+
+`Config::capath(client, server)` returns a typed `Route::Direct` for `.` or
+`Route::Via` for ordered intermediate realm names; absent pairs remain None.
+Mixed direct/intermediate values and empty/whitespace-containing realm tokens
+are rejected. Case, repetitions and profile finals are preserved. The graph
+is diagnostic WP-11 metadata, **not** active routing or transited validation.
+Existing acceptor behavior still requires explicit caller transit policy for
+cross-realm acceptance; callers do not acquire that policy by parsing capaths.
+
+`Config::plugins` holds per-interface repeated disable/enable_only names.
+No plugin registry or loading is introduced. Controls that would disable the
+existing encrypted-timestamp mechanism (`clpreauth` disable encrypted_timestamp
+or enable_only excluding it) fail closed. Controls for unavailable mechanisms
+are diagnostic. `module` remains `UnsupportedDynamicModule` in every mode.
+Server-only `[kdcdefaults]`, `[dbmodules]`, `[logging]` headers, including empty
+sections, construct `ConfigDiagnostic::ServerOnly` in production and error in
+Strict mode. No server configuration is acted upon.
+
+Existing `[domain_realm]` map and exact/longest-suffix/dotted-apex rules are
+unchanged. `auth_to_local_names` mapping keys now preserve principal case.
+Application paths serialize as ordered path/value pairs so nonempty hierarchical
+keys remain valid JSON. D adds no implicit ambient reads or plan-2 mechanism.
+The generic PKINIT libdefaults/realm-subsection override hierarchy is not added
+by this realm-section substep; its mechanism consumers remain WP-06.
