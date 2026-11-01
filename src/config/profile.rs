@@ -17,6 +17,8 @@ pub(super) struct Profile {
     finals: BTreeSet<Key>,
     /// Realm names in first appearance order, including empty realms.
     realms: Vec<String>,
+    /// Section headers, including empty sections.
+    sections: BTreeSet<String>,
 }
 
 impl Profile {
@@ -37,6 +39,9 @@ impl Profile {
 
     /// Preserve realm appearance independently of relation sorting.
     pub(super) fn scope(&mut self, path: &[String]) {
+        if let [section] = path {
+            let _: bool = self.sections.insert(section.clone());
+        }
         if let [section, realm] = path
             && section == "realms"
             && !self.realms.contains(realm)
@@ -83,7 +88,7 @@ impl Profile {
                 {
                     if matches!(
                         key.as_str(),
-                        "kdc" | "admin_server" | "kpasswd_server" | "master_kdc"
+                        "kdc" | "admin_server" | "kpasswd_server" | "master_kdc" | "primary_kdc"
                     ) {
                         lines.extend_from_slice(values);
                     } else {
@@ -103,6 +108,13 @@ impl Profile {
             })
             .collect::<Vec<_>>();
         super::libdefaults::classify(&mut config.libdefaults, &selected)?;
+        super::section_decode::realms(&mut config, &self.values)?;
+        super::section_decode::finish(&mut config, &self.values)?;
+        for section in ["kdcdefaults", "dbmodules", "logging"] {
+            if self.sections.contains(section) {
+                super::section_decode::server(section, &mut config)?;
+            }
+        }
         Ok(config)
     }
 }

@@ -14,6 +14,11 @@ pub enum ParseMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Diagnostic {
+    /// A server-only section is recognized but not applied by this client library.
+    ServerOnly {
+        /// Canonical section name.
+        section: &'static str,
+    },
     /// A known relation has no complete runtime consumer yet.
     NotYetEffective {
         /// Selected scalar relation name.

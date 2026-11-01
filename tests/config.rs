@@ -33,6 +33,14 @@ mod libdefaults_c2;
 #[path = "config/relations_c2.rs"]
 mod relations_c2;
 
+#[path = "config/sections_d.rs"]
+mod sections_d;
+
+#[path = "config/realm_relations_d.rs"]
+mod realm_relations_d;
+#[path = "config/section_composition_d.rs"]
+mod section_composition_d;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(

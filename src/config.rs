@@ -49,6 +49,22 @@ pub mod hostname;
 /// C1 relation parsing and classification.
 #[path = "config/libdefaults.rs"]
 mod libdefaults;
+/// Documented realm relation inventory.
+#[path = "config/realm_relations.rs"]
+mod realm_relations;
+/// Typed realm values and policy diagnostics.
+#[path = "config/realm_values.rs"]
+mod realm_values;
+/// Non-libdefaults subtree decoding.
+#[path = "config/section_decode.rs"]
+mod section_decode;
+/// Independent catalogue count and name regressions.
+#[cfg(test)]
+#[path = "config/section_inventory_tests.rs"]
+mod section_inventory_tests;
+/// Typed application, route and realm relation data.
+#[path = "config/section_values.rs"]
+pub mod section_values;
 
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
@@ -100,9 +116,44 @@ pub struct Config {
     pub realms: Vec<Realm>,
     /// `[domain_realm]` mappings keyed by lower-case domain names.
     pub domain_realm: BTreeMap<String, String>,
+    /// Declared cross-realm routes; not an active transit policy.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub capaths: section_values::Capaths,
+    /// Hierarchical application defaults with MIT precedence.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub applications: section_values::Applications,
+    /// Plugin restrictions by interface, without executable module loading.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub plugins: BTreeMap<String, section_values::Plugins>,
 }
 
 impl Config {
+    /// Lookup application text using MIT's four-level precedence.
+    #[inline]
+    #[must_use]
+    pub fn appdefault(&self, app: &str, realm: &str, relation: &str) -> Option<&str> {
+        self.applications.get(app, realm, relation)
+    }
+
+    /// Lookup a boolean without coercing malformed strings into false.
+    /// # Errors
+    /// Returns `InvalidBoolean` for a selected non-boolean application value.
+    #[inline]
+    pub fn appdefault_boolean(
+        &self,
+        app: &str,
+        realm: &str,
+        relation: &str,
+    ) -> Result<Option<bool>, Error> {
+        self.applications.boolean(app, realm, relation)
+    }
+
+    /// Return a declared route, preserving missing versus direct.
+    #[inline]
+    #[must_use]
+    pub fn capath(&self, client: &str, server: &str) -> Option<&section_values::Route> {
+        self.capaths.get(client)?.get(server)
+    }
     /// Diagnostics for selected profile relations, including deferred consumers.
     #[inline]
     #[must_use]
@@ -127,6 +178,9 @@ impl Config {
             libdefaults: LibDefaults::new(),
             realms: Vec::new(),
             domain_realm: BTreeMap::new(),
+            capaths: BTreeMap::new(),
+            applications: section_values::Applications::default(),
+            plugins: BTreeMap::new(),
         }
     }
 
@@ -1190,6 +1244,15 @@ pub struct Realm {
     pub kpasswd_server: Vec<String>,
     /// Master KDC hosts.
     pub master_kdc: Vec<String>,
+    /// Preferred primary KDC list; falls back to `master_kdc` only when absent.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub primary_kdc: Vec<String>,
+    /// Typed explicitly configured realm relations.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub relations: BTreeMap<String, section_values::Value>,
+    /// Case-sensitive local principal-name mappings; no authorization is performed.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub auth_to_local_names: BTreeMap<String, String>,
 }
 
 impl Realm {
@@ -1211,6 +1274,9 @@ impl Realm {
             kdc: Vec::new(),
             kpasswd_server: Vec::new(),
             master_kdc: Vec::new(),
+            primary_kdc: Vec::new(),
+            relations: BTreeMap::new(),
+            auth_to_local_names: BTreeMap::new(),
         })
     }
 
@@ -1248,10 +1314,14 @@ impl Realm {
                 "master_kdc" => {
                     append_until_final(&mut realm.master_kdc, value, &mut master_final);
                 }
+                "primary_kdc" => realm.primary_kdc.push(value.to_owned()),
                 _ => {}
             }
         }
 
+        if realm.primary_kdc.is_empty() {
+            realm.primary_kdc.clone_from(&realm.master_kdc);
+        }
         if realm.kpasswd_server.is_empty() {
             realm.kpasswd_server = realm
                 .admin_server

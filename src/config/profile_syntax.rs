@@ -37,6 +37,9 @@ impl State {
             }
             let name = raw_name.trim().to_ascii_lowercase();
             let discarded = profile.closed(slice::from_ref(&name));
+            if !discarded {
+                profile.scope(slice::from_ref(&name));
+            }
             if !discarded && suffix.trim() == "*" {
                 profile.finalize(vec![name.clone()]);
             }
@@ -66,7 +69,13 @@ impl State {
             return Err(invalid(line));
         }
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
-        let key = if self.scopes.len() == 1 && section == "realms" {
+        let key = if (self.scopes.len() == 1 && section == "realms")
+            || matches!(section, "capaths" | "appdefaults")
+            || self
+                .scopes
+                .last()
+                .is_some_and(|scope| scope.name == "auth_to_local_names")
+        {
             tag.to_owned()
         } else {
             tag.to_ascii_lowercase()
@@ -99,7 +108,11 @@ impl State {
             });
             return Ok(());
         }
-        let (body, value_final) = marker(value);
+        let (body, value_final) = if matches!(key.as_str(), "auth_to_local" | "pkinit_cert_match") {
+            (value, false)
+        } else {
+            marker(value)
+        };
         let decoded = quoted(body, line)?;
         if !discarded {
             profile.relation(

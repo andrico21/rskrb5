@@ -566,6 +566,12 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// Strict parsing rejects configuration intended only for server processes.
+    #[error("server-only configuration section: {section}")]
+    ServerOnly {
+        /// Canonical section name.
+        section: &'static str,
+    },
     /// An unsupported relation requires stricter behavior or strict parsing.
     #[error("relation {relation} is not yet effective; requires {package}")]
     NotYetEffective {
