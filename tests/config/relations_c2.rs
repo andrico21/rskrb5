@@ -9,6 +9,7 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
+
     use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
 
     /// Selected deferred values retain their type and name the missing package.
@@ -105,8 +106,9 @@ mod tests {
             assert_eq!(config.libdefaults.kdc_default_options, expected);
             #[cfg(feature = "messages")]
             {
-                use rskrb5_ng::client::options::AsReq;
                 use std::time::UNIX_EPOCH;
+
+                use rskrb5_ng::client::options::AsReq;
                 assert_eq!(
                     AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults).kdc_option_bits,
                     expected
@@ -139,8 +141,9 @@ mod tests {
             assert_eq!(actual.as_secs(), seconds);
             #[cfg(feature = "messages")]
             {
-                use rskrb5_ng::client::options::{AsReq, TgsReq};
                 use std::time::UNIX_EPOCH;
+
+                use rskrb5_ng::client::options::{AsReq, TgsReq};
                 let initial = AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults);
                 let service = TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults);
                 if name == "ticket_lifetime" {

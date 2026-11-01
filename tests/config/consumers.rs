@@ -9,20 +9,20 @@
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use crate::env as child_env;
     use core::error::Error;
+    use std::{env, fs, process};
+
     use rskrb5_ng::{
         Config, Principal, TokioClient,
         ccache::{CCache, Principal as CachePrincipal},
         client::transport::KdcProtocol,
+        config::parameters::Failure as ExpansionFailure,
+        error::{Ccache as CacheFailure, Client as ClientFailure},
         keytab::Keytab,
         service::Validator,
     };
-    use rskrb5_ng::{
-        config::parameters::Failure as ExpansionFailure,
-        error::{Ccache as CacheFailure, Client as ClientFailure},
-    };
-    use std::{env, fs, process};
+
+    use crate::env as child_env;
 
     /// Environment replacement bytes remain literal across all default loaders.
     #[test]

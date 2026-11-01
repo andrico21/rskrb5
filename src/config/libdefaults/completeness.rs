@@ -8,8 +8,9 @@
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use super::super::relations::RELATIONS;
     use core::error::Error;
+
+    use super::super::relations::RELATIONS;
 
     /// Exact order, names, count and metadata cover all 43 planned MIT relations.
     #[test]

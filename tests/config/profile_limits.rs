@@ -8,13 +8,14 @@
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::iter::repeat_n;
     use core::{
         error::Error,
+        iter::repeat_n,
         sync::atomic::{AtomicU64, Ordering},
     };
-    use rskrb5_ng::{Config, error::Config as ConfigError};
     use std::{env, fs, io::ErrorKind, path::PathBuf, process};
+
+    use rskrb5_ng::{Config, error::Config as ConfigError};
 
     /// Invocation sequence independent of platform clock resolution.
     static NEXT: AtomicU64 = AtomicU64::new(0);

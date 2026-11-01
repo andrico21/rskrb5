@@ -14,10 +14,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{crypto::selection, file_name};
-
 #[cfg(feature = "messages")]
 use crate::config::{LibDefaults, credential_names, parameters::DefaultName};
+use crate::{crypto::selection, file_name};
 
 /// First byte of every keytab file.
 const KEYTAB_FIRST_BYTE: u8 = 5;

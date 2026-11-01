@@ -2,8 +2,10 @@
 
 use core::time::Duration;
 
-use super::super::{Error, LibDefaults, Line, Toggle, invalid_integer, parse_boolean, parse_i32};
-use super::duration;
+use super::{
+    super::{Error, LibDefaults, Line, Toggle, invalid_integer, parse_boolean, parse_i32},
+    duration,
+};
 
 /// Decode newly recognized C2 relations into the existing typed configuration.
 /// # Errors

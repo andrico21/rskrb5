@@ -9,12 +9,13 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::{error::Error, iter::repeat_n};
+    use std::{env, fs, io, path::PathBuf, process};
+
     use rskrb5_ng::{
         Config,
         config::{MAX_INCLUDE_BYTES, ParseMode},
         error::Config as Failure,
     };
-    use std::{env, fs, io, path::PathBuf, process};
 
     /// Readers must stop at the size sentinel rather than drain their input.
     #[test]

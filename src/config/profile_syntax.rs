@@ -1,7 +1,8 @@
 //! Per-source grammar state and quote-aware comment boundaries.
 
-use super::{Error, Line, profile::Profile, protocol};
 use core::slice;
+
+use super::{Error, Line, profile::Profile, protocol};
 
 /// One open syntactic scope, including a final marker pending its close.
 #[derive(Default)]

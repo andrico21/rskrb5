@@ -9,6 +9,7 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
+
     use rskrb5_ng::config::{Config, ParseMode};
 
     /// Unsupported restrictions cannot silently disappear in either mode.
@@ -134,6 +135,8 @@ mod tests {
     #[cfg(feature = "messages")]
     #[test]
     fn proxiable_reaches_requests() -> Result<(), Box<dyn Error>> {
+        use std::time::UNIX_EPOCH;
+
         use rasn::der;
         use rskrb5_ng::{
             Principal,
@@ -142,7 +145,6 @@ mod tests {
                 options::{AsReq, TgsReq},
             },
         };
-        use std::time::UNIX_EPOCH;
         for (value, expected) in [("on", 0x1000_0000_u32), ("off", 0)] {
             let config = Config::parse(&format!("[libdefaults]\n proxiable = {value}\n"))?;
             assert_eq!(
