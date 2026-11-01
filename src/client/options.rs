@@ -87,6 +87,10 @@ impl AsReq {
         }
         options.kdc_option_bits = defaults.kdc_default_options;
         options.kdc_option_bits &= !0x4000_0000;
+        options.kdc_option_bits &= !0x1000_0000;
+        if defaults.proxiable.is_enabled() {
+            options.kdc_option_bits |= 0x1000_0000;
+        }
         if defaults.forwardable.is_enabled() {
             options.kdc_option_bits |= 0x4000_0000;
         }
@@ -240,6 +244,10 @@ impl TgsReq {
         }
         options.kdc_option_bits = defaults.kdc_default_options;
         options.kdc_option_bits &= !0x4000_0000;
+        options.kdc_option_bits &= !0x1000_0000;
+        if defaults.proxiable.is_enabled() {
+            options.kdc_option_bits |= 0x1000_0000;
+        }
         if defaults.forwardable.is_enabled() {
             options.kdc_option_bits |= 0x4000_0000;
         }

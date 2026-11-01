@@ -27,6 +27,12 @@ mod relations_c1;
 #[path = "config/c1_boundaries.rs"]
 mod c1_boundaries;
 
+#[path = "config/libdefaults_c2.rs"]
+mod libdefaults_c2;
+
+#[path = "config/relations_c2.rs"]
+mod relations_c2;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(
@@ -545,12 +551,20 @@ mod tests {
     /// Pins the libdefaults, KDCs, kpasswd servers and realm mapping of the gokrb5 integration config.
     #[test]
     fn parses_gokrb5_integration_config_fixture() -> Result<(), TestError> {
-        let config = Config::parse(KRB5_CONF).context("config parses")?;
+        assert!(matches!(
+            Config::parse(KRB5_CONF),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
+        let config = Config::parse(&KRB5_CONF.replace("noaddresses = false", "noaddresses = true"))
+            .context("addressless fixture parses")?;
 
         assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
         assert!(!config.libdefaults.dns_lookup_realm.is_enabled());
         assert!(!config.libdefaults.dns_lookup_kdc.is_enabled());
-        assert!(!config.libdefaults.no_addresses.is_enabled());
+        assert!(config.libdefaults.no_addresses.is_enabled());
         assert!(config.libdefaults.forwardable.is_enabled());
         assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(24));
         assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [18_i32]);
@@ -585,7 +599,17 @@ mod tests {
     fn loads_config_file() -> Result<(), TestError> {
         let path = temp_file("load")?;
         fs::write(&path, KRB5_CONF).context("config fixture writes")?;
-
+        assert!(matches!(
+            Config::load(&path),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
+        fs::write(
+            &path,
+            KRB5_CONF.replace("noaddresses = false", "noaddresses = true"),
+        )?;
         let config = Config::load(&path).context("config loads")?;
         fs::remove_file(&path).context("the test config is removed")?;
 
@@ -1403,7 +1427,15 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn implicit_permitted_enctypes_round_trip_stays_implicit() -> Result<(), TestError> {
-        let config = Config::parse(KRB5_CONF).map_err(|cause| format!("config parses: {cause}"))?;
+        assert!(matches!(
+            Config::parse(KRB5_CONF),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
+        let config =
+            Config::parse(&KRB5_CONF.replace("noaddresses = false", "noaddresses = true"))?;
         assert!(!config.libdefaults.permitted_enctypes_explicit.is_enabled());
 
         let json = serde_json::to_string(&config.libdefaults)

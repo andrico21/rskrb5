@@ -611,6 +611,27 @@ pub struct LibDefaults {
     pub k5login_authoritative: Toggle,
     /// `.k5login` directory.
     pub k5login_directory: String,
+    /// Requested KCM Mach service; KCM support remains unavailable.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub kcm_mach_service: String,
+    /// Requested KCM Unix socket; parsing never connects to it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub kcm_socket: String,
+    /// Plugin location template; never used to load executable code.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub plugin_base_dir: String,
+    /// Requested shortname suffix; None means unspecified, Some("") disables it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub qualify_shortname: Option<String>,
+    /// Total request deadline; nonzero profile values fail until a total budget exists.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub request_timeout: Duration,
+    /// Recognized SPAKE group names; no SPAKE exchange is enabled.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub spake_preauth_groups: Vec<String>,
+    /// Requested channel-binding-aware GSS signaling; not yet implemented.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub client_aware_channel_bindings: Toggle,
     /// KDC default options bit string as a 32-bit integer.
     pub kdc_default_options: u32,
     /// KDC time sync setting.
@@ -996,8 +1017,15 @@ impl LibDefaults {
             extra_addresses: Vec::new(),
             forwardable: Toggle::Disabled,
             ignore_acceptor_hostname: Toggle::Disabled,
-            k5login_authoritative: Toggle::Disabled,
+            k5login_authoritative: Toggle::Enabled,
             k5login_directory: home.unwrap_or_default(),
+            kcm_mach_service: "org.h5l.kcm".to_owned(),
+            kcm_socket: "/var/run/.heim_org.h5l.kcm-socket".to_owned(),
+            plugin_base_dir: "%{LIBDIR}/krb5/plugins".to_owned(),
+            qualify_shortname: None,
+            request_timeout: Duration::ZERO,
+            spake_preauth_groups: vec!["edwards25519".to_owned()],
+            client_aware_channel_bindings: Toggle::Disabled,
             kdc_default_options: 0x0000_0010,
             kdc_time_sync: 1,
             no_addresses: Toggle::Enabled,
@@ -1088,7 +1116,7 @@ impl LibDefaults {
                 }
                 "k5login_directory" => value.clone_into(&mut self.k5login_directory),
                 "kdc_default_options" => {
-                    self.kdc_default_options = parse_hex_u32(value, line, key)?;
+                    self.kdc_default_options = libdefaults::c2::option_bits(value, line)?;
                 }
                 "kdc_timesync" => self.kdc_time_sync = parse_i32(value, line, key)?,
                 "noaddresses" | "no_addresses" => {
@@ -1105,21 +1133,21 @@ impl LibDefaults {
                 "proxiable" => self.proxiable = Toggle::from_bool(parse_boolean(value)?),
                 "rdns" => self.rdns = Toggle::from_bool(parse_boolean(value)?),
                 "realm_try_domains" => self.realm_try_domains = parse_i32(value, line, key)?,
-                "renew_lifetime" => self.renew_lifetime = parse_duration(value)?,
+                "renew_lifetime" => self.renew_lifetime = libdefaults::duration::parse(value)?,
                 "safe_checksum_type" => {
                     let id = selection::checksum_name(value)
                         .map_or_else(|| parse_i32(value, line, key), Ok)?;
                     selection::reject_checksum(id)?;
                     self.safe_checksum_type = id;
                 }
-                "ticket_lifetime" => self.ticket_lifetime = parse_duration(value)?,
+                "ticket_lifetime" => self.ticket_lifetime = libdefaults::duration::parse(value)?,
                 "udp_preference_limit" => {
                     self.udp_preference_limit = parse_i32(value, line, key)?;
                 }
                 "verify_ap_req_nofail" => {
                     self.verify_ap_req_nofail = Toggle::from_bool(parse_boolean(value)?);
                 }
-                _ => {}
+                _ => libdefaults::c2::parse(self, line)?,
             }
         }
 
@@ -1789,19 +1817,6 @@ fn parse_i32_list(value: &str, line: &Line, key: &str) -> Result<Vec<i32>, Error
         .filter(|part| !part.trim().is_empty())
         .map(|part| parse_i32(part.trim(), line, key))
         .collect()
-}
-
-/// Parse a hexadecimal `u32` value of `key`, with or without a `0x` prefix.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidInteger`] naming the digits when they are not a
-/// hexadecimal `u32`.
-fn parse_hex_u32(value: &str, line: &Line, key: &str) -> Result<u32, Error> {
-    let digits = value.trim().trim_start_matches("0x");
-    u32::from_str_radix(digits, 16)
-        .ok()
-        .ok_or_else(|| invalid_integer(digits, line, key))
 }
 
 /// The [`Error::InvalidInteger`] for `value` of `key` on `line`.
