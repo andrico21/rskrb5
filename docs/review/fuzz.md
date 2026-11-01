@@ -87,7 +87,7 @@ timeout artifact:
 | `kdc_tcp_frame` | 24,229,707 | 121 s | 0 |
 | `krb_messages` | 306,487 | 121 s | 0 |
 | `der_oid` | 348,348 | 121 s | 0 |
-| `krb5_conf` | 280,234 | 121 s | 0 |
+| `krb5_conf` | 140,698 (todo 15 F, 2026-11-01) | 121 s | 0 |
 | `name_parse` | 2,629,623 | 121 s | 0 |
 
 ### Crashes
@@ -245,19 +245,22 @@ does.
 | `rskrb5_ng::config::LibDefaults::parse_lines` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::LibDefaults::parse_mode` | `src/config.rs` | - | Typed mode accessor, not a parser. |
 | `rskrb5_ng::config::Realm::parse` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::profile::Profile::finish` | `src/config/profile.rs` | `krb5_conf` | Typed decoding after ordered composition. |
-| `rskrb5_ng::config::profile_syntax::State::line` | `src/config/profile_syntax.rs` | `krb5_conf` | Independent source grammar. |
-| `rskrb5_ng::config::profile_syntax::State::finish` | `src/config/profile_syntax.rs` | `krb5_conf` | Rejects unclosed scopes. |
-| `rskrb5_ng::config::profile_syntax::quoted` | `src/config/profile_syntax.rs` | `krb5_conf` | Quoted profile values. |
-| `rskrb5_ng::config::profile_syntax::comments` | `src/config/profile_syntax.rs` | `krb5_conf` | Quote-aware comment boundaries. |
+| `rskrb5_ng::config::profile::Profile::finish` | `src/config/profile.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::State::line` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::State::finish` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::quoted` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::comments` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::hostname::Canonicalization::parse` | `src/config/hostname.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::libdefaults::c2::parse` | `src/config/libdefaults/c2.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::libdefaults::duration::parse` | `src/config/libdefaults/duration.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::realm_values::decode` | `src/config/realm_values.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::fork_tests::parse_does_not_read_uid_or_home` | `src/config.rs` | - | unit test, not a parser |
 | `rskrb5_ng::config::enctype_expr::EnctypeExpr::parse` | `src/config/enctype_expr.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::enctype_names::Selector::parse` | `src/config/enctype_names.rs` | `krb5_conf` | |
-| `rskrb5_ng::config::parse_assignment` | `src/config/sections.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::sections::parse_assignment` | `src/config/sections.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_boolean` | `src/config.rs` | `name_parse` |  |
 | `rskrb5_ng::config::parse_colon_duration` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_duration` | `src/config.rs` | `name_parse` |  |
-| `rskrb5_ng::config::parse_hex_u32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32_list` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_ip_addresses` | `src/config.rs` | `krb5_conf` |  |

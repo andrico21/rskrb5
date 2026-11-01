@@ -521,3 +521,27 @@ Fedora installation on this host. Both the host-plus-include fixture and the
 independent snippet parse in Compatible with diagnostics and AES IDs 20/19/18/17.
 TEST.RSKRB5 disable_encrypted_timestamp=true fails with the named WP-07 error.
 Tests read no host config at runtime and require no LF-only checkout or network.
+
+## F: generated catalogue and differential fixture provenance
+
+[config-relations.md](config-relations.md) is generated directly from the three
+Rust tables by `scripts/check-config-relations.py --write`. Its self-test asserts
+checked-in text equals generated output after CRLF normalization; CI and prek
+also run the read-only checker. It verifies the independent pinned inventories,
+all 77 named tests, and complete literal tuple consumption. Documentation drift,
+opaque expressions, duplicates, missing names/tests and comment/string decoys
+are negative self-test cases. The document is packaged with this file and the
+security policy; README links to it with a package-local relative link.
+
+The MIT differential tests are **source-example-derived**, not live MIT runs:
+
+| Test/fixture | MIT example and independent expected result |
+| --- | --- |
+| mit-sample.conf / mit_documentation_sample_matches_expected_values | krb5_conf.rst:1237–1256; ATHENA.MIT.EDU default, ordered three Athena and two EXAMPLE KDCs; scalar first-wins from prof_get.c:215–249. |
+| resolve_realm_applies_bare_domain_tags_to_subdomains | krb5_conf.rst:585–603; crash.mit.edu and subdomains of dev.mit.edu map TEST.ATHENA.MIT.EDU, dev.mit.edu and mit.edu map ATHENA.MIT.EDU. |
+| section_composition_d::appdefaults | krb5_conf.rst:709–731 and appdefault.c:38–138; app+realm before app before realm before global, using distinct strings to expose precedence. |
+| section_composition_d::capaths | krb5_conf.rst:628–695; repeated intermediates retain client traversal order and dot means direct; test uses renamed realms and adds final-marker regression. |
+
+All URLs above are pinned by the reference links in sections A/D. Host-e.conf
+is a normalized host fixture, not an MIT differential oracle. Its Camellia
+snippet retains the explicitly recorded Fedora-shaped provenance from E.
