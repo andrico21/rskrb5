@@ -30,6 +30,9 @@ v8.4.4 and lists every deliberate divergence.
 The [security policy](docs/security-policy.md) documents runtime encryption
 permission, permanent feature rejections, derivation limits and residual secret copies.
 
+The generated [configuration relation catalogue](docs/config-relations.md)
+lists typed settings, effective consumers, and fail-closed/deferred behavior.
+
 ## Quick start
 
 ```toml

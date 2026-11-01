@@ -15,6 +15,7 @@ use rasn::types::Integer;
 use crate::client::KdcError;
 #[cfg(feature = "tokio")]
 use crate::client::transport::KdcProtocol;
+use crate::config::parameters::Failure as ExpansionFailure;
 #[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 include!("error/any.rs");
@@ -125,6 +126,9 @@ pub enum ApReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Ccache {
+    /// A configured name could not be expanded from available facts.
+    #[error("credential name expansion failed: {0}")]
+    Expansion(#[from] ExpansionFailure),
     /// A requested cryptographic feature violates permanent policy.
     #[error("policy error: {0}")]
     Policy(#[from] Policy),
@@ -562,6 +566,44 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// Strict parsing rejects unrecognized sections.
+    #[error("unknown configuration section: {section}")]
+    UnknownSection {
+        /// Section name.
+        section: String,
+    },
+    /// Strict parsing rejects unrecognized relation paths.
+    #[error("unknown configuration relation path: {}", path.join("/"))]
+    UnknownRelation {
+        /// Selected profile path.
+        path: Vec<String>,
+    },
+    /// Strict parsing rejects removed preauthentication preferences.
+    #[error("ignored preauthentication preference: {id}")]
+    IgnoredPreauthType {
+        /// Removed preference identifier.
+        id: i32,
+    },
+    /// Strict parsing rejects configuration intended only for server processes.
+    #[error("server-only configuration section: {section}")]
+    ServerOnly {
+        /// Canonical section name.
+        section: &'static str,
+    },
+    /// An unsupported relation requires stricter behavior or strict parsing.
+    #[error("relation {relation} is not yet effective; requires {package}")]
+    NotYetEffective {
+        /// Selected relation.
+        relation: &'static str,
+        /// Work package owning its runtime consumer.
+        package: &'static str,
+    },
+    /// A local-address list contains a malformed IP address.
+    #[error("invalid extra address: {0}")]
+    InvalidAddress(String),
+    /// Dynamic profile and plugin providers are not loaded by this crate.
+    #[error("dynamic configuration modules are unsupported")]
+    UnsupportedDynamicModule,
     /// An enctype expression contains a name or operator outside MIT's vocabulary.
     #[error("unknown enctype expression token: {token}")]
     UnknownEnctype {
@@ -1123,6 +1165,9 @@ pub enum KdcReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Keytab {
+    /// A configured name could not be expanded from available facts.
+    #[error("keytab name expansion failed: {0}")]
+    Expansion(#[from] ExpansionFailure),
     /// UID tokens require Linux procfs process identities.
     #[error("credential path process identity is unavailable (UID tokens require Linux procfs)")]
     IdentityUnavailable,

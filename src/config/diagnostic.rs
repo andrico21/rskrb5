@@ -14,6 +14,28 @@ pub enum ParseMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Diagnostic {
+    /// An unrecognized top-level profile section.
+    UnknownSection {
+        /// Canonical section name.
+        section: String,
+    },
+    /// An unrecognized relation or subsection under a supported section.
+    UnknownRelation {
+        /// Full selected profile path, retaining case-sensitive components.
+        path: Vec<String>,
+    },
+    /// A server-only section is recognized but not applied by this client library.
+    ServerOnly {
+        /// Canonical section name.
+        section: &'static str,
+    },
+    /// A known relation has no complete runtime consumer yet.
+    NotYetEffective {
+        /// Selected scalar relation name.
+        relation: &'static str,
+        /// Work package implementing the missing behavior.
+        package: &'static str,
+    },
     /// A removed draft-9 mechanism was ignored in a preference list.
     IgnoredPreauthType {
         /// Ignored PA type, never selected for an outgoing exchange.
@@ -26,4 +48,23 @@ pub enum Diagnostic {
         /// Work package required before this selection can take effect.
         until: &'static str,
     },
+}
+
+impl Diagnostic {
+    /// Convert every diagnostic kind to its strict-mode error without exceptions.
+    pub(super) fn into_error(self) -> super::Error {
+        use super::Error;
+        match self {
+            Self::UnknownSection { section } => Error::UnknownSection { section },
+            Self::UnknownRelation { path } => Error::UnknownRelation { path },
+            Self::NotYetEffective { relation, package } => {
+                Error::NotYetEffective { relation, package }
+            }
+            Self::ServerOnly { section } => Error::ServerOnly { section },
+            Self::IgnoredPreauthType { id } => Error::IgnoredPreauthType { id },
+            Self::UnsupportedSecureEnctype { token, until } => {
+                Error::UnsupportedSecureEnctype { token, until }
+            }
+        }
+    }
 }

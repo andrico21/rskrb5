@@ -3,6 +3,53 @@
 #[path = "support/env.rs"]
 mod env;
 
+#[path = "config/profile.rs"]
+mod profile;
+
+#[path = "config/profile_limits.rs"]
+mod profile_limits;
+
+#[path = "config/expansion.rs"]
+mod expansion;
+
+#[path = "config/readers.rs"]
+mod readers;
+
+#[path = "config/consumers.rs"]
+mod consumers;
+
+#[path = "config/libdefaults_c1.rs"]
+mod libdefaults_c1;
+
+#[path = "config/relations_c1.rs"]
+mod relations_c1;
+
+#[path = "config/c1_boundaries.rs"]
+mod c1_boundaries;
+
+#[path = "config/libdefaults_c2.rs"]
+mod libdefaults_c2;
+
+#[path = "config/relations_c2.rs"]
+mod relations_c2;
+
+#[path = "config/sections_d.rs"]
+mod sections_d;
+
+#[path = "config/realm_relations_d.rs"]
+mod realm_relations_d;
+#[path = "config/section_composition_d.rs"]
+mod section_composition_d;
+
+#[path = "config/diagnostics_e.rs"]
+mod diagnostics_e;
+
+#[path = "config/compatibility_e.rs"]
+mod compatibility_e;
+
+#[path = "config/unavailable_e.rs"]
+mod unavailable_e;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(
@@ -27,6 +74,8 @@ mod tests {
     use proptest::{prelude::Strategy, prop_assert};
     #[cfg(feature = "messages")]
     use rasn::der;
+    #[cfg(feature = "serde")]
+    use rskrb5_ng::config::ConfigDiagnostic;
     #[cfg(any(feature = "serde", feature = "messages"))]
     use rskrb5_ng::config::LibDefaults;
     #[cfg(feature = "messages")]
@@ -519,12 +568,20 @@ mod tests {
     /// Pins the libdefaults, KDCs, kpasswd servers and realm mapping of the gokrb5 integration config.
     #[test]
     fn parses_gokrb5_integration_config_fixture() -> Result<(), TestError> {
-        let config = Config::parse(KRB5_CONF).context("config parses")?;
+        assert!(matches!(
+            Config::parse(KRB5_CONF),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
+        let config = Config::parse(&KRB5_CONF.replace("noaddresses = false", "noaddresses = true"))
+            .context("addressless fixture parses")?;
 
         assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
         assert!(!config.libdefaults.dns_lookup_realm.is_enabled());
         assert!(!config.libdefaults.dns_lookup_kdc.is_enabled());
-        assert!(!config.libdefaults.no_addresses.is_enabled());
+        assert!(config.libdefaults.no_addresses.is_enabled());
         assert!(config.libdefaults.forwardable.is_enabled());
         assert_eq!(config.libdefaults.ticket_lifetime, Duration::from_hours(24));
         assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [18_i32]);
@@ -559,7 +616,17 @@ mod tests {
     fn loads_config_file() -> Result<(), TestError> {
         let path = temp_file("load")?;
         fs::write(&path, KRB5_CONF).context("config fixture writes")?;
-
+        assert!(matches!(
+            Config::load(&path),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
+        fs::write(
+            &path,
+            KRB5_CONF.replace("noaddresses = false", "noaddresses = true"),
+        )?;
         let config = Config::load(&path).context("config loads")?;
         fs::remove_file(&path).context("the test config is removed")?;
 
@@ -573,7 +640,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that a path list loads in order, skipping empty paths, with the later file winning.
+    /// Pins first-value precedence across an ordered path list, skipping empty paths.
     #[test]
     fn loads_config_path_list_in_order() -> Result<(), TestError> {
         let first = temp_file("load-list-first")?;
@@ -606,7 +673,7 @@ mod tests {
         fs::remove_file(&first).context("the test config is removed")?;
         fs::remove_file(&second).context("the test config is removed")?;
 
-        assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
+        assert_eq!(config.libdefaults.default_realm, "FIRST.GOKRB5");
         assert_eq!(
             config.resolve_realm("host.first.gokrb5"),
             Some("FIRST.GOKRB5")
@@ -618,7 +685,7 @@ mod tests {
         Ok(())
     }
 
-    /// Pins that `KRB5_CONFIG` path lists load with the later file winning.
+    /// Pins first-value precedence across `KRB5_CONFIG` entries.
     #[test]
     fn loads_config_path_list_from_env() -> Result<(), TestError> {
         const TEST_PATH: &str = "tests::loads_config_path_list_from_env";
@@ -655,7 +722,7 @@ mod tests {
         fs::remove_file(&first).context("the test config is removed")?;
         fs::remove_file(&second).context("the test config is removed")?;
 
-        assert_eq!(config.libdefaults.default_realm, "SECOND.GOKRB5");
+        assert_eq!(config.libdefaults.default_realm, "FIRST.GOKRB5");
         Ok(())
     }
 
@@ -1011,7 +1078,7 @@ mod tests {
         // When the sections compose.
         let config = Config::parse(input)?;
 
-        // Then unrelated realms, final relations and later scalar values survive.
+        // Then unrelated realms, final relations and first scalar values survive.
         assert_eq!(config.configured_kdcs("A")?, ["first.example:88"]);
         assert_eq!(config.configured_kdcs("B")?, ["other.example:88"]);
         assert_eq!(
@@ -1020,7 +1087,7 @@ mod tests {
         );
         assert_eq!(
             config.realm("A").context("realm A exists")?.default_domain,
-            "new.example"
+            "old.example"
         );
         Ok(())
     }
@@ -1092,40 +1159,32 @@ mod tests {
         Ok(())
     }
 
-    /// Pins case-insensitive `[libdefaults]` keys and comma-separated `extra_addresses` without invalid entries.
+    /// Malformed address input fails rather than silently narrowing the list.
     #[test]
     fn libdefaults_keys_are_case_insensitive_and_extra_addresses_are_comma_separated()
     -> Result<(), TestError> {
-        let config = Config::parse(
+        let result = Config::parse(
             "
 [libdefaults]
  DEFAULT_REALM = TEST.GOKRB5
  EXTRA_ADDRESSES = 127.0.0.1, 127.0.0.2, not-an-ip
  FORWARDABLE = TRUE
 ",
-        )
-        .context("config parses")?;
-
-        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-        assert!(config.libdefaults.forwardable.is_enabled());
-        assert_eq!(config.libdefaults.extra_addresses.len(), 2);
-        assert_eq!(
-            config
-                .libdefaults
-                .extra_addresses
-                .first()
-                .context("a first extra address")?
-                .to_string(),
-            "127.0.0.1"
         );
+        assert!(matches!(result, Err(Error::InvalidAddress(value)) if value == "not-an-ip"));
+        let valid = Config::parse(
+            "[libdefaults]\n DEFAULT_REALM = TEST.GOKRB5\n EXTRA_ADDRESSES = 127.0.0.1, 127.0.0.2\n FORWARDABLE = TRUE\n",
+        )?;
+        assert_eq!(valid.libdefaults.default_realm, "TEST.GOKRB5");
+        assert!(valid.libdefaults.forwardable.is_enabled());
         assert_eq!(
-            config
+            valid
                 .libdefaults
                 .extra_addresses
-                .get(1)
-                .context("a second extra address")?
-                .to_string(),
-            "127.0.0.2"
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["127.0.0.1", "127.0.0.2"]
         );
         Ok(())
     }
@@ -1385,7 +1444,15 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn implicit_permitted_enctypes_round_trip_stays_implicit() -> Result<(), TestError> {
-        let config = Config::parse(KRB5_CONF).map_err(|cause| format!("config parses: {cause}"))?;
+        assert!(matches!(
+            Config::parse(KRB5_CONF),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
+        let config =
+            Config::parse(&KRB5_CONF.replace("noaddresses = false", "noaddresses = true"))?;
         assert!(!config.libdefaults.permitted_enctypes_explicit.is_enabled());
 
         let json = serde_json::to_string(&config.libdefaults)
@@ -1394,7 +1461,18 @@ mod tests {
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
 
         assert!(!decoded.permitted_enctypes_explicit.is_enabled());
-        assert_eq!(decoded, config.libdefaults);
+        assert_eq!(serde_json::to_string(&decoded)?, json);
+        assert!(
+            decoded.enctype_diagnostics.is_empty(),
+            "parse diagnostics are not serialized"
+        );
+        assert!(config.diagnostics().iter().any(|item| matches!(
+            item,
+            ConfigDiagnostic::NotYetEffective {
+                relation: "dns_lookup_realm",
+                package: "plan 2 WP-10"
+            }
+        )));
         Ok(())
     }
     /// Pins that JSON without the explicit flag deserializes as an implicit permitted list.
@@ -1526,10 +1604,10 @@ mod tests {
         );
         Ok(())
     }
-    /// Pins that a later `[libdefaults]` section can repair an earlier conflict.
+    /// Pins that later sections cannot replace a conflicting first request list.
     #[test]
     fn a_later_section_can_repair_an_earlier_conflict() -> Result<(), TestError> {
-        let config = Config::parse(
+        let result = Config::parse(
             "
 [libdefaults]
  default_tkt_enctypes = aes128-cts-hmac-sha1-96
@@ -1538,12 +1616,11 @@ mod tests {
 [libdefaults]
  default_tkt_enctypes = aes256-cts-hmac-sha1-96
 ",
-        )
-        .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
-
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
-        #[cfg(feature = "messages")]
-        assert_eq!(encoded_as_req_etypes(&config.libdefaults)?, vec![18_i32]);
+        );
+        let failure = result.err().ok_or("first conflicting list was replaced")?;
+        assert!(
+            matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96")
+        );
         Ok(())
     }
     /// Pins that an explicit request list from an included file is validated.
@@ -1580,7 +1657,7 @@ mod tests {
         );
         Ok(())
     }
-    /// Pins that a later included file can repair an earlier conflict.
+    /// Pins that a later included file cannot replace the first request list.
     #[test]
     fn a_later_included_file_can_repair_an_earlier_conflict() -> Result<(), TestError> {
         let dir = include_fixture_dir(
@@ -1606,10 +1683,12 @@ mod tests {
 
         let loaded = Config::load(&main_path);
         fs::remove_dir_all(&dir)?;
-        let config = loaded
-            .map_err(|cause| format!("the final effective request list is permitted: {cause}"))?;
-
-        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), vec![18_i32]);
+        let failure = loaded
+            .err()
+            .ok_or("first included request list was replaced")?;
+        assert!(
+            matches!(failure, Error::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype } if enctype == "aes128-cts-hmac-sha1-96")
+        );
         Ok(())
     }
     /// Pins that a bare tag does not match a host that merely ends with its text.

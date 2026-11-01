@@ -105,6 +105,8 @@ impl Client {
     ///
     /// # Ambient input
     /// Reads `KRB5CCNAME` before the configured fallback; invalid Unicode is an
+    /// expansion error when `TMPDIR`, `TEMP` or `APPDATA` supplies invalid text;
+    /// process identity is read for identity tokens. An invalid `KRB5CCNAME` is an
     /// error. Use [`Self::from_ccache_name`] for an explicit cache name.
     ///
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to

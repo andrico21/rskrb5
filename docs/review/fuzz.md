@@ -87,7 +87,7 @@ timeout artifact:
 | `kdc_tcp_frame` | 24,229,707 | 121 s | 0 |
 | `krb_messages` | 306,487 | 121 s | 0 |
 | `der_oid` | 348,348 | 121 s | 0 |
-| `krb5_conf` | 280,234 | 121 s | 0 |
+| `krb5_conf` | 140,698 (todo 15 F, 2026-11-01) | 121 s | 0 |
 | `name_parse` | 2,629,623 | 121 s | 0 |
 
 ### Crashes
@@ -227,11 +227,11 @@ does.
 | `rskrb5_ng::client::transport::tests::parses_dns_server_override_ip_and_default_port` | `src/client/transport.rs` | - | unit test, not a parser |
 | `rskrb5_ng::client::transport::tests::parses_dns_server_override_ip_and_explicit_port` | `src/client/transport.rs` | - | unit test, not a parser |
 | `rskrb5_ng::client::transport::framing::validate_tcp_length` | `src/client/transport/framing.rs` | - | private `const fn` on the 4-byte record mark of `exchange_tcp_framed`; unit tests `tcp_lengths_are_service_specific` (src) and `kdc_tcp_rejects_reserved_bit_before_body_read`, `tokio_transport_uses_tcp_length_prefix` (tests/client_transport.rs) |
-| `rskrb5_ng::config::Config::load` | `src/config.rs` | - | reads the file, then `parse_with_roots` (the parser `krb5_conf` reaches) |
+| `rskrb5_ng::config::Config::load` | `src/config.rs` | - | delegates to bounded `load_paths`; shared grammar reached by `krb5_conf` |
 | `rskrb5_ng::config::Config::load_default` | `src/config.rs` | - | reads the platform default path, then `load_paths` |
 | `rskrb5_ng::config::Config::load_default_or_parse` | `src/config.rs` | - | the default file, else `Config::parse` on embedded text (`krb5_conf`) |
 | `rskrb5_ng::config::Config::load_from_env` | `src/config.rs` | - | reads `KRB5_CONFIG`, then `load_paths` |
-| `rskrb5_ng::config::Config::load_paths` | `src/config.rs` | - | reads each file, then `parse_with_roots` |
+| `rskrb5_ng::config::Config::load_paths` | `src/config.rs` | - | bounded independent file reads, shared `IncludeExpansion::expand` grammar |
 | `rskrb5_ng::config::Config::parse` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::Config::parse_with_mode` | `src/config.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::Config::parse_with_roots` | `src/config.rs` | `krb5_conf` |  |
@@ -245,24 +245,27 @@ does.
 | `rskrb5_ng::config::LibDefaults::parse_lines` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::LibDefaults::parse_mode` | `src/config.rs` | - | Typed mode accessor, not a parser. |
 | `rskrb5_ng::config::Realm::parse` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::SectionKind::parse` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::brace_delta` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::profile::Profile::finish` | `src/config/profile.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::State::line` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::State::finish` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::quoted` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::profile_syntax::comments` | `src/config/profile_syntax.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::hostname::Canonicalization::parse` | `src/config/hostname.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::libdefaults::c2::parse` | `src/config/libdefaults/c2.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::libdefaults::duration::parse` | `src/config/libdefaults/duration.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::realm_values::decode` | `src/config/realm_values.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::fork_tests::parse_does_not_read_uid_or_home` | `src/config.rs` | - | unit test, not a parser |
 | `rskrb5_ng::config::enctype_expr::EnctypeExpr::parse` | `src/config/enctype_expr.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::enctype_names::Selector::parse` | `src/config/enctype_names.rs` | `krb5_conf` | |
-| `rskrb5_ng::config::parse_assignment` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::sections::parse_assignment` | `src/config/sections.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_boolean` | `src/config.rs` | `name_parse` |  |
 | `rskrb5_ng::config::parse_colon_duration` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::parse_domain_realm` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_duration` | `src/config.rs` | `name_parse` |  |
-| `rskrb5_ng::config::parse_hex_u32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32_list` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_ip_addresses` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::parse_realms` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_supported_enctype_ids` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_unit_duration` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::strip_comments` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::crypto::AesSha1Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::AesSha2Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::Des3CbcSha1KdEtype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |

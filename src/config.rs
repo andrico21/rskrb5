@@ -4,13 +4,22 @@
 //! mappings, domain-realm lookup, durations and KDC discovery. Enctype ID
 //! accessors apply the configured family opt-ins and permitted list.
 
+/// Explicit-context expansion of credential-name profile parameters.
+#[path = "config/expansion.rs"]
+pub mod parameters;
+
+/// Ambient credential-name resolution, separate from profile parsing.
+#[cfg(feature = "messages")]
+#[path = "config/credential_names.rs"]
+pub(crate) mod credential_names;
+
 use alloc::{borrow::Cow, collections::BTreeMap};
 use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
 use std::{
-    env,
+    env, fs,
     io::{self, Read as _},
     path::{Path, PathBuf},
 };
@@ -26,6 +35,47 @@ pub mod protocol;
 #[cfg(feature = "serde")]
 #[path = "config/serde_policy.rs"]
 mod serde_policy;
+
+/// Ordered profile composition.
+#[path = "config/profile.rs"]
+mod profile;
+/// Independent source syntax state.
+#[path = "config/profile_syntax.rs"]
+mod profile_syntax;
+
+/// Per-row fail-closed classification review.
+#[cfg(test)]
+#[path = "config/classification_e.rs"]
+mod classification_e;
+/// Exhaustive diagnostic promotion regressions.
+#[cfg(test)]
+#[path = "config/diagnostic_tests.rs"]
+mod diagnostic_tests;
+/// Typed DNS canonicalization policy.
+#[path = "config/hostname.rs"]
+pub mod hostname;
+/// C1 relation parsing and classification.
+#[path = "config/libdefaults.rs"]
+mod libdefaults;
+/// Documented realm relation inventory.
+#[path = "config/realm_relations.rs"]
+mod realm_relations;
+/// Typed realm values and policy diagnostics.
+#[path = "config/realm_values.rs"]
+mod realm_values;
+/// Non-libdefaults subtree decoding.
+#[path = "config/section_decode.rs"]
+mod section_decode;
+/// Independent catalogue count and name regressions.
+#[cfg(test)]
+#[path = "config/section_inventory_tests.rs"]
+mod section_inventory_tests;
+/// Typed application, route and realm relation data.
+#[path = "config/section_values.rs"]
+pub mod section_values;
+/// Unknown profile path diagnostics.
+#[path = "config/unknown.rs"]
+mod unknown;
 
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
@@ -59,12 +109,12 @@ pub const MAX_INCLUDE_DEPTH: usize = 8;
 
 /// The most files one configuration may pull in through `include` and
 /// `includedir` before parsing fails with [`Error::IncludeTooMany`].
-pub const MAX_INCLUDE_FILES: usize = 64;
+pub const MAX_INCLUDE_FILES: usize = 256;
 
 /// The most bytes one configuration may pull in through `include` and
 /// `includedir` - counted across every included file - before parsing fails with
-/// [`Error::IncludeTooLarge`] (1 MiB).
-pub const MAX_INCLUDE_BYTES: usize = 1024 * 1024;
+/// [`Error::IncludeTooLarge`] (4 MiB, including root sources).
+pub const MAX_INCLUDE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Parsed Kerberos configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -77,9 +127,60 @@ pub struct Config {
     pub realms: Vec<Realm>,
     /// `[domain_realm]` mappings keyed by lower-case domain names.
     pub domain_realm: BTreeMap<String, String>,
+    /// Declared cross-realm routes; not an active transit policy.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub capaths: section_values::Capaths,
+    /// Hierarchical application defaults with MIT precedence.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub applications: section_values::Applications,
+    /// Plugin restrictions by interface, without executable module loading.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub plugins: BTreeMap<String, section_values::Plugins>,
 }
 
 impl Config {
+    /// Lookup application text using MIT's four-level precedence.
+    #[inline]
+    #[must_use]
+    pub fn appdefault(&self, app: &str, realm: &str, relation: &str) -> Option<&str> {
+        self.applications.get(app, realm, relation)
+    }
+
+    /// Lookup a boolean without coercing malformed strings into false.
+    /// # Errors
+    /// Returns `InvalidBoolean` for a selected non-boolean application value.
+    #[inline]
+    pub fn appdefault_boolean(
+        &self,
+        app: &str,
+        realm: &str,
+        relation: &str,
+    ) -> Result<Option<bool>, Error> {
+        self.applications.boolean(app, realm, relation)
+    }
+
+    /// Return a declared route, preserving missing versus direct.
+    #[inline]
+    #[must_use]
+    pub fn capath(&self, client: &str, server: &str) -> Option<&section_values::Route> {
+        self.capaths.get(client)?.get(server)
+    }
+    /// Diagnostics for selected profile relations, including deferred consumers.
+    #[inline]
+    #[must_use]
+    pub fn diagnostics(&self) -> &[ConfigDiagnostic] {
+        &self.libdefaults.enctype_diagnostics
+    }
+
+    /// Resolve a host mapping, then the explicitly configured default realm.
+    #[inline]
+    #[must_use]
+    pub fn realm_for_host(&self, host: &str) -> Option<&str> {
+        self.resolve_realm(host).or_else(|| {
+            (!self.libdefaults.default_realm.is_empty())
+                .then_some(self.libdefaults.default_realm.as_str())
+        })
+    }
     #[must_use]
     /// Create a config with MIT/gokrb5-style defaults and no parsed sections.
     #[inline]
@@ -88,6 +189,9 @@ impl Config {
             libdefaults: LibDefaults::new(),
             realms: Vec::new(),
             domain_realm: BTreeMap::new(),
+            capaths: BTreeMap::new(),
+            applications: section_values::Applications::default(),
+            plugins: BTreeMap::new(),
         }
     }
 
@@ -107,18 +211,7 @@ impl Config {
     where
         P: AsRef<Path>,
     {
-        use std::fs;
-
-        let file = path.as_ref();
-        let canonical = fs::canonicalize(file).map_err(|source| Error::File {
-            path: file.to_path_buf(),
-            source,
-        })?;
-        let input = fs::read_to_string(file).map_err(|source| Error::File {
-            path: file.to_path_buf(),
-            source,
-        })?;
-        Self::parse_with_roots(&input, [canonical])
+        Self::load_paths([path])
     }
 
     /// Load and parse the `krb5.conf` path list named by `KRB5_CONFIG`.
@@ -189,52 +282,44 @@ impl Config {
 
     /// Load and parse one or more `krb5.conf` files.
     ///
-    /// Files are concatenated in iterator order before parsing, preserving the
-    /// same section semantics as a single file with repeated sections. Each
-    /// file's canonical path is on the open chain before any of that text
-    /// expands, so a file the list names that one of its own children includes
-    /// is [`Error::IncludeCycle`] rather than a second read of the same file.
+    /// Sources compose in iterator order. Directory entries use MIT's filename
+    /// filter and bytewise order. Each file has independent syntax state; scalar
+    /// relations select their first value and endpoint relations accumulate.
+    /// Missing explicitly named sources fail closed rather than being skipped.
     ///
     /// # Errors
     ///
     /// Returns [`Error::EmptyConfigPathList`] when the list names no non-empty
     /// path, [`Error::File`] when a named file cannot be resolved or read, and
-    /// the [`Config::parse`] errors for the concatenated text.
+    /// the [`Config::parse`] errors for each independent source.
     #[inline]
     pub fn load_paths<I, P>(paths: I) -> Result<Self, Error>
     where
         I: IntoIterator<Item = P>,
         P: AsRef<Path>,
     {
-        use std::fs::{canonicalize, read_to_string};
-
-        let mut input = String::new();
-        // Every loaded file contributes exactly one root, so `roots` doubles as
-        // the count of files loaded so far.
-        let mut roots = Vec::new();
+        let mut loader = IncludeExpansion::default();
+        let mut found = false;
         for entry in paths {
             let path = entry.as_ref();
             if path.as_os_str().is_empty() {
                 continue;
             }
-            if !roots.is_empty() {
-                input.push('\n');
-            }
-            let canonical = canonicalize(path).map_err(|source| Error::File {
+            found = true;
+            let metadata = fs::metadata(path).map_err(|source| Error::File {
                 path: path.to_path_buf(),
                 source,
             })?;
-            input.push_str(&read_to_string(path).map_err(|source| Error::File {
-                path: path.to_path_buf(),
-                source,
-            })?);
-            input.push('\n');
-            roots.push(canonical);
+            if metadata.is_dir() {
+                loader.include_dir(path, 0)?;
+            } else {
+                loader.include_file(path, 0)?;
+            }
         }
-        if roots.is_empty() {
+        if !found {
             return Err(Error::EmptyConfigPathList);
         }
-        Self::parse_with_roots(&input, roots)
+        loader.profile.finish(ParseMode::Compatible)
     }
 
     /// Load the platform default files of `paths` that exist.
@@ -276,11 +361,10 @@ impl Config {
 
     /// Parse a `krb5.conf` string.
     ///
-    /// A line beginning with `include <file>` or `includedir <dir>` outside a
-    /// `{ ... }` group is expanded before the sections are parsed: the named file
-    /// is spliced at the directive site (MIT's `parse_include_file`), or every
-    /// file the directory holds whose name MIT's `valid_name` accepts is spliced
-    /// in alphanumeric order (`parse_include_dir`). The expansion is bounded by
+    /// A line beginning with `include <absolute-file>` or
+    /// `includedir <absolute-dir>` loads independent sources at the directive
+    /// site, then resumes the parent's section and nesting state. Directory
+    /// entries use MIT's eligibility filter and bytewise order. Loading is bounded by
     /// [`MAX_INCLUDE_DEPTH`], [`MAX_INCLUDE_FILES`] and [`MAX_INCLUDE_BYTES`], and
     /// a cycle, an unreadable file or directory, or a bound that is passed is a
     /// named [`Error`] rather than a skipped directive.
@@ -310,6 +394,52 @@ impl Config {
         Self::parse_with_roots(input, [])
     }
 
+    /// Parse caller text, equivalent to gokrb5's `NewFromString`.
+    ///
+    /// # Errors
+    /// Returns the bounded profile-composition errors of [`Self::parse`].
+    #[inline]
+    pub fn from_string(input: &str) -> Result<Self, Error> {
+        Self::parse(input)
+    }
+
+    /// Load an explicit path, equivalent to gokrb5's `Load`.
+    ///
+    /// # Errors
+    /// Returns the pathful I/O and composition errors of [`Self::load`].
+    #[inline]
+    pub fn from_path<P>(path: P) -> Result<Self, Error>
+    where
+        P: AsRef<Path>,
+    {
+        Self::load(path)
+    }
+
+    /// Parse a reader, including buffered readers, through profile composition.
+    ///
+    /// # Errors
+    /// Returns typed I/O, UTF-8, size and include-composition failures.
+    #[inline]
+    pub fn from_reader<R>(reader: R) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
+        let mut bytes = Vec::new();
+        let limit = u64::try_from(MAX_INCLUDE_BYTES)
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
+        let _: usize = reader.take(limit).read_to_end(&mut bytes)?;
+        if bytes.len() > MAX_INCLUDE_BYTES {
+            return Err(Error::IncludeTooLarge {
+                bytes: bytes.len(),
+                limit: MAX_INCLUDE_BYTES,
+            });
+        }
+        let text = String::from_utf8(bytes)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
+        Self::parse(&text)
+    }
+
     /// Parse a profile with explicit secure-unsupported handling.
     ///
     /// # Errors
@@ -319,13 +449,7 @@ impl Config {
         Self::parse_with_roots_mode(input, [], mode)
     }
 
-    /// The parser the string entry point and the two file loaders share: they
-    /// differ in nothing but the canonical paths the text came from.
-    ///
-    /// Those paths go on the open chain before the text they contributed is
-    /// expanded, which is what makes the configuration's own files cycle
-    /// members: a root that includes itself, and a path-list root a child
-    /// includes, are [`Error::IncludeCycle`] like any other re-entered file.
+    /// Parse caller-provided text with an optional active source chain.
     ///
     /// # Errors
     ///
@@ -347,56 +471,16 @@ impl Config {
     where
         I: IntoIterator<Item = PathBuf>,
     {
-        let input = IncludeExpansion::default()
-            .with_roots(roots)
-            .expand(text, 0)?;
-        let mut config = Self::new();
-        config.libdefaults.enctype_parse_mode = mode;
-        let mut enctypes = EnctypeParseState::default();
-        let mut realm_lines = Vec::new();
-        let mut current = SectionKind::Unknown;
-        let mut lines = Vec::new();
-
-        for (index, raw) in input.lines().enumerate() {
-            // Saturating: an enumerate index is below `usize::MAX`, so the
-            // one-based line number cannot overflow.
-            let line_number = index.saturating_add(1);
-            let cleaned = strip_comments(raw).trim();
-            if cleaned.is_empty() {
-                continue;
-            }
-
-            if let Some(section) = SectionKind::parse(cleaned) {
-                if current == SectionKind::Realms {
-                    realm_lines.append(&mut lines);
-                }
-                apply_section(&mut config, current, &lines, &mut enctypes)?;
-                current = section;
-                lines.clear();
-                continue;
-            }
-
-            if current != SectionKind::DomainRealm
-                && let Some((key, value)) = cleaned.split_once('=')
-            {
-                protocol::relation(key.trim(), value.trim())?;
-            }
-
-            if current != SectionKind::Unknown {
-                lines.push(Line {
-                    number: line_number,
-                    text: cleaned.to_owned(),
-                });
-            }
+        let mut loader = IncludeExpansion::default().with_roots(roots);
+        if text.len() > MAX_INCLUDE_BYTES {
+            return Err(Error::IncludeTooLarge {
+                bytes: text.len(),
+                limit: MAX_INCLUDE_BYTES,
+            });
         }
-
-        if current == SectionKind::Realms {
-            realm_lines.append(&mut lines);
-        }
-        apply_section(&mut config, current, &lines, &mut enctypes)?;
-        config.realms = parse_realms(&realm_lines)?;
-        config.libdefaults.validate_explicit_enctypes(enctypes)?;
-        Ok(config)
+        loader.bytes = text.len();
+        loader.expand(text, 0)?;
+        loader.profile.finish(mode)
     }
 
     /// Render a gokrb5-style JSON snapshot of the parsed configuration.
@@ -556,6 +640,9 @@ pub struct LibDefaults {
     pub default_client_keytab_name: String,
     /// Default service keytab path.
     pub default_keytab_name: String,
+    /// Requested replay store; explicit persistent stores fail closed until WP-20.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub default_rcache_name: String,
     /// Default realm.
     pub default_realm: String,
     /// Preferred TGS enctype names.
@@ -565,11 +652,20 @@ pub struct LibDefaults {
     #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub default_tkt_enctypes: Vec<String>,
     /// Whether hostnames should be DNS-canonicalized.
-    pub dns_canonicalize_hostname: Toggle,
+    pub dns_canonicalize_hostname: hostname::Canonicalization,
     /// Whether KDC DNS lookup is enabled.
     pub dns_lookup_kdc: Toggle,
     /// Whether realm DNS lookup is enabled.
     pub dns_lookup_realm: Toggle,
+    /// Requested URI discovery; no URI resolver is enabled by parsing this value.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub dns_uri_lookup: Toggle,
+    /// Requested GSS delegation restriction; credential forwarding is unavailable.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub enforce_ok_as_delegate: Toggle,
+    /// Requested error presentation template; typed errors remain unchanged.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub err_fmt: String,
     /// Extra local addresses.
     pub extra_addresses: Vec<IpAddr>,
     /// Whether tickets should be forwardable.
@@ -580,6 +676,27 @@ pub struct LibDefaults {
     pub k5login_authoritative: Toggle,
     /// `.k5login` directory.
     pub k5login_directory: String,
+    /// Requested KCM Mach service; KCM support remains unavailable.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub kcm_mach_service: String,
+    /// Requested KCM Unix socket; parsing never connects to it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub kcm_socket: String,
+    /// Plugin location template; never used to load executable code.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub plugin_base_dir: String,
+    /// Requested shortname suffix; None means unspecified, Some("") disables it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub qualify_shortname: Option<String>,
+    /// Total request deadline; nonzero profile values fail until a total budget exists.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub request_timeout: Duration,
+    /// Recognized SPAKE group names; no SPAKE exchange is enabled.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub spake_preauth_groups: Vec<String>,
+    /// Requested channel-binding-aware GSS signaling; not yet implemented.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub client_aware_channel_bindings: Toggle,
     /// KDC default options bit string as a 32-bit integer.
     pub kdc_default_options: u32,
     /// KDC time sync setting.
@@ -758,8 +875,8 @@ impl LibDefaults {
     /// Sets `dns_canonicalize_hostname`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_dns_canonicalize_hostname(mut self, value: Toggle) -> Self {
-        self.dns_canonicalize_hostname = value;
+    pub fn with_dns_canonicalize_hostname(mut self, value: Toggle) -> Self {
+        self.dns_canonicalize_hostname = value.into();
         self
     }
     /// Sets `dns_lookup_kdc`, preserving the other fields.
@@ -952,17 +1069,28 @@ impl LibDefaults {
             default_ccache_name: String::new(),
             default_client_keytab_name: "/usr/local/var/krb5/user/%{euid}/client.keytab".to_owned(),
             default_keytab_name: "/etc/krb5.keytab".to_owned(),
+            default_rcache_name: String::new(),
             default_realm: String::new(),
             default_tgs_enctypes: default_enctypes.clone(),
             default_tkt_enctypes: default_enctypes.clone(),
-            dns_canonicalize_hostname: Toggle::Enabled,
+            dns_canonicalize_hostname: hostname::Canonicalization::Always,
             dns_lookup_kdc: Toggle::Disabled,
             dns_lookup_realm: Toggle::Disabled,
+            dns_uri_lookup: Toggle::Disabled,
+            enforce_ok_as_delegate: Toggle::Disabled,
+            err_fmt: String::new(),
             extra_addresses: Vec::new(),
             forwardable: Toggle::Disabled,
             ignore_acceptor_hostname: Toggle::Disabled,
-            k5login_authoritative: Toggle::Disabled,
+            k5login_authoritative: Toggle::Enabled,
             k5login_directory: home.unwrap_or_default(),
+            kcm_mach_service: "org.h5l.kcm".to_owned(),
+            kcm_socket: "/var/run/.heim_org.h5l.kcm-socket".to_owned(),
+            plugin_base_dir: "%{LIBDIR}/krb5/plugins".to_owned(),
+            qualify_shortname: None,
+            request_timeout: Duration::ZERO,
+            spake_preauth_groups: vec!["edwards25519".to_owned()],
+            client_aware_channel_bindings: Toggle::Disabled,
             kdc_default_options: 0x0000_0010,
             kdc_time_sync: 1,
             no_addresses: Toggle::Enabled,
@@ -1013,12 +1141,14 @@ impl LibDefaults {
                 }
                 "canonicalize" => self.canonicalize = Toggle::from_bool(parse_boolean(value)?),
                 "ccache_type" => self.ccache_type = parse_i32(value, line, key)?,
-                "clockskew" => self.clockskew = parse_duration(value)?,
+                "clockskew" => self.clockskew = libdefaults::duration::parse(value)?,
                 "default_ccache_name" => value.clone_into(&mut self.default_ccache_name),
                 "default_client_keytab_name" => {
                     value.clone_into(&mut self.default_client_keytab_name);
                 }
                 "default_keytab_name" => value.clone_into(&mut self.default_keytab_name),
+                "default_rcache_name" => value.clone_into(&mut self.default_rcache_name),
+                "err_fmt" => value.clone_into(&mut self.err_fmt),
                 "default_realm" => value.clone_into(&mut self.default_realm),
                 "default_tgs_enctypes" => {
                     enctypes.expressions.push(EnctypeExpr::parse(value)?);
@@ -1031,13 +1161,17 @@ impl LibDefaults {
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
-                    self.dns_canonicalize_hostname = Toggle::from_bool(parse_boolean(value)?);
+                    self.dns_canonicalize_hostname = hostname::Canonicalization::parse(value)?;
                 }
                 "dns_lookup_kdc" => self.dns_lookup_kdc = Toggle::from_bool(parse_boolean(value)?),
                 "dns_lookup_realm" => {
                     self.dns_lookup_realm = Toggle::from_bool(parse_boolean(value)?);
                 }
-                "extra_addresses" => self.extra_addresses = parse_ip_addresses(value),
+                "dns_uri_lookup" => self.dns_uri_lookup = Toggle::from_bool(parse_boolean(value)?),
+                "enforce_ok_as_delegate" => {
+                    self.enforce_ok_as_delegate = Toggle::from_bool(parse_boolean(value)?);
+                }
+                "extra_addresses" => self.extra_addresses = parse_ip_addresses(value)?,
                 "forwardable" => self.forwardable = Toggle::from_bool(parse_boolean(value)?),
                 "ignore_acceptor_hostname" => {
                     self.ignore_acceptor_hostname = Toggle::from_bool(parse_boolean(value)?);
@@ -1047,7 +1181,7 @@ impl LibDefaults {
                 }
                 "k5login_directory" => value.clone_into(&mut self.k5login_directory),
                 "kdc_default_options" => {
-                    self.kdc_default_options = parse_hex_u32(value, line, key)?;
+                    self.kdc_default_options = libdefaults::c2::option_bits(value, line)?;
                 }
                 "kdc_timesync" => self.kdc_time_sync = parse_i32(value, line, key)?,
                 "noaddresses" | "no_addresses" => {
@@ -1064,21 +1198,21 @@ impl LibDefaults {
                 "proxiable" => self.proxiable = Toggle::from_bool(parse_boolean(value)?),
                 "rdns" => self.rdns = Toggle::from_bool(parse_boolean(value)?),
                 "realm_try_domains" => self.realm_try_domains = parse_i32(value, line, key)?,
-                "renew_lifetime" => self.renew_lifetime = parse_duration(value)?,
+                "renew_lifetime" => self.renew_lifetime = libdefaults::duration::parse(value)?,
                 "safe_checksum_type" => {
                     let id = selection::checksum_name(value)
                         .map_or_else(|| parse_i32(value, line, key), Ok)?;
                     selection::reject_checksum(id)?;
                     self.safe_checksum_type = id;
                 }
-                "ticket_lifetime" => self.ticket_lifetime = parse_duration(value)?,
+                "ticket_lifetime" => self.ticket_lifetime = libdefaults::duration::parse(value)?,
                 "udp_preference_limit" => {
                     self.udp_preference_limit = parse_i32(value, line, key)?;
                 }
                 "verify_ap_req_nofail" => {
                     self.verify_ap_req_nofail = Toggle::from_bool(parse_boolean(value)?);
                 }
-                _ => {}
+                _ => libdefaults::c2::parse(self, line)?,
             }
         }
 
@@ -1121,6 +1255,15 @@ pub struct Realm {
     pub kpasswd_server: Vec<String>,
     /// Master KDC hosts.
     pub master_kdc: Vec<String>,
+    /// Preferred primary KDC list; falls back to `master_kdc` only when absent.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub primary_kdc: Vec<String>,
+    /// Typed explicitly configured realm relations.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub relations: BTreeMap<String, section_values::Value>,
+    /// Case-sensitive local principal-name mappings; no authorization is performed.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub auth_to_local_names: BTreeMap<String, String>,
 }
 
 impl Realm {
@@ -1142,6 +1285,9 @@ impl Realm {
             kdc: Vec::new(),
             kpasswd_server: Vec::new(),
             master_kdc: Vec::new(),
+            primary_kdc: Vec::new(),
+            relations: BTreeMap::new(),
+            auth_to_local_names: BTreeMap::new(),
         })
     }
 
@@ -1179,10 +1325,14 @@ impl Realm {
                 "master_kdc" => {
                     append_until_final(&mut realm.master_kdc, value, &mut master_final);
                 }
+                "primary_kdc" => realm.primary_kdc.push(value.to_owned()),
                 _ => {}
             }
         }
 
+        if realm.primary_kdc.is_empty() {
+            realm.primary_kdc.clone_from(&realm.master_kdc);
+        }
         if realm.kpasswd_server.is_empty() {
             realm.kpasswd_server = realm
                 .admin_server
@@ -1221,7 +1371,7 @@ use crate::error::Config as Error;
 /// `permitted_enctypes` line from a later one.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EnctypeParseState {
-    /// Every explicit expression, including values overwritten later.
+    /// Selected explicit expressions, before family-permission resolution.
     expressions: Vec<EnctypeExpr>,
     /// A `default_tkt_enctypes` line was parsed.
     tkt_explicit: bool,
@@ -1232,180 +1382,13 @@ pub(crate) struct EnctypeParseState {
 /// One non-empty, comment-stripped line of a section.
 #[derive(Clone, Debug)]
 struct Line {
-    /// One-based line number in the expanded input.
+    /// One-based line number in its independent source.
     number: usize,
     /// The line text after comment stripping and trimming.
     text: String,
 }
 
-/// The section a line belongs to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SectionKind {
-    /// `[libdefaults]`.
-    LibDefaults,
-    /// `[realms]`.
-    Realms,
-    /// `[domain_realm]`.
-    DomainRealm,
-    /// Any other section, or the text before the first section; its lines are
-    /// ignored.
-    Unknown,
-}
-
-impl SectionKind {
-    /// The section a `[name]` header line opens, or `None` when the line is
-    /// not a section header.
-    fn parse(line: &str) -> Option<Self> {
-        let close = line.find(']')?;
-        // `close` indexes `line`; the name starts after the stripped `[`.
-        let section = line.strip_prefix('[')?.get(..close.checked_sub(1)?)?.trim();
-        Some(match section.to_ascii_lowercase().as_str() {
-            "libdefaults" => Self::LibDefaults,
-            "realms" => Self::Realms,
-            "domain_realm" => Self::DomainRealm,
-            _ => Self::Unknown,
-        })
-    }
-}
-
-/// Apply the lines collected for one section to `config`.
-///
-/// # Errors
-///
-/// Returns the error of the section's own parser for a line it refuses.
-fn apply_section(
-    config: &mut Config,
-    section: SectionKind,
-    lines: &[Line],
-    enctypes: &mut EnctypeParseState,
-) -> Result<(), Error> {
-    match section {
-        SectionKind::LibDefaults => config.libdefaults.parse_lines(lines, enctypes),
-        SectionKind::DomainRealm => parse_domain_realm(&mut config.domain_realm, lines),
-        SectionKind::Realms | SectionKind::Unknown => Ok(()),
-    }
-}
-
-/// `line` up to its first `#` or `;` comment marker.
-fn strip_comments(line: &str) -> &str {
-    // `split` always yields a first piece: the text before the first marker,
-    // or the whole line when it has none.
-    line.split(['#', ';']).next().unwrap_or(line)
-}
-
-/// Split an assignment line into its trimmed key and value.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidLine`] naming `section` when the line has no `=`.
-fn parse_assignment<'line>(
-    line: &'line Line,
-    section: &'static str,
-) -> Result<(&'line str, &'line str), Error> {
-    let Some((key, value)) = line.text.split_once('=') else {
-        return Err(Error::InvalidLine {
-            section,
-            line: line.number,
-            text: line.text.clone(),
-        });
-    };
-    Ok((key.trim(), value.trim()))
-}
-
-/// Record the `[domain_realm]` mappings of `lines`, keyed by the lower-cased
-/// domain; a later mapping for the same domain replaces an earlier one.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidLine`] for a line that is not an assignment.
-fn parse_domain_realm(
-    domain_realm: &mut BTreeMap<String, String>,
-    lines: &[Line],
-) -> Result<(), Error> {
-    for line in lines {
-        let (domain, realm) = parse_assignment(line, "domain_realm")?;
-        // A repeated domain replaces the earlier mapping; the old value is
-        // not needed.
-        drop(domain_realm.insert(domain.to_ascii_lowercase(), realm.to_owned()));
-    }
-    Ok(())
-}
-
-/// Parse the `[realms]` section: a sequence of `NAME = { ... }` blocks.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidLine`] for a line that is not an assignment,
-/// [`Error::InvalidRealmsSection`] for a block that does not open with `{`,
-/// closes a brace it never opened or is never closed, and the
-/// [`Realm::parse`] errors of each block.
-fn parse_realms(lines: &[Line]) -> Result<Vec<Realm>, Error> {
-    let mut blocks: Vec<(String, Vec<Line>)> = Vec::new();
-    let mut remaining = lines.iter();
-
-    while let Some(line) = remaining.next() {
-        let (name, value) = parse_assignment(line, "realms")?;
-        if !value.contains('{') {
-            return Err(Error::InvalidRealmsSection(format!(
-                "realm block for {name} does not start with '{{'"
-            )));
-        }
-
-        let mut depth = brace_delta(value);
-        if depth < 0_i32 {
-            return Err(Error::InvalidRealmsSection(
-                "unpaired closing brace".to_owned(),
-            ));
-        }
-
-        let mut block = Vec::new();
-
-        while depth > 0_i32 {
-            let Some(block_line) = remaining.next() else {
-                break;
-            };
-            if depth == 1_i32 && !block_line.text.trim().starts_with('}') {
-                block.push(block_line.clone());
-            }
-
-            // Saturating: a nesting count past `i32` is no real configuration,
-            // and it still reads as "inside the block".
-            depth = depth.saturating_add(brace_delta(&block_line.text));
-            if depth < 0_i32 {
-                return Err(Error::InvalidRealmsSection(
-                    "unpaired closing brace".to_owned(),
-                ));
-            }
-        }
-
-        if depth != 0_i32 {
-            return Err(Error::InvalidRealmsSection(format!(
-                "realm block for {name} is not closed"
-            )));
-        }
-
-        if let Some((_, relations)) = blocks.iter_mut().find(|(realm, _)| realm == name) {
-            relations.extend(block);
-        } else {
-            blocks.push((name.to_owned(), block));
-        }
-    }
-
-    blocks
-        .into_iter()
-        .map(|(name, relations)| Realm::parse(&name, &relations))
-        .collect()
-}
-
-/// The number of `{` in `value` minus the number of `}`.
-fn brace_delta(value: &str) -> i32 {
-    // Saturating: a brace count past `i32` is no real configuration line.
-    value.chars().fold(0_i32, |delta, ch| match ch {
-        '{' => delta.saturating_add(1_i32),
-        '}' => delta.saturating_sub(1_i32),
-        _ => delta,
-    })
-}
+include!("config/sections.rs");
 
 /// Parse a krb5 duration value.
 ///
@@ -1458,13 +1441,14 @@ pub fn parse_duration(value: &str) -> Result<Duration, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidBoolean`] for a value that is none of `1`, `t`,
-/// `true`, `y`, `yes`, `0`, `f`, `false`, `n` or `no` (case-insensitive).
+/// Returns [`Error::InvalidBoolean`] outside MIT's case-insensitive vocabulary:
+/// `1`, `t`, `true`, `y`, `yes`, `on`, `0`, `false`, `n`, `no`, `nil`, `off`.
+/// The existing gokrb5 `f` spelling remains a compatible extension.
 #[inline]
 pub fn parse_boolean(value: &str) -> Result<bool, Error> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "t" | "true" | "y" | "yes" => Ok(true),
-        "0" | "f" | "false" | "n" | "no" => Ok(false),
+        "1" | "t" | "true" | "y" | "yes" | "on" => Ok(true),
+        "0" | "f" | "false" | "n" | "no" | "nil" | "off" => Ok(false),
         _ => Err(Error::InvalidBoolean(value.to_owned())),
     }
 }
@@ -1561,7 +1545,7 @@ struct LibDefaultsJson<'config> {
     default_tkt_enctype_ids: Vec<i32>,
     /// [`LibDefaults::dns_canonicalize_hostname`], as gokrb5's `DNSCanonicalizeHostname`.
     #[serde(rename = "DNSCanonicalizeHostname")]
-    dns_canonicalize_hostname: Toggle,
+    dns_canonicalize_hostname: hostname::Canonicalization,
     /// [`LibDefaults::dns_lookup_kdc`], as gokrb5's `DNSLookupKDC`.
     #[serde(rename = "DNSLookupKDC")]
     dns_lookup_kdc: Toggle,
@@ -1916,19 +1900,6 @@ fn parse_i32_list(value: &str, line: &Line, key: &str) -> Result<Vec<i32>, Error
         .collect()
 }
 
-/// Parse a hexadecimal `u32` value of `key`, with or without a `0x` prefix.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidInteger`] naming the digits when they are not a
-/// hexadecimal `u32`.
-fn parse_hex_u32(value: &str, line: &Line, key: &str) -> Result<u32, Error> {
-    let digits = value.trim().trim_start_matches("0x");
-    u32::from_str_radix(digits, 16)
-        .ok()
-        .ok_or_else(|| invalid_integer(digits, line, key))
-}
-
 /// The [`Error::InvalidInteger`] for `value` of `key` on `line`.
 fn invalid_integer(value: &str, line: &Line, key: &str) -> Error {
     Error::InvalidInteger {
@@ -1938,12 +1909,17 @@ fn invalid_integer(value: &str, line: &Line, key: &str) -> Error {
     }
 }
 
-/// The IP addresses of a comma-separated list; items that do not parse are
-/// skipped.
-fn parse_ip_addresses(value: &str) -> Vec<IpAddr> {
+/// Decode an address list without silently narrowing malformed input.
+/// # Errors
+/// Returns a typed failure naming the malformed address token.
+fn parse_ip_addresses(value: &str) -> Result<Vec<IpAddr>, Error> {
     value
-        .split(',')
-        .filter_map(|part| part.trim().parse().ok())
+        .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse()
+                .map_err(|_invalid_address| Error::InvalidAddress(part.to_owned()))
+        })
         .collect()
 }
 
@@ -2048,6 +2024,8 @@ fn includedir_name_is_valid(name: &[u8]) -> bool {
 /// and the cycle check on canonical paths are a deliberate divergence from MIT.
 #[derive(Default)]
 struct IncludeExpansion {
+    /// Ordered shared tree; syntax state belongs to each `expand` invocation.
+    profile: profile::Profile,
     /// Canonical paths of the files and directories being expanded, outermost
     /// first: the cycle check is a membership test on this chain, so a file - or
     /// a directory reached again through a symlink - that is re-entered by one
@@ -2087,24 +2065,33 @@ impl IncludeExpansion {
     ///
     /// Returns the [`Self::include_file`] or [`Self::include_dir`] error of the
     /// first directive whose target cannot be read or breaks a limit.
-    fn expand(&mut self, input: &str, depth: usize) -> Result<String, Error> {
-        let mut expanded = String::with_capacity(input.len());
-        let mut group_level = 0_i32;
-        for line in input.lines() {
-            let cleaned = strip_comments(line).trim();
-            if group_level == 0_i32
-                && let Some(directive) = IncludeDirective::parse(cleaned)
-            {
-                expanded.push_str(&self.splice(directive, depth)?);
+    fn expand(&mut self, input: &str, depth: usize) -> Result<(), Error> {
+        let mut state = profile_syntax::State::default();
+        for (index, line) in input.lines().enumerate() {
+            let cleaned = profile_syntax::comments(line).trim();
+            if cleaned.is_empty() {
                 continue;
             }
-            expanded.push_str(line);
-            expanded.push('\n');
-            // Saturating: a nesting count past `i32` is no real configuration,
-            // and it still reads as "inside a group".
-            group_level = group_level.saturating_add(brace_delta(cleaned));
+            if cleaned
+                .split_whitespace()
+                .next()
+                .is_some_and(|word| word.eq_ignore_ascii_case("module"))
+            {
+                return Err(Error::UnsupportedDynamicModule);
+            }
+            if let Some(directive) = IncludeDirective::parse(cleaned) {
+                self.splice(directive, depth)?;
+                continue;
+            }
+            state.line(
+                &Line {
+                    number: index.saturating_add(1),
+                    text: cleaned.to_owned(),
+                },
+                &mut self.profile,
+            )?;
         }
-        Ok(expanded)
+        state.finish(&mut self.profile)
     }
 
     /// What one directive contributes to the expanded text.
@@ -2113,10 +2100,23 @@ impl IncludeExpansion {
     ///
     /// Returns the [`Self::include_file`] or [`Self::include_dir`] error for
     /// the directive's target.
-    fn splice(&mut self, directive: IncludeDirective<'_>, depth: usize) -> Result<String, Error> {
+    fn splice(&mut self, directive: IncludeDirective<'_>, depth: usize) -> Result<(), Error> {
+        let argument = match directive {
+            IncludeDirective::File(value) | IncludeDirective::Directory(value) => value,
+        };
+        if !Path::new(argument).is_absolute() {
+            return Err(Error::IncludeFile {
+                path: PathBuf::from(argument),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "include path must be absolute",
+                ),
+            });
+        }
+        let next_depth = depth.saturating_add(1);
         match directive {
-            IncludeDirective::File(argument) => self.include_file(Path::new(argument), depth),
-            IncludeDirective::Directory(argument) => self.include_dir(Path::new(argument), depth),
+            IncludeDirective::File(value) => self.include_file(Path::new(value), next_depth),
+            IncludeDirective::Directory(value) => self.include_dir(Path::new(value), next_depth),
         }
     }
 
@@ -2133,12 +2133,10 @@ impl IncludeExpansion {
     /// [`Error::IncludeCycle`] for a file already being expanded, the
     /// [`Self::read_include`] limit errors, and the errors of its own
     /// directives.
-    fn include_file(&mut self, path: &Path, depth: usize) -> Result<String, Error> {
-        use std::fs;
-
+    fn include_file(&mut self, path: &Path, depth: usize) -> Result<(), Error> {
         // Saturating: `MAX_INCLUDE_DEPTH` refuses the chain long before
         // `usize::MAX`.
-        let file_depth = depth.saturating_add(1);
+        let file_depth = depth;
         if file_depth > MAX_INCLUDE_DEPTH {
             return Err(Error::IncludeTooDeep {
                 depth: file_depth,
@@ -2147,16 +2145,14 @@ impl IncludeExpansion {
         }
         // Resolving the path is how a file that does not exist is named rather
         // than skipped; it also gives the cycle check its canonical key.
-        let canonical = fs::canonicalize(path).map_err(|source| Error::IncludeFile {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let canonical =
+            fs::canonicalize(path).map_err(|source| profile_file_error(path, depth, source))?;
         if self.open.contains(&canonical) {
             return Err(Error::IncludeCycle {
                 path: path.to_path_buf(),
             });
         }
-        let content = self.read_include(path)?;
+        let content = self.read_include(path, depth)?;
         self.open.push(canonical);
         let expanded = self.expand(&content, file_depth);
         drop(self.open.pop());
@@ -2171,7 +2167,7 @@ impl IncludeExpansion {
     /// [`Error::IncludeTooLarge`] past [`MAX_INCLUDE_BYTES`], and
     /// [`Error::IncludeFile`] for a file that cannot be opened or read, or that
     /// is not UTF-8 text.
-    fn read_include(&mut self, path: &Path) -> Result<String, Error> {
+    fn read_include(&mut self, path: &Path, depth: usize) -> Result<String, Error> {
         use std::fs::File;
 
         // Saturating: `MAX_INCLUDE_FILES` refuses long before `usize::MAX`.
@@ -2185,23 +2181,17 @@ impl IncludeExpansion {
         // Read at most one byte past what is left of the budget, so an oversize
         // file is refused without reading it into memory first.
         let remaining = MAX_INCLUDE_BYTES.saturating_sub(self.bytes);
-        let file = File::open(path).map_err(|source| Error::IncludeFile {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let file = File::open(path).map_err(|source| profile_file_error(path, depth, source))?;
         // Saturating: the limit plus one is what is read, and a `usize` budget
         // past `u64` is clamped rather than wrapped.
         let limit = u64::try_from(remaining)
             .unwrap_or(u64::MAX)
             .saturating_add(1);
         let mut bytes = Vec::new();
-        let _: usize =
-            file.take(limit)
-                .read_to_end(&mut bytes)
-                .map_err(|source| Error::IncludeFile {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
+        let _: usize = file
+            .take(limit)
+            .read_to_end(&mut bytes)
+            .map_err(|source| profile_file_error(path, depth, source))?;
         if bytes.len() > remaining {
             return Err(Error::IncludeTooLarge {
                 bytes: self.bytes.saturating_add(bytes.len()),
@@ -2243,9 +2233,7 @@ impl IncludeExpansion {
     /// [`Error::IncludeTooMany`] once its accepted names pass
     /// [`MAX_INCLUDE_FILES`], and the [`Self::include_file`] error of any
     /// accepted file.
-    fn include_dir(&mut self, dir: &Path, depth: usize) -> Result<String, Error> {
-        use std::fs;
-
+    fn include_dir(&mut self, dir: &Path, depth: usize) -> Result<(), Error> {
         let canonical = fs::canonicalize(dir).map_err(|source| Error::IncludeDir {
             path: dir.to_path_buf(),
             source,
@@ -2284,14 +2272,13 @@ impl IncludeExpansion {
         }
         // Byte order, which is `strcmp` order: MIT reads the directory's accepted
         // files in alphanumeric order.
-        names.sort();
+        names.sort_by(|left, right| left.as_encoded_bytes().cmp(right.as_encoded_bytes()));
         self.open.push(canonical);
-        let mut expanded = String::new();
         for name in names {
-            expanded.push_str(&self.include_file(&dir.join(name), depth)?);
+            self.include_file(&dir.join(name), depth)?;
         }
         drop(self.open.pop());
-        Ok(expanded)
+        Ok(())
     }
 }
 
@@ -2614,10 +2601,7 @@ mod fork_tests {
         loaded.err().ok_or_else(|| expected.into())
     }
 
-    /// `include` splices the named file at the directive site, so a
-    /// fragment's settings are in the configuration and a setting the parent
-    /// writes *after* the directive still wins - the splice is positional, not a
-    /// merge of two independently parsed files.
+    /// Included scalar values precede values written after the directive site.
     #[test]
     fn include_file_splices_settings_at_directive_site() -> Result<(), Box<dyn error::Error>> {
         let dir = fixture_dir("splice")?;
@@ -2644,8 +2628,8 @@ mod fork_tests {
             "the fragment's realm is spliced into the configuration"
         );
         assert_eq!(
-            config.libdefaults.default_realm, "PARENT.EXAMPLE",
-            "a setting after the directive site still wins, so the splice is positional"
+            config.libdefaults.default_realm, "FRAGMENT.EXAMPLE",
+            "the first setting is in the included fragment"
         );
         Ok(())
     }
@@ -2655,7 +2639,7 @@ mod fork_tests {
     /// and reads the accepted names in alphanumeric order.
     ///
     /// The order assertion is the `default_realm` one: two accepted names set it,
-    /// and the one that sorts last wins. The filter assertion is the empty realm
+    /// and the one that sorts first wins. The filter assertion is the empty realm
     /// list: only the two rejected names carry a `[realms]` section, so a realm
     /// appearing at all would mean one of them was read.
     #[test]
@@ -2699,8 +2683,8 @@ mod fork_tests {
         remove_fixture(&dir);
 
         assert_eq!(
-            config.libdefaults.default_realm, "LAST.EXAMPLE",
-            "the accepted names are read in alphanumeric order, so the last one wins"
+            config.libdefaults.default_realm, "FIRST.EXAMPLE",
+            "the accepted names are read in byte order, so the first one wins"
         );
         assert_eq!(config.libdefaults.udp_preference_limit, 1_i32);
         assert!(
@@ -2794,11 +2778,11 @@ mod fork_tests {
             matches!(
                 error,
                 Error::IncludeTooMany {
-                    count: 65,
+                    count: 257,
                     limit: MAX_INCLUDE_FILES
                 }
             ),
-            "the 65th file is past the limit of {MAX_INCLUDE_FILES}: {error:?}"
+            "the 257th file is past the limit of {MAX_INCLUDE_FILES}: {error:?}"
         );
         Ok(())
     }
@@ -2892,8 +2876,7 @@ mod fork_tests {
             matches!(
                 error,
                 Error::IncludeTooLarge {
-                    // `MAX_INCLUDE_BYTES` (1 MiB) plus one: 1_048_577.
-                    bytes: 0x0010_0001,
+                    bytes: 0x0040_0001,
                     limit: MAX_INCLUDE_BYTES
                 }
             ),
@@ -2948,7 +2931,7 @@ mod fork_tests {
 
     /// A `KRB5_CONFIG` path list keeps MIT's order with an include in it -
     /// files are read in list order, each file's includes are expanded where the
-    /// directive sits, and a later file's settings still win.
+    /// directive sits, and the first scalar value wins.
     #[test]
     fn krb5_config_path_list_preserves_mit_order_with_includes() -> Result<(), Box<dyn error::Error>>
     {
@@ -2977,12 +2960,12 @@ mod fork_tests {
         remove_fixture(&dir);
 
         assert_eq!(
-            config.libdefaults.default_realm, "SECOND.EXAMPLE",
-            "the later file in the list wins over the included fragment"
+            config.libdefaults.default_realm, "INCLUDE.EXAMPLE",
+            "the included fragment provides the first value"
         );
         assert_eq!(
-            config.libdefaults.udp_preference_limit, 2_i32,
-            "and over the file that carried the include"
+            config.libdefaults.udp_preference_limit, 1_i32,
+            "the first root provides the first preference value"
         );
         assert!(
             config.realm("INCLUDE.EXAMPLE").is_some(),
@@ -3026,10 +3009,7 @@ mod fork_tests {
         Ok(())
     }
 
-    /// A path-list root that a child includes is the same cycle. Every
-    /// top-level file is on the open stack before the text it contributed is
-    /// expanded, so a child's `include` of the root is named rather than the
-    /// root being read a second time.
+    /// Re-including a completed root is not an active-chain cycle.
     #[test]
     fn a_path_list_root_included_by_a_child_is_a_cycle() -> Result<(), Box<dyn error::Error>> {
         let dir = fixture_dir("path-list-root")?;
@@ -3044,16 +3024,10 @@ mod fork_tests {
             &format!("include {}\n", first.display()),
         )?;
 
-        let error = refusal(
-            Config::load_paths([&first, &second]),
-            "a path-list root a child includes is refused",
-        )?;
+        let config = Config::load_paths([&first, &second])?;
         remove_fixture(&dir);
 
-        assert!(
-            matches!(&error, Error::IncludeCycle { path } if path == &first),
-            "the root of the path list is already being read: {error:?}"
-        );
+        assert_eq!(config.libdefaults.default_realm, "FIRST.EXAMPLE");
         Ok(())
     }
 

@@ -1,0 +1,4 @@
+# Fedora-shaped krb5 backend snippet; not installed on the test author's host.
+# Mirrors the existing todo-14 crypto-policy regression's secure enctype list.
+[libdefaults]
+permitted_enctypes = aes256-cts-hmac-sha384-192 aes128-cts-hmac-sha256-128 aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 camellia256-cts-cmac camellia128-cts-cmac

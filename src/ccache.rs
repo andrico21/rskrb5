@@ -85,7 +85,8 @@ impl CacheName {
     where
         P: AsRef<str>,
     {
-        direct_file_path_from_cache_name(name.as_ref()).map(Self::File)
+        let expanded = file_name::expand_path_tokens(name.as_ref()).map_err(file_name_error)?;
+        direct_file_path_from_cache_name(&expanded).map(Self::File)
     }
 
     #[must_use]
@@ -244,10 +245,18 @@ impl CCache {
     where
         P: AsRef<str>,
     {
-        let cache_name = name.as_ref();
-        self.save(Self::file_path_from_cache_name(cache_name)?)?;
+        let cache_name = file_name::expand_path_tokens(name.as_ref()).map_err(file_name_error)?;
+        self.save_resolved_name(&cache_name)
+    }
+
+    /// Save a resolved name and publish a new collection primary without rescanning.
+    ///
+    /// # Errors
+    /// Returns serialization, path and filesystem failures.
+    pub(crate) fn save_resolved_name(&self, cache_name: &str) -> Result<(), Error> {
+        self.save(Self::resolved_file_path(cache_name)?)?;
         if dir_collection_path(cache_name).is_some() {
-            let _published = Self::file_path_from_cache_name(cache_name)?;
+            let _published = Self::resolved_file_path(cache_name)?;
         }
         Ok(())
     }
@@ -269,6 +278,14 @@ impl CCache {
     /// token expansion cannot read Linux procfs or is unsupported on this platform.
     #[inline]
     pub fn file_path_from_cache_name(name: &str) -> Result<PathBuf, Error> {
+        Self::resolved_file_path(&file_name::expand_path_tokens(name).map_err(file_name_error)?)
+    }
+
+    /// Resolve already-expanded data without interpreting inserted percent signs.
+    ///
+    /// # Errors
+    /// Returns store, path and collection I/O errors, but performs no token expansion.
+    pub(crate) fn resolved_file_path(name: &str) -> Result<PathBuf, Error> {
         if let Some(directory) = dir_collection_path(name) {
             return dir_collection_primary_path(directory);
         }
@@ -582,7 +599,7 @@ fn direct_file_path_from_cache_name(name: &str) -> Result<PathBuf, Error> {
     if let Some(path) = dir_subsidiary_path(name) {
         return validate_dir_subsidiary_path(path);
     }
-    file_name::file_path_from_name(name, &["FILE", "WRFILE"]).map_err(file_name_error)
+    file_name::literal_file_path(name, &["FILE", "WRFILE"]).map_err(file_name_error)
 }
 
 /// Map the shared filename boundary into the credential-cache error domain.
@@ -625,7 +642,7 @@ fn validate_dir_subsidiary_path(path: &str) -> Result<PathBuf, Error> {
     if path.is_empty() {
         return Err(Error::InvalidCacheName);
     }
-    let expanded = PathBuf::from(file_name::expand_path_tokens(path).map_err(file_name_error)?);
+    let expanded = PathBuf::from(path);
     let has_parent = expanded
         .parent()
         .is_some_and(|parent| !parent.as_os_str().is_empty());
@@ -650,8 +667,7 @@ fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     if directory.is_empty() {
         return Err(Error::InvalidCacheName);
     }
-    let collection =
-        PathBuf::from(file_name::expand_path_tokens(directory).map_err(file_name_error)?);
+    let collection = PathBuf::from(directory);
     let primary_path = collection.join(DIR_PRIMARY_FILE);
     file_name::reject_symlink(&primary_path)?;
     let primary = match fs::read_to_string(&primary_path) {

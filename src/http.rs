@@ -31,7 +31,7 @@ use crate::client::{
     negotiate::Client as NegotiateClient, principal::Principal,
 };
 #[cfg(feature = "tower")]
-use crate::config::Config;
+use crate::config::{Config, parameters::DefaultName};
 #[cfg(feature = "tower")]
 use crate::keytab::{self, Keytab};
 #[cfg(feature = "tower")]
@@ -1168,6 +1168,10 @@ impl NegotiateLayer<'static> {
 
     /// Create a Negotiate layer from `config.libdefaults.default_keytab_name`.
     ///
+    /// # Ambient input
+    /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
+    /// Use `from_keytab_name` with a literal name to avoid this discovery.
+    ///
     /// The configured `[libdefaults] clockskew` becomes the acceptance window;
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
     /// Enctype permission is taken from the same configuration, including legacy opt-ins.
@@ -1180,15 +1184,20 @@ impl NegotiateLayer<'static> {
     pub fn from_default_keytab_name(config: &Config) -> Result<Self> {
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
             .map_err(|_invalid| Policy::InvalidConfiguration)?;
-        Self::from_keytab_name(&config.libdefaults.default_keytab_name)?
-            .with_crypto_policy(policy)
-            .with_max_clock_skew(config.libdefaults.clockskew)
+        Self::from_keytab(keytab::configured_keytab(
+            &config.libdefaults,
+            DefaultName::Keytab,
+        )?)
+        .with_crypto_policy(policy)
+        .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a Negotiate layer from the default keytab.
     ///
     /// # Ambient input
     /// Reads `KRB5_KTNAME` before the configured fallback; invalid Unicode is an
+    /// expansion error when `TMPDIR`, `TEMP` or `APPDATA` supplies invalid text;
+    /// process identity is read for identity tokens. An invalid `KRB5_KTNAME` is an
     /// error. Use [`Self::from_keytab_name`] for an explicit keytab name.
     ///
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
@@ -1204,11 +1213,9 @@ impl NegotiateLayer<'static> {
     pub fn from_default_keytab(config: &Config) -> Result<Self> {
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
             .map_err(|_invalid| Policy::InvalidConfiguration)?;
-        Self::from_keytab_name(keytab::default_keytab_name(
-            &config.libdefaults.default_keytab_name,
-        )?)?
-        .with_crypto_policy(policy)
-        .with_max_clock_skew(config.libdefaults.clockskew)
+        Self::from_keytab(keytab::default_keytab_name(&config.libdefaults)?)
+            .with_crypto_policy(policy)
+            .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
     /// Create a Negotiate layer by loading the file keytab named by `KRB5_KTNAME`.
@@ -1447,6 +1454,10 @@ impl<S> NegotiateService<'static, S> {
 
     /// Wrap an inner service by loading `config.libdefaults.default_keytab_name`.
     ///
+    /// # Ambient input
+    /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
+    /// Use `from_keytab_name` with a literal name to avoid this discovery.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the configured name is not a file keytab
@@ -1459,6 +1470,7 @@ impl<S> NegotiateService<'static, S> {
     /// Wrap an inner service with the default keytab.
     ///
     /// # Ambient input
+    /// Configured templates read `TMPDIR`, `TEMP`, `APPDATA` and process identity.
     /// Reads `KRB5_KTNAME` before the configured fallback; invalid Unicode is an
     /// error. Use [`Self::from_keytab_name`] for an explicit keytab name.
     ///
