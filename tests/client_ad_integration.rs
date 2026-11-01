@@ -843,10 +843,10 @@ mod tests {
   dns_lookup_kdc = false
   ticket_lifetime = 24h
   forwardable = yes
+{rc4_options}
   default_tkt_enctypes = aes256-cts-hmac-sha1-96
   default_tgs_enctypes = aes256-cts-hmac-sha1-96
-  noaddresses = false
-{rc4_options}
+  noaddresses = true
 
 [realms]
  {USER_REALM} = {{

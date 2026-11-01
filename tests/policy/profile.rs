@@ -156,8 +156,21 @@ fn profile_rejects_disabled_unknown_and_d2_terms() -> Result<(), Box<dyn Error>>
                 let text = format!(
                     "[libdefaults]\npermitted_enctypes = aes256-cts\n{key} = aes256-cts {token}"
                 );
+                if key == "permitted_enctypes" {
+                    assert_eq!(
+                        Config::parse_with_mode(&text, mode)?
+                            .libdefaults
+                            .permitted_enctype_ids(),
+                        [18_i32]
+                    );
+                }
+                let selected = if key == "permitted_enctypes" {
+                    format!("[libdefaults]\n{key} = aes256-cts {token}")
+                } else {
+                    text
+                };
                 // When parsing the original positive token.
-                let failure = Config::parse_with_mode(&text, mode)
+                let failure = Config::parse_with_mode(&selected, mode)
                     .err()
                     .ok_or("positive term silently dropped")?;
                 // Then the exact token and typed failure class survive.
