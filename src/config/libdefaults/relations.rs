@@ -60,7 +60,7 @@ pub(crate) const RELATIONS: [(&str, &str, &str, &str, &str, &str); 43] = [
         "parameter template",
         "DEFCCNAME",
         "TokioClient::from_default_ccache_name",
-        "Effective B2 expansion; unavailable facts fail typed; crate default unset",
+        "Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback; crate default unset",
         "default_ccache_name",
     ),
     (
@@ -68,7 +68,7 @@ pub(crate) const RELATIONS: [(&str, &str, &str, &str, &str, &str); 43] = [
         "parameter template",
         "DEFCKTNAME",
         "TokioClient::with_client_keytab_from_config",
-        "Effective B2 expansion; unavailable facts fail typed",
+        "Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback",
         "default_client_keytab_name",
     ),
     (
@@ -76,7 +76,7 @@ pub(crate) const RELATIONS: [(&str, &str, &str, &str, &str, &str); 43] = [
         "parameter template",
         "DEFKTNAME",
         "Validator::from_default_keytab_name",
-        "Effective B2 expansion; unavailable facts fail typed",
+        "Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback",
         "default_keytab_name",
     ),
     (

@@ -432,3 +432,92 @@ Application paths serialize as ordered path/value pairs so nonempty hierarchical
 keys remain valid JSON. D adds no implicit ambient reads or plan-2 mechanism.
 The generic PKINIT libdefaults/realm-subsection override hierarchy is not added
 by this realm-section substep; its mechanism consumers remain WP-06.
+
+## E: complete diagnostic promotion and classification review
+
+`Config::diagnostics()` returns the diagnostics accumulated by profile parsing:
+UnknownSection, UnknownRelation, NotYetEffective, UnsupportedSecureEnctype,
+ServerOnly, and IgnoredPreauthType. Each is constructed in production and has
+a strict-mode error. The conversion is an exhaustive match, so adding another
+diagnostic requires an explicit error mapping. Strict parsing rejects **every**
+diagnostic, including removed draft-9 preferences before their additional
+NotYetEffective preference-ordering diagnostic can mask them.
+
+UnknownSection includes empty headers; unknown nested relations/subsections
+carry their full path. Unknown sections yield one section diagnostic rather
+than one per contained option. Dynamic namespaces (application options,
+realm/domain names, local-name maps and plugin interface names) remain open;
+unknown relation names and shapes are reported. Finalized/discarded later
+values do not generate diagnostics. Disabled recognized protocol selectors,
+`safe_checksum_type`, and `no_addresses` are not mislabeled as typos.
+Compatible mode cannot infer the security intent of unknown names: it reports
+them, while Strict rejects them.
+
+### Review of all three tables
+
+All **43 libdefaults + 28 realm + 6 section rows** were reviewed. Effective
+consumers and permanent protocol rejections retain their tests/classification.
+`classification_e` iterates every deferred production-table row and requires
+an independently supplied boundary case: **25 libdefaults, 21 realm, 3 section
+rows**. It parses real profiles, not just classification predicates.
+
+Every deferred row has a satisfied/not-weaker value that returns its named
+diagnostic in Compatible and fails in Strict. Where a valid value asks for
+stricter behavior, both modes must fail with NotYetEffective:
+
+| Scope | Relation | Satisfied side | Stricter side rejected |
+| --- | --- | --- | --- |
+| libdefaults | default_rcache_name | none: (memory protection retained) | dfl: |
+| libdefaults | extra_addresses | list with noaddresses=true | nonempty list with noaddresses=false |
+| libdefaults | noaddresses | true | false |
+| libdefaults | request_timeout | 0 | positive total deadline |
+| libdefaults | verify_ap_req_nofail | false | true |
+| libdefaults | client_aware_channel_bindings | false | true |
+| realms | disable_encrypted_timestamp | false | true |
+| plugins / clpreauth | disable | absent mechanism such as pkinit | encrypted_timestamp |
+| plugins / clpreauth | enable_only | includes encrypted_timestamp | excludes encrypted_timestamp |
+
+Other deferred rows have **no valid stricter value against current behavior**;
+this is an explicit test-case decision, not an omitted negative test. Their
+per-row rationale records why: no certificate accepted, credential delegated,
+local-login grant, KCM/native module used, DNS rewriting, or a preference/
+presentation rather than a restriction. For example, CRL checking, delegation
+enforcement, and authoritative k5login are already satisfied by the absence of
+their corresponding acceptance/delegation/grant path. Capaths does not enable
+cross-realm acceptance or override caller transit policy; default rejection
+is stricter. Malformed values are not manufactured “tightening” examples.
+
+### B2 unavailable facts: final disposition
+
+| Token | Missing fact at credential-name resolution | Rationale |
+| --- | --- | --- |
+| username | typed Unavailable error | Never substitute an environment username or another user's credential. |
+| USERID on Windows | typed Unavailable error | Native SID discovery is absent; guessing selects the wrong identity. |
+| LIBDIR | typed Unavailable error | No known installation prefix; never search another credential location. |
+| BINDIR | typed Unavailable error | No known installation prefix; never invent a path. |
+| SBINDIR | typed Unavailable error | No known installation prefix; never invent a path. |
+| uid/euid outside Linux | typed Unavailable error | Existing platform policy; do not implicitly equate UID and SID. |
+
+These are errors in both modes **at effective credential-name resolution**,
+not parse-time ambient discovery. Parsing retains templates; callers may
+supply facts via ExpansionContext. Tests cover all three name selectors with
+missing/supplied facts and the existing configured-cache consumer's causal
+Unavailable error. The three effective table rows record the decision. Inert
+plugin_base_dir containing `%{LIBDIR}` remains NotYetEffective: no module/path
+is loaded/resolved. No identity or environment discovery was added.
+
+### Plan QA fixture provenance
+
+The host's `/etc/krb5.conf` was read on 2026-11-01. Its configuration values
+are copied to `tests/fixtures/profile/host-e.conf`, with normalized comments/
+whitespace and includedir replaced by an absolute test fixture path. It retains
+rdns=false, default_domain, and the Heimdal fcc-mit-ticketflags option (now an
+UnknownRelation diagnostic).
+
+`/etc/krb5.conf.d/` was read and was **empty**. No real local crypto-policy
+include could be copied. `host-e.d/crypto-policies` is explicitly Fedora-shaped,
+using the secure AES+Camellia line already tested in todo 14—not a claim of a
+Fedora installation on this host. Both the host-plus-include fixture and the
+independent snippet parse in Compatible with diagnostics and AES IDs 20/19/18/17.
+TEST.RSKRB5 disable_encrypted_timestamp=true fails with the named WP-07 error.
+Tests read no host config at runtime and require no LF-only checkout or network.
