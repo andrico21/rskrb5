@@ -480,6 +480,10 @@ jobs:
           components: clippy
       - name: Run every lint gate self-test
         run: for s in scripts/lint-gates/*.py scripts/check-error-constructions.py; do python3 "$s" --self-test || exit 1; done
+      - name: Configuration relation generator self-tests
+        run: python3 scripts/check-config-relations.py --self-test
+      - name: Generated configuration relation inventory
+        run: python3 scripts/check-config-relations.py
       - name: Allow gate
         run: python3 scripts/lint-gates/allow_gate.py --enforce
       - name: Exception gate
