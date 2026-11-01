@@ -3,53 +3,11 @@
 //! it. The manifest names repository tests, symbols and documents, so these tests read
 //! them from the checkout at run time and fail closed on anything they cannot find.
 
-#[cfg(test)]
-use core::error::Error;
+include!("parity_manifest/feature.rs");
 
-/// Error type of the manifest helpers and tests.
+/// Typed view of the manifests and the todo index.
 #[cfg(test)]
-type TestError = Box<dyn Error>;
-
-/// One `[[feature]]` row of the manifest.
-#[cfg(test)]
-struct Feature {
-    /// Source row id, such as `MIT-client-1`.
-    id: String,
-    /// Inventory area, the middle segment of the id.
-    area: String,
-    /// Upstream tag the row is pinned to.
-    upstream_ref: String,
-    /// Upstream capability text.
-    capability: String,
-    /// `implemented`, `partial`, `absent`, `rejected`, `omitted` or `out-of-scope`.
-    status: String,
-    /// Strongest evidence class backing the named tests.
-    evidence: String,
-    /// What is still missing, or why nothing is in scope.
-    missing: String,
-    /// Public Rust items delivering the row.
-    rust_symbols: Vec<String>,
-    /// `path::function` names of the tests proving the row.
-    test_names: Vec<String>,
-    /// Cargo features the named symbols need.
-    cargo_features: Vec<String>,
-    /// Deliberate divergence from MIT behavior.
-    divergence: String,
-    /// `ALREADY`, `WP-NN`, `POL-01`, `D1`, `D2` or `D13`.
-    disposition: String,
-    /// Closing plan and todo number, absent for `ALREADY` and `D1` rows.
-    closing: Option<(i64, i64)>,
-    /// Contributing todos, such as `P2-4`.
-    contributors: Vec<String>,
-    /// `RejectedFeature` variant of a rejected row.
-    rejection: Option<String>,
-    /// `docs/<file>.md#<anchor>` reference.
-    doc_anchor: Option<String>,
-}
-
-/// Typed view of the manifest and the todo index.
-#[cfg(test)]
-#[path = "mit_parity_manifest/model.rs"]
+#[path = "parity_manifest/model.rs"]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -60,7 +18,7 @@ mod model;
 
 /// Lexical scans of the checkout.
 #[cfg(test)]
-#[path = "mit_parity_manifest/sources.rs"]
+#[path = "parity_manifest/sources.rs"]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -69,9 +27,9 @@ mod model;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod sources;
 
-/// Markdown rendering of the manifest.
+/// Shared Markdown building blocks.
 #[cfg(test)]
-#[path = "mit_parity_manifest/render.rs"]
+#[path = "parity_manifest/render.rs"]
 #[expect(
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
@@ -80,14 +38,34 @@ mod render;
 
 /// Row consistency rules.
 #[cfg(test)]
-#[path = "mit_parity_manifest/rules.rs"]
+#[path = "parity_manifest/rules.rs"]
 #[expect(
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
 mod rules;
 
-/// Manifest, index and Markdown tests.
+/// Manifest-independent audits.
+#[cfg(test)]
+#[path = "parity_manifest/audit.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod audit;
+
+/// Markdown rendering of the MIT manifest.
+#[cfg(test)]
+#[path = "mit_parity_manifest/markdown.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod markdown;
+
+/// MIT manifest, index and Markdown tests.
 #[cfg(test)]
 #[path = "mit_parity_manifest/checks.rs"]
 #[expect(

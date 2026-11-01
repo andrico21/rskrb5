@@ -1,4 +1,4 @@
-//! Typed view of `docs/mit-krb5-parity.toml` and `docs/parity-todo-index.toml`.
+//! Typed view of the parity manifests and of `docs/parity-todo-index.toml`.
 
 extern crate alloc;
 
@@ -26,11 +26,13 @@ const REQUIRED: [&str; 13] = [
     "contributors",
 ];
 /// Fields a feature row may carry in addition.
-const OPTIONAL: [&str; 4] = [
+const OPTIONAL: [&str; 6] = [
     "closing_plan",
     "closing_todo",
     "rejected_feature",
     "doc_anchor",
+    "parity_area",
+    "related_features",
 ];
 
 /// Reads a repository file as text with LF line endings, failing closed when absent.
@@ -93,19 +95,29 @@ fn parse(table: &Table) -> Result<Feature, TestError> {
         contributors: strings(table, "contributors")?,
         rejection: optional("rejected_feature")?,
         doc_anchor: optional("doc_anchor")?,
+        parity_area: optional("parity_area")?,
+        related: match table.get("related_features") {
+            Some(_) => strings(table, "related_features")?,
+            None => Vec::new(),
+        },
     })
 }
 
-/// Parsed manifest: its whole table and its feature rows.
-pub(crate) fn manifest() -> Result<(Table, Vec<Feature>), TestError> {
-    let table: Table = read("docs/mit-krb5-parity.toml")?.parse()?;
-    let rows = table.get("feature").and_then(Value::as_array);
-    let features = rows
-        .ok_or("manifest has a feature array")?
-        .iter()
-        .map(|row| parse(row.as_table().ok_or("feature row is a table")?))
-        .collect::<Result<Vec<_>, _>>()?;
+/// Parsed manifest `relative`: its whole table and its `[[feature]]` rows.
+pub(crate) fn manifest(relative: &str) -> Result<(Table, Vec<Feature>), TestError> {
+    let table: Table = read(relative)?.parse()?;
+    let features = rows(&table, "feature")?;
     Ok((table, features))
+}
+
+/// Parses the `[[key]]` rows of `table` with the feature schema.
+pub(crate) fn rows(table: &Table, key: &str) -> Result<Vec<Feature>, TestError> {
+    let values = table.get(key).and_then(Value::as_array);
+    values
+        .ok_or_else(|| format!("manifest has a {key} array"))?
+        .iter()
+        .map(|row| parse(row.as_table().ok_or("row is a table")?))
+        .collect()
 }
 
 /// Numbered `(plan, todo)` pairs of the committed todo index; `F` rows are checked, not returned.
