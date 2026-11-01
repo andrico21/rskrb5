@@ -19,7 +19,7 @@ It continues [`rskrb5`](https://github.com/clelange/rskrb5) independently;
 | Service and HTTP Negotiate | AP-REQ validation, replay detection, AP-REP mutual authentication, SPNEGO/GSSAPI tokens, HTTP helpers, 401 retry client wrappers, Tower middleware and an Axum example. |
 | PAC and Active Directory | PAC container, validation info, UPN/DNS, credentials, delegation, device and claims data, checksums and AD credential summaries. The AD integration tests need a lab and aren't run in CI ([`docs/ad-integration.md`](docs/ad-integration.md)). |
 | Review backlog | Every open item of the code review and of the second security-audit run is fixed with a regression test or dismissed with evidence: 78 rows, 75 fixed and 3 dismissed ([`docs/review/README.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/README.md)). |
-| Fuzzing | Each attacker-facing parser has a `cargo fuzz` target (12 targets, [`docs/review/fuzz.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/fuzz.md)). |
+| Fuzzing | Each attacker-facing parser has a `cargo fuzz` target (13 targets, [`docs/review/fuzz.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/fuzz.md)). |
 | Not supported | API, KCM, KEYRING and MSLSA credential stores, FAST armor, PKINIT and system GSSAPI/SSPI facades. Unsupported credential stores fail with a typed error. |
 
 The API can still change before 1.0. Wire formats, cryptographic behaviour
