@@ -60,11 +60,12 @@ These are breaking; the migration guide maps each one.
   generic; many functions gain `#[must_use]` or become `const fn`.
 - New error variants, among them `error::Client::{EnctypeNotRequested,
   EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
-  DnsServiceUnavailable}`, `error::Config::{EnctypeNotPermitted,
-  NoPermittedEnctypes, NoUsableEnctypes}`,
+  DnsServiceUnavailable}`, `error::Config::EnctypeNotPermitted`,
   `error::Kadmin::UnauthenticatedSuccess`,
   `error::Ccache::IdentityUnavailable` and
-  `http::NegotiateHttpError::MutualAuthenticationNotProven`.
+  `http::NegotiateHttpError::MutualAuthenticationNotProven`. The variants
+  added by the follow-up review are listed under "Changes from the follow-up
+  review" below.
   `http::NegotiateHttpError<E>` becomes `NegotiateHttpError<E, B>`, where `B`
   is the response body type the new variant carries.
 - New public fields: `LibDefaults.permitted_enctypes_explicit` and
@@ -99,13 +100,11 @@ These are breaking; the migration guide maps each one.
   narrowing, checked once on the final values across included files. The
   explicit flag (`LibDefaults.permitted_enctypes_explicit`) survives a serde
   round-trip.
-- An explicit allowlist fails closed when it resolves to no supported enctype:
-  a parsed `permitted_enctypes` naming only unsupported or disabled names is a
-  parse error (`error::Config::NoPermittedEnctypes`) instead of meaning "no
-  policy", and a `LibDefaults` built with the explicit flag and an empty
-  `permitted_enctypes` list requests no enctype
-  (`error::Client::EmptyEtypes`) and rejects every session key
-  (`error::Client::EnctypeNotPermitted`).
+- An explicit allowlist fails closed instead of meaning "no policy": a
+  `permitted_enctypes` naming an unknown or disabled enctype is a parse error
+  naming it, one that resolves to nothing is
+  `error::Config::EmptyEnctypeExpression`, and an empty permitted list cannot
+  build a crypto policy (FU-CFG-04 below).
 - MIT's DES3 names `des3-cbc-sha1` and `des3-hmac-sha1` resolve to enctype 16
   like `des3-cbc-sha1-kd`, so an explicit list using them is honoured (subject
   to `allow_des3`, below) instead of silently dropping DES3.
@@ -334,18 +333,14 @@ Config and enctype policy:
 - Enctype names are the only stored policy; the wire ids are derived through
   methods, and an empty request list fails closed (RSK-77250646, upstream
   issue #4).
-- Explicit enctype lists skip unimplemented names (including camellia) and
-  policy-disabled entries, retaining usable names in order. A list with no
-  usable entry fails with `Config::NoUsableEnctypes` (request lists) or
-  `Config::NoPermittedEnctypes` (allowlist), never defaults or empty policy.
-  As in 0.2.2, family names, `DEFAULT` and `-name` are not expanded; they are
-  skipped and an all-selector list fails closed (RSK-45AC5D3A).
+- Explicit enctype lists never fall back to defaults or an empty policy
+  (RSK-45AC5D3A); since FU-CFG-04 and FU-CFG-05 (below) they are MIT list
+  expressions that fail closed by token.
 - The default enctypes are AES only. RC4 and DES3 need the
   `[libdefaults]` flags `allow_rc4` and `allow_des3` (both false by
-  default); disabled explicit entries are skipped, with a named error if
-  no usable entry remains. Export RC4 also needs `allow_weak_crypto`
-  (RSK-5ECE9681, run-2 lead `DEFAULT_ENCTYPES/deprecated-rc4-default`,
-  upstream issue #3).
+  default), and a disabled explicit entry is an error naming it. Export RC4
+  is refused permanently (RSK-5ECE9681, run-2 lead
+  `DEFAULT_ENCTYPES/deprecated-rc4-default`, upstream issue #3).
 - `LibDefaults::new()` reads no environment; `LibDefaults::from_env()` reads
   `HOME`. The default client keytab keeps the `%{euid}` template and
   `k5login_directory` defaults to empty (upstream issue #10, project rule
@@ -375,15 +370,12 @@ Ccache, keytab and credential files:
 
 Release workflow, CI docs and fixture scripts:
 
-- The Release workflow has a secret-free `find-tag` job and a `publish` job
-  that runs only for a `vN.N.N` tag, in the `release` environment (required
-  reviewer), on a commit that is an ancestor of `main` (run-2 lead
-  `release.publish.crates-io-token.unprotected-tag-authorization`).
-  **Owner action:** move `CARGO_REGISTRY_TOKEN` from the repository secrets
-  into the `release` environment
-  (`gh secret set CARGO_REGISTRY_TOKEN --env release`, then
-  `gh secret delete CARGO_REGISTRY_TOKEN`); until then the environment gate
-  does not protect the token.
+- Publishing runs only in the `release` environment (required reviewer), for
+  a release tag on a commit that is an ancestor of `main` (run-2 lead
+  `release.publish.crates-io-token.unprotected-tag-authorization`); the
+  workflow split and the `N.N.N` tags are under FU-CI-06 below.
+  `CARGO_REGISTRY_TOKEN` is an environment secret of `release` only (moved by
+  the owner on 2026-10-29, FU-OPS-01).
 - `scripts/check-github-ad-gate.py --dispatch` refuses to dispatch inputs the
   CI workflow does not declare, and the parity manifest names the fork CI job
   for each gate (RSK-E0AFE152).
@@ -391,6 +383,280 @@ Release workflow, CI docs and fixture scripts:
   a private directory and prints keytab values as `<redacted>`;
   `RSKRB5_INTEGRATION_ENV_FILE` is replaced by `RSKRB5_INTEGRATION_ENV_DIR`
   (RSK-A8D595D8).
+
+#### Changes from the follow-up review
+
+Each fixed row of the follow-up review of `6586b7a` with a behaviour or API
+change, by area, with its register ID. The proofs and commits are in
+`docs/review/followup-6586b7a.md`, and the migration guide's "Follow-up review
+changes" section shows each API change. Where a bullet here changes an earlier
+bullet of this section, this one describes 0.3.0.
+
+Security fail-closed parsing and verification:
+
+- SPNEGO sequences with duplicate or reordered known fields fail with the new
+  `Spnego::InvalidFieldOrder`; legal omissions are still accepted (FU-SPN-03).
+- Unknown constructed SPNEGO context fields `[4]` to `[30]` are skipped after
+  their framing is validated, instead of being rejected (FU-SPN-04).
+- DER lengths in non-minimal long form fail with the new
+  `Spnego::NonminimalLength` (FU-SPN-05).
+- `WrapToken::encrypt_payload_with_confounder` leaves the token unchanged when
+  encryption fails (FU-SPN-R02).
+- `MicToken::verify` and `WrapToken::verify` return `Result<(), Spnego>`
+  instead of a `bool` that was never `false` (FU-SPN-R04).
+- `Spnego::Client` keeps the typed `Box<Client>` cause instead of a string
+  (FU-SPN-R03).
+- Mutual authentication requested through a combined context-flag mask needs a
+  verified AP-REP, exactly as the split masks do, in the async and blocking
+  wrappers and the response classification (FU-HTTP-03).
+- The Negotiate client requires accept-completed and an offered
+  `supportedMech`, and verifies a supplied mechListMIC against the offer, the
+  acceptor sequence and the selected context key; `InitiatorContext` gains a
+  redacted `initiator_subkey` (FU-HTTP-05).
+- The Axum example builds the AP-REP and its header before calling the
+  handler; a failure is an opaque hardened 500 (FU-HTTP-01). It loads the
+  keytab with `Keytab::load_name`, so `WRFILE:` works and the keytab bytes are
+  zeroized (FU-HTTP-R01).
+- Generated `Authorization`/`WWW-Authenticate: Negotiate` values and forwarded
+  incoming `Authorization` values are marked sensitive (FU-HTTP-02).
+- Responses generated by the HTTP layer carry twelve hardening headers; the
+  layer fills missing defaults on inner responses and strips fingerprints
+  unless `with_response_hardening(false)` (FU-HTTP-04).
+- `NegotiateFuture` is a public concrete future that is `Send` when the inner
+  future, body and error are (FU-HTTP-06).
+- `NegotiateService` maps replay-cache, keytab I/O and poisoned-validator
+  faults to an opaque hardened 500 with the cause as an `Arc<Http>` response
+  extension; authentication failures stay 401 (FU-HTTP-R02).
+- `NegotiateService` is `Clone`; clones share the validator and replay state
+  (FU-HTTP-R03).
+- AP-REP and KRB-CRED accept DES3 zero padding below eight bytes; other
+  padding stays strict (FU-MSG-02).
+- KRB-CRED import rejects fractional ticket times with `TimeOutOfRange`
+  instead of truncating them (FU-MSG-03).
+- The complete KRB-PRIV builders reject fractional times and microseconds
+  outside 0..=999999 (FU-MSG-04).
+- The named KRB-ERROR and PA-* decoders reject trailing bytes (FU-MSG-05).
+- KerberosTime conversion to `SystemTime` is whole-second and checked:
+  `client::build_ap_req_with_confounder` rejects a fractional timestamp with
+  `Client::Encode` (FU-API-06).
+- PAC checksum type `0xffffff76` maps to HMAC-MD5 (`-138`) (FU-PAC-01).
+- Ccache versions before 4 with nonempty headers, and version-1 principals
+  with a nonzero name type, fail to serialize instead of losing data
+  (FU-FIL-01).
+- A DIR cache publishes a missing primary file only after the cache is saved,
+  through a synced private stage that is hard-linked without replacing a
+  concurrent winner (FU-FIL-03; the register row is still open).
+- A 1-3 byte keytab entry-size fragment is `Truncated`, not end of file
+  (FU-FIL-04).
+- Opaque negative keytab enctype IDs serialize unchanged (FU-FIL-05).
+- `keytab::Entry::new` applies the 8-bit kvno fallback immediately and is no
+  longer `const`; serialization rejects a zero kvno with a nonzero kvno8
+  (FU-FIL-06).
+
+Passwords and secret ownership:
+
+- Password APIs take `client::Password` (alias of `client::password::Secret`)
+  by value: the `change_password*` methods of `client::Tokio`,
+  `NegotiateClient` and `BlockingNegotiateClient`, and
+  `ChangePasswdData::new`/`for_target`. The password is erased on completion,
+  error and cancellation (FU-CLI-07).
+- `ChangePasswdData::new_passwd` is a redacted zeroizing
+  `kadmin::password::Bytes`, and the request builders encode into zeroizing
+  buffers (FU-TRN-14).
+- MIC and Wrap payloads are owned as `Zeroizing<Vec<u8>>`, and their `Debug`
+  is redacted (FU-SPN-01).
+- `InitiatorContext` and the HTTP results print metadata and lengths, never the
+  `Authorization` token; the quick start no longer logs it (FU-SPN-02).
+- AP-REQ, AP-REP, KDC-reply, KRB-CRED and ticket DER staging and decrypted DER
+  are erased on drop (FU-MSG-01).
+- The checked kpasswd result helpers take the `BuiltKpasswdRequest` and its
+  `RequestOptions`, authenticate the AP-REP, use the server subkey and check
+  freshness, sequence, addresses and reflection (FU-TRN-10).
+- A reply that reflects the request KRB-PRIV is rejected before any password
+  bytes are parsed and reported as an unknown outcome (FU-TRN-02).
+- An unsigned refusal after delivery is
+  `KpasswdOutcomeUnknown(Kadmin::UnauthenticatedRejection { code, text_raw })`,
+  not a definite failure (FU-TRN-03).
+- Decrypt and validation failures after delivery are wrapped in
+  `KpasswdOutcomeUnknown` exactly once (FU-TRN-11).
+- A fractional local request time or `cusec` of 1,000,000 or more is
+  `Client::Encode`, not a reply-control error, and nothing is sent (FU-TRN-01).
+- Own-password rotation of the stored credential ignores the advisory name
+  type (FU-CLI-08).
+
+Crypto policy:
+
+- New `crypto::CryptoPolicy` snapshot (`from_libdefaults`, `check_use` with
+  `crypto::Use`) applied at every consumer; enctype relations are
+  `config::EnctypeExpr` expressions. Unknown, disabled and refused positive
+  terms fail by token (`UnknownEnctype`, `DisabledEnctype`,
+  `RejectedEnctype`), Camellia is a diagnostic in compatible mode and an error
+  in strict mode, `allow_weak_crypto = true` is rejected, and an empty result
+  is `EmptyEnctypeExpression`. `NoUsableEnctypes` and `NoPermittedEnctypes`
+  are removed. New `Config::parse_with_mode` and `ParseMode` (FU-CFG-04).
+- `-name` removes an entry, `DEFAULT` is the SHA2-first AES list
+  `[20, 19, 18, 17]` and `aes` follows MIT's order (FU-CFG-05).
+- KDC-supplied string-to-key counts below 4096 (AES-SHA1) or 32768 (AES-SHA2)
+  are rejected before PBKDF2; `LibDefaults::with_min_s2k_iterations` lowers a
+  minimum from trusted code (FU-CRY-01).
+- MAC checks use the audited `hmac` verification instead of a hand-written
+  comparison (FU-CRY-02).
+- The acceptor applies the policy: `with_crypto_policy` on `Validator`,
+  `NegotiateLayer` and `NegotiateService`. **A keytab with only RC4 keys no
+  longer authorizes RC4**; that needs `allow_rc4` and RC4 in the permitted
+  list (FU-SVC-R04).
+- The `safe_checksum_type` default is 15 (was 8); refused checksums and
+  protocols fail with typed `error::Policy::RejectedFeature` errors, and
+  `Config::UnsupportedDirective` is removed. Every domain error and
+  `error::Any` accept `error::Policy`; `RejectedFeature` and `RejectionReason`
+  catalogue the permanent refusals. `LibDefaults::diagnostics()` returns
+  `Cow<[ConfigDiagnostic]>` (FU-DOC-21).
+
+Configuration:
+
+- A top-level file that cannot be read is `Config::File { path, source }`
+  (FU-CFG-01).
+- `Config::new_without_env`, `Config::parse_without_env` and
+  `LibDefaults::new_without_env` are removed; use `new` and `parse`
+  (FU-CFG-02).
+- The first value of a repeated scalar wins (it was the last), across files,
+  includes, lists and `[domain_realm]`. `forwardable` and `proxiable` set the
+  request bits, `default_realm` is the host fallback, a bare
+  `kdc_default_options` number is decimal, a malformed `extra_addresses` entry
+  is `InvalidAddress`, and `noaddresses = false` is `NotYetEffective`
+  (FU-CFG-03).
+- Section, subsection and relation finals (`*`) stop later contributions;
+  `auth_to_local` and `pkinit_cert_match` values keep a trailing `*`, and
+  application, realm and local-name scopes keep their case (FU-CFG-06).
+- A plain `0` duration means zero seconds (FU-CFG-07).
+- `parse_supported_enctype_ids` is no longer public (FU-CFG-08).
+- Ignored sections have their own brace state; re-reading a completed include
+  is not a cycle; the limits are 256 files and 4 MiB. Unknown sections and
+  relations are diagnostics in compatible mode and errors in strict mode,
+  settings without a runtime consumer are `NotYetEffective`, `module` is
+  `UnsupportedDynamicModule`, and default-name templates are expanded once
+  when a name is resolved, failing on unavailable facts. New
+  `Config::from_reader`, `from_string` and `from_path` (FU-CFG-09).
+
+Service and replay cache:
+
+- `clear_older_than[_at]` is renamed `force_clear_older_than[_at]`, and the
+  new `prune_expired[_at]` removes only expired records (FU-SVC-03).
+- Admission expires records through an ordered index instead of scanning the
+  live digest table (FU-SVC-04); bulk expiry removes only expired pairs
+  (FU-SVC-05); debug builds check the index invariants (FU-SVC-06).
+- `with_max_clock_skew` and `with_shared_replay_cache` on `Validator`,
+  `NegotiateLayer` and `NegotiateService` return `Result`; an explicit cache
+  with too small a skew fails at construction (FU-SVC-09).
+- A same-realm ticket with a nonempty unchecked transited path is rejected
+  with `TransitPolicyRejected` unless the KDC checked it or a
+  `TransitValidator` accepts it (FU-SVC-10).
+- PACs inside AD-MANDATORY-FOR-KDC are found and verified (FU-SVC-11).
+- Each client principal may hold one eighth of the replay cache by default;
+  `ReplayCache::with_principal_capacity` sets the share, and a full share is
+  `ReplayCacheCapacityExceeded` with the share as `capacity` (FU-SVC-R01).
+- `ValidatedApReq.service` names the keytab key that decrypted the ticket, not
+  the cleartext `sname` (FU-SVC-R02).
+- A signed PAC_CLIENT_INFO must match the ticket client name and auth time,
+  else the new `Service::PacClientMismatch` (FU-SVC-R03).
+
+Client:
+
+- `spawn_auto_renewal[_with_retry]` return the `#[must_use]`
+  `client::auto_renewal::Handle` (`TokioClientAutoRenewal` is an alias)
+  (FU-CLI-01).
+- Cached and imported credentials are checked against the enctype policy
+  before the cache changes; explicit RC4/DES3 permission reaches the SPNEGO
+  AP options (FU-CLI-02).
+- A failed in-memory ccache export leaves the destination unchanged
+  (FU-CLI-03).
+- An INVALID or future-dated primary TGT is due for refresh immediately
+  (FU-CLI-04).
+- Diagnostics no longer report preauth PA-DATA numbers as missing keytab
+  enctypes (FU-CLI-05).
+- `cache_service_ticket` returns `Result`, and both cache insertion APIs
+  reject another client identity with the new `Client::CacheClientMismatch`
+  (FU-CLI-06).
+- `sessions_json` reports a cross-realm TGT under its destination realm
+  (FU-CLI-09).
+- TGT renewal keeps the exact `krbtgt/B@A` service and routes to its issuing
+  realm (FU-CLI-10).
+- An optimistic preauthentication that gets error 24 retries at most twice,
+  guided by the KDC's hints, keeping cookies and the pinned TCP connection
+  (FU-CLI-11).
+- AS/TGS replies that break the requested times or grant unrequested flags
+  fail with the new `ReplyTimeConstraint`/`ReplyFlagConstraint`;
+  `AsReq`/`TgsReq` gain `clock_skew`, `BuiltAsReq`/`BuiltTgsReq` gain
+  `reply_clock`, and their constructors are no longer `const` (FU-CLI-12).
+- PREAUTH_FAILED exposes its ETYPE-INFO2 hints and cookies (FU-CLI-13).
+- Keytab preauthentication picks the first requested enctype the KDC offers
+  and the keytab holds (FU-CLI-15).
+- Renewal requires a valid RENEWABLE ticket inside its renewal window; explicit
+  renewal otherwise fails with the new `Client::TicketNotRenewable` (FU-CLI-16).
+- The blocking clients return the new `Client::BlockingRuntimeUnavailable`
+  inside an entered Tokio context instead of panicking (FU-CLI-17).
+- New constructors `Realm::new`, `ccache::HeaderField::new`,
+  `ccache::HostAddress::{new, ipv4, ipv6}` and
+  `service::HostAddress::{new, ipv6}` (FU-API-01).
+- `error::Any` gains `Messages` and `Http` (FU-API-03).
+- `source()` returns the kept cause of `DefaultCacheName`,
+  `DefaultKeytabName`, `DefaultClientKeytabName`, `Spnego::Base64` and
+  `KpasswdOutcomeUnknown` (FU-API-04).
+- `error::Any::Decode` and `error::Config::InvalidIpAddress` are removed
+  (FU-API-05).
+
+Transport:
+
+- Windows `WSAEMSGSIZE` is `UdpResponseTooLarge` (FU-TRN-04).
+- Configured `Auto` keeps the winning TCP connection for preauthentication
+  (FU-TRN-06).
+- Pre-delivery password errors name the endpoint authority (FU-TRN-07).
+- Password address APIs need `ToSocketAddrs` only, not `Clone` (FU-TRN-08).
+- The kpasswd admin fallback always queries `_kerberos-adm._tcp` (FU-TRN-12).
+- An SRV target that does not resolve no longer stops failover to the others
+  (FU-TRN-13).
+- New `client::transport::kdc_tcp_record_length` (FU-FUZ-02).
+
+Gates, tests and CI:
+
+- The gates scan every Rust source Cargo compiles, including build scripts and
+  custom target paths, and fail closed on a source outside the checkout or an
+  empty set (FU-GATE-01).
+- Dead gate flags are removed (`--report`, `completeness_check.py --enforce`);
+  `--paths` with an empty selection selects nothing (FU-GATE-02).
+- Lint paths are canonicalized before the exception allowlist (FU-GATE-03).
+- `feature_closures.py check-ci` also rejects lint-capping or
+  failure-swallowing settings and checks `.cargo/config.toml` (FU-GATE-04).
+- `fuzz_coverage.py --enforce` is a blocking gate (FU-GATE-05) and rejects a
+  row whose function is gone (FU-GATE-06).
+- Prose rules cover every non-test file and macro-generated items
+  (FU-GATE-07); a cancellation contract must sit directly above its function
+  (FU-GATE-08).
+- `semver-checks` takes its baseline from crates.io and fails a release tag
+  whose manifest version differs (FU-GATE-10), and compares with the highest
+  published version up to the candidate, so an unbumped published version
+  fails (FU-GATE-11).
+- The fixture runner writes operator values as `printf %q` data (FU-GATE-12)
+  and prints keytab secrets as `<redacted>` (FU-GATE-13).
+- docs.rs builds the `http` and `tower` features (FU-CI-01).
+- CI and the prek hook run the AD helper suites (FU-CI-02).
+- The advisory `geiger` job uploads a JSON report (FU-CI-03).
+- `mutants` runs in 16 shards under a kill deadline, aggregated by
+  `mutants-report` (FU-CI-04).
+- `publish.yml` uses CI's stable toolchain revision (FU-CI-05).
+- Releases use `N.N.N` tags: the secret-free `Release` coordinator dispatches
+  `publish.yml`, whose token-free `verify` job builds the crate and whose
+  `publish` job uploads it with `--no-verify` after checking its sha256
+  (FU-CI-06); re-dispatching `publish.yml` is the recovery path (FU-CI-07).
+- The example's security-header tests run under `cargo test` (FU-TST-01).
+- `INTEGRATION_REQUIRED=1` fails when a requested live prerequisite is
+  missing (FU-TST-05); the live harness brackets bare IPv6 addresses
+  (FU-TST-07) and bounds its TCP probe (FU-TST-10).
+
+Documentation:
+
+- The cache insertion methods document which entry wins (FU-DOC-16).
+- `error::Ccache::Io` says "read or written" (FU-DOC-22).
 
 ### Lint compliance
 
@@ -414,10 +680,10 @@ Release workflow, CI docs and fixture scripts:
 
 ### Fuzzing, tests and CI
 
-- Twelve `cargo fuzz` targets cover every attacker-facing parser
+- Thirteen `cargo fuzz` targets cover every attacker-facing parser
   (`kpasswd_reply`, `ccache_parse`, `keytab_parse`, `pac_parse`,
   `spnego_token`, `gss_token`, `kdc_reply`, `krb5_conf`, `der_oid`,
-  `krb_messages`, `name_parse`, `http_negotiate`), seeded from the test
+  `krb_messages`, `name_parse`, `http_negotiate`, `kdc_tcp_frame`), seeded from the test
   fixtures; `docs/review/fuzz.md` maps each parser to its target. Ccache and
   config property tests run with `proptest`, including a ccache
   serialization round-trip.
@@ -431,16 +697,18 @@ Release workflow, CI docs and fixture scripts:
   `taplo`, an offline link check with the guideline checksums, the lint gates,
   a build of every fuzz target and `cargo package`. Advisory: `geiger`, a
   floating-nightly rustdoc canary, and on schedule or dispatch the
-  whole-crate mutants run in eight shards and 300 s of fuzzing per target.
-- The `Release` workflow publishes only a `vN.N.N` tag on a CI-green commit
-  of `main`, after the owner approves the `release` environment
-  (`docs/RELEASING.md`).
+  whole-crate mutants run in 16 shards and 300 s of fuzzing per target.
+- Publishing needs an `N.N.N` tag on a CI-green commit of `main` and the
+  owner's approval of the `release` environment (`docs/RELEASING.md`).
 - The Docker MIT KDC and Active Directory integration gates run locally with
   `scripts/run-gated-integration.sh`; the upstream workflow-dispatch jobs
   aren't part of this CI, and `docs/gokrb5-parity.toml` records their upstream
   runs as historical evidence.
 
-## [0.2.2] - 2026-10-07
+## [0.2.2] - 2026-10-23
+
+Published to crates.io on 2026-10-23; the `v0.2.2` tag was created on
+2026-10-07.
 
 Patched fork of `rskrb5`, still based on upstream `clelange/rskrb5` `main` at
 `6f4abc9`, adding the changes below on top of the 0.2.1 set. The upstream

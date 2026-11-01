@@ -39,10 +39,11 @@ independently of `allow_weak_crypto`:
 
 Without them the default enctype lists are AES only, and an explicit
 `default_tkt_enctypes`, `default_tgs_enctypes` or `permitted_enctypes` entry
-naming RC4 or DES3 is skipped; a list with no usable entry fails to parse. In
-code, set `LibDefaults::allow_rc4` and `LibDefaults::allow_des3` (both
-`config::Toggle`) or use their `with_*` builders. "Derived enctype policy"
-below has the details.
+naming RC4 or DES3 fails to parse with `error::Config::DisabledEnctype`. The
+flags permit a family; they do not add it to any list. In code, set
+`LibDefaults::allow_rc4` and `LibDefaults::allow_des3` (both `config::Toggle`)
+or use their `with_*` builders. "Derived enctype policy" and "Runtime crypto
+policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
@@ -55,9 +56,9 @@ describes each one.
   `error::Client::EnctypeNotPermitted`.
 - An explicit `default_tkt_enctypes`/`default_tgs_enctypes` entry outside an
   explicit `permitted_enctypes` is a parse error
-  (`error::Config::EnctypeNotPermitted`), and an explicit
-  `permitted_enctypes` with no usable enctype is
-  `error::Config::NoPermittedEnctypes`.
+  (`error::Config::EnctypeNotPermitted`), and an enctype list that resolves to
+  nothing is `error::Config::EmptyEnctypeExpression` (see "Runtime crypto
+  policy").
 - `des3-cbc-sha1` and `des3-hmac-sha1` mean enctype 16.
 - An unsigned kpasswd success is `error::Kadmin::UnauthenticatedSuccess`.
 - Host-based service principals carry a lower-cased host, and
@@ -89,26 +90,22 @@ Serde input cannot inject cached IDs;
 the compatibility JSON snapshot derives IDs on demand. Empty request lists no
 longer substitute an unrelated built-in policy.
 
-Explicit enctype lists skip unsupported names, including camellia and typos,
-and policy-disabled names. Only usable names remain, in their original order.
-If none remains, request lists return `error::Config::NoUsableEnctypes { key,
-names }`; the permitted list returns `error::Config::NoPermittedEnctypes { names }`.
-Both errors retain the original input names. Empty lists also fail closed;
-neither case substitutes defaults or an unrestricted policy.
-
-Like 0.2.2, family names (`aes`, `aes-sha1`, `aes-sha2`, `camellia`, `rc4`,
-`des3`, `des`), `DEFAULT` and `-name` tokens do not expand or remove algorithms.
-They are skipped as unimplemented names; use concrete enctype names instead.
-Unlike 0.2.2's empty-ID result, a list containing only these tokens fails closed.
-The unconstructed `UnsupportedEnctype` and `EnctypeDisabled` variants were removed
-before 0.3.0 release; neither existed in 0.2.2.
+Explicit enctype lists are MIT list expressions (`DEFAULT`, families and
+`+`/`-` terms) and fail closed by token: an unknown, disabled or permanently
+refused positive entry is an error naming the original token, and a list that
+resolves to nothing is `error::Config::EmptyEnctypeExpression`. Neither case
+substitutes defaults or an unrestricted policy. The table under "Runtime
+crypto policy" maps each input to its error. The `NoUsableEnctypes` and
+`NoPermittedEnctypes` variants of the earlier 0.3 work, and the unconstructed
+`UnsupportedEnctype` and `EnctypeDisabled`, were removed before the 0.3.0
+release; none of them existed in 0.2.2.
 
 Defaults now advertise only AES (20, 19, 18, 17). Set `[libdefaults] allow_rc4`
 or `allow_des3` explicitly to true before configuring RC4 or DES3 names; both
-are disabled by default, independently of `allow_weak_crypto`. Disabled names
-are skipped, with an error only if no usable name remains. Export RC4 additionally
-requires `allow_weak_crypto`. The flags are public `Toggle` fields and serde
-defaults missing flags to false. Policy is evaluated after all sections/includes.
+are disabled by default. A disabled name is `error::Config::DisabledEnctype`.
+Export RC4 is refused permanently, and `allow_weak_crypto = true` is an error.
+The flags are public `Toggle` fields and serde defaults missing flags to false.
+Policy is evaluated after all sections and includes.
 
 ### Durable credential-file replacement
 
@@ -123,7 +120,7 @@ the existing caller-provided owner-only directory ACL requirement.
 The client-keytab default retains `/usr/local/var/krb5/user/%{euid}/client.keytab`
 for identity expansion when used, and `k5login_directory` defaults to empty.
 Use the new `LibDefaults::from_env()` only when HOME discovery is intended.
-The `*_without_env` entry points remain compatibility aliases. Remaining
+The `*_without_env` twins were removed ("Removed configuration twins"). Remaining
 configuration/credential discovery entry points document `# Ambient input`.
 
 ### Explicit transport DNS configuration
@@ -269,14 +266,11 @@ that window (1.5 times the previous 600-second retention estimate). The
 65,536-record default holds about 72 new records/second sustained before
 bursts or replay refreshes need extra headroom. Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
-Each admission, replay included, scans the digest index once under the shared
-lock and touches the key index only for the records it expires. The cost grows
-with live records and depends on hardware: a release build on one 8-core x86-64
-laptop measured about 0.06 ms per admission at 4,400 live records, 0.25 ms at
-17,000 and 1.1-1.3 ms at 66,000. At full default occupancy that host serialises
-roughly 750 admissions/second per cache.
+Admission expires records through an ordered expiry index and no longer
+scans the live digest table (FU-SVC-04); each client principal is limited to a
+share of the capacity ("Replay cache" under the follow-up changes).
 
-Explicit `clear`/`clear_older_than*` remain administrative overrides that can erase
+Explicit `clear`/`force_clear_older_than*` remain administrative overrides that can erase
 live replay protection. Do not schedule aggressive pruning; automatic admission
 now maintains expiry. Replace caches only with service downtime lasting at least
 the replay window; creating a fresh cache or restarting still loses in-memory
@@ -304,11 +298,16 @@ The service validator now rejects cross-realm tickets lacking
 TRANSITED-POLICY-CHECKED with `error::Service::TransitPolicyRejected`, unless
 an explicitly configured `service::TransitValidator` approves the complete path.
 Use `Validator::with_transit_validator(Arc<dyn TransitValidator>)` or the matching
-`http::NegotiateLayer` builder. Implementations receive client realm, service
-realm and the raw `TransitedEncoding`; validate all three. Empty contents still
-represent cross-realm transit. Reject unknown encodings unless your implementation
-understands them. The library does not decode or implicitly trust transit paths.
-Same-realm tickets and KDC-checked cross-realm tickets are unaffected.
+`http::NegotiateLayer` builder. A custom policy implements one method,
+`TransitValidator::accepts(&self, client_realm: &str, service_realm: &str,
+transited: &rasn_kerberos::TransitedEncoding) -> bool` (FU-DOC-07): it
+receives the client realm, the service realm and the raw transited encoding,
+and must validate all three. Empty contents still represent cross-realm
+transit. Reject unknown encodings unless your implementation understands
+them. The library does not decode or implicitly trust transit paths.
+KDC-checked tickets and same-realm tickets with an empty path are
+unaffected; since FU-SVC-10 a same-realm ticket with a nonempty unchecked
+path also needs the KDC check or an accepting policy.
 
 **Active Directory:** MS-KILE §3.1.5.4 does not set this flag, so cross-domain
 and forest-trust tickets require explicit policy; the secure default is unchanged.
@@ -448,8 +447,10 @@ contract. Transport stops failover after possible delivery.
 ### Password plaintext ownership (RSK-471362A3)
 
 Password-specific `ChangePasswdData` Debug now redacts `new_passwd`. High-level
-password copies and owned DER staging buffers use zeroizing owners; immutable
-rasn `OctetString` fields remain dependency-owned residuals (see the review).
+password copies and owned DER staging buffers use zeroizing owners. Passwords
+are now passed as `client::Password` ("Owned passwords" under the follow-up
+changes). The copies that dependencies own are listed in
+[`security-policy.md`](security-policy.md#residual-copies).
 
 ### RFC 3244 bare error responses (RSK-3B6BA222)
 
@@ -472,6 +473,531 @@ sender; absent that option, the sender must have valid IPv4/IPv6 encoding but
 is not bound to the transport endpoint. A supplied response recipient must
 match `RequestOptions::sender_address`. Raw `Reply::decrypt_result` remains a
 decryption-only API with no contextual freshness/address claim.
+
+## Follow-up review changes
+
+The independent follow-up review of `6586b7a` changed the API and behaviour
+again before 0.3.0. Each heading names its rows in the
+[follow-up register](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/followup-6586b7a.md),
+which records the proof and commit of each one. Where an earlier section of
+this guide described the previous state, it points here. The compiled
+examples below are doctests.
+
+### Owned passwords (FU-CLI-07, FU-TRN-14)
+
+Password-changing APIs take the new owning type `client::Password` (an alias
+of `client::password::Secret`) by value instead of a generic
+`P: AsRef<[u8]>`. The affected methods are `change_password`,
+`change_password_for`, `change_password_with_options` and
+`change_password_for_with_options` on `client::Tokio`,
+`client::negotiate::Client` and `client::negotiate::BlockingClient`, plus
+`kadmin::ChangePasswdData::new(Password) -> Self` and
+`ChangePasswdData::for_target(Password, name_type, components, realm) ->
+Result<Self, error::Kadmin>`. The other parameters and results are unchanged.
+
+- `Password::from_string(String)` and `Password::from_vec(Vec<u8>)` take over
+  the allocation without copying it; it is erased when the password is
+  dropped, including on error and cancellation.
+- `Password::copy_from_str(&str)` copies; the caller keeps the duty to erase
+  the borrowed original.
+- `as_bytes()` borrows the bytes. `Password` has no `Clone` or `Display`, and
+  its `Debug` is redacted.
+- `ChangePasswdData::new_passwd` is a redacted zeroizing
+  `kadmin::password::Bytes`, and the request builders encode the password
+  envelope directly into zeroizing buffers.
+
+The 0.2 call with a string literal no longer compiles:
+
+```compile_fail
+use rskrb5_ng::kadmin::ChangePasswdData;
+
+let data = ChangePasswdData::new("n3w-Secret");
+```
+
+Pass an owned password instead:
+
+```rust
+# #[cfg(feature = "messages")]
+# {
+use rskrb5_ng::client::Password;
+use rskrb5_ng::kadmin::ChangePasswdData;
+
+let password = Password::from_string(String::from("n3w-Secret"));
+assert_eq!(password.as_bytes(), b"n3w-Secret");
+let own = ChangePasswdData::new(password);
+let target = ChangePasswdData::for_target(
+    Password::copy_from_str("n3w-Secret"),
+    1,
+    ["alice"],
+    "EXAMPLE.COM",
+);
+assert!(target.is_ok());
+drop(own);
+# }
+```
+
+The high-level clients take the same type:
+
+```rust
+# #[cfg(all(feature = "tokio", feature = "spnego"))]
+# {
+use rskrb5_ng::NegotiateClient;
+use rskrb5_ng::client::{Password, kpasswd::RequestOptions};
+use rskrb5_ng::error::Client;
+
+async fn rotate(
+    client: &mut NegotiateClient,
+    new_password: String,
+    options: RequestOptions,
+) -> Result<bool, Client> {
+    let result = client
+        .change_password_with_options(Password::from_string(new_password), options)
+        .await?;
+    Ok(result.is_success())
+}
+# }
+```
+
+### Checked kpasswd results (FU-TRN-02, FU-TRN-03, FU-TRN-10, FU-TRN-11)
+
+`client::transport::Tokio::exchange_kpasswd_result` and
+`exchange_kpasswd_result_with_config` take the `client::kpasswd::BuiltKpasswdRequest`
+from `build_kpasswd_request` and the `RequestOptions` it was built with,
+instead of a raw `kadmin::Request` and a reply key:
+
+| 0.3 before the follow-up review | Now |
+| --- | --- |
+| `exchange_kpasswd_result(protocol, addr, &kadmin::Request, &EncryptionKey)` | `exchange_kpasswd_result(protocol, addr, &BuiltKpasswdRequest, &RequestOptions)` |
+| `exchange_kpasswd_result_with_config(config, protocol, realm, &kadmin::Request, &EncryptionKey)` | `exchange_kpasswd_result_with_config(config, protocol, realm, &BuiltKpasswdRequest, &RequestOptions)` |
+
+The address no longer needs `Clone` (FU-TRN-08). Both helpers now
+authenticate the AP-REP, use the server's subkey when it selects one, and
+check the reply's freshness, sequence number, addresses and that it is not
+the reflected request. After the request may have been delivered, every
+decryption, validation or unsigned-result failure is wrapped exactly once in
+`error::Client::KpasswdOutcomeUnknown`. An unsigned refusal is no longer a
+definite failure: it is
+`KpasswdOutcomeUnknown(Client::Kadmin(Kadmin::UnauthenticatedRejection { code, text_raw }))`,
+with the code and the raw bytes kept. Only an authenticated rejection that
+passes the context checks is a definite `Kadmin::PasswordChangeFailed`. The
+raw `kadmin::Reply::decrypt_result` still only decrypts.
+
+```rust
+# #[cfg(feature = "tokio")]
+# {
+use core::net::SocketAddr;
+
+use rskrb5_ng::client::kpasswd::{BuiltKpasswdRequest, RequestOptions};
+use rskrb5_ng::client::transport::{KdcProtocol, Tokio};
+use rskrb5_ng::error::{Client, Kadmin};
+
+/// `Some(true)`: changed; `Some(false)`: definitely refused; `None`: unknown.
+async fn change(
+    transport: &Tokio,
+    addr: SocketAddr,
+    request: &BuiltKpasswdRequest,
+    options: &RequestOptions,
+) -> Result<Option<bool>, Client> {
+    match transport
+        .exchange_kpasswd_result(KdcProtocol::Tcp, addr, request, options)
+        .await
+    {
+        Ok(result) => Ok(Some(result.is_success())),
+        Err(Client::Kadmin(Kadmin::PasswordChangeFailed { .. })) => Ok(Some(false)),
+        // The password may have changed: reconcile (for example with a fresh
+        // login) before retrying, never retry blindly.
+        Err(Client::KpasswdOutcomeUnknown(_cause)) => Ok(None),
+        Err(other) => Err(other),
+    }
+}
+# }
+```
+
+Failures before the request was sent keep their definite error classes, and
+a local request time with a fractional second or `cusec` of 1,000,000 or more
+is `Client::Encode` (FU-TRN-01).
+
+### Runtime crypto policy (FU-CFG-04, FU-CFG-05, FU-CRY-01, FU-SVC-R04, FU-DOC-21)
+
+`crypto::CryptoPolicy` is an immutable permission snapshot built with
+`CryptoPolicy::from_libdefaults(&LibDefaults)` (or `TryFrom`); its `Default`
+is the secure `DEFAULT` list `[20, 19, 18, 17]` with RC4 and DES3 disabled.
+`policy.check_use(etype, crypto::Use::…)` checks a wire enctype before it is
+used as a request entry, reply key, session key, ticket key, acceptor ticket,
+acceptor subkey, imported credential or checked low-level operation, and
+returns `error::Policy::EnctypeNotPermitted { etype, usage }` (or a permanent
+`RejectedFeature`). Rebuild the snapshot after changing the configuration;
+public `LibDefaults` fields are staging values, not permission. The policy
+itself is described in [`security-policy.md`](security-policy.md#policy).
+
+The three enctype relations are parsed as `config::EnctypeExpr`, MIT's
+ordered list language: `DEFAULT`, the families `aes`, `des3`, `rc4` and
+`camellia`, and left-to-right `+`/`-` terms. This replaces the earlier
+behaviour that skipped families, `DEFAULT` and `-name`:
+
+| Input | Before | Now |
+| --- | --- | --- |
+| unknown name (`typo-enctype`) | skipped | `error::Config::UnknownEnctype { token }` |
+| RC4/DES3 name without `allow_rc4`/`allow_des3` | skipped | `error::Config::DisabledEnctype { token }` |
+| single DES, RC4 export or another permanently refused name | skipped | `error::Config::RejectedEnctype { token, source }` |
+| Camellia | skipped | skipped with a `ConfigDiagnostic` in `ParseMode::Compatible`; `error::Config::UnsupportedSecureEnctype` in `ParseMode::Strict` |
+| `-name` | ignored | removes the entry; removing never needs permission |
+| nothing left | `NoUsableEnctypes` / `NoPermittedEnctypes` | `error::Config::EmptyEnctypeExpression` |
+| `allow_weak_crypto = true` | accepted | `error::Config::Policy(Policy::RejectedFeature { feature: WeakCrypto, .. })` |
+
+`token` is the original spelling, prefix included. `NoUsableEnctypes` and
+`NoPermittedEnctypes` are removed. A request list without an explicit value
+inherits the permitted list.
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use rskrb5_ng::config::Config;
+use rskrb5_ng::crypto::{CryptoPolicy, Use};
+use rskrb5_ng::error::{Config as ConfigError, Policy};
+
+let config = Config::parse(
+    "[libdefaults]\n permitted_enctypes = DEFAULT -aes128-cts-hmac-sha1-96\n",
+)?;
+assert_eq!(config.libdefaults.permitted_enctype_ids(), [20, 19, 18]);
+let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
+policy.check_use(18, Use::SessionKey)?;
+assert!(matches!(
+    policy.check_use(17, Use::SessionKey),
+    Err(Policy::EnctypeNotPermitted { etype: 17, .. })
+));
+
+let unknown = Config::parse("[libdefaults]\n default_tkt_enctypes = aes typo-enctype\n");
+assert!(matches!(unknown, Err(ConfigError::UnknownEnctype { token }) if token == "typo-enctype"));
+let disabled = Config::parse("[libdefaults]\n default_tgs_enctypes = rc4-hmac\n");
+assert!(matches!(disabled, Err(ConfigError::DisabledEnctype { token }) if token == "rc4-hmac"));
+let empty = Config::parse("[libdefaults]\n permitted_enctypes = aes -aes\n");
+assert!(matches!(empty, Err(ConfigError::EmptyEnctypeExpression)));
+# Ok(())
+# }
+```
+
+`allow_rc4` and `allow_des3` permit a family; they do not insert names into
+the request or permitted lists (FU-DOC-05). An RC4 enctype is used only when
+`allow_rc4` is set and RC4 is a member of the permitted list, and it is
+requested only when it is also in the request list. Read the effective lists
+with the derived-ID methods `default_tkt_enctype_ids()`,
+`default_tgs_enctype_ids()` and `permitted_enctype_ids()`:
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use rskrb5_ng::config::Config;
+
+// The family is enabled, but no list names RC4: nothing changes.
+let enabled = Config::parse("[libdefaults]\n allow_rc4 = true\n")?;
+assert_eq!(enabled.libdefaults.default_tkt_enctype_ids(), [20, 19, 18, 17]);
+assert!(!enabled.libdefaults.permitted_enctype_ids().contains(&23));
+
+// Enabled and listed: RC4 is permitted and requested, after the AES entries.
+let listed = Config::parse(
+    "[libdefaults]\n allow_rc4 = true\n permitted_enctypes = DEFAULT rc4-hmac\n",
+)?;
+assert_eq!(listed.libdefaults.permitted_enctype_ids(), [20, 19, 18, 17, 23]);
+assert_eq!(listed.libdefaults.default_tkt_enctype_ids(), [20, 19, 18, 17, 23]);
+# Ok(())
+# }
+```
+
+`Config::parse_with_mode(input, ParseMode)` selects the mode;
+`config::ParseMode::Compatible` is what `Config::parse` uses.
+`Config::diagnostics()` returns `&[ConfigDiagnostic]`, and
+`LibDefaults::diagnostics()` returns `Cow<[ConfigDiagnostic]>` (call
+`.as_ref()` to match on a slice); diagnostics are not serialized. Draft-9
+preauthentication types are ignored with `ConfigDiagnostic::IgnoredPreauthType`
+in compatible mode and are an error in strict mode.
+
+The `safe_checksum_type` default is 15 (was 8), and a permanently refused
+checksum selection fails with a typed `RejectedFeature` instead of the
+removed `error::Config::UnsupportedDirective`. Serde input is checked the
+same way: a refused enctype, checksum or weak-crypto selection fails
+deserialization through the format's own error, carrying the typed
+`error::Policy` text.
+
+### Permanent rejections and `error::Policy` (FU-DOC-21)
+
+`error::Policy::RejectedFeature { feature, reason }` reports a feature this
+crate refuses permanently. `error::RejectedFeature` names it (`SingleDes`,
+`KerberosV4`, `V4Conversion`, `RsaPkinit`, `Draft9Pkinit`, `Rc4Export`,
+`UnauthenticatedChecksum { id }`, `UnprotectedPasswordChange`, `WeakCrypto`;
+each variant links its section of `security-policy.md`), and
+`error::RejectionReason` (`RemovedAndInsecure`, `InsecureByDesign`,
+`MissingAuthentication`) explains it. `RejectionReason` is not an error
+source: match the enums, not the text. `error::Any`, `error::Config`,
+`error::Crypto`, `error::Ccache`, `error::Kadmin`, `error::KrbErrorCodec` and
+`error::Messages` have a `Policy` variant; every other domain error converts with `From<Policy>`
+through its crypto (or, for `error::Http`, SPNEGO) variant, so `?` works
+everywhere.
+
+```rust
+# fn main() {
+use rskrb5_ng::error::{Any, Policy, RejectedFeature, RejectionReason};
+
+let refusal = Policy::RejectedFeature {
+    feature: RejectedFeature::WeakCrypto,
+    reason: RejectionReason::InsecureByDesign,
+};
+let any = Any::from(refusal);
+assert!(matches!(
+    any,
+    Any::Policy(Policy::RejectedFeature { feature: RejectedFeature::WeakCrypto, .. })
+));
+# }
+```
+
+### Acceptor enctype policy (FU-SVC-R04)
+
+`service::Validator`, `http::NegotiateLayer` and `http::NegotiateService`
+apply a crypto policy, set with `with_crypto_policy(CryptoPolicy)`. The
+default is the secure `DEFAULT` list; the `Config`-driven constructors
+(`from_default_keytab_name`, `from_default_keytab`) use the configured
+permitted list and legacy flags. The ticket and authenticator enctypes are
+checked before key lookup and decryption, the ticket session key before PAC
+and authenticator work, and the authenticator subkey before replay
+admission. **A keytab holding only RC4 keys no longer authorizes RC4 by
+itself:** the acceptor needs `allow_rc4` and RC4 in the permitted list.
+
+```rust
+# #[cfg(feature = "messages")]
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use rskrb5_ng::config::Config;
+use rskrb5_ng::crypto::CryptoPolicy;
+use rskrb5_ng::keytab::Keytab;
+use rskrb5_ng::service::Validator;
+
+let keytab = Keytab::default();
+let config = Config::parse(
+    "[libdefaults]\n allow_rc4 = true\n permitted_enctypes = DEFAULT rc4-hmac\n",
+)?;
+let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
+let validator = Validator::new(&keytab).with_crypto_policy(policy);
+drop(validator);
+# Ok(())
+# }
+# #[cfg(not(feature = "messages"))]
+# fn main() {}
+```
+
+`spnego::InitiatorContext` keeps its policy and rejects an excluded AP-REP
+subkey.
+
+### Password-derivation minimums (FU-CRY-01)
+
+A KDC-supplied string-to-key iteration count below **4096** (AES-SHA1) or
+**32768** (AES-SHA2) is rejected before PBKDF2 with
+`error::Policy::S2kIterationsTooLow`. Trusted code can lower a minimum with
+`LibDefaults::with_min_s2k_iterations(crypto::s2k::Family, u32) ->
+Result<Self, error::Policy>` (1 to 2^24); this weakens resistance to offline
+guessing. Text configuration and serde cannot set it; deserialization
+restores the defaults. The raw RFC-vector functions are unchanged.
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use rskrb5_ng::config::LibDefaults;
+use rskrb5_ng::crypto::s2k::Family;
+
+let defaults = LibDefaults::new().with_min_s2k_iterations(Family::AesSha1, 1000)?;
+assert!(LibDefaults::new().with_min_s2k_iterations(Family::AesSha2, 0).is_err());
+drop(defaults);
+# Ok(())
+# }
+```
+
+### Replay cache (FU-SVC-03, FU-SVC-09, FU-SVC-R01)
+
+- `clear_older_than` and `clear_older_than_at` on `ReplayCache` and
+  `SharedReplayCache` are renamed `force_clear_older_than[_at]`: they can
+  reopen live authenticators. The new `prune_expired` and `prune_expired_at`
+  remove only expired records (`usize` on `ReplayCache`,
+  `Result<usize, error::Service>` on `SharedReplayCache`).
+- `with_max_clock_skew` and `with_shared_replay_cache` on `service::Validator`,
+  `http::NegotiateLayer` and `http::NegotiateService` return `Result` (they were
+  `Self`). An unused cache the builder owns adopts the new skew; an explicit
+  cache whose skew is too small fails here, and raising the window after
+  admission has started fails closed.
+- Each authenticated client principal may hold at most a share of the cache:
+  by default one eighth of the capacity (at least one record). Set it with
+  `ReplayCache::with_principal_capacity(usize)`. A principal over its share gets
+  `error::Service::ReplayCacheCapacityExceeded { capacity }` with its share as
+  `capacity`. Live evidence is never evicted.
+- Admission expires records through an ordered index instead of scanning the
+  digest table (FU-SVC-04, FU-SVC-05).
+
+```rust
+# #[cfg(feature = "messages")]
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use core::time::Duration;
+
+use rskrb5_ng::keytab::Keytab;
+use rskrb5_ng::service::{ReplayCache, SharedReplayCache, Validator};
+
+let cache = SharedReplayCache::from_cache(
+    ReplayCache::with_limits(Duration::from_secs(300), 65_536).with_principal_capacity(1024),
+);
+let keytab = Keytab::default();
+let validator = Validator::new(&keytab)
+    .with_max_clock_skew(Duration::from_secs(120))?
+    .with_shared_replay_cache(cache.clone())?;
+let expired = cache.prune_expired()?;
+assert_eq!(expired, 0);
+drop(validator);
+# Ok(())
+# }
+# #[cfg(not(feature = "messages"))]
+# fn main() {}
+```
+
+### Removed configuration twins (FU-CFG-02, FU-CFG-08)
+
+Every remaining configuration constructor is environment-free, so the
+`*_without_env` twins are gone:
+
+| Removed | Use |
+| --- | --- |
+| `config::Config::new_without_env()` | `Config::new()` |
+| `config::Config::parse_without_env(input)` | `Config::parse(input)` |
+| `config::LibDefaults::new_without_env()` | `LibDefaults::new()` |
+
+`config::parse_supported_enctype_ids` is no longer public; use
+`Config::parse` and the derived-ID methods.
+
+### Configuration composition (FU-CFG-01, FU-CFG-03, FU-CFG-06, FU-CFG-07, FU-CFG-09)
+
+Configuration now follows MIT profile semantics; the details are in
+[`config-profile.md`](config-profile.md) and the generated
+[relation catalogue](config-relations.md).
+
+- **First value wins.** A repeated scalar keeps its first value, across files,
+  includes, lists and `[domain_realm]` mappings (it was the last). Put the
+  value you want first, or remove the duplicate.
+- **Finals.** `[section]*`, `subsection* = {`, `}*` and `relation* = value`
+  stop later contributions to that scope, within a file and across files.
+  Values of `auth_to_local` and `pkinit_cert_match` keep a trailing `*`.
+  Application, realm and local-name scopes keep their case.
+- **Includes.** Ignored sections no longer share brace state with the rest
+  of the file; re-reading a completed source is not a cycle; the limits are
+  256 files and 4 MiB in total, root files included.
+- **Unknown input.** Unknown sections and relations are diagnostics in
+  compatible mode and errors in strict mode; recognized settings that have no
+  runtime effect yet are `error::Config::NotYetEffective` in both modes.
+- **`module`.** `module` directives and relations fail with
+  `error::Config::UnsupportedDynamicModule`; no code is loaded.
+- `forwardable` and `proxiable` set the request bits, `default_realm` is the
+  host fallback, a bare `kdc_default_options` number is decimal (an explicit
+  `0x` is hex), a malformed `extra_addresses` entry is `InvalidAddress`, and a
+  plain `0` is a valid zero duration.
+- A file that cannot be read is `error::Config::File { path, source }` instead
+  of a bare `Io`.
+
+New readers mirror gokrb5's: `Config::from_string(&str)` (= `parse`),
+`Config::from_path(path)` (= `load`) and `Config::from_reader(impl io::Read)`,
+which reads at most 4 MiB.
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use rskrb5_ng::config::Config;
+
+let text = "[libdefaults]\n default_realm = FIRST.EXAMPLE\n default_realm = SECOND.EXAMPLE\n";
+let config = Config::from_reader(text.as_bytes())?;
+assert_eq!(config.libdefaults.default_realm, "FIRST.EXAMPLE");
+assert_eq!(Config::from_string(text)?.libdefaults.default_realm, "FIRST.EXAMPLE");
+assert!(Config::parse("[libdefaults]\n module = /usr/lib/plugin.so:entry\n").is_err());
+# Ok(())
+# }
+```
+
+### Default names (FU-CFG-09)
+
+`default_ccache_name`, `default_keytab_name` and `default_client_keytab_name`
+from the profile are expanded once, when a name is resolved, through
+`config::parameters::DefaultName::expand` with explicitly gathered facts.
+A token whose fact is unavailable (for example `%{username}`, a Windows SID
+or an installation directory) is an error; there is no fallback to another
+name. The `KRB5CCNAME`/`KRB5_KTNAME`/`KRB5_CLIENT_KTNAME` environment values
+keep precedence and their existing UID-token behaviour.
+
+### Client changes (FU-CLI-01, FU-CLI-06, FU-CLI-12, FU-CLI-16, FU-CLI-17)
+
+- `client::Tokio::spawn_auto_renewal[_with_retry]` return
+  `client::auto_renewal::Handle` (`TokioClientAutoRenewal` is now an alias of
+  it), which is `#[must_use]`: dropping it cancels the task.
+- `Tokio::cache_service_ticket` returns `Result<(), error::Client>`. It and
+  `cache_tgt_session` reject a session of another client realm or component
+  list with `error::Client::CacheClientMismatch` before changing the cache.
+- `error::Client::BlockingRuntimeUnavailable`: the blocking clients refuse to
+  run inside an entered Tokio context instead of panicking; use the async
+  client there.
+- AS/TGS replies that break the requested times or grant unrequested flags
+  fail with `error::Client::ReplyTimeConstraint` or `ReplyFlagConstraint`.
+  `AsReq`/`TgsReq` gain `clock_skew`, and `BuiltAsReq`/`BuiltTgsReq` gain
+  `reply_clock`; their `new` is no longer `const`.
+- Explicit renewal of a ticket that is not renewable (or outside its renewal
+  window) is `error::Client::TicketNotRenewable`.
+
+```rust
+# #[cfg(feature = "tokio")]
+# {
+use rskrb5_ng::client::{TgsRepSession, Tokio};
+use rskrb5_ng::error::Client;
+
+fn insert(client: &mut Tokio, session: TgsRepSession) -> Result<(), Client> {
+    client.cache_service_ticket(session)
+}
+# }
+```
+
+### Error types (FU-API-03, FU-API-04, FU-API-05, FU-SPN-R03, FU-SPN-R04)
+
+- `error::Any` gains `Messages(error::Messages)` (feature `messages`) and
+  `Http(error::Http)` (feature `http`), so `?` reaches `rskrb5_ng::Result`
+  without erasing those causes.
+- `source()` now returns the kept cause of `Ccache::DefaultCacheName`,
+  `Keytab::DefaultKeytabName`, `Client::DefaultClientKeytabName` (the
+  `VarError`), `Spnego::Base64` (the `DecodeError`) and
+  `Client::KpasswdOutcomeUnknown` (the boxed `Client`).
+- `error::Spnego::Client` holds `Box<error::Client>` (was `String`) and is
+  its source.
+- Removed variants that nothing constructed: `error::Any::Decode(String)` and
+  `error::Config::InvalidIpAddress { line, key, value }`.
+- `spnego::MicToken::verify` and `WrapToken::verify` return
+  `Result<(), error::Spnego>` instead of `Result<bool, _>`, which was never
+  `Ok(false)`: replace `assert!(token.verify(key, usage)?)` with
+  `token.verify(key, usage)?`.
+- New variants: `error::Spnego::{InvalidFieldOrder, NonminimalLength}`,
+  `error::Service::PacClientMismatch`, `error::Kadmin::UnauthenticatedRejection`
+  and those named in the sections above.
+
+```rust
+# #[cfg(feature = "http")]
+# {
+use rskrb5_ng::error::{Any, Http, Messages};
+
+fn widen_messages(error: Messages) -> Any {
+    Any::from(error)
+}
+fn widen_http(error: Http) -> Any {
+    Any::from(error)
+}
+# }
+```
+
+### Whole-second AP-REQ timestamps (FU-API-06)
+
+`client::build_ap_req_with_confounder` rejects a timestamp with a fractional
+second with `error::Client::Encode`; pass whole seconds and the microseconds
+separately. KerberosTime values with a fractional second convert to
+`SystemTime` with `TimeOverflow` instead of wrong arithmetic.
+
+### New constructors (FU-API-01, FU-FUZ-02)
+
+`config::Realm::new(String) -> Result`, `ccache::HeaderField::new`,
+`ccache::HostAddress::{new, ipv4, ipv6}` and
+`service::HostAddress::{new(i32, Vec<u8>), ipv6([u8; 16])}` build values of
+these non-exhaustive types. `client::transport::kdc_tcp_record_length([u8; 4],
+usize)` validates a KDC TCP record mark.
 
 ## Non-exhaustive types and constructors
 
@@ -528,7 +1054,7 @@ and writable. `Option` builders accept the complete `Option<T>`, including
 | `client::PreauthKeyInfo` | `new(etype)`; `with_salt`, `with_s2kparams` |
 | `client::KdcError` | `new(stime, susec, error_code, service)`; `with_ctime`, `with_cusec`, `with_text`, `with_client`, `with_e_data`, `with_method_data`, `with_preauth_key_info` |
 | `client::PrunedSessions` | Existing `Default`; `with_primary_tgt`, `with_tgt_sessions`, `with_service_tickets` |
-| `config::LibDefaults` | `Default`, `new`, and the compatibility alias `new_without_env` are environment-free; use `from_env()` explicitly for HOME discovery. Use `with_<field>` for public fields, or the derived ID methods described above. |
+| `config::LibDefaults` | `Default` and `new` are environment-free (`new_without_env` was removed); use `from_env()` explicitly for HOME discovery. Use `with_<field>` for public fields, or the derived ID methods described above. |
 | `config::Config`, `config::Realm` | Existing constructors or config parsing; modify public fields after construction |
 | `service::ApRepOptions` | Existing `Default`; `with_subkey`, `with_sequence_number`, `with_kvno` |
 | `messages::EncryptedData` | `new(etype, cipher)`; `with_kvno` |
@@ -550,8 +1076,9 @@ and `InitiatorContextOptions`. Existing token constructors remain available for
 ## Earlier source-compatible signature changes
 
 `Tokio::{change_password, change_password_for, change_password_with_options,
-change_password_for_with_options}` accept a named generic `P: AsRef<[u8]>`
-instead of an `impl AsRef<[u8]>` argument. Ordinary calls are unchanged.
+change_password_for_with_options}` first accepted a named generic
+`P: AsRef<[u8]>` instead of an `impl AsRef<[u8]>` argument. They now take a
+`client::Password` by value ("Owned passwords").
 
 ## Signature changes
 
@@ -586,8 +1113,13 @@ The earlier pass also made these public APIs `const fn`:
   with_ap_rep, with_reject_invalid}`;
 - `http::NegotiateService::{inner, inner_mut, with_ap_rep, with_reject_invalid}`.
 
-The four password-change methods listed above already use a named generic `P`
-with a where-clause. Each former argument-position `impl Trait` in this pass
+Since FU-SVC-09, `with_max_clock_skew` (on `service::Validator`,
+`http::NegotiateLayer` and `http::NegotiateService`) and
+`with_shared_replay_cache` return `Result` and are no longer `const fn`
+("Replay cache" under the follow-up changes).
+
+The four password-change methods listed above used a named generic `P` with a
+where-clause at that point; they now take `client::Password`. Each former argument-position `impl Trait` in this pass
 likewise becomes an independent named generic with the same bounds; ordinary
 calls keep type inference, and callers may now explicitly name these type
 arguments using turbofish syntax.
@@ -623,7 +1155,12 @@ arguments using turbofish syntax.
 The following inventory includes all public signature and must-use changes in
 this pass, including const eligibility exposed by the other signature changes.
 Generic parameter names are explicit; each where-clause retains the former
-argument's independent bound. Module-level re-export paths continue to work.
+argument's independent bound. Items are listed by their defining paths: the
+module-local re-exports were removed, and only the crate-root facade
+re-exports remain ("Renamed paths" below). The inventory is a snapshot of API
+pass B; "Follow-up review changes" above supersedes the entries it changes
+(password methods and `ChangePasswdData`, the replay-cache builders, the
+kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 
 #### New must-use contracts
 
@@ -702,8 +1239,8 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `client::Tokio::tgt_session_for_realm`.
 - `client::Tokio::cached_service_ticket_count`.
 - `client::Tokio::cached_service_ticket`.
-- `client::<'request>TgsRequestParts<'request>::new`.
-- `client::<'request>TgsRequestParts<'request>::with_timestamp`.
+- `client::TgsRequestParts<'request>::new`.
+- `client::TgsRequestParts<'request>::with_timestamp`.
 - `client::default_password_salt`.
 - `config::Config::new`.
 - `config::Config::realm`.
@@ -765,7 +1302,7 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `evaluation::data::CandidateAssessment::support_for`.
 - `http::NegotiateLayer<'static>::from_keytab`.
 - `kadmin::ChangePasswdMessageOptions::with_recipient_address`.
-- `kadmin::<'request>PasswordEncryption<'request>::new`.
+- `kadmin::PasswordEncryption<'request>::new`.
 - `kadmin::ChangePasswordResult::is_success`.
 - `keytab::Name::file_path`.
 - `keytab::Name::into_file_path`.
@@ -925,8 +1462,8 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `client::build_tgs_req_for_realm_with_subkey`: `pub fn build_tgs_req_for_realm_with_subkey<R>( tgt: &AsRepSession, kdc_realm: R, service: Principal, options: TgsReq, ) -> Result<TgsFastRequestParts, Error> where R: Into<String>,`. The realm argument changed from `impl Into<String>` to the named generic `R`.
 - `client::build_tgs_req_for_realm_with_confounder`: `pub fn build_tgs_req_for_realm_with_confounder<P>( tgt: &AsRepSession, kdc_realm: P, service: Principal, options: TgsReq, timestamp: SystemTime, cusec: u32, confounder: &[u8], ) -> Result<BuiltTgsReq, Error> where P: Into<String>,`.
 - `client::build_tgs_req_for_realm_with_confounder_and_subkey`: `pub fn build_tgs_req_for_realm_with_confounder_and_subkey<R>( tgt: &AsRepSession, kdc_realm: R, service: Principal, parts: TgsRequestParts<'_>, ) -> Result<TgsFastRequestParts, Error> where R: Into<String>,`.
-- `client::<'request>TgsRequestParts<'request>::new`: `pub const fn new( options: TgsReq, confounder: &'request [u8], subkey: &'request EncryptionKey, ) -> Self`.
-- `client::<'request>TgsRequestParts<'request>::with_timestamp`: `pub const fn with_timestamp(mut self, timestamp: SystemTime, cusec: u32) -> Self`.
+- `client::TgsRequestParts<'request>::new`: `pub const fn new( options: TgsReq, confounder: &'request [u8], subkey: &'request EncryptionKey, ) -> Self`.
+- `client::TgsRequestParts<'request>::with_timestamp`: `pub const fn with_timestamp(mut self, timestamp: SystemTime, cusec: u32) -> Self`.
 - `config::Config::load`: `pub fn load<P>(path: P) -> Result<Self, Error> where P: AsRef<Path>,`.
 - `config::Toggle::from_bool`: `pub const fn from_bool(value: bool) -> Self`.
 - `config::Toggle::is_enabled`: `pub const fn is_enabled(self) -> bool`.
@@ -999,9 +1536,9 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `crypto::KerberosEtype::confounder_len`: `pub const fn confounder_len(self) -> usize`.
 - `crypto::KerberosEtype::hmac_len`: `pub const fn hmac_len(self) -> usize`.
 - `crypto::KerberosEtype::default_s2kparams`: `pub const fn default_s2kparams(self) -> &'static str`.
-- `http::<B>NegotiateHttpResponse<B>::did_negotiate`: `pub const fn did_negotiate(&self) -> bool`.
+- `http::NegotiateHttpResponse<B>::did_negotiate`: `pub const fn did_negotiate(&self) -> bool`.
 - `http::NegotiateLayer<'static>::from_keytab_name`: `pub fn from_keytab_name<P>(keytab_name: P) -> Result<Self> where P: AsRef<str>,`.
-- `http::<S>NegotiateService<'static,S>::from_keytab_name`: `pub fn from_keytab_name<P>(inner: S, keytab_name: P) -> Result<Self> where P: AsRef<str>,`.
+- `http::NegotiateService<'static, S>::from_keytab_name`: `pub fn from_keytab_name<P>(inner: S, keytab_name: P) -> Result<Self> where P: AsRef<str>,`.
 - `kadmin::ChangePasswdData::new`: `pub fn new<P>(new_passwd: P) -> Self where P: AsRef<[u8]>,`.
 - `kadmin::ChangePasswdData::for_target`: `pub fn for_target<I, S, P>( new_passwd: P, name_type: i32, components: I, realm: &str, ) -> Result<Self, Error> where I: IntoIterator<Item = S>, S: AsRef<str>, P: AsRef<[u8]>,`.
 - `kadmin::build_enc_krb_priv_part`: `pub fn build_enc_krb_priv_part<P>( user_data: P, options: EncKrbPrivPartOptions, ) -> rasn_kerberos::EncKrbPrivPart where P: AsRef<[u8]>,`.
@@ -1009,7 +1546,7 @@ argument's independent bound. Module-level re-export paths continue to work.
 - `kadmin::build_krb_priv`: `pub fn build_krb_priv<P>( user_data: P, options: EncKrbPrivPartOptions, key: &EncryptionKey, ) -> Result<rasn_kerberos::KrbPriv, Error> where P: AsRef<[u8]>,`.
 - `kadmin::ChangePasswdMessageOptions::new`: `pub const fn new( timestamp: rasn_kerberos::KerberosTime, cusec: u32, sequence_number: u32, sender_address: rasn_kerberos::HostAddress, ) -> Self`.
 - `kadmin::build_change_password_message_with_confounders`: `pub fn build_change_password_message_with_confounders( client_principal: rasn_kerberos::PrincipalName, client_realm: &str, change_data: &ChangePasswdData, service_ticket: rasn_kerberos::Ticket, session_key: &EncryptionKey, options: ChangePasswdMessageOptions, encryption: PasswordEncryption<'_>, ) -> Result<BuiltChangePasswordRequest, Error>`.
-- `kadmin::<'request>PasswordEncryption<'request>::new`: `pub const fn new( reply_key: EncryptionKey, ap_req_confounder: &'request [u8], krb_priv_confounder: &'request [u8], ) -> Self`.
+- `kadmin::PasswordEncryption<'request>::new`: `pub const fn new( reply_key: EncryptionKey, ap_req_confounder: &'request [u8], krb_priv_confounder: &'request [u8], ) -> Self`.
 - `kadmin::Reply::is_krb_error`: `pub const fn is_krb_error(&self) -> bool`.
 - `kadmin::ChangePasswordResult::is_success`: `pub const fn is_success(&self) -> bool`.
 - `keytab::Name::parse`: `pub fn parse<P>(name: P) -> Result<Self, Error> where P: AsRef<str>,`.

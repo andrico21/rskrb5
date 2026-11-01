@@ -1071,7 +1071,8 @@ impl<'keytab> NegotiateLayer<'keytab> {
         self
     }
 
-    /// Apply this explicit policy to unchecked cross-realm tickets.
+    /// Apply this explicit policy to unchecked cross-realm tickets and to
+    /// unchecked same-realm tickets with a nonempty transited path.
     ///
     /// AD cross-domain tickets lack TRANSITED-POLICY-CHECKED and are rejected
     /// by default. Opt in for a trusted endpoint pair with

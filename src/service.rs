@@ -471,8 +471,10 @@ impl SharedReplayCache {
 /// Implementations must validate both endpoint realms and the complete encoded
 /// path. Empty contents mean direct cross-realm transit, not same-realm use.
 /// Unsupported encodings must be rejected unless the implementation understands
-/// their semantics. This policy is called only when the endpoint realms differ
-/// and the KDC has not set TRANSITED-POLICY-CHECKED.
+/// their semantics. This policy is called only when the KDC has not set
+/// TRANSITED-POLICY-CHECKED and either the endpoint realms differ or the
+/// transited path is nonempty: a same-realm ticket with a nonempty unchecked
+/// path needs the same explicit approval.
 pub trait TransitValidator: Debug + Send + Sync {
     /// Return whether this realm path is explicitly trusted by the application.
     fn accepts(
@@ -697,7 +699,8 @@ impl<'keytab> Validator<'keytab> {
         self
     }
 
-    /// Accept unchecked cross-realm paths only when this policy explicitly trusts them.
+    /// Accept unchecked cross-realm or nonempty same-realm paths only when this
+    /// policy explicitly trusts them.
     ///
     /// For AD cross-domain tickets, which lack TRANSITED-POLICY-CHECKED, use
     /// [`TransitPolicy::direct`] for a trusted endpoint pair or
@@ -759,8 +762,9 @@ impl<'keytab> Validator<'keytab> {
     /// [`Error::BadClientAddress`], [`Error::RequiredClientAddressMissing`],
     /// [`Error::ClientPrincipalMismatch`], [`Error::ClockSkew`] and
     /// [`Error::Replay`]. A poisoned shared replay cache returns
-    /// [`Error::ReplayCachePoisoned`]. Unchecked cross-realm transit without an
-    /// approving caller policy returns [`Error::TransitPolicyRejected`].
+    /// [`Error::ReplayCachePoisoned`]. Unchecked cross-realm transit, or an
+    /// unchecked nonempty same-realm path, without an approving caller policy
+    /// returns [`Error::TransitPolicyRejected`].
     #[inline]
     pub fn validate_ap_req(&mut self, bytes: &[u8]) -> Result<ValidatedApReq, Error> {
         self.validate_ap_req_with_check(bytes, |_, _| Ok::<(), Error>(()))
