@@ -97,9 +97,12 @@ Checked on 2026-10-27 with `git ls-remote --heads origin`,
 
 Each frozen head branch is the head of one pull request. The state was first
 recorded right after the repository left the fork network
-(2026-10-25T16:51:06Z, todo 3 of the plan) and checked again on 2026-10-27; it
-was the same both times, and on 2026-10-27 every pull request's head commit
-equalled the branch tip. These pull requests are a historical record: the
+(2026-10-25T16:51:06Z, todo 3 of the plan) and checked again on 2026-10-27.
+The state of the fourteen `clelange/rskrb5` pull requests was the same both
+times;
+`Gittingc0dez/rskrb5#1` was not recorded on 2026-10-25 and was first recorded
+on 2026-10-27. On 2026-10-27 every pull request's head commit equalled the
+branch tip. These pull requests are a historical record: the
 project doesn't maintain them, and nothing here comments on or edits them.
 
 | Head branch | Pull request | Head commit | State 2026-10-25 | State 2026-10-27 |

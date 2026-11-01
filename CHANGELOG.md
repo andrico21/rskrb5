@@ -440,7 +440,10 @@ Release workflow, CI docs and fixture scripts:
   aren't part of this CI, and `docs/gokrb5-parity.toml` records their upstream
   runs as historical evidence.
 
-## [0.2.2] - 2026-10-07
+## [0.2.2] - 2026-10-23
+
+Published to crates.io on 2026-10-23; the `v0.2.2` tag was created on
+2026-10-07.
 
 Patched fork of `rskrb5`, still based on upstream `clelange/rskrb5` `main` at
 `6f4abc9`, adding the changes below on top of the 0.2.1 set. The upstream
