@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+# How to run: python3 scripts/lint-gates/package_links.py --enforce
+"""Hold every relative Markdown link of the published package inside it.
+
+`cargo package --list --allow-dirty` names the files of the archive. Each
+packaged Markdown file is read (CRLF-safe; fenced code blocks and code spans
+are skipped) for inline and image links, reference definitions, autolinks
+and HTML `href`/`src` attributes. A relative target must name a packaged
+file (or a directory holding one) and a fragment must name a heading or an
+`id`/`name` anchor of a packaged Markdown target. Targets the archive
+excludes are linked as `https://github.com/andrico21/rskrb5-ng/blob/main/...`
+(or `tree/main/...`), which must name an existing file (directory) of the
+checkout. `http(s)`, `mailto` and anchor-only links are not resolved; any
+other scheme, a root-absolute path and a path leaving the package fail.
+"""
+
+from __future__ import annotations
+
+import argparse
+import posixpath
+import re
+import subprocess
+import sys
+from contextlib import redirect_stdout
+from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Final
+from urllib.parse import unquote
+
+ROOT: Final = Path(__file__).resolve().parents[2]
+REPO_URL: Final = re.compile(
+    r"https://github\.com/andrico21/rskrb5-ng/(blob|tree)/main/([^#?]+)"
+)
+SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
+FENCE: Final = re.compile(r" {0,3}(`{3,}|~{3,})")
+CODE_SPAN: Final = re.compile(r"(`+)(?:(?!\1).)+?\1")
+REFERENCE: Final = re.compile(r" {0,3}\[(?!\^)[^\]]+\]:\s*(<[^>]*>|\S+)")
+AUTOLINK: Final = re.compile(r"<([A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*)>")
+ATTRIBUTE: Final = re.compile(r"""\b(?:href|src)\s*=\s*["']([^"']*)["']""")
+ANCHOR: Final = re.compile(r"""<a\s[^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""")
+HEADING: Final = re.compile(r" {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
+
+
+def package_files(root: Path) -> frozenset[str]:
+    listing = subprocess.run(
+        ["cargo", "package", "--list", "--allow-dirty"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listing.returncode != 0:
+        raise SystemExit(
+            f"package_links: cargo package --list failed:\n{listing.stderr}"
+        )
+    return frozenset(
+        line.strip() for line in listing.stdout.splitlines() if line.strip()
+    )
+
+
+def prose_lines(text: str) -> list[tuple[int, str]]:
+    """Numbered lines outside fenced code blocks."""
+    lines = []
+    fence = ""
+    for number, line in enumerate(
+        text.replace("\r\n", "\n").replace("\r", "\n").split("\n"), 1
+    ):
+        opening = FENCE.match(line)
+        if fence:
+            if (
+                opening
+                and opening.group(1)[0] == fence[0]
+                and len(opening.group(1)) >= len(fence)
+            ):
+                fence = ""
+            continue
+        if opening:
+            fence = opening.group(1)
+            continue
+        lines.append((number, line))
+    return lines
+
+
+def destination(line: str, start: int) -> str:
+    if line.startswith("<", start):
+        end = line.find(">", start)
+        return line[start + 1 : end if end >= 0 else len(line)]
+    depth, index = 0, start
+    while index < len(line):
+        char = line[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        elif char.isspace():
+            break
+        index += 1
+    return line[start:index]
+
+
+def link_targets(text: str) -> list[tuple[int, str]]:
+    found = []
+    for number, raw in prose_lines(text):
+        line = CODE_SPAN.sub("", raw)
+        found.extend(
+            (number, destination(line, m.end())) for m in re.finditer(r"\]\(\s*", line)
+        )
+        reference = REFERENCE.match(line)
+        if reference:
+            found.append((number, reference.group(1).strip("<>")))
+        found.extend((number, m.group(1)) for m in AUTOLINK.finditer(line))
+        found.extend((number, m.group(1)) for m in ATTRIBUTE.finditer(line))
+    return found
+
+
+def anchors(text: str) -> frozenset[str]:
+    """GitHub heading slugs (duplicates numbered) plus explicit HTML anchors."""
+    seen: dict[str, int] = {}
+    found = set(ANCHOR.findall(text))
+    for _, line in prose_lines(text):
+        heading = HEADING.match(line.replace("`", ""))
+        if heading is None:
+            continue
+        title = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", heading.group(1))
+        slug = re.sub(r"[^\w\- ]", "", title.lower()).replace(" ", "-")
+        count = seen.get(slug, 0)
+        seen[slug] = count + 1
+        found.add(slug if count == 0 else f"{slug}-{count}")
+    return frozenset(found)
+
+
+def target_problem(
+    root: Path, files: frozenset[str], source: str, target: str
+) -> str | None:
+    if not target or target.startswith("#"):
+        return None
+    if SCHEME.match(target):
+        repo = REPO_URL.match(target)
+        if repo is None:
+            scheme = target.split(":", 1)[0].lower()
+            return (
+                None
+                if scheme in {"http", "https", "mailto"}
+                else f"unsupported scheme `{scheme}:`"
+            )
+        path = root / unquote(repo.group(2)).rstrip("/")
+        exists = path.is_file() if repo.group(1) == "blob" else path.is_dir()
+        return (
+            None
+            if exists
+            else f"no {repo.group(1)} `{repo.group(2)}` in the repository"
+        )
+    if target.startswith("/"):
+        return "root-absolute path"
+    path_part, _, fragment = target.partition("#")
+    path = posixpath.normpath(
+        posixpath.join(posixpath.dirname(source), unquote(path_part.split("?")[0]))
+    )
+    if path == ".." or path.startswith("../"):
+        return "resolves outside the package"
+    if path not in files:
+        if any(name.startswith(path.rstrip("/") + "/") for name in files):
+            return None
+        where = "excluded from the package" if (root / path).exists() else "missing"
+        kind = "tree" if (root / path).is_dir() else "blob"
+        return f"`{path}` is {where}; use https://github.com/andrico21/rskrb5-ng/{kind}/main/{path}"
+    if fragment and path.endswith(".md"):
+        text = (root / path).read_bytes().decode("utf-8")
+        if unquote(fragment) not in anchors(text):
+            return f"`{path}` has no anchor `#{fragment}`"
+    return None
+
+
+def check(root: Path, files: frozenset[str]) -> list[str]:
+    problems = []
+    for source in sorted(name for name in files if name.endswith(".md")):
+        text = (root / source).read_bytes().decode("utf-8")
+        for number, target in link_targets(text):
+            problem = target_problem(root, files, source, target)
+            if problem is not None:
+                problems.append(f"{source}:{number}: ({target}) {problem}")
+    return problems
+
+
+def self_test() -> int:
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        for name in (
+            "README.md",
+            "docs/a.md",
+            "docs/review/README.md",
+            "scripts/x.py",
+            "src/lib.rs",
+        ):
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(
+                "# Title\n\n## Two words `code`\n\n## Two words code\n"
+            )
+        files = frozenset({"README.md", "docs/a.md", "src/lib.rs"})
+
+        def problems(readme: bytes) -> list[str]:
+            (root / "README.md").write_bytes(readme)
+            return check(root, files)
+
+        clean = (
+            b"[a](docs/a.md#two-words-code-1) ![i](docs/a.md) [s](#local) [w](https://x.org/a)\n"
+            b"[m](mailto:a@b.c) <https://x.org> [ref]: <docs/a.md#title>\n"
+            b"[r](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/README.md)\n"
+            b"[t](https://github.com/andrico21/rskrb5-ng/tree/main/scripts/) [d](docs/)\n"
+            b"`[c](docs/review/README.md)` and ``[c](x)``\n```md\n[f](docs/review/README.md)\n```\n"
+        )
+        assert problems(clean) == [], problems(clean)
+        assert problems(clean.replace(b"\n", b"\r\n")) == [], "CRLF clean"
+        for bad, count in (
+            (b"see [review](docs/review/README.md)\n", 1),
+            (b"see [review](docs/review/README.md)\r\nmore\r\n", 1),
+            (b"[ref]: docs/review/README.md\n", 1),
+            (b'<a href="scripts/x.py">x</a>\n', 1),
+            (b"[m](docs/missing.md)\n", 1),
+            (b"[f](docs/a.md#absent)\n", 1),
+            (b"[o](../outside.md) [p](/README.md) <file:///etc/hosts>\n", 3),
+            (b"[u](https://github.com/andrico21/rskrb5-ng/blob/main/docs/nope.md)\n", 1),
+            (b"[d](scripts/) ~~~\n", 1),
+        ):
+            assert len(problems(bad)) == count, (bad, problems(bad))
+        headings = (root / "docs/a.md").read_text()
+        (root / "docs/a.md").write_text(headings + "[r](review/README.md) [s](../scripts/x.py)\n")
+        assert len(problems(clean)) == 2, problems(clean)
+        (root / "Cargo.toml").write_text(
+            '[package]\nname = "t"\nversion = "0.0.0"\nedition = "2021"\n'
+            'license = "MIT"\ndescription = "t"\nexclude = ["docs/review/", "scripts/"]\n'
+        )
+        (root / "docs/a.md").write_text(headings)
+        (root / "README.md").write_text("[r](docs/review/README.md)\n")
+        report = StringIO()
+        with redirect_stdout(report):
+            failed = main(["--enforce", "--root", str(root)])
+            (root / "README.md").write_text(clean.decode())
+            passed = main(["--enforce", "--root", str(root)])
+        assert (failed, passed) == (1, 0), report.getvalue()
+        assert "README.md:1: (docs/review/README.md)" in report.getvalue(), report.getvalue()
+    print(
+        "package_links self-test: ok (inline, reference, autolink, HTML, CRLF, fragments, cargo list)"
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--enforce", action="store_true")
+    parser.add_argument("--root", type=Path, default=ROOT)
+    args = parser.parse_args(argv)
+    if args.self_test:
+        return self_test()
+    files = package_files(args.root)
+    problems = check(args.root, files)
+    markdown = sum(name.endswith(".md") for name in files)
+    print(
+        "\n".join(
+            problems
+            + [
+                f"package_links: {len(problems)} problem(s) in {markdown} packaged Markdown file(s)"
+            ]
+        )
+    )
+    return int(args.enforce and bool(problems))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
