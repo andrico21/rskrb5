@@ -1,12 +1,39 @@
+# gokrb5 parity manifest. One [[feature]] per GO-* row of the parity inventory,
+# one [[insecure_behaviour]] per Table 2 behaviour a secure superset does not copy.
+# docs/gokrb5-parity.md is generated from this file by tests/gokrb5_parity_manifest.rs.
+
 [target]
 module = "github.com/jcmturner/gokrb5/v8"
 version = "v8.4.4"
 release_date = "2023-02-25"
 release_url = "https://github.com/jcmturner/gokrb5/releases/tag/v8.4.4"
-docs_url = "https://pkg.go.dev/github.com/jcmturner/gokrb5/v8"
-usage_url = "https://github.com/jcmturner/gokrb5/blob/master/v8/USAGE.md"
+commit = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+docs_url = "https://pkg.go.dev/github.com/jcmturner/gokrb5/v8@v8.4.4"
+usage_url = "https://github.com/jcmturner/gokrb5/blob/47cd2e7744531465a983bf457bac38e6ad8f4684/v8/USAGE.md"
+observed_master = "855dbc707a37a21467aef6c0245fcf3328dc39ed"
 license = "Apache-2.0"
-last_reviewed = "2026-10-27"
+inventory_date = "2026-10-29"
+last_reviewed = "2026-11-01"
+manifest_commit_base = "a6a1851"
+
+[summary]
+implemented = 18
+partial = 17
+absent = 0
+rejected = 0
+omitted = 0
+out_of_scope = 0
+total = 35
+
+[insecure_summary]
+implemented = 0
+partial = 1
+absent = 0
+rejected = 13
+omitted = 0
+out_of_scope = 0
+total = 14
 
 [[area]]
 id = "config"
@@ -15,9 +42,9 @@ upstream_packages = ["config"]
 upstream_tests = ["config/*_test.go"]
 rskrb5_modules = ["src/config.rs"]
 rskrb5_tests = ["tests/config.rs"]
-status = "covered"
-evidence = ["unit tests cover parsing, defaults, realm lookup, enctype mapping, path-list loading, and gokrb5-shaped JSON", "unit tests cover the MIT [domain_realm] semantics that diverge from gokrb5: DNS case folding and bare tags applied to subdomains"]
-next = []
+status = "partial"
+evidence = ["unit tests cover parsing, defaults, realm lookup, enctype mapping, path-list loading, reader adapters and gokrb5-shaped JSON", "every [libdefaults], [realms] and section relation has a typed value and a consumer, a diagnostic or an error (docs/config-relations.md); unknown relations are diagnostics and Strict mode rejects them", "unit tests cover the MIT [domain_realm] semantics that diverge from gokrb5: DNS case folding and bare tags applied to subdomains"]
+next = ["GO-config-2: relation consumers close across plan-2 todos 4, 15, 18 and 25; P2-28 closes the row", "GO-config-3: primary-KDC retry and DNS realm discovery close in P2-15"]
 
 [[area]]
 id = "keytab"
@@ -49,7 +76,7 @@ upstream_tests = ["crypto/**/*_test.go"]
 rskrb5_modules = ["src/crypto.rs"]
 rskrb5_tests = ["tests/crypto_aes.rs", "tests/crypto_des3.rs", "tests/crypto_rc4.rs"]
 status = "covered"
-evidence = ["unit vectors cover AES-SHA1, AES-SHA2, DES3-CBC-SHA1-KD, RC4-HMAC, nfold, string-to-key, checksums, message encryption, and tamper rejection"]
+evidence = ["unit vectors cover AES-SHA1, AES-SHA2, DES3-CBC-SHA1-KD, RC4-HMAC, nfold, string-to-key, checksums, message encryption, and tamper rejection", "one CryptoPolicy governs every enctype use; DES3 and RC4-HMAC need allow_des3/allow_rc4, and RC4-EXP and single DES are typed rejections"]
 next = []
 
 [[area]]
@@ -59,9 +86,9 @@ upstream_packages = ["messages", "types", "asn1tools", "krberror"]
 upstream_tests = ["messages/*_test.go", "types/*_test.go", "krberror/*_test.go"]
 rskrb5_modules = ["src/messages.rs", "src/ap_req.rs", "src/ap_rep.rs", "src/kdc_req.rs", "src/kdc_rep.rs", "src/krb_error.rs", "src/krb_priv.rs", "src/krb_safe.rs", "src/krb_cred.rs", "src/ticket.rs"]
 rskrb5_tests = ["tests/asn1_fixture_matrix.rs", "tests/messages.rs", "tests/ap_req.rs", "tests/ap_rep.rs", "tests/kdc_req.rs", "tests/kdc_rep.rs", "tests/krb_error.rs", "tests/krb_priv.rs", "tests/krb_safe.rs", "tests/krb_cred.rs", "tests/ticket.rs"]
-status = "covered"
-evidence = ["translated gokrb5 DER fixtures decode and round-trip through rasn-backed wrappers"]
-next = []
+status = "partial"
+evidence = ["translated gokrb5 DER fixtures decode and round-trip through rasn-backed wrappers", "typed domain errors keep their causes"]
+next = ["GO-messages-1: a dedicated U2U request constructor closes in P2-17", "GO-iana-1, GO-types-1 and GO-asn1tools-1: public assigned-number tables, authorization-data handling and checked DER utilities close in P2-27"]
 
 [[area]]
 id = "kadmin-kpasswd"
@@ -81,9 +108,9 @@ upstream_packages = ["client"]
 upstream_tests = ["client/*_test.go", "client/*_integration_test.go"]
 rskrb5_modules = ["src/client.rs", "src/client/options.rs", "src/client/principal.rs", "src/client/transport.rs", "src/client/kpasswd.rs"]
 rskrb5_tests = ["tests/client.rs", "tests/client_principal.rs", "tests/client_transport.rs", "tests/client_integration.rs"]
-status = "covered-with-gated-evidence"
+status = "partial"
 evidence = ["unit tests cover password/keytab/ccache login, AS/TGS exchange, referrals, renewal, S4U2Self, S4U2Proxy, diagnostics, write-back, and cache behavior", "unit tests cover the renewal series: the refresh band from the current ticket life, auto-renewal pacing, and the AS fallback for an expired or refused renewal", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed 40 Docker MIT client_integration tests on ubuntu-latest, including DNS-SRV, referrals, renewal, cached tickets, ccache, HTTP, and kpasswd"]
-next = ["keep full Docker MIT integration green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
+next = ["GO-client-1: logger and key-access contract close in P2-6", "GO-client-2: authenticated changed-client referrals and the logger; P2-28 closes the row", "GO-client-3: U2U request constructor closes in P2-17", "keep full Docker MIT integration green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "service"
@@ -92,9 +119,9 @@ upstream_packages = ["service"]
 upstream_tests = ["service/*_test.go", "messages/Ticket_test.go"]
 rskrb5_modules = ["src/service.rs", "src/http.rs"]
 rskrb5_tests = ["tests/service.rs", "tests/http.rs", "tests/client_integration.rs"]
-status = "covered-with-gated-evidence"
+status = "partial"
 evidence = ["unit tests cover AP-REQ validation, replay cache, clock skew, client address checks, AP-REP mutual auth, mutual-required completion enforcement (classifier and send wrappers fail closed), [libdefaults] clockskew on the Config-driven acceptors, keytab adapters, and PAC checksum validation", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
-next = ["keep Linux Docker HTTP/SPNEGO coverage green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
+next = ["GO-service-1: logger contract and settings equivalence close in P2-6", "keep Linux Docker HTTP/SPNEGO coverage green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "gssapi-spnego"
@@ -103,9 +130,9 @@ upstream_packages = ["gssapi", "spnego"]
 upstream_tests = ["gssapi/*_test.go", "spnego/*_test.go", "spnego/http_test.go"]
 rskrb5_modules = ["src/spnego.rs", "src/spnego/oid.rs", "src/http.rs", "src/client/negotiate.rs"]
 rskrb5_tests = ["tests/gssapi.rs", "tests/spnego.rs", "tests/http.rs", "tests/client.rs", "tests/client_integration.rs"]
-status = "covered-with-gated-evidence"
+status = "partial"
 evidence = ["MIC, Wrap, SPNEGO token, raw KRB5 Negotiate, AP-REP verification, HTTP helpers, Tower middleware, and high-level header generation are covered", "transport-agnostic async and blocking HTTP client wrappers retry 401 Negotiate responses through replayable request factories"]
-next = ["keep HTTP wrapper tests green in CI and Docker SPNEGO integration green locally before release"]
+next = ["GO-spnego-2 and GO-gssapi-1: credential delegation and a general mechanism/context interface close in P2-18", "GO-client-6 and GO-service-3: HTTP client conveniences, cookies, redirects and the session manager close in P2-26", "keep HTTP wrapper tests green in CI and Docker SPNEGO integration green locally before release"]
 
 [[area]]
 id = "pac"
@@ -114,9 +141,9 @@ upstream_packages = ["pac"]
 upstream_tests = ["pac/*_test.go", "messages/Ticket_test.go", "client/client_ad_integration_test.go"]
 rskrb5_modules = ["src/pac.rs", "src/pac/reader.rs", "src/service.rs"]
 rskrb5_tests = ["tests/pac.rs", "tests/service.rs", "tests/client_ad_integration.rs"]
-status = "covered-needs-ad-evidence"
-evidence = ["unit tests cover PAC container data, validation info, credentials, UPN/DNS, S4U delegation, device info, claims, compression, signatures, and AD credential summaries"]
-next = ["run TESTAD=1 against a maintained AD lab and keep it green before claiming full AD parity"]
+status = "partial"
+evidence = ["unit tests cover PAC container data, validation info, credentials, UPN/DNS, S4U delegation, device info, claims, compression, server signatures, and AD credential summaries"]
+next = ["GO-pac-1 and GO-credentials-3: KDC-checksum verification and a credential-attribute model close in P2-22", "run TESTAD=1 against a maintained AD lab and keep it green before claiming full AD parity"]
 
 [[area]]
 id = "docker-mit"
@@ -138,18 +165,18 @@ rskrb5_modules = ["tests/client_ad_integration.rs", "src/pac.rs", "src/client.rs
 rskrb5_tests = ["tests/client_ad_integration.rs"]
 status = "blocked-on-lab"
 evidence = ["AD integration tests exist, the lab contract is documented in docs/ad-integration.md, TESTAD_REQUIRED=1 fails when the strict gate would otherwise soft-skip, lab-specific keytab path/hex/base64 overrides are supported, scripts/check-ad-integration-env.py preflights strict AD runs, scripts/check-github-ad-gate.py checks GitHub secret readiness and refuses to dispatch while ci.yml has no AD job, docs/ad-lab-provisioning.md documents the live AD lab contract, and docs/github-ad-gate-setup.md documents the secret setup a restored AD job needs", "tests/client_ad_integration.rs statically verifies the embedded AD keytab fixtures contain testuser1, testuser2, testuser3, and sysHTTP principals with AES128, AES256, and RC4 key material", "historical upstream clelange/rskrb5: GitHub Actions run 28119806826 passed the hosted keytab secret-shape dry-run job (upstream dispatch input test_ad_dry_run=true)", "historical upstream clelange/rskrb5: GitHub Actions run 28117082548 reached hosted ubuntu-latest and decoded the four keytab secrets before failing because the four endpoint secrets were absent"]
-next = ["strict AD parity stays deferred: TEST_AD_USER_KDC_ADDR, TEST_AD_RESOURCE_KDC_ADDR, TEST_AD_USER_ADMIN_ADDR, and TEST_AD_RESOURCE_ADMIN_ADDR are unavailable and the fork's ci.yml has no AD job", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services", "use docs/samba-ad-feasibility.md only as a backup spike, not as Windows AD parity evidence", "to restore a hosted AD gate, add an AD job and its workflow_dispatch inputs to ci.yml, then run scripts/check-github-ad-gate.py before dispatching it", "after strict AD is available, run scripts/check-ad-integration-env.py before TESTAD=1 TESTAD_REQUIRED=1 with lab-specific keytabs as needed and record keytab login, no-preauth login, user-domain PAC, and resource-trust PAC evidence"]
+next = ["GO-doc-1: maintained live MIT, Samba and Windows AD evidence for this commit closes in P2-28", "strict AD parity stays deferred: TEST_AD_USER_KDC_ADDR, TEST_AD_RESOURCE_KDC_ADDR, TEST_AD_USER_ADMIN_ADDR, and TEST_AD_RESOURCE_ADMIN_ADDR are unavailable and the fork's ci.yml has no AD job", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services", "use docs/samba-ad-feasibility.md only as a backup spike, not as Windows AD parity evidence", "to restore a hosted AD gate, add an AD job and its workflow_dispatch inputs to ci.yml, then run scripts/check-github-ad-gate.py before dispatching it", "after strict AD is available, run scripts/check-ad-integration-env.py before TESTAD=1 TESTAD_REQUIRED=1 with lab-specific keytabs as needed and record keytab login, no-preauth login, user-domain PAC, and resource-trust PAC evidence"]
 
 [[area]]
 id = "non-goals"
-name = "Out-of-scope non-gokrb5 platform features"
+name = "Not required by gokrb5 alone (target-relative scope)"
 upstream_packages = []
 upstream_tests = []
 rskrb5_modules = ["src/ccache.rs", "src/keytab.rs"]
 rskrb5_tests = ["tests/ccache.rs", "tests/keytab.rs", "tests/client.rs"]
 status = "intentionally-out-of-scope"
-evidence = ["API, KCM, KEYRING, MSLSA, MEMORY, FAST armor, PKINIT, and system GSSAPI/SSPI facades are not required for gokrb5/v8 parity and are rejected or documented as unsupported"]
-next = ["keep unsupported-store errors typed and documented; do not block gokrb5 parity on these features"]
+evidence = ["gokrb5 v8.4.4 has no API, KCM, KEYRING, MSLSA or MEMORY credential stores, FAST armor, PKINIT or system GSSAPI/SSPI facade, so they are not gokrb5 parity rows; the combined MIT and gokrb5 superset still requires the in-scope ones, tracked in docs/mit-krb5-parity.toml", "only C-ABI or system-library wrappers and D1 server machinery are excluded globally"]
+next = ["keep unsupported-store errors typed until the MIT manifest rows close (plan-2 todos 7-8 and 11-14)"]
 
 [[gate]]
 id = "linux-docker-mit-full"
@@ -234,3 +261,871 @@ required_for_release = true
 required_for_parity = true
 evidence = ["async send_with_negotiate and blocking send_with_blocking_negotiate wrappers retry 401 Negotiate responses using caller-provided replayable request factories", "tests cover retry header insertion, final Negotiate classification, no-challenge pass-through, and body replay constraints"]
 next = ["keep HTTP wrapper tests green before release"]
+
+[[feature]]
+id = "GO-config-1"
+area = "config"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "`Load`, `NewFromString`, `NewFromReader`, `NewFromScanner`, `New`, `JSON`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::Config::from_reader", "config::Config::parse", "config::Config::load_paths", "config::Config::json"]
+test_names = ["tests/config/readers.rs::reader_accepts_exact_limit", "tests/config/readers.rs::reader_composes_absolute_includes", "tests/config.rs::loads_config_file", "tests/config.rs::loads_config_path_list_in_order", "tests/config.rs::config_json_matches_gokrb5_shape"]
+feature_flags = ["serde"]
+security_divergence = "Config::from_reader stands in for NewFromReader and NewFromScanner; a reader shares the include byte budget, relative includes are rejected and a missing KRB5_CONFIG entry fails closed (MIT semantics from plan-1 todo 15)."
+disposition = "WP-01"
+closing_plan = 1
+closing_todo = 15
+contributors = []
+parity_area = "config"
+
+[[feature]]
+id = "GO-config-2"
+area = "config"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "`[libdefaults]` values"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Every [libdefaults] relation is parsed with a typed value and a consumer, a diagnostic or an error (P1-15, docs/config-relations.md); the consumers still missing close across P2-4, P2-15, P2-18 and P2-25, and P2-28 closes the row."
+rust_symbols = ["config::LibDefaults", "config::Config::diagnostics"]
+test_names = ["tests/config/relations_c1.rs::canonicalize", "tests/config/diagnostics_e.rs::unknown_paths_preserve_scope_and_finality", "src/config/diagnostic_tests.rs::every_diagnostic_promotes_to_error"]
+feature_flags = []
+security_divergence = "gokrb5 silently ignores unknown keys; here they are diagnostics and ParseMode::Strict turns every diagnostic into an error. A value asking for behaviour stricter than the library provides is an error in both modes."
+disposition = "WP-01"
+closing_plan = 2
+closing_todo = 28
+contributors = ["P1-15", "P2-4", "P2-15", "P2-18", "P2-25"]
+parity_area = "config"
+
+[[feature]]
+id = "GO-config-3"
+area = "config"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "`[realms]`, endpoint precedence, KDC and kpasswd lookup"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Primary-KDC retry after a bad password and DNS realm discovery (P2-15); configured kdc and kpasswd_server endpoints, the terminal `*`, the admin_server port-464 kpasswd fallback, IPv6 endpoints and KDC/kpasswd SRV lookup exist."
+rust_symbols = ["config::Realm"]
+test_names = ["tests/config/realm_relations_d.rs::kdc", "tests/config/realm_relations_d.rs::kpasswd_server", "tests/config/realm_relations_d.rs::admin_server", "tests/config/section_composition_d.rs::primary_kdc_precedence", "tests/client_transport/cases.rs::kpasswd_admin_fallback_preserves_ipv6"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = ["P1-15"]
+parity_area = "config"
+
+[[feature]]
+id = "GO-config-4"
+area = "config"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "`[domain_realm]` and realm resolution"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::Config::resolve_realm"]
+test_names = ["tests/config/section_composition_d.rs::domain_realm"]
+feature_flags = []
+security_divergence = "MIT krb5.conf(5) semantics: the host is folded to ASCII lower case after a trailing dot is dropped, and at each suffix level the leading-dot tag is tried before the bare tag, so a bare tag covers its subdomains. gokrb5 v8.4.4 compares the query as given and walks leading-dot tags only."
+disposition = "ALREADY"
+contributors = []
+parity_area = "config"
+
+[[feature]]
+id = "GO-keytab-1"
+area = "keytab"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "`Unmarshal`, `Load`, `Marshal`, `Write`"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["keytab::Keytab", "keytab::Keytab::parse"]
+test_names = ["tests/keytab.rs::parses_gokrb5_keytab_fixture", "tests/keytab.rs::roundtrips_gokrb5_keytab_fixture", "tests/keytab.rs::saves_and_loads_keytab_file", "tests/keytab.rs::serializer_checks_version_one_realm_count", "tests/keytab.rs::rejects_partial_next_entry_sizes"]
+feature_flags = []
+security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected."
+disposition = "ALREADY"
+contributors = []
+parity_area = "keytab"
+
+[[feature]]
+id = "GO-keytab-2"
+area = "keytab"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "`New`, `AddEntry`, `GetEncryptionKey`, `String`, `JSON`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["keytab::Keytab::add_entry_from_password", "keytab::Keytab::find_key", "keytab::EntryMetadata"]
+test_names = ["tests/keytab.rs::generates_gokrb5_user_keytab_entries_from_password", "tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype", "tests/keytab.rs::kvno_zero_selects_newest_matching_key", "tests/keytab.rs::keytab_metadata_json_redacts_key_values"]
+feature_flags = ["serde"]
+security_divergence = "Metadata JSON redacts key values."
+disposition = "ALREADY"
+contributors = []
+parity_area = "keytab"
+
+[[feature]]
+id = "GO-credentials-1"
+area = "credentials"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "CCache v1–v4 read, v4 header, `LoadCCache`, `Unmarshal`"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["ccache::CCache", "ccache::CCache::parse"]
+test_names = ["tests/ccache.rs::parses_gokrb5_ccache_fixture", "tests/ccache.rs::roundtrips_gokrb5_ccache_fixture", "tests/ccache.rs::serde_supported_ccache_versions_roundtrip", "tests/ccache.rs::legacy_ccaches_reject_unrepresentable_fields"]
+feature_flags = []
+security_divergence = "gokrb5 has a ccache reader only; writing and DIR collections are a deliberate superset. Every record count is checked against the remaining input before memory is reserved (see GO-T2-8)."
+disposition = "ALREADY"
+contributors = []
+parity_area = "ccache"
+
+[[feature]]
+id = "GO-credentials-2"
+area = "credentials"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "CCache accessors / entry filtering"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["ccache::CCache::entries", "ccache::CCache::config_entries"]
+test_names = ["tests/ccache.rs::gets_client_and_server_entries", "tests/ccache.rs::entries_filter_out_x_cacheconf_credentials"]
+feature_flags = []
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+parity_area = "ccache"
+
+[[feature]]
+id = "GO-credentials-3"
+area = "credentials"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Credentials and AD identity attributes"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "PAC AdCredentials and the validated service identity exist; there is no generic mutable credential-attribute model or serialization contract (P2-22)."
+rust_symbols = ["pac::AdCredentials"]
+test_names = ["tests/pac.rs::derives_ad_credentials_from_kerb_validation_info"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+parity_area = "pac"
+
+[[feature]]
+id = "GO-client-1"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Client constructors, login and lifecycle"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Password, keytab and ccache constructors, login, destroy, diagnostics and cache APIs exist; the logger contract (P2-6) and key-access and lifecycle compatibility (P2-4) are missing."
+rust_symbols = ["client::Tokio"]
+test_names = ["tests/client/session_cache.rs::tokio_client_affirm_login_returns_current_cache_only_tgt"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "WP-18"
+closing_plan = 2
+closing_todo = 6
+contributors = ["P2-4"]
+parity_area = "client"
+
+[[feature]]
+id = "GO-client-2"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "AS exchange, pre-authentication, referrals, FAST indicators"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Encrypted timestamp, ETYPE-INFO2/INFO/PW-SALT selection, cookies and PA-REQ-ENC-PA-REP exist; authenticated changed-client referrals (P2-7) and the logger (P2-6) are missing, and P2-28 closes the row."
+rust_symbols = []
+test_names = ["tests/client/login_preauth.rs::parses_kdc_preauth_required_error_and_selects_etype_info2", "tests/client/as_exchange.rs::process_as_rep_rejects_invalid_pa_req_enc_pa_rep_checksum"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 28
+contributors = ["P2-4", "P2-6", "P2-7"]
+parity_area = "client"
+
+[[feature]]
+id = "GO-client-3"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "TGS, referrals, U2U, S4U, service ticket cache"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "TGS, referrals, S4U and the service-ticket cache with JSON and removal exist; there is no dedicated U2U request constructor or flow (P2-17)."
+rust_symbols = []
+test_names = ["tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt", "tests/client/tgs_exchange.rs::builds_s4u2proxy_tgs_req_with_evidence_ticket"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = []
+parity_area = "client"
+
+[[feature]]
+id = "GO-client-4"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "UDP/TCP KDC transport and endpoint iteration"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::transport::Tokio", "client::transport::kdc_tcp_record_length"]
+test_names = ["tests/client_transport/tests/affinity.rs::tokio_transport_auto_honors_tcp_first_udp_preference_limit", "tests/client_transport/cases.rs::tokio_transport_auto_retries_tcp_after_udp_response_too_big", "tests/client_transport/cases.rs::udp_transport_rejects_truncated_datagram", "tests/client_transport/cases.rs::configured_endpoint_preserves_bare_ipv6"]
+feature_flags = ["tokio"]
+security_divergence = "KDC TCP framing uses 31-bit lengths and rejects the reserved bit before reading the body; an oversized UDP datagram is an error, never a truncated prefix (see GO-T2-9)."
+disposition = "ALREADY"
+contributors = []
+parity_area = "client"
+
+[[feature]]
+id = "GO-client-5"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "TGT sessions, renewal and renewal fallback"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::Tokio::spawn_auto_renewal_with_retry"]
+test_names = ["tests/client/session_cache.rs::tokio_client_tracks_multiple_tgt_sessions", "tests/client/session_cache.rs::tokio_client_auto_renewal_uses_as_when_renewal_refused", "tests/client/session_cache.rs::tokio_client_auto_renewal_paces_after_renewal", "tests/client/review_cancellation.rs::tokio_client_auto_renewal_handle_aborts"]
+feature_flags = ["tokio"]
+security_divergence = "A TGT is due in the last sixth of end_time - start_time (gokrb5 measures from auth_time); a failed or no-progress refresh sleeps the retry delay; with a password or keytab a refused or expired renewal falls back to the AS exchange, which gokrb5 v8.4.4 does not do while renew_till is in the future."
+disposition = "ALREADY"
+contributors = []
+parity_area = "client"
+
+[[feature]]
+id = "GO-client-6"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "HTTP SPNEGO client"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Transport-agnostic 401 retry helpers over replayable request factories exist; there is no ready HTTP client with a cookie jar, redirect policy and Get/Post conveniences (P2-26)."
+rust_symbols = ["http::send_with_negotiate"]
+test_names = ["tests/http.rs::negotiate_http_client_retries_challenge_with_replayable_request"]
+feature_flags = ["http"]
+security_divergence = "Mutual authentication requested by the caller fails closed unless the final response carries an AP-REP that verifies (see GO-T2-5)."
+disposition = "WP-19"
+closing_plan = 2
+closing_todo = 26
+contributors = []
+parity_area = "gssapi-spnego"
+
+[[feature]]
+id = "GO-client-7"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "RFC 3244 password change"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::Tokio::change_password", "client::Tokio::change_password_for"]
+test_names = ["tests/client/password_change.rs::tokio_client_changes_explicit_target_password", "tests/client/password_change.rs::tokio_client_rejects_unsigned_kpasswd_success", "tests/client_transport/cases.rs::kpasswd_lost_reply_does_not_retry_endpoint"]
+feature_flags = ["tokio"]
+security_divergence = "Success is reported only through a verified AP-REP and KRB-PRIV; a bare KRB-ERROR with result 0 is Kadmin::UnauthenticatedSuccess and the stored password is kept. A possibly delivered request is never retried (see GO-T2-10)."
+disposition = "ALREADY"
+contributors = []
+doc_anchor = "docs/security-policy.md#unprotected-password-change"
+parity_area = "kadmin-kpasswd"
+
+[[feature]]
+id = "GO-service-1"
+area = "service"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "AP-REQ verification / credentials"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "A strict AP-REQ validator with address, PAC, keytab-override and clockskew settings exists; the logger contract and settings equivalence are missing (P2-6)."
+rust_symbols = ["service::Validator", "service::ValidatedApReq"]
+test_names = ["tests/service.rs::rejects_authenticator_client_realm_mismatch", "tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator"]
+feature_flags = ["messages"]
+security_divergence = "The authenticator realm is compared with the ticket realm (see GO-T2-4); Config-driven acceptors apply [libdefaults] clockskew, which gokrb5 reads on the client side only."
+disposition = "WP-18"
+closing_plan = 2
+closing_todo = 6
+contributors = []
+parity_area = "service"
+
+[[feature]]
+id = "GO-service-2"
+area = "service"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Global replay cache"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["service::ReplayCache", "service::SharedReplayCache"]
+test_names = ["tests/service.rs::replay_lifecycle_capacity_preserves_live_records", "tests/service.rs::replay_lifecycle_accepts_concurrent_shared_validations", "src/service/replay/policy_tests.rs::capacity_default_and_custom_limit_are_enforced"]
+feature_flags = ["messages"]
+security_divergence = "Per-instance or shared caches with a capacity (65,536 records by default) that fail closed when full replace gokrb5's unbounded process-wide singleton (see GO-T2-7)."
+disposition = "ALREADY"
+contributors = []
+parity_area = "service"
+
+[[feature]]
+id = "GO-service-3"
+area = "service"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "HTTP server authentication wrapper"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Tower NegotiateLayer and NegotiateService with request identity exist; session-manager continuation and the logger contract are missing (P2-26)."
+rust_symbols = ["http::NegotiateLayer", "http::NegotiateService"]
+test_names = ["tests/http.rs::negotiate_layer_integrates_with_axum_router"]
+feature_flags = ["tower"]
+security_divergence = ""
+disposition = "WP-19"
+closing_plan = 2
+closing_todo = 26
+contributors = []
+parity_area = "gssapi-spnego"
+
+[[feature]]
+id = "GO-spnego-1"
+area = "spnego"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "SPNEGO tokens and mech negotiation"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["spnego::NegTokenInit", "spnego::NegTokenResp", "spnego::NegState"]
+test_names = ["tests/spnego.rs::decodes_and_roundtrips_gokrb5_neg_token_init", "tests/spnego.rs::decodes_and_roundtrips_gokrb5_neg_token_resp", "tests/spnego.rs::acceptor_rejects_stateless_continuation", "tests/spnego.rs::acceptor_rejects_unverified_mech_list_mic"]
+feature_flags = ["spnego"]
+security_divergence = "Stateless continuations fail closed and supplied mechListMICs are verified (see GO-T2-6)."
+disposition = "ALREADY"
+contributors = []
+parity_area = "gssapi-spnego"
+
+[[feature]]
+id = "GO-spnego-2"
+area = "spnego"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Kerberos GSS mechanism tokens, AP-REQ and AP-REP"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "AP-REQ checksum and flags, AP-REP verification and MIC checks exist; an advertised delegation flag cannot carry or import credentials (DelegationRequiresCredential) until P2-18."
+rust_symbols = ["spnego::InitiatorContext"]
+test_names = ["tests/http.rs::completion_verifies_acceptor_mic", "tests/http.rs::blocking_mutual_wrapper_rejects_a_missing_ap_rep"]
+feature_flags = ["spnego"]
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+parity_area = "gssapi-spnego"
+
+[[feature]]
+id = "GO-credentials-4"
+area = "credentials"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Ccache integration and environment/default selection"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::Tokio::from_ccache", "client::Tokio::from_ccache_name"]
+test_names = ["tests/client/session_cache.rs::tokio_client_from_ccache_ignores_other_client_credentials", "tests/client/session_cache.rs::tokio_client_exports_and_saves_ccache", "tests/ccache.rs::saves_and_loads_ccache_from_env"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+parity_area = "ccache"
+
+[[feature]]
+id = "GO-crypto-1"
+area = "crypto"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Supported enctypes and checksums"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::KerberosEtype", "crypto::CryptoPolicy::check_use"]
+test_names = ["tests/crypto_aes.rs::reports_aes_sha1_metadata", "tests/crypto_aes.rs::reports_aes_sha2_metadata_and_dispatch", "tests/crypto_des3.rs::reports_des3_metadata_and_dispatch", "tests/crypto_rc4.rs::reports_rc4_hmac_metadata_and_dispatch", "tests/policy/profile.rs::policy_checks_every_use", "tests/policy/selection.rs::numeric_selection_is_typed"]
+feature_flags = []
+security_divergence = "One CryptoPolicy governs every enctype use. Default lists are AES only; DES3 and RC4-HMAC need allow_des3/allow_rc4; RC4-EXP and single DES are typed rejections; MIT list syntax applies and forbidden positive terms are errors. des3-cbc-sha1 and des3-hmac-sha1 mean etype 16 as in MIT, where gokrb5 maps them to unimplemented 7 and 8."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+parity_area = "crypto"
+
+[[feature]]
+id = "GO-crypto-2"
+area = "crypto"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "String-to-key, key derivation, encryption/integrity"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::AesSha1Etype", "crypto::AesSha2Etype", "crypto::Des3CbcSha1KdEtype", "crypto::Rc4HmacEtype"]
+test_names = ["tests/crypto_aes.rs::nfold_matches_gokrb5_vectors", "tests/crypto_aes.rs::aes128_string_to_key_matches_gokrb5_vectors", "tests/crypto_aes.rs::aes_sha2_string_to_key_matches_gokrb5_vectors", "tests/crypto_des3.rs::des3_string_to_key_matches_gokrb5_vectors", "tests/crypto_rc4.rs::rc4_hmac_string_to_key_matches_gokrb5_vector", "src/crypto.rs::sha2_rejects_bad_tag_before_any_decryption"]
+feature_flags = []
+security_divergence = "AES-SHA2 verifies the HMAC before decrypting (see GO-T2-1)."
+disposition = "ALREADY"
+contributors = []
+parity_area = "crypto"
+
+[[feature]]
+id = "GO-messages-1"
+area = "messages"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Kerberos wire message marshal/unmarshal"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "AS/TGS/AP/KRB-SAFE/KRB-PRIV/KRB-CRED/KRB-ERROR codecs and builders exist; there is no dedicated U2U request constructor, only raw additional-ticket and option bits (P2-17)."
+rust_symbols = []
+test_names = ["tests/kdc_req.rs::decodes_gokrb5_as_req_fixtures", "tests/asn1_fixture_matrix.rs::rasn_kerberos_roundtrips_expected_gokrb5_asn1_fixtures"]
+feature_flags = ["messages"]
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = []
+parity_area = "messages"
+
+[[feature]]
+id = "GO-kadmin-1"
+area = "kadmin"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "RFC 3244 ChangePasswdData, Request/Reply, ChangePasswdMsg"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["kadmin::ChangePasswdData", "kadmin::Request", "kadmin::Reply"]
+test_names = ["tests/kadmin.rs::change_passwd_data_matches_gokrb5_fixture", "tests/kadmin.rs::kpasswd_request_builder_encrypts_payload_and_frames_request", "tests/kadmin.rs::kpasswd_reply_decrypt_result_returns_parsed_error_result", "tests/kadmin.rs::kpasswd_bare_error_cannot_assert_success"]
+feature_flags = ["messages"]
+security_divergence = "A bare KRB-ERROR reply can never assert success."
+disposition = "ALREADY"
+contributors = []
+parity_area = "kadmin-kpasswd"
+
+[[feature]]
+id = "GO-pac-1"
+area = "pac"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "PAC container and signatures"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Container parsing and server-checksum verification exist; the KDC checksum is parsed and required but not verified cryptographically (P2-22)."
+rust_symbols = ["pac::Pac::verify_server_checksum"]
+test_names = ["tests/pac.rs::parses_signature_data_and_zeroes_checksum_bytes"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+parity_area = "pac"
+
+[[feature]]
+id = "GO-pac-2"
+area = "pac"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "PAC buffer payload decoders"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["pac::KerbValidationInfo", "pac::UpnDnsInfo", "pac::CredentialData", "pac::NtlmSupplementalCredential", "pac::S4UDelegationInfo", "pac::DeviceInfo", "pac::ClaimsSet"]
+test_names = ["tests/pac.rs::parses_gokrb5_pac_container_and_buffers", "tests/pac.rs::derives_ad_credentials_from_kerb_validation_info", "tests/pac.rs::decrypts_credentials_info_and_parses_ntlm_supplemental_credential", "tests/pac.rs::parses_s4u_delegation_info", "tests/pac.rs::parses_gokrb5_client_claims_info_multi_str", "tests/pac.rs::parses_generated_compressed_claims_formats"]
+feature_flags = []
+security_divergence = "Claims decompression is bounded; decoded PAC data is not authorization until the required signatures are checked."
+disposition = "ALREADY"
+contributors = []
+parity_area = "pac"
+
+[[feature]]
+id = "GO-gssapi-1"
+area = "gssapi"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "GSS mechanism, OIDs, status and context flags"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Fixed Kerberos tokens, OIDs and context flags exist; there is no general mechanism or context interface and no complete GSS status mapping (P2-18)."
+rust_symbols = ["spnego::Krb5TokenId"]
+test_names = []
+feature_flags = ["spnego"]
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+parity_area = "gssapi-spnego"
+
+[[feature]]
+id = "GO-gssapi-2"
+area = "gssapi"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "MIC and Wrap tokens"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["spnego::MicToken", "spnego::WrapToken"]
+test_names = ["tests/gssapi.rs::mic_token_decodes_and_roundtrips_gokrb5_vectors", "tests/gssapi.rs::mic_token_rejects_wrong_sender_and_missing_checksum", "tests/gssapi.rs::sealed_wrap_token_encrypts_decrypts_and_roundtrips", "tests/gssapi.rs::sealed_wrap_token_rejects_tampering_and_wrong_usage"]
+feature_flags = ["spnego"]
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+parity_area = "gssapi-spnego"
+
+[[feature]]
+id = "GO-iana-1"
+area = "iana"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Kerberos assigned numbers and lookup tables"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Identifiers and selected mappings are spread across modules; there are no exhaustive public assigned-numbers tables (P2-27)."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-20"
+closing_plan = 2
+closing_todo = 27
+contributors = []
+parity_area = "messages"
+
+[[feature]]
+id = "GO-krberror-1"
+area = "krberror"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Typed/wrapped library errors"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::Any"]
+test_names = ["tests/error_api/sources.rs::unknown_outcome_io_chain", "tests/config.rs::load_paths_reports_failing_path_and_io_source", "tests/policy/rejections.rs::catalogue_converts_without_losing_feature"]
+feature_flags = []
+security_divergence = "Typed domain enums keep their causes through Error::source, which gokrb5's Krberror does not expose."
+disposition = "ALREADY"
+contributors = []
+parity_area = "messages"
+
+[[feature]]
+id = "GO-types-1"
+area = "types"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Principal names, credentials, addresses, flags, cryptosystem, PA data"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "rasn types and principals exist; AD-KDCIssued and AND-OR authorization data are rejected rather than handled, and high-level helpers are incomplete (P2-27)."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-20"
+closing_plan = 2
+closing_todo = 27
+contributors = []
+parity_area = "messages"
+
+[[feature]]
+id = "GO-asn1tools-1"
+area = "asn1tools"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "ASN.1 length/application tag utilities"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "The internal SPNEGO DER reader validates lengths and rejects non-minimal forms; there are no public checked app-tag and length utilities with size and nesting budgets (P2-27)."
+rust_symbols = []
+test_names = ["src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-20"
+closing_plan = 2
+closing_todo = 27
+contributors = []
+parity_area = "messages"
+
+[[feature]]
+id = "GO-doc-1"
+area = "doc"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Supported encryption and interoperability statement"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Docker MIT evidence is historical-upstream and AD is blocked-on-lab; a maintained Docker MIT 1.22.2 and Samba gate on this commit and a strict Windows AD run are needed (P2-28)."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 28
+contributors = []
+parity_area = "active-directory"
+
+[[insecure_behaviour]]
+id = "GO-T2-1"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "AES-SHA2 decrypts before authenticating"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::AesSha2Etype"]
+test_names = ["src/crypto.rs::sha2_rejects_bad_tag_before_any_decryption", "src/crypto.rs::integrity_failure_erases_scratch"]
+feature_flags = []
+security_divergence = "The HMAC is verified in constant time before any decryption (RFC 8009 section 5); no unauthenticated plaintext reaches callers or errors."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-crypto-2"]
+
+[[insecure_behaviour]]
+id = "GO-T2-2"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "AS-REP reply encryption enctype is not constrained by request list"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::CryptoPolicy::check_use"]
+test_names = ["tests/client/login_preauth.rs::initial_as_rep_outside_requested_enctypes_is_rejected", "tests/client/as_exchange.rs::process_as_rep_rejects_session_key_outside_requested_enctypes", "tests/policy/client.rs::as_reply_rejects_excluded_key_before_crypto"]
+feature_flags = ["tokio"]
+security_divergence = "The reply-key enctype must be one the request offered and the policy permits before any key derivation, and the session-key enctype is checked too (Client::EnctypeNotRequested, CryptoPolicy)."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-client-2", "GO-crypto-1"]
+
+[[insecure_behaviour]]
+id = "GO-T2-3"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "TGS-REP server identity checks are commented out"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = []
+test_names = ["tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt", "tests/client/as_exchange.rs::rejects_as_rep_ticket_service_mismatch"]
+feature_flags = ["tokio"]
+security_divergence = "Both the decrypted sname and the ticket sname are bound to the requested service (Client::ServicePrincipalMismatch); the referral exception is limited to a cross-realm TGT form."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-client-3"]
+
+[[insecure_behaviour]]
+id = "GO-T2-4"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "AP-REQ identity comparison omits realm"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["service::Validator"]
+test_names = ["tests/service.rs::rejects_authenticator_client_realm_mismatch"]
+feature_flags = ["messages"]
+security_divergence = "The acceptor compares the authenticator realm and ordered name components with the ticket's (RFC 4120 section 3.2.3) and returns the ticket-derived identity."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-service-1"]
+
+[[insecure_behaviour]]
+id = "GO-T2-5"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "AP-REP verification unimplemented"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["service::VerifiedApRep"]
+test_names = ["tests/http.rs::blocking_mutual_wrapper_rejects_a_missing_ap_rep", "tests/http.rs::mutual_mask_matrix_rejects_unproven_responses", "tests/http.rs::completion_rejects_invalid_metadata"]
+feature_flags = ["http"]
+security_divergence = "The AP-REP is decrypted and matched to the authenticator; with mutual authentication requested, the HTTP wrappers return MutualAuthenticationNotProven unless the final response proves it."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-spnego-2", "GO-client-6"]
+
+[[insecure_behaviour]]
+id = "GO-T2-6"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "SPNEGO mechListMIC is declared unused for Kerberos"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["spnego::AcceptedContext"]
+test_names = ["tests/spnego.rs::acceptor_rejects_unverified_mech_list_mic", "tests/spnego.rs::acceptor_rejects_nonfirst_kerberos", "tests/spnego.rs::mech_list_mic_accepts_nonfirst_and_authenticates_response", "tests/http.rs::completion_verifies_acceptor_mic"]
+feature_flags = ["spnego"]
+security_divergence = "The acceptor verifies supplied mechListMICs, requires one for a non-first Kerberos selection and replies with a reciprocal MIC (RFC 4178); the initiator verifies the acceptor MIC on completion. Multi-round continuation fails closed until plan-2 todo 18."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-spnego-1", "GO-spnego-2"]
+
+[[insecure_behaviour]]
+id = "GO-T2-7"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Replay protection is process-wide and unbounded"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["service::ReplayCache"]
+test_names = ["tests/service.rs::replay_lifecycle_capacity_preserves_live_records", "src/service/replay/policy_tests.rs::capacity_default_and_custom_limit_are_enforced"]
+feature_flags = ["messages"]
+security_divergence = "Replay caches are per instance or explicitly shared, bounded (65,536 records and 300 s skew by default), expire records and fail closed when full."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-service-2"]
+
+[[insecure_behaviour]]
+id = "GO-T2-8"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "CCache parser uses input-derived counts/slices without bounds checks"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["ccache::CCache::parse"]
+test_names = ["tests/ccache.rs::rejects_impossible_component_count", "tests/ccache.rs::rejects_impossible_address_count", "tests/ccache.rs::rejects_impossible_auth_data_count", "tests/ccache.rs::parse_never_panics_on_arbitrary_input"]
+feature_flags = []
+security_divergence = "Every principal component, address and authorization-data count is checked against the remaining input before memory is reserved (Ccache::Truncated, Ccache::LengthOverflow on 32-bit targets)."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-credentials-1"]
+
+[[insecure_behaviour]]
+id = "GO-T2-9"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "KDC TCP frame length is used directly for allocation; UDP buffer truncates"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::transport::kdc_tcp_record_length"]
+test_names = ["tests/client_transport/cases.rs::kdc_tcp_rejects_reserved_bit_before_body_read", "tests/client_transport/cases.rs::udp_transport_rejects_truncated_datagram", "src/client/transport/framing.rs::reserved_record_bit_is_rejected"]
+feature_flags = ["tokio"]
+security_divergence = "TCP record marks are 31-bit, the reserved bit is rejected and the configured size cap is checked before allocation (RFC 4120 section 7.2.2); an oversized UDP datagram is Client::UdpResponseTooLarge."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-client-4"]
+
+[[insecure_behaviour]]
+id = "GO-T2-10"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "kpasswd retries next endpoint after potentially delivered request"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = []
+test_names = ["tests/client_transport/cases.rs::kpasswd_lost_reply_does_not_retry_endpoint", "tests/client_transport/cases.rs::kpasswd_udp_timeout_does_not_retry_tcp", "tests/client/password_change.rs::kpasswd_lost_reply_has_unknown_outcome"]
+feature_flags = ["tokio"]
+security_divergence = "Once a kpasswd request may have been delivered it is never retried on another endpoint or protocol; the result is Client::KpasswdOutcomeUnknown."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-client-7"]
+
+[[insecure_behaviour]]
+id = "GO-T2-11"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "TGS reply verification omits ticket version, transited policy and requested enctype policy"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["service::TransitPolicy"]
+test_names = ["tests/service.rs::service_rejects_nested_ticket_version", "tests/service.rs::transit_rejects_unchecked_cross_realm_paths", "tests/service.rs::transit_policy_rejects_mismatching_paths", "tests/client/tgs_exchange.rs::process_tgs_rep_rejects_session_key_outside_requested_enctypes"]
+feature_flags = ["messages"]
+security_divergence = "tkt-vno and authenticator-vno other than 5 are rejected, the requested session enctype is enforced, and a cross-realm ticket without TRANSITED-POLICY-CHECKED needs an explicit TransitPolicy. Profile-driven capaths transit validation is plan-2 todo 17 (MIT-client-5)."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-client-3", "GO-messages-1"]
+
+[[insecure_behaviour]]
+id = "GO-T2-12"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Principal normalization is not consistently RFC-canonical"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::principal::Principal::host_based_service"]
+test_names = ["tests/client_principal.rs::host_based_service_folds_dns_host_case", "tests/client_principal.rs::host_based_service_preserves_service_and_realm_case"]
+feature_flags = ["messages"]
+security_divergence = "Host-based constructors fold the DNS host component to lower case (RFC 4120 section 6.2.1) so host-case variants share one principal and cached ticket; service names and realms keep their case."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-types-1"]
+
+[[insecure_behaviour]]
+id = "GO-T2-13"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "Configuration parser silently ignores unsupported/unknown keys and some section features"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::Config::diagnostics", "config::diagnostic::ParseMode"]
+test_names = ["tests/config/diagnostics_e.rs::unknown_paths_preserve_scope_and_finality", "src/config/diagnostic_tests.rs::every_diagnostic_promotes_to_error", "tests/config/sections_d.rs::server_only_sections_are_not_silent"]
+feature_flags = []
+security_divergence = "Unknown sections and relations are ConfigDiagnostic values, ParseMode::Strict makes every diagnostic an error, and settings stricter than current behaviour fail in both modes (plan-1 todo 15)."
+disposition = "ALREADY"
+contributors = []
+related_features = ["GO-config-2"]
+
+[[insecure_behaviour]]
+id = "GO-T2-14"
+area = "T2"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "ASN.1 helper length parsing is low-level and caller must validate"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Public checked app-tag and length utilities with explicit size and nesting budgets (P2-27); raw convenience codecs keep their documented prefix decoding."
+rust_symbols = []
+test_names = ["src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms"]
+feature_flags = []
+security_divergence = "No unvalidated length helper is public; the internal SPNEGO DER reader bounds slices, rejects indefinite and non-minimal lengths and checks OIDs."
+disposition = "WP-20"
+closing_plan = 2
+closing_todo = 27
+contributors = []
+related_features = ["GO-asn1tools-1"]
+
+[[post_pin_change]]
+commit = "855dbc707a37a21467aef6c0245fcf3328dc39ed"
+summary = "Add HMAC-SHA256/HMAC-SHA384 signature sizes (RFC 8009)"
+protocol_relevant = true
+test_names = ["tests/crypto_aes.rs::aes128_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors", "tests/crypto_aes.rs::aes256_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors"]
+
+[[post_pin_change]]
+commit = "f8771d3db4076ffb0466df5b44f3ea0c6a962186"
+summary = "Fix KDC-REP verification"
+protocol_relevant = true
+test_names = ["tests/client/as_exchange.rs::rejects_as_rep_ticket_service_mismatch", "tests/client/tgs_exchange.rs::process_tgs_rep_rejects_session_key_outside_requested_enctypes"]
+
+[[post_pin_change]]
+commit = "1b8a082de8677cfacfb1750c6789e05dbd62dfca"
+summary = "Fix gofmt"
+protocol_relevant = false
+test_names = []
+
+[[post_pin_change]]
+commit = "8464c11eee151ff1b7b04d3a06a6ab2e2b72d288"
+summary = "Remove -d from the gofmt test"
+protocol_relevant = false
+test_names = []
+
+[[post_pin_change]]
+commit = "00865968d09b3acdab9b6f0b366f1956f7291f88"
+summary = "Update Go versions in tests"
+protocol_relevant = false
+test_names = []
+
+[[post_pin_change]]
+commit = "64e62c1691b3a8e3bd6042171240a2a2dd019704"
+summary = "UDP client connection uses Dial for address resolution"
+protocol_relevant = true
+test_names = ["tests/client_transport/cases.rs::configured_endpoint_preserves_bare_ipv6"]
+
+[[post_pin_change]]
+commit = "92aa4db89ebe5e6f8871387fab88c3c64d9ea571"
+summary = "Fix TCP resolve when using IPv6"
+protocol_relevant = true
+test_names = ["tests/client_transport/cases.rs::configured_endpoint_preserves_bare_ipv6", "tests/client_transport/cases.rs::kpasswd_admin_fallback_preserves_ipv6"]

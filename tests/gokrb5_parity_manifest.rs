@@ -1,7 +1,81 @@
 //! Checks of the gokrb5 parity manifest in `docs/gokrb5-parity.toml` and of the
 //! repository tooling it cites: the release and CI workflows and the fixture runner.
-//! The tooling files are excluded from the package, so these tests read them from
-//! the repository checkout at run time.
+//! The per-row checks share `tests/parity_manifest/` with the MIT manifest test. The
+//! tooling files are excluded from the package, so these tests read them from the
+//! repository checkout at run time.
+
+include!("parity_manifest/feature.rs");
+
+/// Typed view of the manifests and the todo index.
+#[cfg(test)]
+#[path = "parity_manifest/model.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod model;
+
+/// Lexical scans of the checkout.
+#[cfg(test)]
+#[path = "parity_manifest/sources.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod sources;
+
+/// Shared Markdown building blocks.
+#[cfg(test)]
+#[path = "parity_manifest/render.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod render;
+
+/// Row consistency rules.
+#[cfg(test)]
+#[path = "parity_manifest/rules.rs"]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod rules;
+
+/// Manifest-independent audits.
+#[cfg(test)]
+#[path = "parity_manifest/audit.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod audit;
+
+/// Markdown rendering of the gokrb5 manifest.
+#[cfg(test)]
+#[path = "gokrb5_parity_manifest/markdown.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod markdown;
+
+/// Per-row gokrb5 manifest and Markdown tests.
+#[cfg(test)]
+#[path = "gokrb5_parity_manifest/checks.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod rows;
 
 /// gokrb5 parity manifest and repository tooling tests.
 #[cfg(test)]

@@ -1,0 +1,2880 @@
+# MIT krb5 library parity manifest. One [[feature]] per MIT-* row of the parity inventory.
+# docs/mit-krb5-parity.md is generated from this file by tests/mit_parity_manifest.rs.
+
+[target]
+project = "MIT krb5"
+release = "1.22.2"
+release_date = "2026-01-29"
+upstream_ref = "krb5-1.22.2-final"
+source_url = "https://github.com/krb5/krb5/tree/krb5-1.22.2-final"
+inventory_date = "2026-10-29"
+manifest_commit_base = "a6a1851"
+
+[summary]
+implemented = 36
+partial = 75
+absent = 42
+rejected = 8
+omitted = 1
+out_of_scope = 7
+total = 169
+
+[[feature]]
+id = "MIT-client-1"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "AS exchange / initial TGT acquisition; password, keytab, preauth callback/responder, multi-round-trip step API"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Login/build/process exist, no responder or general multi-round step API."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-client-2"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "TGS service-ticket acquisition and asynchronous step API"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Async acquisition/referral APIs, no transport-neutral tkt-creds step context."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-client-3"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Client principal referrals and enterprise principal canonicalization"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Unarmored AS canonicalize deliberately stripped and returned client must equal request; no authenticated client-referral/enterprise flow."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-05"
+closing_plan = 2
+closing_todo = 7
+contributors = ["P2-4"]
+
+[[feature]]
+id = "MIT-client-4"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Server referrals and cross-realm routing; referral-TGT processing and credential acquisition"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::process_tgs_rep_with_referral"]
+test_names = ["tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt", "tests/client/session_cache.rs::tokio_client_renews_cached_referral_tgt_before_reusing_it"]
+feature_flags = ["tokio"]
+security_divergence = "Referral chains are bounded and the final service name is bound to the request; Go's omitted TGS identity checks are not copied."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-client-5"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Cross-realm TGT path configuration via `capaths`; hierarchical and non-hierarchical traversal"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Explicit acceptor TransitPolicy exists and [capaths] is parsed into a typed graph, but no configured path construction or profile-driven transit validation."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = []
+
+[[feature]]
+id = "MIT-client-6"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "S4U2Self protocol transition / impersonation"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "PA-FOR-USER/principal S4U exists; no certificate S4U identity."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = ["P2-8"]
+
+[[feature]]
+id = "MIT-client-7"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "S4U2Proxy constrained delegation using evidence ticket"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::build_s4u2proxy_req", "client::Tokio::s4u2proxy"]
+test_names = ["tests/client/tgs_exchange.rs::builds_s4u2proxy_tgs_req_with_evidence_ticket", "tests/client/review_s4u.rs::s4u_proxy_rejects_relabelled_evidence", "tests/client/tgs_exchange.rs::tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache"]
+feature_flags = ["tokio"]
+security_divergence = "The evidence ticket's client is bound to the frontend key before the request is built."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-client-8"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Resource-Based Constrained Delegation (RBCD), including client-side cross-realm S4U2Proxy"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Raw RBCD PAC mask/padata and proxy primitives, no complete cross-realm RBCD workflow/proof."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = []
+
+[[feature]]
+id = "MIT-client-9"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Anonymous and realm-exposed anonymous initial credentials"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "AS options lack anonymous identity/policy orchestration."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-06"
+closing_plan = 2
+closing_todo = 8
+contributors = []
+
+[[feature]]
+id = "MIT-client-10"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Ticket request flags and lifetimes: forwardable, proxiable, renewable, renewable-ok, address controls, canonicalize, etc."
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Forwardable/proxiable/lifetime relations map to request options; address controls (extra_addresses, noaddresses = false), authenticated canonicalization and a typed per-request options API are missing."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-client-11"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Initial-credential options and prompting: lifetimes, addresses, enctypes, preauth options, service, anonymous, callbacks/responders"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Options/password/keytab helpers; no responder, automatic password-on-expiry or anonymous flow."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-15"
+closing_plan = 2
+closing_todo = 23
+contributors = ["P2-4"]
+
+[[feature]]
+id = "MIT-client-12"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Verify initial credentials against a host/service keytab (`krb5_verify_init_creds`)"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Generic AP validation is not verify-init-creds orchestration; verify_ap_req_nofail = true fails closed until it exists."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = []
+
+[[feature]]
+id = "MIT-client-13"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KRB-CRED marshal/unmarshal, `mk_1cred`/`mk_ncred`, `rd_cred`; forwarding/delegation credential transport"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Encrypted ccache conversion exists; full contextual forwarding/import controls and authdata/second-ticket conversion incomplete."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-20"
+closing_plan = 2
+closing_todo = 27
+contributors = []
+
+[[feature]]
+id = "MIT-client-14"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "AP-REQ/AP-REP create/read (`mk_req`, `rd_req`, `mk_rep`, `rd_rep`) including DCE-style variants"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "AP exchange exists; DCE variants/three-leg not provided."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18"]
+
+[[feature]]
+id = "MIT-client-15"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KRB-SAFE and KRB-PRIV create/read; KRB-ERROR create/read"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["krb_safe::verify_krb_safe_checksum", "krb_priv::build_krb_priv_with_confounder", "krb_priv::decrypt_krb_priv_enc_part"]
+test_names = ["tests/krb_safe.rs::builds_and_verifies_krb_safe_checksum", "tests/krb_safe.rs::rejects_krb_safe_checksum_mismatch", "tests/krb_priv.rs::builds_and_decrypts_krb_priv_with_explicit_confounder", "tests/krb_error.rs::decodes_and_roundtrips_gokrb5_krb_error_fixture"]
+feature_flags = ["messages"]
+security_divergence = "KRB-SAFE accepts keyed checksums only; unkeyed checksum types are RejectedFeature::UnauthenticatedChecksum."
+disposition = "ALREADY"
+contributors = []
+doc_anchor = "docs/security-policy.md#unauthenticated-checksum"
+
+[[feature]]
+id = "MIT-client-16"
+area = "client"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Replay cache interface: `dfl`, `file2`, `none`; replay detection and configurable cache name"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Bounded memory/shared cache only; no persistent file2/dfl/name dispatch."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-20"
+closing_plan = 2
+closing_todo = 27
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-1"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Encrypted timestamp (PA-ENC-TIMESTAMP) and password salt / ETYPE-INFO(2) processing"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::pa_enc_timestamp"]
+test_names = ["tests/client/as_exchange.rs::builds_and_encrypts_pa_enc_timestamp", "tests/client/login_preauth.rs::parses_kdc_preauth_required_error_and_selects_etype_info2", "src/client/s2k_tests.rs::info2_challenge_checks_before_timestamp_derivation"]
+feature_flags = ["tokio"]
+security_divergence = "Peer s2kparams below the CryptoPolicy minimum (4096 AES-SHA1, 32768 AES-SHA2) are rejected before any key derivation."
+disposition = "ALREADY"
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-preauth-2"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "FAST negotiation, armor-ticket use, request/response protection, cookies, encrypted challenges"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Request-integrity advertisement/check and cookies are not full FAST armor."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-05"
+closing_plan = 2
+closing_todo = 7
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-3"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "FAST anonymous armor via anonymous PKINIT"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No PKINIT/armor exchange."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-06"
+closing_plan = 2
+closing_todo = 8
+contributors = ["P2-7"]
+
+[[feature]]
+id = "MIT-preauth-4"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Encrypted challenge FAST factor"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Timestamp helper is distinct from armored challenge."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-05"
+closing_plan = 2
+closing_todo = 7
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-5"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "PKINIT certificate authentication (RSA and supported ECC paths)"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "PKINIT excluded by current code; implement current ECC/DH, not removed RSA mode."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-06"
+closing_plan = 2
+closing_todo = 8
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-6"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Anonymous PKINIT"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No certificate-less anonymous exchange."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-06"
+closing_plan = 2
+closing_todo = 8
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-7"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "SPAKE password-authenticated key exchange"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Built-in timestamp/key-hint flow only."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-07"
+closing_plan = 2
+closing_todo = 9
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-8"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "OTP client interaction and OTP-over-FAST protocol support"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "OTP dependency types enabled but no client factor/responder exchange."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-08"
+closing_plan = 2
+closing_todo = 10
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-9"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "PA-PAC-REQUEST (request PAC inclusion/exclusion)"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Generic padata and PAC-OPTIONS helper only, not a typed PAC-request API/consumer."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+
+[[feature]]
+id = "MIT-preauth-10"
+area = "preauth"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Client preauth (`clpreauth`) and KDC preauth (`kdcpreauth`) plugin interfaces"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Built-in retries/padata; no pluggable client-preauth interface; kdcpreauth subpart D1 excluded."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 4
+contributors = ["P2-3"]
+
+[[feature]]
+id = "MIT-crypto-1"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "AES128/AES256 CTS with HMAC-SHA1-96"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::AesSha1Etype"]
+test_names = ["tests/crypto_aes.rs::aes128_string_to_key_matches_gokrb5_vectors", "tests/crypto_aes.rs::aes_cts_encrypts_and_decrypts_rfc3962_vectors", "tests/crypto_aes.rs::checksums_and_messages_match_gokrb5_aes256"]
+feature_flags = []
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-crypto-2"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "AES128-SHA256 and AES256-SHA384 (AES-SHA2)"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::AesSha2Etype"]
+test_names = ["tests/crypto_aes.rs::aes_sha2_string_to_key_matches_gokrb5_vectors", "tests/crypto_aes.rs::aes128_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors", "tests/crypto_aes.rs::aes256_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors"]
+feature_flags = []
+security_divergence = "The MAC is verified in constant time before decryption."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-crypto-3"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Camellia128/256 CTS-CMAC"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Closed enctype dispatcher has AES/DES3/RC4 only."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-03"
+closing_plan = 2
+closing_todo = 5
+contributors = []
+
+[[feature]]
+id = "MIT-crypto-4"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "DES3-CBC-SHA1"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::Des3CbcSha1KdEtype", "crypto::CryptoPolicy::check_use"]
+test_names = ["tests/crypto_des3.rs::des3_checksum_and_message_encryption_match_gokrb5_vectors", "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults", "tests/policy/checked.rs::checked_dispatch_requires_permission", "tests/config/relations_c1.rs::allow_des3"]
+feature_flags = []
+security_divergence = "DES3 needs allow_des3 = true. Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-crypto-5"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "RC4-HMAC / RC4-HMAC-EXP"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::Rc4HmacEtype", "error::RejectedFeature::Rc4Export"]
+test_names = ["tests/crypto_rc4.rs::rc4_hmac_message_encryption_matches_gokrb5_vector", "tests/policy/acceptor.rs::default_acceptor_rejects_rc4_ticket", "tests/policy/expressions.rs::insecure_names_are_typed_rejections", "tests/policy/selection.rs::numeric_selection_is_typed"]
+feature_flags = []
+security_divergence = "RC4-HMAC needs allow_rc4 = true. RC4-EXP (etype 24) is permanently rejected as RejectedFeature::Rc4Export, even with both legacy flags set."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "Rc4Export"
+doc_anchor = "docs/security-policy.md#rc4-export"
+
+[[feature]]
+id = "MIT-crypto-6"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Single-DES types (DES-CBC-CRC/MD4/MD5)"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::SingleDes"]
+test_names = ["tests/policy/expressions.rs::insecure_names_are_typed_rejections", "tests/policy/selection.rs::numeric_selection_is_typed", "tests/policy/raw_selection.rs::raw_encryption_rejects_forbidden_selection"]
+feature_flags = []
+security_divergence = "Single-DES ids 1/2/3 and names are rejected at every textual, numeric, serde and raw entry point before any crypto."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "SingleDes"
+doc_anchor = "docs/security-policy.md#single-des"
+
+[[feature]]
+id = "MIT-crypto-7"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Configured enctype policy: `permitted_enctypes`, `default_tkt_enctypes`, `default_tgs_enctypes`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::CryptoPolicy::from_libdefaults", "crypto::CryptoPolicy::check_use", "crypto::policy::Use"]
+test_names = ["tests/policy/profile.rs::policy_checks_every_use", "tests/policy/client.rs::as_request_rejects_excluded_list", "tests/policy/reply_isolation.rs::as_session_policy_isolated", "tests/policy/acceptor.rs::acceptor_applies_explicit_policy", "tests/config/relations_c2.rs::permitted_enctypes"]
+feature_flags = []
+security_divergence = "The permitted list applies to every use, including acceptor keys and imported credentials. The crate default is AES only (SHA2 first). Camellia names are a diagnostic in Compatible mode and an error in Strict mode until Camellia exists (MIT-crypto-3, plan-2 todo 5)."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-crypto-8"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Enctype list operators (`+`/`-`), `DEFAULT` and `ALL` policy keywords"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::EnctypeExpr", "crypto::CryptoPolicy::resolve"]
+test_names = ["tests/policy/expressions.rs::selector_order_removal_and_readdition", "tests/policy/expressions.rs::aliases_case_and_delimiters", "tests/policy/ordering.rs::ordered_edits_match_model", "tests/policy/expressions.rs::unknown_tokens_are_named", "tests/policy/expressions.rs::empty_results_fail_closed"]
+feature_flags = []
+security_divergence = "MIT 1.22.2's parser (init_ctx.c) knows only the DEFAULT keyword, so ALL is an unknown token here as there. DEFAULT expands to the secure AES list, never DES3/RC4; unknown tokens, forbidden positive terms and empty results are errors."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-crypto-9"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`allow_weak_crypto`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::WeakCrypto"]
+test_names = ["tests/policy/profile.rs::weak_crypto_is_permanently_rejected", "tests/config/relations_c1.rs::allow_weak_crypto"]
+feature_flags = []
+security_divergence = "allow_weak_crypto = true is permanently rejected as RejectedFeature::WeakCrypto; false is accepted."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "WeakCrypto"
+doc_anchor = "docs/security-policy.md#weak-crypto"
+
+[[feature]]
+id = "MIT-crypto-10"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`allow_rc4` and `allow_des3`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
+test_names = ["tests/config/relations_c1.rs::allow_des3", "tests/config/relations_c1.rs::allow_rc4", "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults", "tests/policy/acceptor_http.rs::http_builders_propagate_legacy_permission"]
+feature_flags = []
+security_divergence = "Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-crypto-11"
+area = "crypto"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Keyed checksum types, checksum selection, checksum/key-usage enforcement"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Existing keyed AES/DES3/RC4 suite works; Camellia checksum suite missing."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-03"
+closing_plan = 2
+closing_todo = 5
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-1"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "FILE ccache"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["ccache::CCache::load", "ccache::CCache::save", "ccache::CacheName"]
+test_names = ["tests/ccache.rs::parses_gokrb5_ccache_fixture", "tests/ccache.rs::saves_and_loads_ccache_file", "tests/ccache.rs::saves_cache_with_private_permissions", "tests/ccache.rs::resolves_file_cache_names"]
+feature_flags = []
+security_divergence = "Saved caches are private to the owner and symlinked destinations are rejected."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-2"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "DIR cache and collections"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Primary and DIR:: load/save exist; enumeration/switch/new-unique/locking API missing."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 11
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-3"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Linux KEYRING: process/thread/user/session/persistent"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "KEYRING: names fail with a typed UnsupportedCacheType error; no kernel keyring backend."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 13
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-4"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KCM cache client"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "KCM: names fail with a typed UnsupportedCacheType error; no KCM socket protocol."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 12
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-5"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "MEMORY cache"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "In-memory CCache value is not a named MEMORY backend."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 11
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-6"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Windows API cache"
+implementation_status = "omitted"
+evidence_status = "unit"
+missing = "Omitted by owner decision D13: the legacy KfW API: cache is not provided; API: names fail with a typed UnsupportedCacheType error."
+rust_symbols = ["ccache::CacheName"]
+test_names = ["tests/ccache.rs::rejects_unsupported_cache_names"]
+feature_flags = []
+security_divergence = ""
+disposition = "D13"
+closing_plan = 2
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#windows-api-ccache"
+
+[[feature]]
+id = "MIT-ccache-7"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Windows MSLSA cache"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "MSLSA: names fail with a typed UnsupportedCacheType error; no LSA cache backend."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 14
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-8"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Credential-cache collections, primary selection, switching and cursor APIs"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Primary name resolution only, no collection/cursor/select API."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 11
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-9"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Per-cache configuration entries (`krb5_cc_get_config`/`set_config`)"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["ccache::CCache::upsert_config_entry", "ccache::CCache::config_entries", "ccache::ConfigEntry"]
+test_names = ["tests/ccache.rs::builds_and_upserts_x_cacheconf_entries", "tests/ccache.rs::entries_filter_out_x_cacheconf_credentials"]
+feature_flags = []
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-ccache-10"
+area = "ccache"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Ccache file format versions 1–4; configurable `ccache_type`"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Versions parse/serialize, configured ccache_type not applied to new caches."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 11
+contributors = []
+
+[[feature]]
+id = "MIT-keytab-1"
+area = "keytab"
+upstream_ref = "krb5-1.22.2-final"
+capability = "FILE keytab read, enumerate, resolve and mutate APIs"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["keytab::Keytab", "keytab::Keytab::find_key", "keytab::Entry"]
+test_names = ["tests/keytab.rs::parses_gokrb5_keytab_fixture", "tests/keytab.rs::saves_and_loads_keytab_file", "tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype", "tests/keytab.rs::generates_gokrb5_user_keytab_entries_from_password"]
+feature_flags = []
+security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-keytab-2"
+area = "keytab"
+upstream_ref = "krb5-1.22.2-final"
+capability = "WRFILE keytab"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["keytab::Name", "keytab::Keytab::from_name"]
+test_names = ["tests/keytab.rs::parses_typed_file_keytab_names"]
+feature_flags = []
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-keytab-3"
+area = "keytab"
+upstream_ref = "krb5-1.22.2-final"
+capability = "MEMORY keytab"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Owned in-memory Keytab/entry mutation exists, no named MEMORY registry."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 11
+contributors = []
+
+[[feature]]
+id = "MIT-keytab-4"
+area = "keytab"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Client keytab, automatic initial creds and refresh"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Explicit client-keytab and renewal/relogin exist, no full GSS implicit acquisition/refresh integration."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = ["P2-4", "P2-11"]
+
+[[feature]]
+id = "MIT-config-1"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`allow_des3`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
+test_names = ["tests/config/relations_c1.rs::allow_des3", "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults"]
+feature_flags = []
+security_divergence = "Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-config-2"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`allow_rc4`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
+test_names = ["tests/config/relations_c1.rs::allow_rc4", "tests/policy/acceptor.rs::default_acceptor_rejects_rc4_ticket"]
+feature_flags = []
+security_divergence = "Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-config-3"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`allow_weak_crypto`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::WeakCrypto"]
+test_names = ["tests/config/relations_c1.rs::allow_weak_crypto", "tests/policy/profile.rs::weak_crypto_is_permanently_rejected"]
+feature_flags = []
+security_divergence = "true is permanently rejected as RejectedFeature::WeakCrypto; false is accepted."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "WeakCrypto"
+doc_anchor = "docs/security-policy.md#weak-crypto"
+
+[[feature]]
+id = "MIT-config-4"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`canonicalize`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic (consumer: plan 2 WP-04)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::canonicalize"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-05"
+closing_plan = 2
+closing_todo = 7
+contributors = ["P2-4"]
+
+[[feature]]
+id = "MIT-config-5"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`ccache_type`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "New caches remain v4; version choice does not strengthen credential protection; diagnostic (consumer: plan 2 WP-09)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::ccache_type"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 11
+contributors = []
+
+[[feature]]
+id = "MIT-config-6"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`clockskew`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::LibDefaults"]
+test_names = ["tests/config/relations_c1.rs::clockskew", "tests/config/libdefaults_c1.rs::clockskew_when_invalid_mit_syntax", "tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator"]
+feature_flags = []
+security_divergence = "A negative tolerance is rejected; time-unit syntax is accepted as an extension of MIT's integer seconds."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-7"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`default_ccache_name`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::parameters::ExpansionContext", "client::Tokio::from_default_ccache_name"]
+test_names = ["tests/config/relations_c1.rs::default_ccache_name", "tests/config/expansion.rs::documented_tokens_expand_when_context_is_supplied", "tests/config/expansion.rs::unknown_tokens_fail_when_not_exactly_named"]
+feature_flags = ["tokio"]
+security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only."
+disposition = "WP-01"
+closing_plan = 1
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-8"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`default_client_keytab_name`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::parameters::ExpansionContext", "client::Tokio::with_client_keytab_from_config"]
+test_names = ["tests/config/relations_c1.rs::default_client_keytab_name", "tests/config/expansion.rs::profile_names_expand_when_selected_with_context"]
+feature_flags = ["tokio"]
+security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only."
+disposition = "WP-01"
+closing_plan = 1
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-9"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`default_keytab_name`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::parameters::ExpansionContext", "service::Validator::from_default_keytab_name"]
+test_names = ["tests/config/relations_c1.rs::default_keytab_name", "tests/config/expansion.rs::identity_tokens_expand_when_linux"]
+feature_flags = ["messages"]
+security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only."
+disposition = "WP-01"
+closing_plan = 1
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-10"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`default_rcache_name`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Any value except none: requires unavailable persistent/shared replay protection and errors; none: diagnostic because memory replay protection remains (consumer: plan 2 WP-20)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::default_rcache_name"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-20"
+closing_plan = 2
+closing_todo = 27
+contributors = []
+
+[[feature]]
+id = "MIT-config-11"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`default_realm`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::Config::realm_for_host"]
+test_names = ["tests/config/relations_c1.rs::default_realm"]
+feature_flags = []
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-12"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`default_tgs_enctypes`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::options::TgsReq::from_libdefaults", "config::EnctypeExpr"]
+test_names = ["tests/config/relations_c1.rs::default_tgs_enctypes", "tests/policy/client.rs::tgs_request_rejects_excluded_session"]
+feature_flags = ["tokio"]
+security_divergence = "Uses the MIT expression syntax; forbidden positive terms are errors and the default is the AES list."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-config-13"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`default_tkt_enctypes`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::options::AsReq::from_libdefaults", "config::EnctypeExpr"]
+test_names = ["tests/config/relations_c1.rs::default_tkt_enctypes", "tests/policy/client.rs::as_request_rejects_excluded_list"]
+feature_flags = ["tokio"]
+security_divergence = "Uses the MIT expression syntax; forbidden positive terms are errors and the default is the AES list."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-config-14"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`dns_canonicalize_hostname`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No DNS canonicalization occurs; all values diagnostic, including fallback per todo 15 (consumer: plan 2 WP-10)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::dns_canonicalize_hostname"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-15"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`dns_lookup_kdc`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::transport::Tokio::discover_kdcs"]
+test_names = ["tests/config/relations_c1.rs::dns_lookup_kdc"]
+feature_flags = ["tokio"]
+security_divergence = "The crate default is false, so no ambient DNS lookup happens unless configured."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-16"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`dns_lookup_realm`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No TXT realm discovery occurs; false satisfied, true cannot relax behavior; diagnostic (consumer: plan 2 WP-10)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::dns_lookup_realm"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-17"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`dns_uri_lookup`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No URI discovery occurs; false satisfied, true cannot relax behavior; diagnostic; crate default false (consumer: plan 2 WP-10)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::dns_uri_lookup"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-18"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`enforce_ok_as_delegate`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "GSS credential forwarding is unavailable; no credentials delegated, so true already satisfied; diagnostic (consumer: plan 2 WP-12)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::enforce_ok_as_delegate"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-config-19"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`err_fmt`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Formatting does not alter typed errors or authentication policy; diagnostic (consumer: plan 2 WP-18)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::err_fmt"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-18"
+closing_plan = 2
+closing_todo = 6
+contributors = []
+
+[[feature]]
+id = "MIT-config-20"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`extra_addresses`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Ignored when noaddresses=true; nonempty list with noaddresses=false requires unavailable address-bound requests and errors (consumer: plan 2 WP-04)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::extra_addresses"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-config-21"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`forwardable`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "The relation already sets the AS/TGS forwardable bit; the typed per-request option API and KDC-backed proof close in plan-2 todo 4."
+rust_symbols = ["client::options::AsReq::from_libdefaults"]
+test_names = ["tests/config/relations_c1.rs::forwardable"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-config-22"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`ignore_acceptor_hostname`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No GSS acceptor-name relaxation; strict service/keytab identity checks retained; either value diagnostic (consumer: plan 2 WP-12)."
+rust_symbols = []
+test_names = ["tests/config/relations_c1.rs::ignore_acceptor_hostname"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-config-23"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`k5login_authoritative`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No local-login authorization exists; neither value grants login; diagnostic (consumer: plan 2 WP-17)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::k5login_authoritative"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-17"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-config-24"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`k5login_directory`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No local-login authorization or file lookup occurs; diagnostic (consumer: plan 2 WP-17)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::k5login_directory"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-17"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-config-25"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`kcm_mach_service`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No KCM connection exists, including when - disables Mach RPC; diagnostic (consumer: plan 2 WP-09)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::kcm_mach_service"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 14
+contributors = []
+
+[[feature]]
+id = "MIT-config-26"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`kcm_socket`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No KCM connection exists, including when - disables Unix sockets; diagnostic (consumer: plan 2 WP-09)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::kcm_socket"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-09"
+closing_plan = 2
+closing_todo = 12
+contributors = []
+
+[[feature]]
+id = "MIT-config-27"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`kdc_default_options`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::options::AsReq::from_libdefaults", "client::options::TgsReq::from_libdefaults"]
+test_names = ["tests/config/relations_c2.rs::kdc_default_options", "tests/client/as_exchange.rs::as_req_options_from_libdefaults_suppresses_canonicalize_flag"]
+feature_flags = ["tokio"]
+security_divergence = "The canonicalize bit is suppressed on unarmored AS requests so the client identity cannot change."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-28"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`kdc_timesync`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No clock correction occurs; zero satisfied, nonzero does not tighten authentication; diagnostic (consumer: plan 2 WP-04)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::kdc_timesync"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-config-29"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`noaddresses`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Requests currently omit addresses; false requires unavailable address restriction and errors; true diagnostic (consumer: plan 2 WP-04)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::noaddresses"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-config-30"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`permitted_enctypes`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
+test_names = ["tests/config/relations_c2.rs::permitted_enctypes", "tests/policy/profile.rs::policy_checks_every_use", "tests/policy/profile.rs::profile_subtractions_resolve_to_exact_ids"]
+feature_flags = []
+security_divergence = "The crate default is the AES list (SHA2 first), not MIT's list with DES3, RC4 and Camellia; the list governs every use."
+disposition = "WP-02"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+doc_anchor = "docs/security-policy.md#policy"
+
+[[feature]]
+id = "MIT-config-31"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`plugin_base_dir`"
+implementation_status = "out-of-scope"
+evidence_status = "unit"
+missing = "Nothing in scope (D1): a C shared-library search path; D3 forbids a C loader. The relation is parsed as an inert template with a diagnostic; registered Rust providers are plan-2 todo 3."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::plugin_base_dir"]
+feature_flags = []
+security_divergence = ""
+disposition = "D1"
+contributors = []
+doc_anchor = "docs/mit-krb5-parity.md#rust-extension-points"
+
+[[feature]]
+id = "MIT-config-32"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`preferred_preauth_types`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Preference ordering is not an allowlist; no new preauth selection, diagnostic; draft-9 IDs 14/15 removed with existing IgnoredPreauthType (consumer: plan 2 WP-04)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::preferred_preauth_types"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-config-33"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`proxiable`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "The relation already sets the AS/TGS proxiable bit; the typed per-request option API and KDC-backed proof close in plan-2 todo 4."
+rust_symbols = ["client::options::AsReq::from_libdefaults"]
+test_names = ["tests/config/relations_c2.rs::proxiable"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "WP-04"
+closing_plan = 2
+closing_todo = 4
+contributors = []
+
+[[feature]]
+id = "MIT-config-34"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`qualify_shortname`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No automatic qualification exists; empty disables and nonempty requests unavailable name rewriting; diagnostic (consumer: plan 2 WP-10)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::qualify_shortname"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-35"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`rdns`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No reverse DNS occurs; false satisfied, true cannot relax current behavior; diagnostic (consumer: plan 2 WP-10)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::rdns"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-36"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`realm_try_domains`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No domain realm probing occurs; negative disables, nonnegative does not tighten behavior; diagnostic (consumer: plan 2 WP-10)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::realm_try_domains"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-37"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`renew_lifetime`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::options::AsReq::from_libdefaults"]
+test_names = ["tests/config/relations_c2.rs::renew_lifetime", "tests/client/as_exchange.rs::builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-38"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`request_timeout`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Existing per-attempt timeouts are not a total budget; every nonzero value errors; zero diagnostic (consumer: plan 2 WP-10)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::request_timeout"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-39"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`spake_preauth_groups`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped (consumer: plan 2 WP-07)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::spake_preauth_groups"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-07"
+closing_plan = 2
+closing_todo = 9
+contributors = []
+
+[[feature]]
+id = "MIT-config-40"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`ticket_lifetime`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::options::AsReq::from_libdefaults"]
+test_names = ["tests/config/relations_c2.rs::ticket_lifetime", "tests/client/as_exchange.rs::builds_tgt_as_req_with_expected_fields"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-41"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`udp_preference_limit`"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::transport::Tokio"]
+test_names = ["tests/config/relations_c2.rs::udp_preference_limit", "tests/client_transport/tests/affinity.rs::tokio_transport_auto_honors_tcp_first_udp_preference_limit"]
+feature_flags = ["tokio"]
+security_divergence = "Negative values use MIT's default and large values are capped at 32700."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-42"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`verify_ap_req_nofail`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "true requires unavailable verify-init-creds orchestration and errors; false diagnostic (consumer: plan 2 WP-11)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::verify_ap_req_nofail"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = []
+
+[[feature]]
+id = "MIT-config-43"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`client_aware_channel_bindings`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "true requires unavailable GSS channel-binding-aware signaling and errors; false diagnostic (consumer: plan 2 WP-12)."
+rust_symbols = []
+test_names = ["tests/config/relations_c2.rs::client_aware_channel_bindings"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-config-44"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: `admin_server`, `kdc`, `kpasswd_server`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Remote kadm5 consumer of admin_server (plan-2 todo 24); kdc and kpasswd_server endpoints are effective and admin_server feeds the port-464 kpasswd fallback."
+rust_symbols = []
+test_names = ["tests/config/realm_relations_d.rs::kdc", "tests/config/realm_relations_d.rs::kpasswd_server", "tests/config/realm_relations_d.rs::admin_server"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-15"
+closing_plan = 2
+closing_todo = 24
+contributors = ["P2-15", "P2-23"]
+
+[[feature]]
+id = "MIT-config-45"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: `primary_kdc` (formerly `master_kdc`)"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Primary-KDC retry after a bad password against a replica; primary_kdc and master_kdc are parsed (primary_kdc wins) with a diagnostic."
+rust_symbols = []
+test_names = ["tests/config/section_composition_d.rs::primary_kdc_precedence", "tests/config/realm_relations_d.rs::primary_kdc", "tests/config/realm_relations_d.rs::master_kdc"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-46"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: `sitename`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Site-local DNS discovery; the relation is parsed with a diagnostic."
+rust_symbols = []
+test_names = ["tests/config/realm_relations_d.rs::sitename"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-config-47"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: `auth_to_local`, `auth_to_local_names`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "No local authorization or name mapping executes; the relations are parsed with diagnostics."
+rust_symbols = []
+test_names = ["tests/config/realm_relations_d.rs::auth_to_local", "tests/config/realm_relations_d.rs::auth_to_local_names"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-17"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-config-48"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: `default_domain`, `v4_instance_convert`, `v4_realm`"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::V4Conversion"]
+test_names = ["tests/config.rs::rejects_v4_realm_directives", "tests/policy/protocols.rs::relation_api_rejects_removed_modes"]
+feature_flags = []
+security_divergence = "v4_instance_convert and v4_realm are rejected before composition; default_domain stays a parsed, inert relation with a diagnostic."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 15
+contributors = ["P1-14"]
+rejected_feature = "V4Conversion"
+doc_anchor = "docs/security-policy.md#v4-conversion"
+
+[[feature]]
+id = "MIT-config-49"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: `disable_encrypted_timestamp`"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "SPAKE consumer; true is rejected (fail closed) because the current client may still send encrypted timestamp."
+rust_symbols = []
+test_names = ["tests/config/sections_d.rs::encrypted_timestamp_disable_fails_closed", "tests/config/realm_relations_d.rs::disable_encrypted_timestamp"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-07"
+closing_plan = 2
+closing_todo = 9
+contributors = []
+
+[[feature]]
+id = "MIT-config-50"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: `http_anchors` for HTTPS KDC/kpasswd proxy"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "MS-KKDCP HTTPS proxy transport; the relation is parsed with a diagnostic."
+rust_symbols = []
+test_names = ["tests/config/realm_relations_d.rs::http_anchors"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 16
+contributors = []
+
+[[feature]]
+id = "MIT-config-51"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[realms]`: PKINIT identity/trust/cert-auth options"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "PKINIT; realm pkinit_* relations are parsed with diagnostics and enabled pkinit_win2k/pkinit_draft9 values are rejected (D2)."
+rust_symbols = []
+test_names = ["tests/config/sections_d.rs::pkinit_invalid_enums_fail", "tests/config/realm_relations_d.rs::pkinit_anchors", "tests/config/realm_relations_d.rs::pkinit_identities"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-06"
+closing_plan = 2
+closing_todo = 8
+contributors = []
+
+[[feature]]
+id = "MIT-config-52"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[domain_realm]` exact-host and domain/subdomain to realm mapping"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::Config::resolve_realm"]
+test_names = ["tests/config/section_composition_d.rs::domain_realm"]
+feature_flags = []
+security_divergence = "Matching is case-folded: exact host first, then the longest dotted suffix; a dotted suffix does not match the apex."
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-config-53"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[capaths]` explicit non-hierarchical cross-realm paths"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Profile-driven cross-realm routing and transit validation; [capaths] is parsed into a typed graph with a diagnostic."
+rust_symbols = []
+test_names = ["tests/config/section_composition_d.rs::capaths"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-11"
+closing_plan = 2
+closing_todo = 17
+contributors = []
+
+[[feature]]
+id = "MIT-config-54"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`[plugins]` `disable`, `enable_only`, `module` common relations"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "Registered Rust provider selection; disable/enable_only are parsed per interface and restrictions that would exclude the current timestamp preauth fail."
+rust_symbols = []
+test_names = ["tests/config/section_composition_d.rs::disable", "tests/config/section_composition_d.rs::enable_only", "tests/config/section_composition_d.rs::restrictive_preauth_plugins"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 3
+contributors = []
+
+[[feature]]
+id = "MIT-config-55"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`include`, `includedir`, `module` config source directive"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "P2-3: MIT `module` config providers; `module` is Config::UnsupportedDynamicModule in every mode until registered Rust profile providers exist. include/includedir semantics were delivered by P1-15."
+rust_symbols = []
+test_names = ["tests/config/profile.rs::includes_resume_parent_state", "tests/config/readers.rs::reader_composes_absolute_includes", "tests/config/readers.rs::dynamic_modules_fail_in_every_mode"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 3
+contributors = ["P1-15"]
+
+[[feature]]
+id = "MIT-config-56"
+area = "config"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Profile merging, final section/subsection/relation markers, multiple `KRB5_CONFIG` files"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["config::Config::load_paths", "config::Config::diagnostics"]
+test_names = ["tests/config/profile.rs::first_values_win_within_file", "tests/config/profile.rs::section_and_subsection_finals_stop_routes", "tests/config/profile.rs::relation_final_accumulates_until_marker", "tests/config/profile.rs::directory_sources_filter_and_accumulate_in_order", "tests/config.rs::loads_config_path_list_in_order"]
+feature_flags = []
+security_divergence = "A missing KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms."
+disposition = "WP-01"
+closing_plan = 1
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-dns-1"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KDC/admin/password server DNS SRV discovery"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "KDC/kpasswd and admin-to-kpasswd fallback exist; distinct remote-admin endpoint discovery missing."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-dns-2"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KDC/KPASSWD DNS URI discovery"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "SRV-only discovery."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-dns-3"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "DNS TXT realm lookup"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Flag only; resolver paths do not issue TXT."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-dns-4"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Hostname canonicalization with DNS, `fallback`, short-name qualification and reverse DNS"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Host component lowercase normalization only; DNS/PTR/fallback policy absent."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-dns-5"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KDC proxy transport over HTTPS (MS-KKDCP)"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No HTTP KDC transport."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 16
+contributors = []
+
+[[feature]]
+id = "MIT-dns-6"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Site-local KDC discovery (`sitename`)"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No site-local DNS queries; sitename is parsed with a diagnostic."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-dns-7"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Primary KDC retry after invalid password"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Master metadata not a primary retry workflow."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-dns-8"
+area = "dns"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KDC transport ordering, failover, timeout and TCP/UDP fallback"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Bounded UDP/TCP fallback/endpoint retries exist; request_timeout config/whole discovery budget absent."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-10"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-gss-1"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Kerberos V5 GSS mechanism (initiator/acceptor, names, credentials, contexts)"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "SPNEGO init/accept wrappers, not full GSS names/credentials/inquiry/context API."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-gss-2"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "SPNEGO mechanism negotiation; HTTP Negotiate token use"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "One-init negotiation/MIC and HTTP exist; stateful continuation fails NegotiationRequiresState."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-gss-3"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "IAKERB mechanism"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No relay mechanism."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-13"
+closing_plan = 2
+closing_todo = 20
+contributors = []
+
+[[feature]]
+id = "MIT-gss-4"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "NegoEx mechanism negotiation integration"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Kerberos OIDs only, no NegoEx state."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-13"
+closing_plan = 2
+closing_todo = 21
+contributors = []
+
+[[feature]]
+id = "MIT-gss-5"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Channel bindings; channel-bound result flag and strict CBT request"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Explicit no-channel-bindings API ignores initiator binding."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-gss-6"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Credential delegation and delegation policy flag"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "DelegationRequiresCredential is returned; the acceptor checks framing but imports no delegated credentials."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-gss-7"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Credential selection, store extensions: `gss_acquire_cred_from`, `gss_store_cred_into`, `gss_store_cred`"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Cache/keytab client constructors exist, no GSS store/acquire-from interface or collection selection."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18"]
+
+[[feature]]
+id = "MIT-gss-8"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "GSS naming extensions and name attributes (enterprise/X.509 names, auth indicators, PAC attributes)"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Principals/PAC summaries only; enterprise/certificate/anonymous names and RFC6680 attribute API missing."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18", "P2-22"]
+
+[[feature]]
+id = "MIT-gss-9"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "GSS inquiry families: context, credential, name, mechanism and per-OID inquiry"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Public context metadata exists, no complete GSS inquiry/OID/SSF/session-key families."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 18
+contributors = []
+
+[[feature]]
+id = "MIT-gss-10"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "MIC, Wrap/Unwrap, IOV wrap, IOV MIC, AEAD associated-data wrapping"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "MIC/Wrap helpers exist, no IOV/AEAD operations."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18"]
+
+[[feature]]
+id = "MIT-gss-11"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "GSS pseudo-random function / PRF+"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "KDF helpers are not GSS pseudo_random/PRF+."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18"]
+
+[[feature]]
+id = "MIT-gss-12"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "DCE-style context establishment / three-leg setup and DCE-compatible wrap tokens"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No DCE context flag/state/layout API."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18"]
+
+[[feature]]
+id = "MIT-gss-13"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Export/import security context and credentials"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No transfer API; Clone/Debug context isn't secure ownership-transfer serialization."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18"]
+
+[[feature]]
+id = "MIT-gss-14"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "GSS S4U impersonation and proxy credentials"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Client S4U exchange exists, no GSS acquire-impersonate credential/RBCD integration."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-17", "P2-18"]
+
+[[feature]]
+id = "MIT-gss-15"
+area = "gss"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`gss_pseudo_random`, `gss_store_cred`, `gss_inquire_*`, exported names and standard v2 interface"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Init/accept/token helpers only; complete standard semantic surface absent."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-12"
+closing_plan = 2
+closing_todo = 19
+contributors = ["P2-18"]
+
+[[feature]]
+id = "MIT-admin-1"
+area = "admin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Password-change client protocol (change password / set password)"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Authenticated change/target-set APIs exist; expiry responder/automatic change/restart absent."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-15"
+closing_plan = 2
+closing_todo = 23
+contributors = []
+
+[[feature]]
+id = "MIT-admin-2"
+area = "admin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Microsoft set-password protocol compatibility"
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["kadmin::ChangePasswdData", "client::Tokio::change_password_for"]
+test_names = ["tests/kadmin.rs::change_passwd_data_decodes_and_encodes_target_payload", "tests/client/password_change.rs::tokio_client_changes_explicit_target_password"]
+feature_flags = ["tokio"]
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-admin-3"
+area = "admin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Remote kadm5 client APIs over authenticated RPCSEC_GSS"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Kadmin module is kpasswd framing only, no principal/policy RPC client."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-15"
+closing_plan = 2
+closing_todo = 24
+contributors = []
+
+[[feature]]
+id = "MIT-pac-1"
+area = "pac"
+upstream_ref = "krb5-1.22.2-final"
+capability = "PAC parse, buffer get/add/type enumeration and client info"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Parse/raw table/get/client info present; no consistent PAC mutation/builder API."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+
+[[feature]]
+id = "MIT-pac-2"
+area = "pac"
+upstream_ref = "krb5-1.22.2-final"
+capability = "PAC server checksum / KDC checksum verification (`krb5_pac_verify`, `krb5_pac_verify_ext`)"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Verifies server only; KDC signature merely parsed/required, no KDC/client-info verify_ext."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+
+[[feature]]
+id = "MIT-pac-3"
+area = "pac"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Ticket signature and full KDC checksum support"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Signature dispatch handles buffers 6/7 only; no ticket or full-KDC checksum verification."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+
+[[feature]]
+id = "MIT-pac-4"
+area = "pac"
+upstream_ref = "krb5-1.22.2-final"
+capability = "UPN_DNS_INFO and logon-info PAC buffer parsing"
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = ["pac::UpnDnsInfo", "pac::KerbValidationInfo"]
+test_names = ["tests/pac.rs::parses_gokrb5_pac_container_and_buffers", "tests/pac.rs::derives_ad_credentials_from_kerb_validation_info"]
+feature_flags = []
+security_divergence = ""
+disposition = "ALREADY"
+contributors = []
+
+[[feature]]
+id = "MIT-pac-5"
+area = "pac"
+upstream_ref = "krb5-1.22.2-final"
+capability = "PAC attributes and requestor SID buffer handling"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Unrecognized buffers skipped, not typed decode/validation."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+
+[[feature]]
+id = "MIT-pac-6"
+area = "pac"
+upstream_ref = "krb5-1.22.2-final"
+capability = "PA-PAC-REQUEST and PAC request choice"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "PAC-OPTIONS/padata isn't PA-PAC-REQUEST."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+
+[[feature]]
+id = "MIT-pac-7"
+area = "pac"
+upstream_ref = "krb5-1.22.2-final"
+capability = "PAC construction/signing (`krb5_pac_sign`, `sign_ext`, KDC ticket signing)"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Only verify_server_checksum; no builder or signing API (KDC issuance policy is not a deliverable)."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-14"
+closing_plan = 2
+closing_todo = 22
+contributors = []
+
+[[feature]]
+id = "MIT-authz-1"
+area = "authz"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`.k5login` principal-to-local-account authorization"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Parsed k5login fields only, no file authorizer."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-17"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-authz-2"
+area = "authz"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`auth_to_local` RULE and DEFAULT mapping"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "auth_to_local is parsed with a diagnostic; no RULE/DEFAULT mapping executes."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-17"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-authz-3"
+area = "authz"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`auth_to_local_names` explicit principal mapping"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "auth_to_local_names is parsed with a diagnostic; no mapping consumer."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-17"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-authz-4"
+area = "authz"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`an2ln` principal-name-to-local-name authorization"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No local-name API."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-17"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-authz-5"
+area = "authz"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`localauth` plugin interface"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No authorizer registry."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-authz-6"
+area = "authz"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Host-to-realm plugin interface"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Built-in profile realm resolution, no trait/provider chain."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-plugin-1"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`clpreauth` client preauthentication"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No registered preauth trait."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 4
+contributors = ["P2-3"]
+
+[[feature]]
+id = "MIT-plugin-2"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`ccselect` credential-cache selection"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Explicit cache constructors only, no k5identity/realm/hostname selection registry."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 11
+contributors = ["P2-3"]
+
+[[feature]]
+id = "MIT-plugin-3"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`hostrealm` hostname/default-realm mapping"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Profile resolve exists, DNS/domain provider chain incomplete."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-plugin-4"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`localauth` local authorization"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No local authorizer/provider."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 25
+contributors = []
+
+[[feature]]
+id = "MIT-plugin-5"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`profile` configuration provider"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Config value/parse exist, no hierarchical provider interface."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 3
+contributors = []
+
+[[feature]]
+id = "MIT-plugin-6"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`locate` server-location interface"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Built-in transport discovery, no provider registry."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 15
+contributors = []
+
+[[feature]]
+id = "MIT-plugin-7"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "GSSAPI mechanism interface and SPNEGO mechanism plugins"
+implementation_status = "partial"
+evidence_status = "unproven"
+missing = "Fixed Kerberos negotiation only; no mechanism trait/registry."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 21
+contributors = ["P2-3", "P2-18"]
+
+[[feature]]
+id = "MIT-plugin-8"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "NegoEx module interface"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No NegoEx/provider contract."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-13"
+closing_plan = 2
+closing_todo = 21
+contributors = []
+
+[[feature]]
+id = "MIT-plugin-9"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Interposer modules"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "No safe extension/observer API; C symbol interposition mechanics excluded, Rust equivalent required."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-16"
+closing_plan = 2
+closing_todo = 6
+contributors = []
+
+[[feature]]
+id = "MIT-plugin-10"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Password quality (`pwqual`)"
+implementation_status = "out-of-scope"
+evidence_status = "unproven"
+missing = "Nothing in scope (D1): server-side password-quality modules run in kadmind; the client only reports kpasswd result codes."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "D1"
+contributors = []
+doc_anchor = "docs/mit-krb5-parity.md#scope"
+
+[[feature]]
+id = "MIT-plugin-11"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "KADM5 hooks (`kadm5_hook`)"
+implementation_status = "out-of-scope"
+evidence_status = "unproven"
+missing = "Nothing in scope (D1): kadmind lifecycle hooks."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "D1"
+contributors = []
+doc_anchor = "docs/mit-krb5-parity.md#scope"
+
+[[feature]]
+id = "MIT-plugin-12"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`kadm5_auth`"
+implementation_status = "out-of-scope"
+evidence_status = "unproven"
+missing = "Nothing in scope (D1): kadmind authorization modules."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "D1"
+contributors = []
+doc_anchor = "docs/mit-krb5-parity.md#scope"
+
+[[feature]]
+id = "MIT-plugin-13"
+area = "plugin"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`kdcpreauth`, `certauth`, `kdcpolicy`, KDB, authdata"
+implementation_status = "out-of-scope"
+evidence_status = "unproven"
+missing = "Nothing in scope (D1): KDC preauth, certauth, kdcpolicy, KDB and authdata plugins; service-side authdata validation stays in scope elsewhere."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "D1"
+contributors = []
+doc_anchor = "docs/mit-krb5-parity.md#scope"
+
+[[feature]]
+id = "MIT-trace-1"
+area = "trace"
+upstream_ref = "krb5-1.22.2-final"
+capability = "`KRB5_TRACE` diagnostic trace logging and programmatic trace controls"
+implementation_status = "absent"
+evidence_status = "unproven"
+missing = "Diagnostics JSON exists but no event sink/env trace controls."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "WP-18"
+closing_plan = 2
+closing_todo = 6
+contributors = []
+
+[[feature]]
+id = "MIT-removed-1"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Kerberos IV (`krb4`) support"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::KerberosV4"]
+test_names = ["tests/policy/protocols.rs::enabling_protocol_relations_are_typed", "tests/policy/protocols.rs::relation_api_rejects_removed_modes", "tests/policy/protocols.rs::serde_protocol_relations_are_rejected"]
+feature_flags = []
+security_divergence = "krb4 relations and selections are rejected before composition."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "KerberosV4"
+doc_anchor = "docs/security-policy.md#kerberos-v4"
+
+[[feature]]
+id = "MIT-removed-2"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Single-DES encryption types: DES-CBC-CRC/MD4/MD5"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::SingleDes"]
+test_names = ["tests/policy/expressions.rs::insecure_names_are_typed_rejections", "tests/policy/selection.rs::numeric_selection_is_typed", "src/client/s2k_tests.rs::forbidden_profiles_never_enter_pbkdf2"]
+feature_flags = []
+security_divergence = "Single DES is rejected even when legacy flags are set."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "SingleDes"
+doc_anchor = "docs/security-policy.md#single-des"
+
+[[feature]]
+id = "MIT-removed-3"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "RSA PKINIT client authentication"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::RsaPkinit"]
+test_names = ["tests/policy/protocols.rs::relation_api_rejects_removed_modes", "tests/policy/protocols.rs::enabling_protocol_relations_are_typed"]
+feature_flags = []
+security_divergence = "RSA-mode PKINIT selections are rejected; RSA signatures on certificate chains are a separate matter for plan-2 PKINIT."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "RsaPkinit"
+doc_anchor = "docs/security-policy.md#rsa-pkinit"
+
+[[feature]]
+id = "MIT-removed-4"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Draft 9 PKINIT variant"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::Draft9Pkinit"]
+test_names = ["tests/policy/protocols.rs::draft9_api_selection_is_rejected", "tests/policy/protocols.rs::draft9_preferences_are_ignored_with_diagnostics", "tests/policy/protocols.rs::draft9_advertisements_are_ignored"]
+feature_flags = []
+security_divergence = "Explicit selection of PA types 14/15 is rejected; their preferred_preauth_types entries and KDC advertisements are ignored with a diagnostic."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "Draft9Pkinit"
+doc_anchor = "docs/security-policy.md#draft9-pkinit"
+
+[[feature]]
+id = "MIT-removed-5"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Triple-DES session-key issuance by default"
+implementation_status = "out-of-scope"
+evidence_status = "unproven"
+missing = "Nothing in scope (D1): default DES3 session-key issuance is KDC behavior; client opt-in policy is MIT-crypto-4 and MIT-crypto-10."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "D1"
+contributors = []
+doc_anchor = "docs/mit-krb5-parity.md#scope"
+
+[[feature]]
+id = "MIT-removed-6"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "RC4 session-key issuance by default"
+implementation_status = "out-of-scope"
+evidence_status = "unproven"
+missing = "Nothing in scope (D1): default RC4 session-key issuance is KDC behavior; client opt-in policy is MIT-crypto-5 and MIT-crypto-10."
+rust_symbols = []
+test_names = []
+feature_flags = []
+security_divergence = ""
+disposition = "D1"
+contributors = []
+doc_anchor = "docs/mit-krb5-parity.md#scope"
+
+[[feature]]
+id = "MIT-removed-7"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "DES3/RC4 as default long-term key generation types"
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "P2-24: remote-admin keysalt defaults and policy. Client request defaults never include DES3/RC4 (P1-14)."
+rust_symbols = []
+test_names = ["tests/policy/profile.rs::policy_defaults_and_numeric_rejection"]
+feature_flags = []
+security_divergence = ""
+disposition = "WP-15"
+closing_plan = 2
+closing_todo = 24
+contributors = ["P1-14"]
+
+[[feature]]
+id = "MIT-removed-8"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Unkeyed checksum algorithms / unauthenticated integrity"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::UnauthenticatedChecksum"]
+test_names = ["tests/policy/selection.rs::checksum_selection_is_typed", "tests/policy/selection.rs::textual_checksum_selection_is_typed", "tests/policy/raw_selection.rs::peer_checksum_selection_is_typed", "tests/krb_safe.rs::rejects_unsupported_krb_safe_checksum_type"]
+feature_flags = []
+security_divergence = "Unkeyed checksum ids are rejected at every selection entry point."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "UnauthenticatedChecksum"
+doc_anchor = "docs/security-policy.md#unauthenticated-checksum"
+
+[[feature]]
+id = "MIT-removed-9"
+area = "removed"
+upstream_ref = "krb5-1.22.2-final"
+capability = "Legacy unauthenticated KRB5 password change or cleartext password transport"
+implementation_status = "rejected"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["error::RejectedFeature::UnprotectedPasswordChange"]
+test_names = ["tests/policy/protocols.rs::password_versions_fail_closed", "tests/policy/protocols.rs::null_password_payload_is_rejected"]
+feature_flags = []
+security_divergence = "Unprotected password-change modes are rejected; unauthenticated replies never count as success."
+disposition = "D2"
+closing_plan = 1
+closing_todo = 14
+contributors = []
+rejected_feature = "UnprotectedPasswordChange"
+doc_anchor = "docs/security-policy.md#unprotected-password-change"
