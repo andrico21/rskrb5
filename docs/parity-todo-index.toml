@@ -1,0 +1,312 @@
+# Committed inventory of the plan todos that the parity manifests may name.
+# Copied from the two execution plans; the tests read this file, never the plans.
+
+[[todo]]
+plan = 1
+number = 1
+title = "Baseline, the follow-up register, and revmux unit-1 run 02"
+
+[[todo]]
+plan = 1
+number = 2
+title = "Registry token into the release environment (owner action, D5)"
+
+[[todo]]
+plan = 1
+number = 3
+title = "SPNEGO/GSS tokens and the HTTP layer (wave 1a lane A1)"
+
+[[todo]]
+plan = 1
+number = 4
+title = "Transport, kpasswd and kadmin (wave 1a lane C)"
+
+[[todo]]
+plan = 1
+number = 5
+title = "Crypto, Kerberos messages and PAC (wave 1a lane D)"
+
+[[todo]]
+plan = 1
+number = 6
+title = "Configuration odds and ends, ccache, keytab and file names (wave 1a lane E)"
+
+[[todo]]
+plan = 1
+number = 7
+title = "Lint gates, CI, release workflow, mutation and geiger infrastructure (wave 1a lane F)"
+
+[[todo]]
+plan = 1
+number = 8
+title = "Converge wave 1a and push"
+
+[[todo]]
+plan = 1
+number = 9
+title = "Service acceptor and replay cache (wave 1b lane A2)"
+
+[[todo]]
+plan = 1
+number = 10
+title = "High-level client (wave 1b lane B)"
+
+[[todo]]
+plan = 1
+number = 11
+title = "Converge wave 1b and push"
+
+[[todo]]
+plan = 1
+number = 12
+title = "Error module and public API consistency (wave 2)"
+
+[[todo]]
+plan = 1
+number = 13
+title = "Ambient-input confinement (wave 2)"
+
+[[todo]]
+plan = 1
+number = 14
+title = "One crypto policy, MIT enctype-list syntax, and typed rejection of insecure features (WP-02 + POL-01)"
+
+[[todo]]
+plan = 1
+number = 15
+title = "krb5.conf profile completeness with MIT semantics (WP-01)"
+
+[[todo]]
+plan = 1
+number = 16
+title = "Documentation, CHANGELOG, migration guide and overlay facts"
+
+[[todo]]
+plan = 1
+number = 17
+title = "Parity manifests for MIT krb5 and gokrb5"
+
+[[todo]]
+plan = 1
+number = 18
+title = "Mutation campaign, complete run at HEAD (D4)"
+
+[[todo]]
+plan = 1
+number = 19
+title = "Mutation triage: acceptor, HTTP, client, transport and kadmin files"
+
+[[todo]]
+plan = 1
+number = 20
+title = "Mutation triage: crypto, messages, PAC, config, files and the rest"
+
+[[todo]]
+plan = 1
+number = 21
+title = "Mutation campaign: verification re-run, closing FU-FUZ-01"
+
+[[todo]]
+plan = 1
+number = 22
+title = "Independent critic pass on the final tree"
+
+[[todo]]
+plan = 1
+number = 23
+title = "Final register, gates, housekeeping and push"
+
+[[todo]]
+plan = 1
+number = "F1"
+title = "Plan compliance audit"
+
+[[todo]]
+plan = 1
+number = "F2"
+title = "Code quality review"
+
+[[todo]]
+plan = 1
+number = "F3"
+title = "Real manual QA"
+
+[[todo]]
+plan = 1
+number = "F4"
+title = "Ideal-state fidelity"
+
+[[todo]]
+plan = 2
+number = 1
+title = "Interop infrastructure: pinned MIT krb5 1.22.2 and Samba AD in Docker, required-mode suite, CI workflow"
+
+[[todo]]
+plan = 2
+number = 2
+title = "Dependency admission gate and the additive-leaf feature rule (D3, D6, D10)"
+
+[[todo]]
+plan = 2
+number = 3
+title = "Rust extension points (WP-16)"
+
+[[todo]]
+plan = 2
+number = 4
+title = "Exchange engine, responder and options (WP-04)"
+
+[[todo]]
+plan = 2
+number = 5
+title = "Camellia (WP-03, leaf `camellia`) and the Kerberos PRF primitives"
+
+[[todo]]
+plan = 2
+number = 6
+title = "Trace and logging diagnostics (WP-18; adapter leaf `tracing`)"
+
+[[todo]]
+plan = 2
+number = 7
+title = "FAST armor and encrypted challenge (WP-05)"
+
+[[todo]]
+plan = 2
+number = 8
+title = "PKINIT and anonymous credentials (WP-06, leaf `pkinit`)"
+
+[[todo]]
+plan = 2
+number = 9
+title = "SPAKE pre-authentication (WP-07, leaf `spake`)"
+
+[[todo]]
+plan = 2
+number = 10
+title = "OTP inside FAST (WP-08)"
+
+[[todo]]
+plan = 2
+number = 11
+title = "Credential stores I: the store traits, MEMORY ccache and keytab, collections, DIR completion (WP-09a)"
+
+[[todo]]
+plan = 2
+number = 12
+title = "Credential stores II: KCM client (WP-09b)"
+
+[[todo]]
+plan = 2
+number = 13
+title = "Credential stores III: Linux kernel keyring (WP-09c, leaf `ccache-keyring`)"
+
+[[todo]]
+plan = 2
+number = 14
+title = "Credential stores IV: Windows MSLSA and the macOS store (WP-09d; D11, D13)"
+
+[[todo]]
+plan = 2
+number = 15
+title = "Discovery and canonicalization (WP-10a)"
+
+[[todo]]
+plan = 2
+number = 16
+title = "MS-KKDCP KDC proxy and its transport trait (WP-10b; built-in transport leaf `kkdcp-rustls`; D7)"
+
+[[todo]]
+plan = 2
+number = 17
+title = "Routing, capaths transit validation, S4U/RBCD, U2U and verify_init_creds (WP-11; closes plan-1 FU-SVC-08)"
+
+[[todo]]
+plan = 2
+number = 18
+title = "GSS-API I: names, credentials, contexts, channel bindings, delegation (WP-12a)"
+
+[[todo]]
+plan = 2
+number = 19
+title = "GSS-API II: IOV/AEAD, PRF, context export/import, DCE style, legacy token formats (WP-12b)"
+
+[[todo]]
+plan = 2
+number = 20
+title = "IAKERB (WP-13a)"
+
+[[todo]]
+plan = 2
+number = 21
+title = "NegoEx (WP-13b)"
+
+[[todo]]
+plan = 2
+number = 22
+title = "PAC API: builder, full verification, attributes (WP-14)"
+
+[[todo]]
+plan = 2
+number = 23
+title = "Password expiry and kpasswd completion (WP-15a)"
+
+[[todo]]
+plan = 2
+number = 24
+title = "Remote kadm5 client over RPCSEC_GSS (WP-15b)"
+
+[[todo]]
+plan = 2
+number = 25
+title = "Local authorization and name translation (WP-17, leaf `localauth`)"
+
+[[todo]]
+plan = 2
+number = 26
+title = "HTTP client and session parity (WP-19; leaf `http-client`; the session manager is always compiled with `http`)"
+
+[[todo]]
+plan = 2
+number = 27
+title = "Replay backends and the authenticated message API (WP-20)"
+
+[[todo]]
+plan = 2
+number = 28
+title = "Configuration consumers complete; parity manifests at 100%; docs"
+
+[[todo]]
+plan = 2
+number = 29
+title = "Mutation campaign for the whole crate (D4)"
+
+[[todo]]
+plan = 2
+number = 30
+title = "Independent critic pass on the final tree"
+
+[[todo]]
+plan = 2
+number = 31
+title = "Final gates, overlay facts, interop proof, push"
+
+[[todo]]
+plan = 2
+number = "F1"
+title = "Plan compliance audit"
+
+[[todo]]
+plan = 2
+number = "F2"
+title = "Code quality review"
+
+[[todo]]
+plan = 2
+number = "F3"
+title = "Real manual QA"
+
+[[todo]]
+plan = 2
+number = "F4"
+title = "Ideal-state fidelity"
