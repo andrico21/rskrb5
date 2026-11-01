@@ -2485,8 +2485,13 @@ fn kdc_error_code(bytes: &[u8]) -> Option<i32> {
 /// `request_len` bytes under `udp_preference_limit`.
 #[cfg(feature = "tokio")]
 fn auto_uses_udp_first(config: &Config, request_len: usize) -> bool {
-    let limit = config.libdefaults.udp_preference_limit;
-    limit != 1 && usize::try_from(limit).is_ok_and(|max| request_len <= max)
+    let configured = config.libdefaults.udp_preference_limit;
+    let limit: i32 = if configured < 0_i32 {
+        1465_i32
+    } else {
+        configured.min(32_700_i32)
+    };
+    usize::try_from(limit).is_ok_and(|max| request_len <= max)
 }
 
 #[cfg(test)]
@@ -2500,6 +2505,24 @@ mod tests {
     use core::net::IpAddr;
 
     use super::parse_dns_server;
+
+    /// Parsed UDP limits reach Auto transport with MIT fallback, cap and boundary.
+    #[test]
+    fn profile_udp_preference_boundaries() -> Result<(), super::ConfigError> {
+        for (limit, size, expected) in [
+            (-1_i32, 1465_usize, true),
+            (-1_i32, 1466_usize, false),
+            (1_i32, 1_usize, true),
+            (1_i32, 2_usize, false),
+            (32_701_i32, 32_701_usize, false),
+            (32_701_i32, 32_700_usize, true),
+        ] {
+            let config =
+                super::Config::parse(&format!("[libdefaults]\n udp_preference_limit = {limit}\n"))?;
+            assert_eq!(super::auto_uses_udp_first(&config, size), expected);
+        }
+        Ok(())
+    }
 
     /// Numeric framing boundaries are tested without allocating multi-gigabyte requests.
     #[test]
