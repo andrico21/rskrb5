@@ -20,12 +20,17 @@ It continues [`rskrb5`](https://github.com/clelange/rskrb5) independently;
 | PAC and Active Directory | PAC container, validation info, UPN/DNS, credentials, delegation, device and claims data, checksums and AD credential summaries. The AD integration tests need a lab and aren't run in CI ([`docs/ad-integration.md`](docs/ad-integration.md)). |
 | Review backlog | Every open item of the code review and of the second security-audit run is fixed with a regression test or dismissed with evidence: 78 rows, 75 fixed and 3 dismissed ([`docs/review/README.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/README.md)). |
 | Fuzzing | Each attacker-facing parser has a `cargo fuzz` target (13 targets, [`docs/review/fuzz.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/fuzz.md)). |
+| Follow-up review | The independent review of `6586b7a` is tracked row by row, with proofs, in [`docs/review/followup-6586b7a.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/followup-6586b7a.md); `CHANGELOG.md` lists each behaviour change. |
+| Parity with MIT krb5 and gokrb5 | Not complete. This release delivers the review follow-up, MIT `krb5.conf` profile semantics (work package WP-01) and the runtime encryption policy with its permanent rejections (WP-02, POL-01). The other work packages (WP-03 to WP-20) are planned, not delivered. The per-feature manifests are the source of truth: [MIT krb5 1.22.2](docs/mit-krb5-parity.md), 169 rows (36 implemented, 75 partial, 42 absent, 8 rejected, 1 omitted, 7 out of scope); [gokrb5 v8.4.4](docs/gokrb5-parity.md), 35 rows (18 implemented, 17 partial). |
 | Not supported | API, KCM, KEYRING and MSLSA credential stores, FAST armor, PKINIT and system GSSAPI/SSPI facades. Unsupported credential stores fail with a typed error. |
 
 The API can still change before 1.0. Wire formats, cryptographic behaviour
 and the gokrb5 fixture parity are treated as compatibility-sensitive.
-[`docs/gokrb5-parity.md`](docs/gokrb5-parity.md) tracks parity with gokrb5
-v8.4.4 and lists every deliberate divergence.
+[`docs/mit-krb5-parity.md`](docs/mit-krb5-parity.md) and
+[`docs/gokrb5-parity.md`](docs/gokrb5-parity.md) track parity with MIT krb5
+1.22.2 and gokrb5 v8.4.4 feature by feature, from the machine-readable
+`docs/mit-krb5-parity.toml` and `docs/gokrb5-parity.toml`, and list every
+deliberate divergence.
 
 The [security policy](docs/security-policy.md) documents runtime encryption
 permission, permanent feature rejections, derivation limits and residual secret copies.
