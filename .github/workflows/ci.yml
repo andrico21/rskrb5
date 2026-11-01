@@ -643,11 +643,8 @@ jobs:
     # Mutation runs only need the build to compile. The deny-level profile
     # would make most mutants unviable (a mutant often leaves an unused
     # binding), so lints are capped and warnings let through for this job.
-    # Debug info is off: every mutant relinks the ~50 test binaries in each of
-    # the two build directories, and with full debug info five of the 16
-    # runners of run 41325372774 died mid-run ("lost communication",
-    # "received a shutdown signal", which GitHub attributes to a starved
-    # runner). Test behaviour does not depend on debug info; debug
+    # Debug info is off, since every mutant relinks the ~50 test binaries in
+    # each build directory; test behaviour does not depend on it and debug
     # assertions stay on.
     env:
       CARGO_BUILD_WARNINGS: allow
@@ -659,6 +656,21 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-mutants
         run: cargo install cargo-mutants --locked
+      # A mutant can turn a loop into an unbounded allocation that fills the
+      # runner's 16 GB faster than the per-mutant timeout fires; the kernel
+      # then starves the runner agent and GitHub drops the job ("lost
+      # communication", "received a shutdown signal": shard 5/16 of run
+      # 41325372774 and shard 10/32 of run 41343745268, one mutant range).
+      # The run step moves itself into this cgroup, so the OOM killer ends
+      # the runaway test binary there (its test fails: the mutant is caught)
+      # and the runner survives.
+      - name: Confine the mutation run's memory
+        run: |
+          grep -qw memory /sys/fs/cgroup/cgroup.subtree_control
+          sudo mkdir /sys/fs/cgroup/mutants
+          echo 12G | sudo tee /sys/fs/cgroup/mutants/memory.max
+          echo 0 | sudo tee /sys/fs/cgroup/mutants/memory.swap.max
+          echo 16384 | sudo tee /sys/fs/cgroup/mutants/pids.max
       - name: Run cargo mutants (shard ${{ matrix.shard }}/32, wall-capped at 170m)
         # `timeout` sends TERM at 170m and KILL 5m later if the run ignores
         # TERM, reporting 124 or 137: the untested tail is then absent from
@@ -666,6 +678,7 @@ jobs:
         # unfinished. cargo-mutants' own statuses (2 = missed mutants,
         # 3 = timeouts) are advisory findings.
         run: |
+          echo "$$" | sudo tee /sys/fs/cgroup/mutants/cgroup.procs
           set +e
           timeout -k 5m 170m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/32 -j 2
           status=$?
@@ -685,7 +698,8 @@ jobs:
           generated=$(jq 'length' "$out/mutants.json" 2>/dev/null || echo 0)
           total=$(jq '[.outcomes[]? | select(.scenario != "Baseline")] | length' "$out/outcomes.json" 2>/dev/null || echo 0)
           summary=$(jq -r '"caught=\(.caught) missed=\(.missed) unviable=\(.unviable) timeout=\(.timeout) success=\(.success)"' "$out/outcomes.json" 2>/dev/null || echo "no outcomes.json")
-          line="shard ${{ matrix.shard }}/32: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown}"
+          oom_kills=$(awk '$1 == "oom_kill" {print $2}' /sys/fs/cgroup/mutants/memory.events 2>/dev/null || echo unknown)
+          line="shard ${{ matrix.shard }}/32: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} truncated=${TRUNCATED:-unknown} oom_kills=${oom_kills:-unknown}"
           echo "$line"
           echo "$line" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload mutants.out
