@@ -202,3 +202,75 @@ current no-unsafe/no-new-dependency implementation; such tokens fail typed
 can supply those facts through B1's pure API and use explicit literal paths.
 No additional ledger row closes: FU-CFG-09 was already marked fixed by Step A;
 B2 completes its separately noted dynamic-module refusal. GAP-4 remains open.
+
+## C1: first 22 libdefaults relations
+
+The typed public `LibDefaults` fields expose all 22 values from `allow_des3`
+through `ignore_acceptor_hostname`. `hostname::Canonicalization` preserves
+`Never`, `Always`, and `Fallback`; boolean serde representations remain
+compatible, with the additional string `"fallback"`. Existing boolean builders
+remain available. New fields are `default_rcache_name`, `dns_uri_lookup`,
+`enforce_ok_as_delegate`, and `err_fmt`.
+
+`src/config/libdefaults/relations.rs::RELATIONS` is the machine-readable source
+for step F. Its 22 literal rows contain six columns: relation, value kind, MIT
+default, consumer symbol or `plan 2 WP-xx`, fail-closed rationale, and named test
+in `tests/config/relations_c1.rs`. Every relation is a **scalar lookup**; list
+tokens are inside that first value. Step F still owns generating and checking
+`docs/config-relations.md`; C1 does not claim all 43 relations are complete.
+
+The production classifier reads the same table after complete decoding and
+enctype resolution. `Config::diagnostics()` exposes its `NotYetEffective`
+diagnostics alongside existing enctype diagnostics. Strict mode rejects every
+selected deferred C1 relation. Compatible mode rejects explicit replay-store
+names other than `none:` (persistent/cross-process protection is unavailable,
+WP-20), and nonempty `extra_addresses` with `noaddresses=false` (address-bound
+requests unavailable, WP-04). `none:` does **not** disable current memory replay
+protection. With `noaddresses=true`, addresses are typed but only diagnosed.
+Absent deferred relations do not generate a diagnostic or activate a feature.
+
+No DNS canonicalization, TXT/URI discovery, GSS credential forwarding, acceptor
+name relaxation, error formatting, or cache-format selection is added. Those
+requests produce diagnostics: current behavior does not perform the requested
+relaxation. GSS context builders already reject credential delegation. AS
+canonicalization remains suppressed to preserve authenticated identity; TGS
+options still consume the flag. The table records that partial effectiveness
+as WP-04, not as completed AS canonicalization.
+
+Existing consumers now apply `forwardable` to AS and TGS request bits; false
+clears a conflicting raw KDC-options bit. `Config::realm_for_host` selects a
+domain mapping before `default_realm`, and the high-level service-realm lookup
+uses it before its existing client-realm fallback. Explicit service realms
+retain precedence. Clockskew continues into reply-validation and acceptor
+options; enctype expressions and default-name loaders retain WP-02/B2 consumers.
+
+### MIT references and deliberate grammar differences
+
+- [1.22 krb5.conf relation defaults](https://web.mit.edu/kerberos/krb5-1.22/doc/admin/conf_files/krb5_conf.html#libdefaults).
+  Build-time `DEFCCNAME`, `DEFCKTNAME`, `DEFKTNAME` are not universal paths.
+  This crate retains its B2 defaults. DNS KDC lookup defaults false here rather
+  than MIT's true in DNS-enabled builds; URI discovery defaults false here
+  because it is unavailable. Replay-name storage is unset here, not a claim
+  that MIT's `dfl:` backend exists.
+- [prof_get.c](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_get.c):
+  booleans include `on`, `off`, `nil`; historical `f` remains a gokrb5 extension.
+  `ccache_type` is signed decimal i32, not a four-value parsing enum.
+- [x-deltat.y:143–171](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/krb/x-deltat.y#L143-L171):
+  C1 clockskew accepts seconds, ordered `d/h/m/s` terms, `h:m[:s]`, and
+  `d-h:m:s`. Signed components are accepted when their checked i32 total is
+  nonnegative. Colon fields after the first have at most two digits; duplicate
+  or reordered units, concatenated whitespace-separated digits, overflow and
+  trailing garbage are errors. Negative tolerances fail closed. MIT's context
+  initializer actually reads clockskew as integer seconds: time syntax here is
+  the requested extension. Unlike MIT's lexer, unknown trailing characters
+  are not treated as end-of-input. Other duration relations retain their
+  previous parser pending C2; this is not a global duration-parser rewrite.
+- [localaddr.c](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/localaddr.c):
+  address lists accept commas and ASCII whitespace. This crate deliberately
+  rejects malformed address tokens instead of silently narrowing the list.
+
+Parse diagnostics remain excluded from serde, as before. The existing serde
+round-trip regression now compares all serialized fields and explicitly pins
+that diagnostic exclusion. The malformed-address regression retains the same
+bad input but changes partial acceptance to `InvalidAddress`; a valid uppercase
+fixture preserves the original case-folding and address-order assertions.
