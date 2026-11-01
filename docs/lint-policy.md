@@ -9,14 +9,14 @@ builds, lints and tests clean, and so does Windows.
 
 - The `[lints]` tables in the root [`Cargo.toml`](../Cargo.toml) are the TOML
   fence of core Section 9, "The profile", in the vendored
-  [core guidelines](rust-guidelines/RUST_GUIDELINES.md). The pin and the
-  re-vendor procedure are in the [vendoring index](../RUST_GUIDELINES.md).
+  [core guidelines](https://github.com/andrico21/rskrb5-ng/blob/main/docs/rust-guidelines/RUST_GUIDELINES.md). The pin and the
+  re-vendor procedure are in the [vendoring index](https://github.com/andrico21/rskrb5-ng/blob/main/RUST_GUIDELINES.md).
   `profile_eq.py` compares the two as parsed TOML; any difference fails.
 - [`clippy.toml`](../clippy.toml) is the core sample. Only
   `allowed-duplicate-crates` (each with a reason comment, matching the
   `[[bans.skip]]` names in [`deny.toml`](../deny.toml)) and `doc-valid-idents`
   may differ, and only by appending.
-- [`.cargo/config.toml`](../.cargo/config.toml) sets
+- [`.cargo/config.toml`](https://github.com/andrico21/rskrb5-ng/blob/main/.cargo/config.toml) sets
   `build.warnings = "deny"`. CI keeps `-D warnings` on clippy and rustdoc.
   For local work in progress, `CARGO_BUILD_WARNINGS=allow` lets one cargo
   invocation build with warnings; CI sets it only where the profile is not
@@ -25,9 +25,9 @@ builds, lints and tests clean, and so does Windows.
 - The fuzz crate (`fuzz/Cargo.toml`) is a separate workspace without lint
   tables; `fuzz_lint.py` applies the root profile to it as command-line flags.
 - On top of the core: the
-  [Kerberos overlay](rust-guidelines/overlays/domains/kerberos-credential-protocols.md),
-  the [HTTP services overlay](rust-guidelines/overlays/domains/http-services.md)
-  and the [rskrb5-ng project overlay](rust-guidelines/overlays/projects/rskrb5-ng.md).
+  [Kerberos overlay](https://github.com/andrico21/rskrb5-ng/blob/main/docs/rust-guidelines/overlays/domains/kerberos-credential-protocols.md),
+  the [HTTP services overlay](https://github.com/andrico21/rskrb5-ng/blob/main/docs/rust-guidelines/overlays/domains/http-services.md)
+  and the [rskrb5-ng project overlay](https://github.com/andrico21/rskrb5-ng/blob/main/docs/rust-guidelines/overlays/projects/rskrb5-ng.md).
   Overlays may add rules and may not remove any.
 
 ## The six sanctioned exceptions
@@ -38,7 +38,7 @@ attributes allowed anywhere in the Rust sources, including inside
 kinds. The sources are `src`, `tests`, `examples`, `benches` and
 `fuzz/fuzz_targets` plus everything the checkout's Cargo manifests compile:
 build scripts and targets with a custom `path`
-([`source_set.py`](../scripts/lint-gates/source_set.py)); a target outside
+([`source_set.py`](https://github.com/andrico21/rskrb5-ng/blob/main/scripts/lint-gates/source_set.py)); a target outside
 the checkout, an out-of-line `mod` in a file scanned on its own, or an empty
 source set fails every gate. A lint path is read the way rustc reads it, so
 `clippy :: r#unwrap_used` is `clippy::unwrap_used`, and an argument that is
@@ -68,10 +68,10 @@ forbidden.
 
 ## Gates
 
-All gate scripts live in [`scripts/lint-gates/`](../scripts/lint-gates/), use
+All gate scripts live in [`scripts/lint-gates/`](https://github.com/andrico21/rskrb5-ng/tree/main/scripts/lint-gates), use
 the Python standard library only, and have a `--self-test` mode. CI runs them
-in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
-[`prek.toml`](../prek.toml) mirrors the fast ones as a pre-push hook.
+in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blob/main/.github/workflows/ci.yml);
+[`prek.toml`](https://github.com/andrico21/rskrb5-ng/blob/main/prek.toml) mirrors the fast ones as a pre-push hook.
 
 | Command | What it enforces |
 |---|---|
@@ -86,7 +86,7 @@ in the `lint-gates` job of [`ci.yml`](../.github/workflows/ci.yml);
 | `feature_closures.py run` | every feature closure: `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |
 | `feature_closures.py check-ci .github/workflows/ci.yml` | the matrix of the job whose id is `closures` lists exactly the computed closures, each once; the job is defined once, no other `closures:` key exists (no decoy job or matrix), the matrix has no `include`/`exclude`, the job has no `if`/`continue-on-error`, and its steps run exactly the strict clippy and test commands. Nothing may cap lints or swallow a failure: the job has no `env`, `defaults`, `shell`, `container` or `working-directory` and uses only the checkout, toolchain and cache actions; the workflow sets no `defaults` and no Cargo or rustc variable beyond `CARGO_TERM_COLOR`, `CARGO_INCREMENTAL`, `CARGO_NET_RETRY` and `RUST_BACKTRACE`; and `.cargo/config.toml` keeps `build.warnings = "deny"` with no `rustflags`, wrapper, `rustc` or Cargo/rustc `[env]` variable |
 | `fuzz_lint.py --enforce` | the root profile on the nightly fuzz crate, in a disposable copy (without `--enforce` it reports the clippy result and exits 0, like every gate) |
-| `fuzz_coverage.py --enforce` | the parser inventory of [`review/fuzz.md`](review/fuzz.md) exists and is not empty, lists every function the parser search finds, names only functions still defined in their source file, and names only targets of `fuzz/Cargo.toml` (`--coverage DIR` proves the mappings from coverage exports) |
+| `fuzz_coverage.py --enforce` | the parser inventory of [`review/fuzz.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/fuzz.md) exists and is not empty, lists every function the parser search finds, names only functions still defined in their source file, and names only targets of `fuzz/Cargo.toml` (`--coverage DIR` proves the mappings from coverage exports) |
 | `workflow_gate.py --enforce` | the `lint-gates` job and the prek hook run every gate, plus the error-variant construction audit and the offline self-tests of `scripts/check-github-ad-gate.py`, `scripts/check-ad-integration-env-smoke.py`, `scripts/run-gated-integration.sh` and `scripts/release-publish.sh`, and the job may not be skipped or advisory; every action is pinned to a commit SHA, each `dtolnay/rust-toolchain` channel to one SHA, and the release workflows use CI's `# stable` revision |
 | `scripts/check-error-constructions.py` | every public variant of the error enums in `src/error.rs` and `src/error/` has a construction expression outside its enum definition (patterns, strings and comments do not count); an enum body the scanner cannot read fails closed |
 | `scripts/check-config-relations.py` and `--self-test` | literal Rust tables generate the packaged relation document exactly (CRLF-safe); all 43 libdefaults and 28 pinned realm names match independent inventories, all 77 rows name existing tests; malformed/duplicate/opaque tables, missing tests and documentation drift fail closed |
@@ -139,11 +139,11 @@ Production means every file outside `tests/` and `benches/` (so `src`,
 macro generates are checked as well: every `macro_rules!` definition or macro
 invocation whose tokens can produce an `async fn`, a test or a `Drop` impl is
 scanned like source, metavariables read as identifiers
-([`prose_scope.py`](../scripts/lint-gates/prose_scope.py)); `proptest!` cases
+([`prose_scope.py`](https://github.com/andrico21/rskrb5-ng/blob/main/scripts/lint-gates/prose_scope.py)); `proptest!` cases
 are exempt only from `test-docs` and `test-result`.
 
 `test-result` requires `Result` only when the test body has a propagation site
-([`prose_infallible.py`](../scripts/lint-gates/prose_infallible.py)).
+([`prose_infallible.py`](https://github.com/andrico21/rskrb5-ng/blob/main/scripts/lint-gates/prose_infallible.py)).
 Assertions (including error assertions) and known infallible construction or
 ownership conversions don't count, because an unused `Ok(())` wrapper would
 trigger `clippy::unnecessary_wraps`. Unknown calls, fallible calls nested in
@@ -181,7 +181,7 @@ new lints. The owner allows the executor to update the shared core. Then:
    Section 9 profile (each new lint at the level the core's inclusion rule
    gives), the Exclusions table (each excluded lint with its reason) and the
    "tracks stable through" line. Push it.
-3. Re-vendor at the new pin ([`RUST_GUIDELINES.md`](../RUST_GUIDELINES.md))
+3. Re-vendor at the new pin ([`RUST_GUIDELINES.md`](https://github.com/andrico21/rskrb5-ng/blob/main/RUST_GUIDELINES.md))
    and mirror the profile into `Cargo.toml` `[lints]` (`profile_eq.py
    --clippy-toml` passes).
 4. Fix every new diagnostic directly, in one `toolchain:` commit. No baseline

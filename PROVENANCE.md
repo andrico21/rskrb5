@@ -42,7 +42,7 @@ work listed in [`CHANGELOG.md`](CHANGELOG.md). Code moving from
 `rskrb5-patched` follows
 [`docs/migration-from-rskrb5-patched.md`](docs/migration-from-rskrb5-patched.md).
 
-The branch ledger [`docs/maintenance/branches.md`](docs/maintenance/branches.md)
+The branch ledger [`docs/maintenance/branches.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/maintenance/branches.md)
 lists every ref, the `archive/*` tags of the deleted release branches and the
 frozen pull-request head branches.
 
@@ -75,7 +75,7 @@ on 2026-10-27.
 Issues filed: [#1](https://github.com/clelange/rskrb5/issues/1) to
 [#14](https://github.com/clelange/rskrb5/issues/14), all open on 2026-10-27.
 Their resolution in this crate is indexed in
-[`docs/review/README.md`](docs/review/README.md) (keys `upstream issue #N`).
+[`docs/review/README.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/README.md) (keys `upstream issue #N`).
 
 The TCP transport change of 0.2.2 imported the two commits of the third-party
 upstream PR #19, opened by Gittingc0dez, with their authorship preserved
