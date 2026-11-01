@@ -18,6 +18,15 @@ mod readers;
 #[path = "config/consumers.rs"]
 mod consumers;
 
+#[path = "config/libdefaults_c1.rs"]
+mod libdefaults_c1;
+
+#[path = "config/relations_c1.rs"]
+mod relations_c1;
+
+#[path = "config/c1_boundaries.rs"]
+mod c1_boundaries;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(
@@ -42,6 +51,8 @@ mod tests {
     use proptest::{prelude::Strategy, prop_assert};
     #[cfg(feature = "messages")]
     use rasn::der;
+    #[cfg(feature = "serde")]
+    use rskrb5_ng::config::ConfigDiagnostic;
     #[cfg(any(feature = "serde", feature = "messages"))]
     use rskrb5_ng::config::LibDefaults;
     #[cfg(feature = "messages")]
@@ -1107,40 +1118,32 @@ mod tests {
         Ok(())
     }
 
-    /// Pins case-insensitive `[libdefaults]` keys and comma-separated `extra_addresses` without invalid entries.
+    /// Malformed address input fails rather than silently narrowing the list.
     #[test]
     fn libdefaults_keys_are_case_insensitive_and_extra_addresses_are_comma_separated()
     -> Result<(), TestError> {
-        let config = Config::parse(
+        let result = Config::parse(
             "
 [libdefaults]
  DEFAULT_REALM = TEST.GOKRB5
  EXTRA_ADDRESSES = 127.0.0.1, 127.0.0.2, not-an-ip
  FORWARDABLE = TRUE
 ",
-        )
-        .context("config parses")?;
-
-        assert_eq!(config.libdefaults.default_realm, "TEST.GOKRB5");
-        assert!(config.libdefaults.forwardable.is_enabled());
-        assert_eq!(config.libdefaults.extra_addresses.len(), 2);
-        assert_eq!(
-            config
-                .libdefaults
-                .extra_addresses
-                .first()
-                .context("a first extra address")?
-                .to_string(),
-            "127.0.0.1"
         );
+        assert!(matches!(result, Err(Error::InvalidAddress(value)) if value == "not-an-ip"));
+        let valid = Config::parse(
+            "[libdefaults]\n DEFAULT_REALM = TEST.GOKRB5\n EXTRA_ADDRESSES = 127.0.0.1, 127.0.0.2\n FORWARDABLE = TRUE\n",
+        )?;
+        assert_eq!(valid.libdefaults.default_realm, "TEST.GOKRB5");
+        assert!(valid.libdefaults.forwardable.is_enabled());
         assert_eq!(
-            config
+            valid
                 .libdefaults
                 .extra_addresses
-                .get(1)
-                .context("a second extra address")?
-                .to_string(),
-            "127.0.0.2"
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["127.0.0.1", "127.0.0.2"]
         );
         Ok(())
     }
@@ -1409,7 +1412,18 @@ mod tests {
             .map_err(|cause| format!("libdefaults deserialize: {cause}"))?;
 
         assert!(!decoded.permitted_enctypes_explicit.is_enabled());
-        assert_eq!(decoded, config.libdefaults);
+        assert_eq!(serde_json::to_string(&decoded)?, json);
+        assert!(
+            decoded.enctype_diagnostics.is_empty(),
+            "parse diagnostics are not serialized"
+        );
+        assert!(config.diagnostics().iter().any(|item| matches!(
+            item,
+            ConfigDiagnostic::NotYetEffective {
+                relation: "dns_lookup_realm",
+                package: "plan 2 WP-10"
+            }
+        )));
         Ok(())
     }
     /// Pins that JSON without the explicit flag deserializes as an implicit permitted list.

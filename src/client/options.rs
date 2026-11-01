@@ -86,6 +86,10 @@ impl AsReq {
             options.etypes.retain(|etype| permitted.contains(etype));
         }
         options.kdc_option_bits = defaults.kdc_default_options;
+        options.kdc_option_bits &= !0x4000_0000;
+        if defaults.forwardable.is_enabled() {
+            options.kdc_option_bits |= 0x4000_0000;
+        }
         if defaults.canonicalize.is_enabled() {
             options.kdc_option_bits |= KDC_OPTION_CANONICALIZE;
         }
@@ -235,6 +239,10 @@ impl TgsReq {
             options.etypes.retain(|etype| permitted.contains(etype));
         }
         options.kdc_option_bits = defaults.kdc_default_options;
+        options.kdc_option_bits &= !0x4000_0000;
+        if defaults.forwardable.is_enabled() {
+            options.kdc_option_bits |= 0x4000_0000;
+        }
         if defaults.canonicalize.is_enabled() {
             options.kdc_option_bits |= KDC_OPTION_CANONICALIZE;
         }

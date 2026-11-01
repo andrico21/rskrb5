@@ -43,6 +43,13 @@ mod profile;
 #[path = "config/profile_syntax.rs"]
 mod profile_syntax;
 
+/// Typed DNS canonicalization policy.
+#[path = "config/hostname.rs"]
+pub mod hostname;
+/// C1 relation parsing and classification.
+#[path = "config/libdefaults.rs"]
+mod libdefaults;
+
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";
 /// The configuration files tried, in order, when `KRB5_CONFIG` is unset.
@@ -96,6 +103,22 @@ pub struct Config {
 }
 
 impl Config {
+    /// Diagnostics for selected profile relations, including deferred consumers.
+    #[inline]
+    #[must_use]
+    pub fn diagnostics(&self) -> &[ConfigDiagnostic] {
+        &self.libdefaults.enctype_diagnostics
+    }
+
+    /// Resolve a host mapping, then the explicitly configured default realm.
+    #[inline]
+    #[must_use]
+    pub fn realm_for_host(&self, host: &str) -> Option<&str> {
+        self.resolve_realm(host).or_else(|| {
+            (!self.libdefaults.default_realm.is_empty())
+                .then_some(self.libdefaults.default_realm.as_str())
+        })
+    }
     #[must_use]
     /// Create a config with MIT/gokrb5-style defaults and no parsed sections.
     #[inline]
@@ -552,6 +575,9 @@ pub struct LibDefaults {
     pub default_client_keytab_name: String,
     /// Default service keytab path.
     pub default_keytab_name: String,
+    /// Requested replay store; explicit persistent stores fail closed until WP-20.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub default_rcache_name: String,
     /// Default realm.
     pub default_realm: String,
     /// Preferred TGS enctype names.
@@ -561,11 +587,20 @@ pub struct LibDefaults {
     #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
     pub default_tkt_enctypes: Vec<String>,
     /// Whether hostnames should be DNS-canonicalized.
-    pub dns_canonicalize_hostname: Toggle,
+    pub dns_canonicalize_hostname: hostname::Canonicalization,
     /// Whether KDC DNS lookup is enabled.
     pub dns_lookup_kdc: Toggle,
     /// Whether realm DNS lookup is enabled.
     pub dns_lookup_realm: Toggle,
+    /// Requested URI discovery; no URI resolver is enabled by parsing this value.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub dns_uri_lookup: Toggle,
+    /// Requested GSS delegation restriction; credential forwarding is unavailable.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub enforce_ok_as_delegate: Toggle,
+    /// Requested error presentation template; typed errors remain unchanged.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub err_fmt: String,
     /// Extra local addresses.
     pub extra_addresses: Vec<IpAddr>,
     /// Whether tickets should be forwardable.
@@ -754,8 +789,8 @@ impl LibDefaults {
     /// Sets `dns_canonicalize_hostname`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub const fn with_dns_canonicalize_hostname(mut self, value: Toggle) -> Self {
-        self.dns_canonicalize_hostname = value;
+    pub fn with_dns_canonicalize_hostname(mut self, value: Toggle) -> Self {
+        self.dns_canonicalize_hostname = value.into();
         self
     }
     /// Sets `dns_lookup_kdc`, preserving the other fields.
@@ -948,12 +983,16 @@ impl LibDefaults {
             default_ccache_name: String::new(),
             default_client_keytab_name: "/usr/local/var/krb5/user/%{euid}/client.keytab".to_owned(),
             default_keytab_name: "/etc/krb5.keytab".to_owned(),
+            default_rcache_name: String::new(),
             default_realm: String::new(),
             default_tgs_enctypes: default_enctypes.clone(),
             default_tkt_enctypes: default_enctypes.clone(),
-            dns_canonicalize_hostname: Toggle::Enabled,
+            dns_canonicalize_hostname: hostname::Canonicalization::Always,
             dns_lookup_kdc: Toggle::Disabled,
             dns_lookup_realm: Toggle::Disabled,
+            dns_uri_lookup: Toggle::Disabled,
+            enforce_ok_as_delegate: Toggle::Disabled,
+            err_fmt: String::new(),
             extra_addresses: Vec::new(),
             forwardable: Toggle::Disabled,
             ignore_acceptor_hostname: Toggle::Disabled,
@@ -1009,12 +1048,14 @@ impl LibDefaults {
                 }
                 "canonicalize" => self.canonicalize = Toggle::from_bool(parse_boolean(value)?),
                 "ccache_type" => self.ccache_type = parse_i32(value, line, key)?,
-                "clockskew" => self.clockskew = parse_duration(value)?,
+                "clockskew" => self.clockskew = libdefaults::duration::parse(value)?,
                 "default_ccache_name" => value.clone_into(&mut self.default_ccache_name),
                 "default_client_keytab_name" => {
                     value.clone_into(&mut self.default_client_keytab_name);
                 }
                 "default_keytab_name" => value.clone_into(&mut self.default_keytab_name),
+                "default_rcache_name" => value.clone_into(&mut self.default_rcache_name),
+                "err_fmt" => value.clone_into(&mut self.err_fmt),
                 "default_realm" => value.clone_into(&mut self.default_realm),
                 "default_tgs_enctypes" => {
                     enctypes.expressions.push(EnctypeExpr::parse(value)?);
@@ -1027,13 +1068,17 @@ impl LibDefaults {
                     enctypes.tkt_explicit = true;
                 }
                 "dns_canonicalize_hostname" => {
-                    self.dns_canonicalize_hostname = Toggle::from_bool(parse_boolean(value)?);
+                    self.dns_canonicalize_hostname = hostname::Canonicalization::parse(value)?;
                 }
                 "dns_lookup_kdc" => self.dns_lookup_kdc = Toggle::from_bool(parse_boolean(value)?),
                 "dns_lookup_realm" => {
                     self.dns_lookup_realm = Toggle::from_bool(parse_boolean(value)?);
                 }
-                "extra_addresses" => self.extra_addresses = parse_ip_addresses(value),
+                "dns_uri_lookup" => self.dns_uri_lookup = Toggle::from_bool(parse_boolean(value)?),
+                "enforce_ok_as_delegate" => {
+                    self.enforce_ok_as_delegate = Toggle::from_bool(parse_boolean(value)?);
+                }
+                "extra_addresses" => self.extra_addresses = parse_ip_addresses(value)?,
                 "forwardable" => self.forwardable = Toggle::from_bool(parse_boolean(value)?),
                 "ignore_acceptor_hostname" => {
                     self.ignore_acceptor_hostname = Toggle::from_bool(parse_boolean(value)?);
@@ -1287,13 +1332,14 @@ pub fn parse_duration(value: &str) -> Result<Duration, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidBoolean`] for a value that is none of `1`, `t`,
-/// `true`, `y`, `yes`, `0`, `f`, `false`, `n` or `no` (case-insensitive).
+/// Returns [`Error::InvalidBoolean`] outside MIT's case-insensitive vocabulary:
+/// `1`, `t`, `true`, `y`, `yes`, `on`, `0`, `false`, `n`, `no`, `nil`, `off`.
+/// The existing gokrb5 `f` spelling remains a compatible extension.
 #[inline]
 pub fn parse_boolean(value: &str) -> Result<bool, Error> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "t" | "true" | "y" | "yes" => Ok(true),
-        "0" | "f" | "false" | "n" | "no" => Ok(false),
+        "1" | "t" | "true" | "y" | "yes" | "on" => Ok(true),
+        "0" | "f" | "false" | "n" | "no" | "nil" | "off" => Ok(false),
         _ => Err(Error::InvalidBoolean(value.to_owned())),
     }
 }
@@ -1390,7 +1436,7 @@ struct LibDefaultsJson<'config> {
     default_tkt_enctype_ids: Vec<i32>,
     /// [`LibDefaults::dns_canonicalize_hostname`], as gokrb5's `DNSCanonicalizeHostname`.
     #[serde(rename = "DNSCanonicalizeHostname")]
-    dns_canonicalize_hostname: Toggle,
+    dns_canonicalize_hostname: hostname::Canonicalization,
     /// [`LibDefaults::dns_lookup_kdc`], as gokrb5's `DNSLookupKDC`.
     #[serde(rename = "DNSLookupKDC")]
     dns_lookup_kdc: Toggle,
@@ -1767,12 +1813,17 @@ fn invalid_integer(value: &str, line: &Line, key: &str) -> Error {
     }
 }
 
-/// The IP addresses of a comma-separated list; items that do not parse are
-/// skipped.
-fn parse_ip_addresses(value: &str) -> Vec<IpAddr> {
+/// Decode an address list without silently narrowing malformed input.
+/// # Errors
+/// Returns a typed failure naming the malformed address token.
+fn parse_ip_addresses(value: &str) -> Result<Vec<IpAddr>, Error> {
     value
-        .split(',')
-        .filter_map(|part| part.trim().parse().ok())
+        .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse()
+                .map_err(|_invalid_address| Error::InvalidAddress(part.to_owned()))
+        })
         .collect()
 }
 

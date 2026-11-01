@@ -14,6 +14,13 @@ pub enum ParseMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Diagnostic {
+    /// A known relation has no complete runtime consumer yet.
+    NotYetEffective {
+        /// Selected scalar relation name.
+        relation: &'static str,
+        /// Work package implementing the missing behavior.
+        package: &'static str,
+    },
     /// A removed draft-9 mechanism was ignored in a preference list.
     IgnoredPreauthType {
         /// Ignored PA type, never selected for an outgoing exchange.

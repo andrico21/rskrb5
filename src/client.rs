@@ -20,13 +20,6 @@ use std::env;
 use std::io;
 #[cfg(feature = "tokio")]
 use std::path::Path;
-
-#[cfg(feature = "tokio")]
-use crate::{
-    config::{credential_names, parameters::DefaultName},
-    file_name,
-    keytab::configured_keytab,
-};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::{der, types::Integer};
@@ -45,6 +38,12 @@ use crate::{
     error, kdc_rep, kdc_req,
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
+};
+#[cfg(feature = "tokio")]
+use crate::{
+    config::{credential_names, parameters::DefaultName},
+    file_name,
+    keytab::configured_keytab,
 };
 /// Identity-bound cache insertion.
 #[cfg(feature = "tokio")]
@@ -4737,7 +4736,7 @@ fn service_realm(config: &Config, service: &Principal) -> Option<String> {
     service
         .components
         .last()
-        .and_then(|host| config.resolve_realm(host))
+        .and_then(|host| config.realm_for_host(host))
         .map(str::to_owned)
 }
 
@@ -4828,7 +4827,7 @@ fn ccache_principal(value: &Principal) -> ccache::Principal {
 fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
     let cache_name =
         credential_names::resolve_credential_template(&config.libdefaults, DefaultName::Ccache)
-            .map_err(error::Ccache::from)?;
+            .map_err(error::Ccache::Expansion)?;
     if cache_name.is_empty() {
         return Err(Error::NoDefaultCCacheName);
     }

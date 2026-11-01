@@ -94,6 +94,15 @@ impl Profile {
             config.realms.push(Realm::parse(name, &lines)?);
         }
         config.libdefaults.validate_explicit_enctypes(enctypes)?;
+        let selected = self
+            .values
+            .keys()
+            .filter_map(|path| match path.as_slice() {
+                [section, key] if section == "libdefaults" => Some(key.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        super::libdefaults::classify(&mut config.libdefaults, &selected)?;
         Ok(config)
     }
 }

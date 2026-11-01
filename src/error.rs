@@ -1,5 +1,4 @@
 //! Typed errors grouped by Kerberos domain.
-use crate::config::parameters::Failure as ExpansionFailure;
 use core::str::Utf8Error;
 #[cfg(feature = "messages")]
 use core::time::Duration;
@@ -16,6 +15,7 @@ use rasn::types::Integer;
 use crate::client::KdcError;
 #[cfg(feature = "tokio")]
 use crate::client::transport::KdcProtocol;
+use crate::config::parameters::Failure as ExpansionFailure;
 #[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 include!("error/any.rs");
@@ -566,6 +566,17 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// An unsupported relation requires stricter behavior or strict parsing.
+    #[error("relation {relation} is not yet effective; requires {package}")]
+    NotYetEffective {
+        /// Selected relation.
+        relation: &'static str,
+        /// Work package owning its runtime consumer.
+        package: &'static str,
+    },
+    /// A local-address list contains a malformed IP address.
+    #[error("invalid extra address: {0}")]
+    InvalidAddress(String),
     /// Dynamic profile and plugin providers are not loaded by this crate.
     #[error("dynamic configuration modules are unsupported")]
     UnsupportedDynamicModule,

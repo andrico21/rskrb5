@@ -543,7 +543,8 @@ pub(crate) fn configured_keytab(
     defaults: &LibDefaults,
     selection: DefaultName,
 ) -> Result<Keytab, Error> {
-    let name = credential_names::resolve_credential_template(defaults, selection)?;
+    let name = credential_names::resolve_credential_template(defaults, selection)
+        .map_err(Error::Expansion)?;
     let path =
         file_name::literal_file_path(&name, &["FILE", "WRFILE"]).map_err(|error| match error {
             file_name::Error::Empty => Error::InvalidKeytabName,
