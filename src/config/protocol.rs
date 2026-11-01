@@ -5,6 +5,27 @@ use crate::{
     error::{Config as Error, Policy, RejectedFeature, RejectionReason},
 };
 
+/// Protocol selectors recognized even when disabled and therefore not rejected.
+pub(super) fn recognized(key: &str) -> bool {
+    key.starts_with("v4_")
+        || key.starts_with("krb4_")
+        || matches!(
+            key,
+            "pkinit_win2k"
+                | "pkinit_draft9"
+                | "flag_rsa_protocol"
+                | "pkinit_rsa_only"
+                | "pkinit_use_rsa"
+                | "pkinit_rsa"
+                | "pkinit_key_exchange"
+                | "pkinit_kex"
+                | "kpasswd_unprotected"
+                | "kpasswd_cleartext"
+                | "kpasswd_protocol"
+                | "kpasswd_version"
+        )
+}
+
 /// Parse a protocol relation without enabling an unsupported legacy mechanism.
 /// Unrelated keys, including certificate identity/trust paths, are not mode selectors.
 /// # Errors

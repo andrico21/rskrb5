@@ -41,6 +41,15 @@ mod realm_relations_d;
 #[path = "config/section_composition_d.rs"]
 mod section_composition_d;
 
+#[path = "config/diagnostics_e.rs"]
+mod diagnostics_e;
+
+#[path = "config/compatibility_e.rs"]
+mod compatibility_e;
+
+#[path = "config/unavailable_e.rs"]
+mod unavailable_e;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(

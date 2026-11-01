@@ -19,6 +19,8 @@ pub(super) struct Profile {
     realms: Vec<String>,
     /// Section headers, including empty sections.
     sections: BTreeSet<String>,
+    /// All admitted subsection paths, including empty ones.
+    scopes: BTreeSet<Key>,
 }
 
 impl Profile {
@@ -39,6 +41,7 @@ impl Profile {
 
     /// Preserve realm appearance independently of relation sorting.
     pub(super) fn scope(&mut self, path: &[String]) {
+        let _: bool = self.scopes.insert(path.to_vec());
         if let [section] = path {
             let _: bool = self.sections.insert(section.clone());
         }
@@ -99,6 +102,11 @@ impl Profile {
             config.realms.push(Realm::parse(name, &lines)?);
         }
         config.libdefaults.validate_explicit_enctypes(enctypes)?;
+        if mode == ParseMode::Strict
+            && let Some(diagnostic) = config.diagnostics().first()
+        {
+            return Err(diagnostic.clone().into_error());
+        }
         let selected = self
             .values
             .keys()
@@ -115,6 +123,8 @@ impl Profile {
                 super::section_decode::server(section, &mut config)?;
             }
         }
+        super::unknown::report(&mut config, &self.sections, &self.values)?;
+        super::unknown::empty_scopes(&mut config, &self.scopes)?;
         Ok(config)
     }
 }

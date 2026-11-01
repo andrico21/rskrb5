@@ -43,6 +43,14 @@ mod profile;
 #[path = "config/profile_syntax.rs"]
 mod profile_syntax;
 
+/// Per-row fail-closed classification review.
+#[cfg(test)]
+#[path = "config/classification_e.rs"]
+mod classification_e;
+/// Exhaustive diagnostic promotion regressions.
+#[cfg(test)]
+#[path = "config/diagnostic_tests.rs"]
+mod diagnostic_tests;
 /// Typed DNS canonicalization policy.
 #[path = "config/hostname.rs"]
 pub mod hostname;
@@ -65,6 +73,9 @@ mod section_inventory_tests;
 /// Typed application, route and realm relation data.
 #[path = "config/section_values.rs"]
 pub mod section_values;
+/// Unknown profile path diagnostics.
+#[path = "config/unknown.rs"]
+mod unknown;
 
 /// The environment variable naming the `krb5.conf` path list.
 const KRB5_CONFIG_ENV: &str = "KRB5_CONFIG";

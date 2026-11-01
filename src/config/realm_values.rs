@@ -90,14 +90,7 @@ pub(super) fn report(
     output: &mut Vec<ConfigDiagnostic>,
 ) -> Result<(), Error> {
     if mode == ParseMode::Strict {
-        match &diagnostic {
-            ConfigDiagnostic::NotYetEffective { relation, package } => {
-                return Err(Error::NotYetEffective { relation, package });
-            }
-            ConfigDiagnostic::ServerOnly { section } => return Err(Error::ServerOnly { section }),
-            ConfigDiagnostic::IgnoredPreauthType { id: _ }
-            | ConfigDiagnostic::UnsupportedSecureEnctype { token: _, until: _ } => {}
-        }
+        return Err(diagnostic.into_error());
     }
     output.push(diagnostic);
     Ok(())

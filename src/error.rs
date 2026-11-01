@@ -566,6 +566,24 @@ pub enum Client {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Config {
+    /// Strict parsing rejects unrecognized sections.
+    #[error("unknown configuration section: {section}")]
+    UnknownSection {
+        /// Section name.
+        section: String,
+    },
+    /// Strict parsing rejects unrecognized relation paths.
+    #[error("unknown configuration relation path: {}", path.join("/"))]
+    UnknownRelation {
+        /// Selected profile path.
+        path: Vec<String>,
+    },
+    /// Strict parsing rejects removed preauthentication preferences.
+    #[error("ignored preauthentication preference: {id}")]
+    IgnoredPreauthType {
+        /// Removed preference identifier.
+        id: i32,
+    },
     /// Strict parsing rejects configuration intended only for server processes.
     #[error("server-only configuration section: {section}")]
     ServerOnly {
