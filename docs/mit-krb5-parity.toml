@@ -79,7 +79,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["client::process_tgs_rep_with_referral"]
-test_names = ["tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt", "tests/client/session_cache.rs::tokio_client_renews_cached_referral_tgt_before_reusing_it"]
+test_names = [
+  "tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt",
+  "tests/client/session_cache.rs::tokio_client_renews_cached_referral_tgt_before_reusing_it",
+]
 feature_flags = ["tokio"]
 security_divergence = "Referral chains are bounded and the final service name is bound to the request; Go's omitted TGS identity checks are not copied."
 disposition = "ALREADY"
@@ -128,7 +131,11 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["client::build_s4u2proxy_req", "client::Tokio::s4u2proxy"]
-test_names = ["tests/client/tgs_exchange.rs::builds_s4u2proxy_tgs_req_with_evidence_ticket", "tests/client/review_s4u.rs::s4u_proxy_rejects_relabelled_evidence", "tests/client/tgs_exchange.rs::tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache"]
+test_names = [
+  "tests/client/tgs_exchange.rs::builds_s4u2proxy_tgs_req_with_evidence_ticket",
+  "tests/client/review_s4u.rs::s4u_proxy_rejects_relabelled_evidence",
+  "tests/client/tgs_exchange.rs::tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache",
+]
 feature_flags = ["tokio"]
 security_divergence = "The evidence ticket's client is bound to the frontend key before the request is built."
 disposition = "ALREADY"
@@ -261,8 +268,17 @@ capability = "KRB-SAFE and KRB-PRIV create/read; KRB-ERROR create/read"
 implementation_status = "implemented"
 evidence_status = "fixture"
 missing = ""
-rust_symbols = ["krb_safe::verify_krb_safe_checksum", "krb_priv::build_krb_priv_with_confounder", "krb_priv::decrypt_krb_priv_enc_part"]
-test_names = ["tests/krb_safe.rs::builds_and_verifies_krb_safe_checksum", "tests/krb_safe.rs::rejects_krb_safe_checksum_mismatch", "tests/krb_priv.rs::builds_and_decrypts_krb_priv_with_explicit_confounder", "tests/krb_error.rs::decodes_and_roundtrips_gokrb5_krb_error_fixture"]
+rust_symbols = [
+  "krb_safe::verify_krb_safe_checksum",
+  "krb_priv::build_krb_priv_with_confounder",
+  "krb_priv::decrypt_krb_priv_enc_part",
+]
+test_names = [
+  "tests/krb_safe.rs::builds_and_verifies_krb_safe_checksum",
+  "tests/krb_safe.rs::rejects_krb_safe_checksum_mismatch",
+  "tests/krb_priv.rs::builds_and_decrypts_krb_priv_with_explicit_confounder",
+  "tests/krb_error.rs::decodes_and_roundtrips_gokrb5_krb_error_fixture",
+]
 feature_flags = ["messages"]
 security_divergence = "KRB-SAFE accepts keyed checksums only; unkeyed checksum types are RejectedFeature::UnauthenticatedChecksum."
 disposition = "ALREADY"
@@ -295,7 +311,11 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["client::pa_enc_timestamp"]
-test_names = ["tests/client/as_exchange.rs::builds_and_encrypts_pa_enc_timestamp", "tests/client/login_preauth.rs::parses_kdc_preauth_required_error_and_selects_etype_info2", "src/client/s2k_tests.rs::info2_challenge_checks_before_timestamp_derivation"]
+test_names = [
+  "tests/client/as_exchange.rs::builds_and_encrypts_pa_enc_timestamp",
+  "tests/client/login_preauth.rs::parses_kdc_preauth_required_error_and_selects_etype_info2",
+  "src/client/s2k_tests.rs::info2_challenge_checks_before_timestamp_derivation",
+]
 feature_flags = ["tokio"]
 security_divergence = "Peer s2kparams below the CryptoPolicy minimum (4096 AES-SHA1, 32768 AES-SHA2) are rejected before any key derivation."
 disposition = "ALREADY"
@@ -464,7 +484,11 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::AesSha1Etype"]
-test_names = ["tests/crypto_aes.rs::aes128_string_to_key_matches_gokrb5_vectors", "tests/crypto_aes.rs::aes_cts_encrypts_and_decrypts_rfc3962_vectors", "tests/crypto_aes.rs::checksums_and_messages_match_gokrb5_aes256"]
+test_names = [
+  "tests/crypto_aes.rs::aes128_string_to_key_matches_gokrb5_vectors",
+  "tests/crypto_aes.rs::aes_cts_encrypts_and_decrypts_rfc3962_vectors",
+  "tests/crypto_aes.rs::checksums_and_messages_match_gokrb5_aes256",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "ALREADY"
@@ -479,7 +503,11 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::AesSha2Etype"]
-test_names = ["tests/crypto_aes.rs::aes_sha2_string_to_key_matches_gokrb5_vectors", "tests/crypto_aes.rs::aes128_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors", "tests/crypto_aes.rs::aes256_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors"]
+test_names = [
+  "tests/crypto_aes.rs::aes_sha2_string_to_key_matches_gokrb5_vectors",
+  "tests/crypto_aes.rs::aes128_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors",
+  "tests/crypto_aes.rs::aes256_sha2_derive_checksum_integrity_and_crypto_match_gokrb5_vectors",
+]
 feature_flags = []
 security_divergence = "The MAC is verified in constant time before decryption."
 disposition = "ALREADY"
@@ -511,7 +539,12 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::Des3CbcSha1KdEtype", "crypto::CryptoPolicy::check_use"]
-test_names = ["tests/crypto_des3.rs::des3_checksum_and_message_encryption_match_gokrb5_vectors", "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults", "tests/policy/checked.rs::checked_dispatch_requires_permission", "tests/config/relations_c1.rs::allow_des3"]
+test_names = [
+  "tests/crypto_des3.rs::des3_checksum_and_message_encryption_match_gokrb5_vectors",
+  "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults",
+  "tests/policy/checked.rs::checked_dispatch_requires_permission",
+  "tests/config/relations_c1.rs::allow_des3",
+]
 feature_flags = []
 security_divergence = "DES3 needs allow_des3 = true. Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
 disposition = "WP-02"
@@ -529,7 +562,12 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::Rc4HmacEtype", "error::RejectedFeature::Rc4Export"]
-test_names = ["tests/crypto_rc4.rs::rc4_hmac_message_encryption_matches_gokrb5_vector", "tests/policy/acceptor.rs::default_acceptor_rejects_rc4_ticket", "tests/policy/expressions.rs::insecure_names_are_typed_rejections", "tests/policy/selection.rs::numeric_selection_is_typed"]
+test_names = [
+  "tests/crypto_rc4.rs::rc4_hmac_message_encryption_matches_gokrb5_vector",
+  "tests/policy/acceptor.rs::default_acceptor_rejects_rc4_ticket",
+  "tests/policy/expressions.rs::insecure_names_are_typed_rejections",
+  "tests/policy/selection.rs::numeric_selection_is_typed",
+]
 feature_flags = []
 security_divergence = "RC4-HMAC needs allow_rc4 = true. RC4-EXP (etype 24) is permanently rejected as RejectedFeature::Rc4Export, even with both legacy flags set."
 disposition = "WP-02"
@@ -548,7 +586,11 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::SingleDes"]
-test_names = ["tests/policy/expressions.rs::insecure_names_are_typed_rejections", "tests/policy/selection.rs::numeric_selection_is_typed", "tests/policy/raw_selection.rs::raw_encryption_rejects_forbidden_selection"]
+test_names = [
+  "tests/policy/expressions.rs::insecure_names_are_typed_rejections",
+  "tests/policy/selection.rs::numeric_selection_is_typed",
+  "tests/policy/raw_selection.rs::raw_encryption_rejects_forbidden_selection",
+]
 feature_flags = []
 security_divergence = "Single-DES ids 1/2/3 and names are rejected at every textual, numeric, serde and raw entry point before any crypto."
 disposition = "D2"
@@ -566,8 +608,18 @@ capability = "Configured enctype policy: `permitted_enctypes`, `default_tkt_enct
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["crypto::CryptoPolicy::from_libdefaults", "crypto::CryptoPolicy::check_use", "crypto::policy::Use"]
-test_names = ["tests/policy/profile.rs::policy_checks_every_use", "tests/policy/client.rs::as_request_rejects_excluded_list", "tests/policy/reply_isolation.rs::as_session_policy_isolated", "tests/policy/acceptor.rs::acceptor_applies_explicit_policy", "tests/config/relations_c2.rs::permitted_enctypes"]
+rust_symbols = [
+  "crypto::CryptoPolicy::from_libdefaults",
+  "crypto::CryptoPolicy::check_use",
+  "crypto::policy::Use",
+]
+test_names = [
+  "tests/policy/profile.rs::policy_checks_every_use",
+  "tests/policy/client.rs::as_request_rejects_excluded_list",
+  "tests/policy/reply_isolation.rs::as_session_policy_isolated",
+  "tests/policy/acceptor.rs::acceptor_applies_explicit_policy",
+  "tests/config/relations_c2.rs::permitted_enctypes",
+]
 feature_flags = []
 security_divergence = "The permitted list applies to every use, including acceptor keys and imported credentials. The crate default is AES only (SHA2 first). Camellia names are a diagnostic in Compatible mode and an error in Strict mode until Camellia exists (MIT-crypto-3, plan-2 todo 5)."
 disposition = "WP-02"
@@ -585,7 +637,13 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["config::EnctypeExpr", "crypto::CryptoPolicy::resolve"]
-test_names = ["tests/policy/expressions.rs::selector_order_removal_and_readdition", "tests/policy/expressions.rs::aliases_case_and_delimiters", "tests/policy/ordering.rs::ordered_edits_match_model", "tests/policy/expressions.rs::unknown_tokens_are_named", "tests/policy/expressions.rs::empty_results_fail_closed"]
+test_names = [
+  "tests/policy/expressions.rs::selector_order_removal_and_readdition",
+  "tests/policy/expressions.rs::aliases_case_and_delimiters",
+  "tests/policy/ordering.rs::ordered_edits_match_model",
+  "tests/policy/expressions.rs::unknown_tokens_are_named",
+  "tests/policy/expressions.rs::empty_results_fail_closed",
+]
 feature_flags = []
 security_divergence = "MIT 1.22.2's parser (init_ctx.c) knows only the DEFAULT keyword, so ALL is an unknown token here as there. DEFAULT expands to the secure AES list, never DES3/RC4; unknown tokens, forbidden positive terms and empty results are errors."
 disposition = "WP-02"
@@ -603,7 +661,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::WeakCrypto"]
-test_names = ["tests/policy/profile.rs::weak_crypto_is_permanently_rejected", "tests/config/relations_c1.rs::allow_weak_crypto"]
+test_names = [
+  "tests/policy/profile.rs::weak_crypto_is_permanently_rejected",
+  "tests/config/relations_c1.rs::allow_weak_crypto",
+]
 feature_flags = []
 security_divergence = "allow_weak_crypto = true is permanently rejected as RejectedFeature::WeakCrypto; false is accepted."
 disposition = "WP-02"
@@ -622,7 +683,12 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
-test_names = ["tests/config/relations_c1.rs::allow_des3", "tests/config/relations_c1.rs::allow_rc4", "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults", "tests/policy/acceptor_http.rs::http_builders_propagate_legacy_permission"]
+test_names = [
+  "tests/config/relations_c1.rs::allow_des3",
+  "tests/config/relations_c1.rs::allow_rc4",
+  "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults",
+  "tests/policy/acceptor_http.rs::http_builders_propagate_legacy_permission",
+]
 feature_flags = []
 security_divergence = "Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
 disposition = "WP-02"
@@ -656,8 +722,17 @@ capability = "FILE ccache"
 implementation_status = "implemented"
 evidence_status = "fixture"
 missing = ""
-rust_symbols = ["ccache::CCache::load", "ccache::CCache::save", "ccache::CacheName"]
-test_names = ["tests/ccache.rs::parses_gokrb5_ccache_fixture", "tests/ccache.rs::saves_and_loads_ccache_file", "tests/ccache.rs::saves_cache_with_private_permissions", "tests/ccache.rs::resolves_file_cache_names"]
+rust_symbols = [
+  "ccache::CCache::load",
+  "ccache::CCache::save",
+  "ccache::CacheName",
+]
+test_names = [
+  "tests/ccache.rs::parses_gokrb5_ccache_fixture",
+  "tests/ccache.rs::saves_and_loads_ccache_file",
+  "tests/ccache.rs::saves_cache_with_private_permissions",
+  "tests/ccache.rs::resolves_file_cache_names",
+]
 feature_flags = []
 security_divergence = "Saved caches are private to the owner and symlinked destinations are rejected."
 disposition = "ALREADY"
@@ -791,8 +866,15 @@ capability = "Per-cache configuration entries (`krb5_cc_get_config`/`set_config`
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["ccache::CCache::upsert_config_entry", "ccache::CCache::config_entries", "ccache::ConfigEntry"]
-test_names = ["tests/ccache.rs::builds_and_upserts_x_cacheconf_entries", "tests/ccache.rs::entries_filter_out_x_cacheconf_credentials"]
+rust_symbols = [
+  "ccache::CCache::upsert_config_entry",
+  "ccache::CCache::config_entries",
+  "ccache::ConfigEntry",
+]
+test_names = [
+  "tests/ccache.rs::builds_and_upserts_x_cacheconf_entries",
+  "tests/ccache.rs::entries_filter_out_x_cacheconf_credentials",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "ALREADY"
@@ -824,7 +906,12 @@ implementation_status = "implemented"
 evidence_status = "fixture"
 missing = ""
 rust_symbols = ["keytab::Keytab", "keytab::Keytab::find_key", "keytab::Entry"]
-test_names = ["tests/keytab.rs::parses_gokrb5_keytab_fixture", "tests/keytab.rs::saves_and_loads_keytab_file", "tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype", "tests/keytab.rs::generates_gokrb5_user_keytab_entries_from_password"]
+test_names = [
+  "tests/keytab.rs::parses_gokrb5_keytab_fixture",
+  "tests/keytab.rs::saves_and_loads_keytab_file",
+  "tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype",
+  "tests/keytab.rs::generates_gokrb5_user_keytab_entries_from_password",
+]
 feature_flags = []
 security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected."
 disposition = "ALREADY"
@@ -888,7 +975,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
-test_names = ["tests/config/relations_c1.rs::allow_des3", "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults"]
+test_names = [
+  "tests/config/relations_c1.rs::allow_des3",
+  "tests/policy/profile.rs::policy_legacy_flags_and_mutated_defaults",
+]
 feature_flags = []
 security_divergence = "Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
 disposition = "WP-02"
@@ -906,7 +996,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
-test_names = ["tests/config/relations_c1.rs::allow_rc4", "tests/policy/acceptor.rs::default_acceptor_rejects_rc4_ticket"]
+test_names = [
+  "tests/config/relations_c1.rs::allow_rc4",
+  "tests/policy/acceptor.rs::default_acceptor_rejects_rc4_ticket",
+]
 feature_flags = []
 security_divergence = "Enforced client- and acceptor-side for every policy-checked use (request lists, replies, tickets, acceptor keys, imports, checked low-level APIs); MIT's flag only gates KDC issuance. Raw RFC-vector APIs stay policy-free."
 disposition = "WP-02"
@@ -924,7 +1017,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::WeakCrypto"]
-test_names = ["tests/config/relations_c1.rs::allow_weak_crypto", "tests/policy/profile.rs::weak_crypto_is_permanently_rejected"]
+test_names = [
+  "tests/config/relations_c1.rs::allow_weak_crypto",
+  "tests/policy/profile.rs::weak_crypto_is_permanently_rejected",
+]
 feature_flags = []
 security_divergence = "true is permanently rejected as RejectedFeature::WeakCrypto; false is accepted."
 disposition = "WP-02"
@@ -977,7 +1073,11 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["config::LibDefaults"]
-test_names = ["tests/config/relations_c1.rs::clockskew", "tests/config/libdefaults_c1.rs::clockskew_when_invalid_mit_syntax", "tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator"]
+test_names = [
+  "tests/config/relations_c1.rs::clockskew",
+  "tests/config/libdefaults_c1.rs::clockskew_when_invalid_mit_syntax",
+  "tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator",
+]
 feature_flags = []
 security_divergence = "A negative tolerance is rejected; time-unit syntax is accepted as an extension of MIT's integer seconds."
 disposition = "ALREADY"
@@ -991,8 +1091,15 @@ capability = "`default_ccache_name`"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["config::parameters::ExpansionContext", "client::Tokio::from_default_ccache_name"]
-test_names = ["tests/config/relations_c1.rs::default_ccache_name", "tests/config/expansion.rs::documented_tokens_expand_when_context_is_supplied", "tests/config/expansion.rs::unknown_tokens_fail_when_not_exactly_named"]
+rust_symbols = [
+  "config::parameters::ExpansionContext",
+  "client::Tokio::from_default_ccache_name",
+]
+test_names = [
+  "tests/config/relations_c1.rs::default_ccache_name",
+  "tests/config/expansion.rs::documented_tokens_expand_when_context_is_supplied",
+  "tests/config/expansion.rs::unknown_tokens_fail_when_not_exactly_named",
+]
 feature_flags = ["tokio"]
 security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only."
 disposition = "WP-01"
@@ -1008,8 +1115,14 @@ capability = "`default_client_keytab_name`"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["config::parameters::ExpansionContext", "client::Tokio::with_client_keytab_from_config"]
-test_names = ["tests/config/relations_c1.rs::default_client_keytab_name", "tests/config/expansion.rs::profile_names_expand_when_selected_with_context"]
+rust_symbols = [
+  "config::parameters::ExpansionContext",
+  "client::Tokio::with_client_keytab_from_config",
+]
+test_names = [
+  "tests/config/relations_c1.rs::default_client_keytab_name",
+  "tests/config/expansion.rs::profile_names_expand_when_selected_with_context",
+]
 feature_flags = ["tokio"]
 security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only."
 disposition = "WP-01"
@@ -1025,8 +1138,14 @@ capability = "`default_keytab_name`"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["config::parameters::ExpansionContext", "service::Validator::from_default_keytab_name"]
-test_names = ["tests/config/relations_c1.rs::default_keytab_name", "tests/config/expansion.rs::identity_tokens_expand_when_linux"]
+rust_symbols = [
+  "config::parameters::ExpansionContext",
+  "service::Validator::from_default_keytab_name",
+]
+test_names = [
+  "tests/config/relations_c1.rs::default_keytab_name",
+  "tests/config/expansion.rs::identity_tokens_expand_when_linux",
+]
 feature_flags = ["messages"]
 security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only."
 disposition = "WP-01"
@@ -1074,8 +1193,14 @@ capability = "`default_tgs_enctypes`"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["client::options::TgsReq::from_libdefaults", "config::EnctypeExpr"]
-test_names = ["tests/config/relations_c1.rs::default_tgs_enctypes", "tests/policy/client.rs::tgs_request_rejects_excluded_session"]
+rust_symbols = [
+  "client::options::TgsReq::from_libdefaults",
+  "config::EnctypeExpr",
+]
+test_names = [
+  "tests/config/relations_c1.rs::default_tgs_enctypes",
+  "tests/policy/client.rs::tgs_request_rejects_excluded_session",
+]
 feature_flags = ["tokio"]
 security_divergence = "Uses the MIT expression syntax; forbidden positive terms are errors and the default is the AES list."
 disposition = "WP-02"
@@ -1092,8 +1217,14 @@ capability = "`default_tkt_enctypes`"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["client::options::AsReq::from_libdefaults", "config::EnctypeExpr"]
-test_names = ["tests/config/relations_c1.rs::default_tkt_enctypes", "tests/policy/client.rs::as_request_rejects_excluded_list"]
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "config::EnctypeExpr",
+]
+test_names = [
+  "tests/config/relations_c1.rs::default_tkt_enctypes",
+  "tests/policy/client.rs::as_request_rejects_excluded_list",
+]
 feature_flags = ["tokio"]
 security_divergence = "Uses the MIT expression syntax; forbidden positive terms are errors and the default is the AES list."
 disposition = "WP-02"
@@ -1329,8 +1460,14 @@ capability = "`kdc_default_options`"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["client::options::AsReq::from_libdefaults", "client::options::TgsReq::from_libdefaults"]
-test_names = ["tests/config/relations_c2.rs::kdc_default_options", "tests/client/as_exchange.rs::as_req_options_from_libdefaults_suppresses_canonicalize_flag"]
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "client::options::TgsReq::from_libdefaults",
+]
+test_names = [
+  "tests/config/relations_c2.rs::kdc_default_options",
+  "tests/client/as_exchange.rs::as_req_options_from_libdefaults_suppresses_canonicalize_flag",
+]
 feature_flags = ["tokio"]
 security_divergence = "The canonicalize bit is suppressed on unarmored AS requests so the client identity cannot change."
 disposition = "ALREADY"
@@ -1379,7 +1516,11 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["crypto::CryptoPolicy::from_libdefaults"]
-test_names = ["tests/config/relations_c2.rs::permitted_enctypes", "tests/policy/profile.rs::policy_checks_every_use", "tests/policy/profile.rs::profile_subtractions_resolve_to_exact_ids"]
+test_names = [
+  "tests/config/relations_c2.rs::permitted_enctypes",
+  "tests/policy/profile.rs::policy_checks_every_use",
+  "tests/policy/profile.rs::profile_subtractions_resolve_to_exact_ids",
+]
 feature_flags = []
 security_divergence = "The crate default is the AES list (SHA2 first), not MIT's list with DES3, RC4 and Camellia; the list governs every use."
 disposition = "WP-02"
@@ -1498,7 +1639,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["client::options::AsReq::from_libdefaults"]
-test_names = ["tests/config/relations_c2.rs::renew_lifetime", "tests/client/as_exchange.rs::builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag"]
+test_names = [
+  "tests/config/relations_c2.rs::renew_lifetime",
+  "tests/client/as_exchange.rs::builds_tgt_as_req_with_renew_lifetime_sets_renewable_flag",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "ALREADY"
@@ -1547,7 +1691,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["client::options::AsReq::from_libdefaults"]
-test_names = ["tests/config/relations_c2.rs::ticket_lifetime", "tests/client/as_exchange.rs::builds_tgt_as_req_with_expected_fields"]
+test_names = [
+  "tests/config/relations_c2.rs::ticket_lifetime",
+  "tests/client/as_exchange.rs::builds_tgt_as_req_with_expected_fields",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "ALREADY"
@@ -1562,7 +1709,10 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["client::transport::Tokio"]
-test_names = ["tests/config/relations_c2.rs::udp_preference_limit", "tests/client_transport/tests/affinity.rs::tokio_transport_auto_honors_tcp_first_udp_preference_limit"]
+test_names = [
+  "tests/config/relations_c2.rs::udp_preference_limit",
+  "tests/client_transport/tests/affinity.rs::tokio_transport_auto_honors_tcp_first_udp_preference_limit",
+]
 feature_flags = ["tokio"]
 security_divergence = "Negative values use MIT's default and large values are capped at 32700."
 disposition = "ALREADY"
@@ -1611,7 +1761,11 @@ implementation_status = "partial"
 evidence_status = "unit"
 missing = "Remote kadm5 consumer of admin_server (plan-2 todo 24); kdc and kpasswd_server endpoints are effective and admin_server feeds the port-464 kpasswd fallback."
 rust_symbols = []
-test_names = ["tests/config/realm_relations_d.rs::kdc", "tests/config/realm_relations_d.rs::kpasswd_server", "tests/config/realm_relations_d.rs::admin_server"]
+test_names = [
+  "tests/config/realm_relations_d.rs::kdc",
+  "tests/config/realm_relations_d.rs::kpasswd_server",
+  "tests/config/realm_relations_d.rs::admin_server",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-15"
@@ -1628,7 +1782,11 @@ implementation_status = "partial"
 evidence_status = "unit"
 missing = "Primary-KDC retry after a bad password against a replica; primary_kdc and master_kdc are parsed (primary_kdc wins) with a diagnostic."
 rust_symbols = []
-test_names = ["tests/config/section_composition_d.rs::primary_kdc_precedence", "tests/config/realm_relations_d.rs::primary_kdc", "tests/config/realm_relations_d.rs::master_kdc"]
+test_names = [
+  "tests/config/section_composition_d.rs::primary_kdc_precedence",
+  "tests/config/realm_relations_d.rs::primary_kdc",
+  "tests/config/realm_relations_d.rs::master_kdc",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
@@ -1662,7 +1820,10 @@ implementation_status = "partial"
 evidence_status = "unit"
 missing = "No local authorization or name mapping executes; the relations are parsed with diagnostics."
 rust_symbols = []
-test_names = ["tests/config/realm_relations_d.rs::auth_to_local", "tests/config/realm_relations_d.rs::auth_to_local_names"]
+test_names = [
+  "tests/config/realm_relations_d.rs::auth_to_local",
+  "tests/config/realm_relations_d.rs::auth_to_local_names",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-17"
@@ -1679,7 +1840,10 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::V4Conversion"]
-test_names = ["tests/config.rs::rejects_v4_realm_directives", "tests/policy/protocols.rs::relation_api_rejects_removed_modes"]
+test_names = [
+  "tests/config.rs::rejects_v4_realm_directives",
+  "tests/policy/protocols.rs::relation_api_rejects_removed_modes",
+]
 feature_flags = []
 security_divergence = "v4_instance_convert and v4_realm are rejected before composition; default_domain stays a parsed, inert relation with a diagnostic."
 disposition = "D2"
@@ -1698,7 +1862,10 @@ implementation_status = "partial"
 evidence_status = "unit"
 missing = "SPAKE consumer; true is rejected (fail closed) because the current client may still send encrypted timestamp."
 rust_symbols = []
-test_names = ["tests/config/sections_d.rs::encrypted_timestamp_disable_fails_closed", "tests/config/realm_relations_d.rs::disable_encrypted_timestamp"]
+test_names = [
+  "tests/config/sections_d.rs::encrypted_timestamp_disable_fails_closed",
+  "tests/config/realm_relations_d.rs::disable_encrypted_timestamp",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-07"
@@ -1732,7 +1899,11 @@ implementation_status = "partial"
 evidence_status = "unit"
 missing = "PKINIT; realm pkinit_* relations are parsed with diagnostics and enabled pkinit_win2k/pkinit_draft9 values are rejected (D2)."
 rust_symbols = []
-test_names = ["tests/config/sections_d.rs::pkinit_invalid_enums_fail", "tests/config/realm_relations_d.rs::pkinit_anchors", "tests/config/realm_relations_d.rs::pkinit_identities"]
+test_names = [
+  "tests/config/sections_d.rs::pkinit_invalid_enums_fail",
+  "tests/config/realm_relations_d.rs::pkinit_anchors",
+  "tests/config/realm_relations_d.rs::pkinit_identities",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-06"
@@ -1781,7 +1952,11 @@ implementation_status = "partial"
 evidence_status = "unit"
 missing = "Registered Rust provider selection; disable/enable_only are parsed per interface and restrictions that would exclude the current timestamp preauth fail."
 rust_symbols = []
-test_names = ["tests/config/section_composition_d.rs::disable", "tests/config/section_composition_d.rs::enable_only", "tests/config/section_composition_d.rs::restrictive_preauth_plugins"]
+test_names = [
+  "tests/config/section_composition_d.rs::disable",
+  "tests/config/section_composition_d.rs::enable_only",
+  "tests/config/section_composition_d.rs::restrictive_preauth_plugins",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
@@ -1798,7 +1973,11 @@ implementation_status = "partial"
 evidence_status = "unit"
 missing = "P2-3: MIT `module` config providers; `module` is Config::UnsupportedDynamicModule in every mode until registered Rust profile providers exist. include/includedir semantics were delivered by P1-15."
 rust_symbols = []
-test_names = ["tests/config/profile.rs::includes_resume_parent_state", "tests/config/readers.rs::reader_composes_absolute_includes", "tests/config/readers.rs::dynamic_modules_fail_in_every_mode"]
+test_names = [
+  "tests/config/profile.rs::includes_resume_parent_state",
+  "tests/config/readers.rs::reader_composes_absolute_includes",
+  "tests/config/readers.rs::dynamic_modules_fail_in_every_mode",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
@@ -1815,7 +1994,13 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["config::Config::load_paths", "config::Config::diagnostics"]
-test_names = ["tests/config/profile.rs::first_values_win_within_file", "tests/config/profile.rs::section_and_subsection_finals_stop_routes", "tests/config/profile.rs::relation_final_accumulates_until_marker", "tests/config/profile.rs::directory_sources_filter_and_accumulate_in_order", "tests/config.rs::loads_config_path_list_in_order"]
+test_names = [
+  "tests/config/profile.rs::first_values_win_within_file",
+  "tests/config/profile.rs::section_and_subsection_finals_stop_routes",
+  "tests/config/profile.rs::relation_final_accumulates_until_marker",
+  "tests/config/profile.rs::directory_sources_filter_and_accumulate_in_order",
+  "tests/config.rs::loads_config_path_list_in_order",
+]
 feature_flags = []
 security_divergence = "A missing KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms."
 disposition = "WP-01"
@@ -2239,8 +2424,14 @@ capability = "Microsoft set-password protocol compatibility"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["kadmin::ChangePasswdData", "client::Tokio::change_password_for"]
-test_names = ["tests/kadmin.rs::change_passwd_data_decodes_and_encodes_target_payload", "tests/client/password_change.rs::tokio_client_changes_explicit_target_password"]
+rust_symbols = [
+  "kadmin::ChangePasswdData",
+  "client::Tokio::change_password_for",
+]
+test_names = [
+  "tests/kadmin.rs::change_passwd_data_decodes_and_encodes_target_payload",
+  "tests/client/password_change.rs::tokio_client_changes_explicit_target_password",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "ALREADY"
@@ -2323,7 +2514,10 @@ implementation_status = "implemented"
 evidence_status = "fixture"
 missing = ""
 rust_symbols = ["pac::UpnDnsInfo", "pac::KerbValidationInfo"]
-test_names = ["tests/pac.rs::parses_gokrb5_pac_container_and_buffers", "tests/pac.rs::derives_ad_credentials_from_kerb_validation_info"]
+test_names = [
+  "tests/pac.rs::parses_gokrb5_pac_container_and_buffers",
+  "tests/pac.rs::derives_ad_credentials_from_kerb_validation_info",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "ALREADY"
@@ -2725,7 +2919,11 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::KerberosV4"]
-test_names = ["tests/policy/protocols.rs::enabling_protocol_relations_are_typed", "tests/policy/protocols.rs::relation_api_rejects_removed_modes", "tests/policy/protocols.rs::serde_protocol_relations_are_rejected"]
+test_names = [
+  "tests/policy/protocols.rs::enabling_protocol_relations_are_typed",
+  "tests/policy/protocols.rs::relation_api_rejects_removed_modes",
+  "tests/policy/protocols.rs::serde_protocol_relations_are_rejected",
+]
 feature_flags = []
 security_divergence = "krb4 relations and selections are rejected before composition."
 disposition = "D2"
@@ -2744,7 +2942,11 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::SingleDes"]
-test_names = ["tests/policy/expressions.rs::insecure_names_are_typed_rejections", "tests/policy/selection.rs::numeric_selection_is_typed", "src/client/s2k_tests.rs::forbidden_profiles_never_enter_pbkdf2"]
+test_names = [
+  "tests/policy/expressions.rs::insecure_names_are_typed_rejections",
+  "tests/policy/selection.rs::numeric_selection_is_typed",
+  "src/client/s2k_tests.rs::forbidden_profiles_never_enter_pbkdf2",
+]
 feature_flags = []
 security_divergence = "Single DES is rejected even when legacy flags are set."
 disposition = "D2"
@@ -2763,7 +2965,10 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::RsaPkinit"]
-test_names = ["tests/policy/protocols.rs::relation_api_rejects_removed_modes", "tests/policy/protocols.rs::enabling_protocol_relations_are_typed"]
+test_names = [
+  "tests/policy/protocols.rs::relation_api_rejects_removed_modes",
+  "tests/policy/protocols.rs::enabling_protocol_relations_are_typed",
+]
 feature_flags = []
 security_divergence = "RSA-mode PKINIT selections are rejected; RSA signatures on certificate chains are a separate matter for plan-2 PKINIT."
 disposition = "D2"
@@ -2782,7 +2987,11 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::Draft9Pkinit"]
-test_names = ["tests/policy/protocols.rs::draft9_api_selection_is_rejected", "tests/policy/protocols.rs::draft9_preferences_are_ignored_with_diagnostics", "tests/policy/protocols.rs::draft9_advertisements_are_ignored"]
+test_names = [
+  "tests/policy/protocols.rs::draft9_api_selection_is_rejected",
+  "tests/policy/protocols.rs::draft9_preferences_are_ignored_with_diagnostics",
+  "tests/policy/protocols.rs::draft9_advertisements_are_ignored",
+]
 feature_flags = []
 security_divergence = "Explicit selection of PA types 14/15 is rejected; their preferred_preauth_types entries and KDC advertisements are ignored with a diagnostic."
 disposition = "D2"
@@ -2850,7 +3059,12 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::UnauthenticatedChecksum"]
-test_names = ["tests/policy/selection.rs::checksum_selection_is_typed", "tests/policy/selection.rs::textual_checksum_selection_is_typed", "tests/policy/raw_selection.rs::peer_checksum_selection_is_typed", "tests/krb_safe.rs::rejects_unsupported_krb_safe_checksum_type"]
+test_names = [
+  "tests/policy/selection.rs::checksum_selection_is_typed",
+  "tests/policy/selection.rs::textual_checksum_selection_is_typed",
+  "tests/policy/raw_selection.rs::peer_checksum_selection_is_typed",
+  "tests/krb_safe.rs::rejects_unsupported_krb_safe_checksum_type",
+]
 feature_flags = []
 security_divergence = "Unkeyed checksum ids are rejected at every selection entry point."
 disposition = "D2"
@@ -2869,7 +3083,10 @@ implementation_status = "rejected"
 evidence_status = "unit"
 missing = ""
 rust_symbols = ["error::RejectedFeature::UnprotectedPasswordChange"]
-test_names = ["tests/policy/protocols.rs::password_versions_fail_closed", "tests/policy/protocols.rs::null_password_payload_is_rejected"]
+test_names = [
+  "tests/policy/protocols.rs::password_versions_fail_closed",
+  "tests/policy/protocols.rs::null_password_payload_is_rejected",
+]
 feature_flags = []
 security_divergence = "Unprotected password-change modes are rejected; unauthenticated replies never count as success."
 disposition = "D2"
